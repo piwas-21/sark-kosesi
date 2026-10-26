@@ -91,6 +91,9 @@ approval fails before comparison; snapshot updating is disabled in normal gates.
 The CI browser artifact contains the candidate gallery for review. Local evidence
 controls attest the contributor's record; they are not cryptographic proof of a
 human review. Never create that record without the user's actual approval.
+Baseline comparison uses Ubuntu 24.04 and the pinned Playwright browser builds.
+Captures on other operating systems remain diagnostic and cannot replace the
+approved images, since native fonts and controls can render differently.
 
 Capture and comparison use native browser defaults at an explicit 1x pixel
 density and the same viewport sizes. A correction limited to that comparison

@@ -34,6 +34,15 @@ packages/design/         # tokens and accessible UI primitives
 
 Keep modules small and organized by commerce capability. Avoid a generic repository/CQRS framework. Domain code is independent of HTTP/SQL and is deterministic with explicit clock/identifier inputs. Use typed identifiers, checked integer money arithmetic and explicit state transitions; no floating-point money, unchecked casts or panic/unwrap/expect in request paths. Forbid unsafe code in owned application crates. Error responses are typed and redact internals. Connection, request, payload, queue and retry limits are explicit.
 
+Application `Clock` and `Identifiers` ports supply explicit request-diagnostic
+inputs. Infrastructure adapters use checked system-clock conversion and OS
+entropy; tests inject fixed values and failures. Each API response has a generated
+32-character hexadecimal request ID and Unix-seconds header when those inputs
+are available. Caller-supplied IDs are ignored. Unavailable inputs return a
+redacted 503; there is no predictable fallback ID. Failure events include only the
+generated correlation context, static code and status, with no request URL,
+credentials or body. Successful catalogue reads do not generate per-read logs.
+
 ## Inventory and finance
 
 Model sellable variants separately from physical components. A configuration has a versioned bill of materials: seat/back/bolster covers and optional matching foam inserts. Covers-only does not reserve foam. Prepacked and separable stock require explicit warehouse rules; never count both kit stock and its contents as independently available.

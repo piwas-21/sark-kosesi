@@ -207,6 +207,7 @@ version = "0.1.0"
 dependencies = [
  "commerce-application",
  "commerce-domain",
+ "getrandom 0.4.3",
  "serde_json",
  "sqlx",
  "tokio",

@@ -1,5 +1,6 @@
 #![forbid(unsafe_code)]
 use commerce_api::{AppState, PREVIEW_REQUEST_CAPACITY, config::Config, contract, router};
+use commerce_infrastructure::runtime::{SecureIdentifiers, SystemClock};
 use commerce_infrastructure::{MIGRATOR, connect};
 use std::sync::Arc;
 use tokio::sync::Semaphore;
@@ -24,6 +25,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         pool,
         preview_token: Arc::from(config.preview_token),
         capacity: Arc::new(Semaphore::new(PREVIEW_REQUEST_CAPACITY)),
+        clock: Arc::new(SystemClock),
+        identifiers: Arc::new(SecureIdentifiers),
     });
     axum::serve(listener, app)
         .with_graceful_shutdown(async {

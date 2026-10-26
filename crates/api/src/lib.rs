@@ -11,13 +11,17 @@ use axum::{
     response::{IntoResponse, Response},
     routing::get,
 };
-use commerce_application::Locale;
+use commerce_application::{
+    Locale,
+    request_context::{Clock, Identifiers, RequestContext},
+};
 use commerce_infrastructure::{catalogue, readiness};
 use serde::Serialize;
 use sqlx::PgPool;
 use std::{sync::Arc, time::Duration};
 use subtle::ConstantTimeEq;
 use tokio::sync::Semaphore;
+use tracing::Instrument;
 use utoipa::ToSchema;
 
 // The 25-user steady fixture may still drain when its 50-request burst starts.
@@ -28,6 +32,8 @@ pub struct AppState {
     pub pool: PgPool,
     pub preview_token: Arc<str>,
     pub capacity: Arc<Semaphore>,
+    pub clock: Arc<dyn Clock>,
+    pub identifiers: Arc<dyn Identifiers>,
 }
 
 #[derive(Serialize, ToSchema)]
@@ -78,14 +84,44 @@ fn secret_equal(left: &[u8], right: &[u8]) -> bool {
 }
 
 async fn bounded(State(state): State<AppState>, request: Request, next: Next) -> Response {
+    let context = RequestContext::capture(state.clock.as_ref(), state.identifiers.as_ref());
+    let span = match context.as_ref() {
+        Ok(context) => tracing::info_span!(
+            "request",
+            correlation_id = %context.id,
+            unix_seconds = context.unix_seconds
+        ),
+        Err(_) => tracing::Span::none(),
+    };
     let permit = state.capacity.try_acquire();
-    let mut response = if permit.is_err() {
+    let mut response = if context.is_err() {
+        error(StatusCode::SERVICE_UNAVAILABLE, "context_unavailable")
+    } else if permit.is_err() {
         error(StatusCode::SERVICE_UNAVAILABLE, "capacity_exceeded")
     } else {
-        tokio::time::timeout(Duration::from_secs(1), next.run(request))
-            .await
-            .unwrap_or_else(|_| error(StatusCode::GATEWAY_TIMEOUT, "dependency_timeout"))
+        tokio::time::timeout(
+            Duration::from_secs(1),
+            next.run(request).instrument(span.clone()),
+        )
+        .await
+        .unwrap_or_else(|_| error(StatusCode::GATEWAY_TIMEOUT, "dependency_timeout"))
     };
+    if let Ok(context) = context {
+        let id = HeaderValue::from_str(&context.id.to_string());
+        let timestamp = HeaderValue::from_str(&context.unix_seconds.to_string());
+        match (id, timestamp) {
+            (Ok(id), Ok(timestamp)) => {
+                response.headers_mut().insert("x-request-id", id);
+                response
+                    .headers_mut()
+                    .insert("x-request-unix-seconds", timestamp);
+            }
+            _ => response = error(StatusCode::SERVICE_UNAVAILABLE, "context_unavailable"),
+        }
+    }
+    if response.status().is_server_error() {
+        tracing::warn!(parent: &span, code = "request_unavailable", http_status = response.status().as_u16());
+    }
     for (key, value) in [
         ("cache-control", "private, no-store"),
         ("x-robots-tag", "noindex, nofollow"),
