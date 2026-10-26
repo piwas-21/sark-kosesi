@@ -1,0 +1,7 @@
+#!/usr/bin/env sh
+set -eu
+branch=$(git branch --show-current)
+case "$branch" in
+  main|develop) echo 'Commit on an owned feature branch, not a protected branch.' >&2; exit 1 ;;
+esac
+git diff --cached --check
