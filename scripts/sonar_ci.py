@@ -55,7 +55,6 @@ def wait_ready():
 def bootstrap():
     wait_ready()
     password = "Aa1!" + secrets.token_urlsafe(36)
-    print(f"::add-mask::{password}", flush=True)
     api(
         "api/users/change_password",
         "admin:admin",

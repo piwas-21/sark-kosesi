@@ -47,3 +47,4 @@ class SonarApi(unittest.TestCase):
             ready.assert_called_once()
             random.assert_called_once_with(36)
             output.assert_any_call("::add-mask::test-token", flush=True)
+            self.assertFalse(any(password in str(call) for call in output.call_args_list))
