@@ -121,13 +121,7 @@ def check_stage(config, package):
             raise ValueError("Application gate job missing")
 
 
-def main():
-    for name in REQUIRED:
-        if not (ROOT / name).is_file():
-            raise ValueError(f"Missing required document: {name}")
-    config = json.loads((ROOT / "config/delivery.json").read_text())
-    rules = json.loads((ROOT / "config/github-ruleset.json").read_text())
-    package = json.loads((ROOT / "package.json").read_text())
+def check_inventory(config, rules):
     expected = set(config["requiredChecks"])
     if not expected:
         raise ValueError("Required check inventory cannot be empty")
@@ -139,49 +133,76 @@ def main():
     }
     if expected != actual:
         raise ValueError("CI check inventory and GitHub rules disagree")
+
+
+def check_workflow(text, package):
+    for action in re.findall(r"uses:\s*([^\s]+)", text):
+        if not re.fullmatch(r"[\w.-]+/[\w./-]+@[0-9a-f]{40}", action):
+            raise ValueError(f"Unpinned action: {action}")
+    for container in re.findall(r"image:\s*([^\s]+)", text):
+        if not re.fullmatch(r"[^\s]+@sha256:[0-9a-f]{64}", container):
+            raise ValueError(f"Unpinned CI container: {container}")
+        if "mcr.microsoft.com/playwright:" in container:
+            version = package["devDependencies"]["@playwright/test"]
+            if f"playwright:v{version}-noble@" not in container:
+                raise ValueError("Playwright package and CI browser image versions differ")
+    if "pull_request_target:" in text or "continue-on-error: true" in text:
+        raise ValueError("Unsafe or nonblocking required workflow")
+
+
+def check_source(path, package):
+    text = path.read_text()
+    if "/Users/" in text or "/home/runner/work/" in text:
+        raise ValueError(f"Absolute workstation path in {path.relative_to(ROOT)}")
+    if path.suffix == ".md":
+        for target in re.findall(r"\]\(([^)\n]+)\)", text):
+            local_target(path, target)
+    if path.suffix == ".html":
+        Assets(path).feed(text)
+        if 'name="robots" content="noindex,nofollow"' not in text:
+            raise ValueError(f"Prototype must remain noindex: {path}")
+    if path.suffix == ".css":
+        for target in re.findall(r"url\(['\"]?([^)'\"]+)", text):
+            local_target(path, target)
+    if path.suffix in (".js", ".mjs"):
+        subprocess.run(["node", "--check", str(path)], check=True, capture_output=True)
+    if path.parent == ROOT / ".github/workflows":
+        check_workflow(text, package)
+
+
+def check_assets():
+    for asset in json.loads((ROOT / "design/asset-manifest.json").read_text())["files"]:
+        path = ROOT / asset["path"]
+        if not path.is_file() or hashlib.sha256(path.read_bytes()).hexdigest() != asset["sha256"]:
+            raise ValueError(f"Asset integrity mismatch: {asset['path']}")
+
+
+def check_event():
+    if os.environ.get("GITHUB_EVENT_NAME") != "pull_request":
+        return
+    event = json.loads(Path(os.environ["GITHUB_EVENT_PATH"]).read_text())["pull_request"]
+    base, head = event["base"]["ref"], event["head"]["ref"]
+    if base not in ("develop", "main") or (base == "main" and head != "develop"):
+        raise ValueError("Feature PRs target develop; only develop releases target main")
+
+
+def main():
+    for name in REQUIRED:
+        if not (ROOT / name).is_file():
+            raise ValueError(f"Missing required document: {name}")
+    config = json.loads((ROOT / "config/delivery.json").read_text())
+    rules = json.loads((ROOT / "config/github-ruleset.json").read_text())
+    package = json.loads((ROOT / "package.json").read_text())
+    check_inventory(config, rules)
     check_stage(config, package)
     count = 0
     for path in project_files():
         if path.suffix not in (".md", ".html", ".css", ".js", ".mjs", ".yml", ".json", ".txt"):
             continue
-        text = path.read_text()
-        if "/Users/" in text or "/home/runner/work/" in text:
-            raise ValueError(f"Absolute workstation path in {path.relative_to(ROOT)}")
-        if path.suffix == ".md":
-            for target in re.findall(r"\]\(([^)\n]+)\)", text):
-                local_target(path, target)
-        if path.suffix == ".html":
-            Assets(path).feed(text)
-            if 'name="robots" content="noindex,nofollow"' not in text:
-                raise ValueError(f"Prototype must remain noindex: {path}")
-        if path.suffix == ".css":
-            for target in re.findall(r'url\([\'"]?([^\)\'\"]+)', text):
-                local_target(path, target)
-        if path.suffix in (".js", ".mjs"):
-            subprocess.run(["node", "--check", str(path)], check=True, capture_output=True)
-        if path.parent == ROOT / ".github/workflows":
-            for action in re.findall(r"uses:\s*([^\s]+)", text):
-                if not re.fullmatch(r"[\w.-]+/[\w./-]+@[0-9a-f]{40}", action):
-                    raise ValueError(f"Unpinned action: {action}")
-            for container in re.findall(r"image:\s*([^\s]+)", text):
-                if not re.fullmatch(r"[^\s]+@sha256:[0-9a-f]{64}", container):
-                    raise ValueError(f"Unpinned CI container: {container}")
-                if "mcr.microsoft.com/playwright:" in container:
-                    version = package["devDependencies"]["@playwright/test"]
-                    if f"playwright:v{version}-noble@" not in container:
-                        raise ValueError("Playwright package and CI browser image versions differ")
-            if "pull_request_target:" in text or "continue-on-error: true" in text:
-                raise ValueError("Unsafe or nonblocking required workflow")
+        check_source(path, package)
         count += 1
-    for asset in json.loads((ROOT / "design/asset-manifest.json").read_text())["files"]:
-        path = ROOT / asset["path"]
-        if not path.is_file() or hashlib.sha256(path.read_bytes()).hexdigest() != asset["sha256"]:
-            raise ValueError(f"Asset integrity mismatch: {asset['path']}")
-    if os.environ.get("GITHUB_EVENT_NAME") == "pull_request":
-        event = json.loads(Path(os.environ["GITHUB_EVENT_PATH"]).read_text())["pull_request"]
-        base, head = event["base"]["ref"], event["head"]["ref"]
-        if base not in ("develop", "main") or (base == "main" and head != "develop"):
-            raise ValueError("Feature PRs target develop; only develop releases target main")
+    check_assets()
+    check_event()
     print(
         f"Foundation contracts passed: {count} source/document files, assets and delivery policy."
     )

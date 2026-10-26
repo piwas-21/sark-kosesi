@@ -147,6 +147,9 @@ jobs:
           include-hidden-files: true
           if-no-files-found: error
           retention-days: 30
+      - name: Sonar startup diagnostics
+        if: failure()
+        run: docker logs --tail 100 sonar-ci
       - name: Dispose isolated server
         if: always()
         run: docker rm --force --volumes sonar-ci

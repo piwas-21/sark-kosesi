@@ -26,8 +26,17 @@ def api(path, credential, data=None, **query):
         data=urlencode(data).encode() if data is not None else None,
         headers={"Authorization": "Basic " + base64.b64encode(credential.encode()).decode()},
     )
-    with urlopen(request, timeout=20) as response:
-        body = response.read()
+    try:
+        with urlopen(request, timeout=20) as response:
+            body = response.read()
+    except HTTPError as error:
+        detail = error.read(2048).decode("utf-8", errors="replace")
+        sensitive = [credential, *credential.split(":"), *(str(v) for v in (data or {}).values())]
+        for value in sensitive:
+            if value:
+                detail = detail.replace(value, "[redacted]")
+        error.add_note(f"Sonar API {path}: {detail}")
+        raise
     return json.loads(body) if body else {}
 
 
@@ -45,7 +54,7 @@ def wait_ready():
 
 def bootstrap():
     wait_ready()
-    password = secrets.token_urlsafe(36)
+    password = "Aa1!" + secrets.token_urlsafe(36)
     print(f"::add-mask::{password}", flush=True)
     api(
         "api/users/change_password",
