@@ -4,6 +4,7 @@
 import hashlib
 import io
 import json
+import os
 import platform
 import secrets
 import shutil
@@ -35,9 +36,15 @@ ARCHIVES = {
 
 
 def export_sources(root, destination):
+    # Hook-local Git variables can override cwd and redirect an index. This
+    # operation always owns the explicit root, never its caller's Git context.
+    environment = {key: value for key, value in os.environ.items() if not key.startswith("GIT_")}
+
     selected = (
         subprocess.check_output(
-            ["git", "ls-files", "--cached", "--others", "--exclude-standard", "-z"], cwd=root
+            ["git", "ls-files", "--cached", "--others", "--exclude-standard", "-z"],
+            cwd=root,
+            env=environment,
         )
         .decode()
         .split("\0")
