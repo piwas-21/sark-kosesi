@@ -32,11 +32,12 @@ def api(path, credential, data=None, **query):
 
 
 def wait_ready():
-    for _ in range(90):
+    deadline = time.monotonic() + 180
+    while time.monotonic() < deadline:
         try:
             if api("api/system/status", "").get("status") == "UP":
                 return
-        except (URLError, TimeoutError):
+        except (URLError, TimeoutError, ConnectionError):
             pass
         time.sleep(2)
     raise ValueError("Sonar server did not become ready within three minutes")
