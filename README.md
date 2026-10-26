@@ -26,7 +26,7 @@ npm run preview
 
 Open [the local design studio](http://localhost:48763/studio.html). Set `PORT` if needed. The server binds to loopback and serves only the prototype directory. Do not expose it as a public shop.
 
-`npm run test:prototype` runs the browser regression suite after installing Playwright’s pinned Chromium runtime with `node node_modules/@playwright/test/cli.js install chromium`. CI installs the Linux browser dependencies itself. Tests are scoped to a local fixture, never a live provider.
+`npm run test:prototype` runs the browser regression suite after installing Playwright’s pinned Chromium runtime with `node node_modules/@playwright/test/cli.js install chromium`. CI uses the matching official Playwright container, pinned by digest, with browsers and system dependencies already installed. Tests are scoped to a local fixture, never a live provider.
 
 ## Specifications
 

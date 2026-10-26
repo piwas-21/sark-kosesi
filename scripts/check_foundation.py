@@ -116,6 +116,13 @@ def main():
             for action in re.findall(r'uses:\s*([^\s]+)', text):
                 if not re.fullmatch(r'[\w.-]+/[\w./-]+@[0-9a-f]{40}', action):
                     raise ValueError(f'Unpinned action: {action}')
+            for container in re.findall(r'image:\s*([^\s]+)', text):
+                if not re.fullmatch(r'[^\s]+@sha256:[0-9a-f]{64}', container):
+                    raise ValueError(f'Unpinned CI container: {container}')
+                if 'mcr.microsoft.com/playwright:' in container:
+                    version = package['devDependencies']['@playwright/test']
+                    if f'playwright:v{version}-noble@' not in container:
+                        raise ValueError('Playwright package and CI browser image versions differ')
             if 'pull_request_target:' in text or 'continue-on-error: true' in text:
                 raise ValueError('Unsafe or nonblocking required workflow')
         count += 1
