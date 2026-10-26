@@ -1,0 +1,140 @@
+{
+  "status": "concept-only; no product-media sale clearance",
+  "files": [
+    {
+      "path": "design/prototype/storefront-light.png",
+      "bytes": 132117,
+      "sha256": "7af46985836deb6e3493c47ce11a45dc6dcaf8914559a810b49c7c7f8d7095cc"
+    },
+    {
+      "path": "design/prototype/product-light.png",
+      "bytes": 115259,
+      "sha256": "c26ba53f72a5d2e96e0b4afa6fbeb9038605f9c02c9a9d5a145eb8fcf7370143"
+    },
+    {
+      "path": "design/prototype/direction-02-arabic-dark.png",
+      "bytes": 55998,
+      "sha256": "05ae6493c8b16f3644cc445af80991c8fde202b6e74dd4774e57fcdae0df4239"
+    },
+    {
+      "path": "design/prototype/storefront-mobile.png",
+      "bytes": 45400,
+      "sha256": "9a1b852fd3ad967f21a22e03fb694c5c8f29bfe059bdef86857e2c8a68636554"
+    },
+    {
+      "path": "design/prototype/mobile-arabic-dark.png",
+      "bytes": 40534,
+      "sha256": "0ddb3b581075f18cffc8f1572ec749c9a944d850405f8d15638332c2758d4b65"
+    },
+    {
+      "path": "design/prototype/direction-02-admin.png",
+      "bytes": 58644,
+      "sha256": "bc2e45a0f279c2af667ae03e822bcfd958cdcd47c197bf7ca5f4e036d2d43377"
+    },
+    {
+      "path": "design/prototype/admin-light.png",
+      "bytes": 58653,
+      "sha256": "236fd1035b91b378caaee61d897598eb22711a4e4ba3ad38cd1587cd1afc2b95"
+    },
+    {
+      "path": "design/prototype/storefront-arabic-dark.png",
+      "bytes": 24084,
+      "sha256": "1f00d1e660a10770469d0043a916b16641cfb8806ac584d454c3ae06cec32b2f"
+    },
+    {
+      "path": "design/prototype/direction-02-mobile.png",
+      "bytes": 62049,
+      "sha256": "b486445c9cce85d434e118f41d1c087701af4adb381c09055f993ec5eaea58a4"
+    },
+    {
+      "path": "design/prototype/design-studio.png",
+      "bytes": 123989,
+      "sha256": "5ce958d188f4fd2089d430611873166ffa67f6618fa9d2f1b3d2c7183295aad7"
+    },
+    {
+      "path": "design/prototype/direction-02-desktop.png",
+      "bytes": 200867,
+      "sha256": "ebcfa4ce96a500fac57e6551004cad1bc697b4d0c840e431f741bbd0cc09802b"
+    },
+    {
+      "path": "design/prototype/mobile-french.png",
+      "bytes": 35608,
+      "sha256": "8d4e825a376656cf95c8589d0a4188c67b153ecfae70fe68c24a1175b5b161a2"
+    },
+    {
+      "path": "design/prototype/direction-02-product.png",
+      "bytes": 124659,
+      "sha256": "afa9af51a664123eb4793309f8c51ec518873fce5d0f24b5c2546064a224a72c"
+    },
+    {
+      "path": "design/prototype/direction-02-full-page.png",
+      "bytes": 508160,
+      "sha256": "6e9233a360a6c6c22b300528380f12a23e7cc211519b93a35b8b04d46f7eaa92"
+    },
+    {
+      "path": "design/prototype/assets/reference-only.jpg",
+      "bytes": 64221,
+      "sha256": "8b383829ad5099c42f763024b27a392e3dd5b0c3bfaccd654d46c1f6abbf09aa"
+    },
+    {
+      "path": "design/prototype/assets/concept-room.png",
+      "bytes": 3225585,
+      "sha256": "1ecd906a01fb01fa4924d8db388121b779b5880780d306270fac9445aabcff28"
+    },
+    {
+      "path": "design/prototype/assets/seating-cutout-v2.png",
+      "bytes": 2638647,
+      "sha256": "9ab424943b8fde4b3cdc5a722769277dd254cda62a1f6edf7cc08f668fa308bf"
+    },
+    {
+      "path": "design/prototype/assets/courtyard-v2.png",
+      "bytes": 2768937,
+      "sha256": "57da165132f9459f48092c378aeca78b6716f1b2172047ba83dcb3ba0d150d1a"
+    },
+    {
+      "path": "design/prototype/assets/fonts/type-5.ttf",
+      "bytes": 48280,
+      "sha256": "b0ae3e89a7d3ef2b1838bb4b1ceb0b17cc3435af061eee809d76aa623ff116e9"
+    },
+    {
+      "path": "design/prototype/assets/fonts/type-4.ttf",
+      "bytes": 82332,
+      "sha256": "50fe1039eb3ff208d027a4867d3f53bd288bba76273a718578f7b3ec0feec388"
+    },
+    {
+      "path": "design/prototype/assets/fonts/type-6.ttf",
+      "bytes": 48308,
+      "sha256": "376427b5322148d8de1e03f263bcca4935a2d60ba71d9f94f4947ab664c711ae"
+    },
+    {
+      "path": "design/prototype/assets/fonts/type-7.ttf",
+      "bytes": 48280,
+      "sha256": "b79a2ea7a38f33fd96a282fadb9ce97626bb0724a44d21075859f0e50239993a"
+    },
+    {
+      "path": "design/prototype/assets/fonts/type-3.ttf",
+      "bytes": 82204,
+      "sha256": "913ee3631949ee1b4fb2601269412fca5775eb994d4f87be2c366c94ac123dc5"
+    },
+    {
+      "path": "design/prototype/assets/fonts/type-2.ttf",
+      "bytes": 82304,
+      "sha256": "284891c74c258cff7233962e048d9470bfb9fc326b53dd0bca408789297c3409"
+    },
+    {
+      "path": "design/prototype/assets/fonts/type-0.ttf",
+      "bytes": 82192,
+      "sha256": "b56db40c26850f83ba2ebffa1f7faa01e5ee4e55ac63decee1433de520a38483"
+    },
+    {
+      "path": "design/prototype/assets/fonts/type-1.ttf",
+      "bytes": 82244,
+      "sha256": "e1b454f5469f3d0d98c117651a4d15a8345ad77b50f09540b5cf61e82511b563"
+    },
+    {
+      "path": "design/prototype/assets/fonts/type-8.ttf",
+      "bytes": 48200,
+      "sha256": "2a8e7f713ee79fbccdef3cef5c787aff47580299f7da60144961e7db2ec08211"
+    }
+  ]
+}
