@@ -101,8 +101,74 @@ jobs:
       - uses: github/codeql-action/analyze@9b3254085494b55a0f7c4c2b3d2d52cc712ce370
         with:
           category: /language:${{ matrix.language }}
+  application:
+    name: Application gate
+    runs-on: ubuntu-24.04
+    timeout-minutes: 50
+    permissions:
+      contents: read
+    env:
+      ANALYSIS_REVISION: ${{ github.event.pull_request.head.sha || github.sha }}
+      PLAYWRIGHT_SKIP_BROWSER_GC: 1
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+      - run: npm ci --ignore-scripts
+      - run: python3 scripts/install_app_tools.py
+      - run: |
+          rustup show
+          rustup toolchain install nightly-2026-10-25 --profile minimal --component llvm-tools-preview
+      - run: npm run check:rust
+      - run: npm run audit:rust
+      - run: npm run typecheck
+      - run: npm run test:unit
+      - run: npm run test:integration
+      - run: npm run test:migrations
+      - run: npm run test:contracts
+      - run: npm run test:coverage
+      - run: npm run build
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+        with:
+          name: application-${{ env.ANALYSIS_REVISION }}
+          path: |
+            coverage/rust-stable.json
+            coverage/rust.json
+            coverage/rust.lcov
+            coverage/clippy.json
+            coverage/typescript/lcov.info
+            .local/evidence/
+          include-hidden-files: true
+          if-no-files-found: error
+          retention-days: 30
+      - name: Configure browser dependency downloads
+        run: |
+          test -f /etc/apt/apt-mirrors.txt
+          printf '%s\n' 'https://archive.ubuntu.com/ubuntu' | sudo tee /etc/apt/apt-mirrors.txt > /dev/null
+          printf '%s\n' 'Acquire::Retries "3";' 'Acquire::http::Timeout "30";' 'Acquire::https::Timeout "30";' | sudo tee /etc/apt/apt.conf.d/99-p1-network > /dev/null
+      - run: npx playwright install --with-deps chromium firefox webkit
+        timeout-minutes: 10
+      - run: npm run test:browser
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+        if: always()
+        with:
+          name: application-browser-${{ env.ANALYSIS_REVISION }}
+          path: |
+            .local/evidence/
+            test-results/**/*.png
+            .local/visual-candidates/
+          include-hidden-files: true
+          if-no-files-found: error
+          retention-days: 30
   sonar:
     name: SonarQube
+    needs: [application]
+    if: always()
     runs-on: ubuntu-24.04
     timeout-minutes: 20
     permissions:
@@ -126,6 +192,18 @@ jobs:
           .local/venv/bin/pip install --require-hashes -r requirements-dev.txt
           export PATH="$PWD/.local/venv/bin:$PATH"
           npm run test:tooling
+      - uses: actions/download-artifact@018cc2cf5baa6db3ef3c5f8a56943fffe632ef53
+        with:
+          name: application-${{ env.ANALYSIS_REVISION }}
+          path: .local/application-artifact
+      - run: |
+          mkdir -p coverage/typescript
+          cp .local/application-artifact/coverage/rust-stable.json coverage/rust-stable.json
+          cp .local/application-artifact/coverage/rust.json coverage/rust.json
+          cp .local/application-artifact/coverage/rust.lcov coverage/rust.lcov
+          cp .local/application-artifact/coverage/clippy.json coverage/clippy.json
+          cp .local/application-artifact/coverage/typescript/lcov.info coverage/typescript/lcov.info
+          python3 scripts/check_coverage_reports.py
       - name: Start isolated Community Build
         run: |
           sudo sysctl -w vm.max_map_count=524288
@@ -156,7 +234,8 @@ jobs:
   quality:
     name: Quality gate
     if: always()
-    needs: [foundation, secrets, dependencies, prototype, sast, sonar]
+    needs:
+      [foundation, secrets, dependencies, prototype, sast, application, sonar]
     runs-on: ubuntu-24.04
     timeout-minutes: 2
     permissions: {}

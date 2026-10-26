@@ -5,3 +5,7 @@ package-lock.json
 coverage/
 test-results/
 playwright-report/
+
+packages/contracts/generated.ts
+packages/contracts/openapi.json
+**/.next/

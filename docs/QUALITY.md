@@ -7,20 +7,25 @@ The workflow and `config/delivery.json` are the executable foundation inventory.
 | Check            | Evidence                                                                                                                                                        |
 | ---------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | Foundation       | Portable links/assets, pinned actions/images, branch/stage contract, Python and JS lint/format, hostile validation tests and coverage                           |
-| Secret scan      | Pinned Gitleaks over tracked history and current source, redacted output                                                                                        |
+| Secret scan      | Pinned Gitleaks over tracked history and Git-owned current source, redacted output and seeded detector control                                                  |
 | Dependency audit | Locked npm audit for high/critical advisories                                                                                                                   |
 | Prototype smoke  | Pinned Chromium/Playwright, seven locales, device defaults, configuration, room dimensions, keyboard/reduced motion and axe                                     |
 | CodeQL JS/Python | Current populated analysis and no open PR alerts; additional public-repository scanning                                                                         |
 | SonarQube        | Disposable Community Build, populated exact-revision analysis, quality conditions, zero unresolved issues and zero outstanding hotspots; JSON evidence artifact |
 | Quality gate     | Every prerequisite succeeded; no optional or skipped checks                                                                                                     |
 
-`npm run check` runs format/lint, foundation contracts and tooling coverage. Python tools are hash-pinned in `requirements-dev.txt`; JavaScript tools in the npm lockfile. Coverage is a minimum 90% statements/branches combined for the pure gate-policy modules (`gate_policy`, `review_policy`, `sonar_policy`, `check_app_coverage`); wrapper/network/tooling execution is separately exercised by CI and negative-control tests. Do not call this whole-application coverage. Prototype source is a reference design, checked for syntax/assets/browser behavior; production lint, coverage and size budgets cannot exempt production code by moving it under design.
+The current-source secret scan exports tracked and non-ignored untracked files.
+Ignored framework build/runtime keys are not source; force-tracked ignored files
+remain scanned, and the complete tracked history scan still runs. A generated
+fake credential must be detected before accepting the clean source result.
+
+`npm run check` runs format/lint, foundation contracts and tooling coverage. Python tools are hash-pinned in `requirements-dev.txt`; JavaScript tools in the npm lockfile. Coverage is a minimum 90% statements/branches combined for the pure gate-policy modules (`gate_policy`, `review_policy`, `sonar_policy`, `check_app_coverage`, `rust_coverage`); wrapper/network/tooling execution is separately exercised by CI and negative-control tests. Do not call this whole-application coverage. Prototype source is a reference design, checked for syntax/assets/browser behavior; production lint, coverage and size budgets cannot exempt production code by moving it under design.
 
 ## Sonar ownership and operation
 
 Use free, self-hostable SonarQube Community Build, pinned by image digest. Each CI job runs a loopback-only temporary server with disposable data, bootstraps random credentials, scans the candidate commit and validates the analysis before publishing evidence. No repository Sonar secret, external SonarCloud subscription or paid PR-analysis feature is required. This uses ordinary main-project analysis for each candidate; there is no persistent PR dashboard, trend history or paid PR decoration. The GitHub check and downloadable evidence are the review surface.
 
-The gate verifies project identity and the analysis revision, populated metrics and quality conditions, no unresolved issues and no outstanding security hotspots. It also probes a nonexistent project to expose misleading empty API results. Coverage generation is a separate fail-closed job step; Sonar imports it rather than inventing coverage. Current scan scope is owned Python tooling and maintained JS test/configuration source; the non-production design specimen is excluded from this maintainability scan, not from secret scanning/browser checks. P1 expands the explicit scope to every app/crate/package and imports real Rust/TS coverage and Clippy JSON. Sonar's Rust support imports Clippy and complexity/coverage metrics; it is not a comprehensive Rust security audit.
+The gate verifies project identity and the analysis revision, populated metrics and quality conditions, no unresolved issues and no outstanding security hotspots. It also probes a nonexistent project to expose misleading empty API results. Coverage generation is a separate fail-closed job step; Sonar imports it rather than inventing coverage. Current scan scope is owned Python tooling and maintained JS test/configuration source; the non-production design specimen is excluded from this maintainability scan, not from secret scanning/browser checks. The application scan covers every maintained app/crate/package source and imports actual Rust/TS coverage and Clippy JSON. Generated OpenAPI/TS contracts have a separate drift gate. Sonar's Rust support imports Clippy and complexity/coverage metrics; it is not a comprehensive Rust security audit.
 
 H2/disposable storage is for isolated CI only. A future persistent self-hosted dashboard requires a supported PostgreSQL instance, TLS/access control, backups and explicit maintenance ownership. Do not deploy the CI server to production or expose its bootstrap credentials. Official references: [Community Rust analysis](https://docs.sonarsource.com/sonarqube-community-build/analyzing-source-code/languages/rust), [Linux prerequisites](https://docs.sonarsource.com/sonarqube-community-build/server-installation/pre-installation/linux).
 
@@ -47,7 +52,7 @@ No fake commands or passing jobs before code exists. Pin the following free tool
 Rust line/region coverage runs on the pinned stable release. Rust branch instrumentation currently requires nightly in cargo-llvm-cov: P1 must pin a separate tested nightly toolchain for the branch-coverage job and run `cargo +<pinned-nightly> llvm-cov --branch`. Production builds remain on stable. Missing branch data fails the coverage gate; do not report it as 100% or silently substitute line coverage. See the [upstream coverage requirements](https://github.com/taiki-e/cargo-llvm-cov#readme).
 
 `python3 scripts/check_app_coverage.py --report REPORT.lcov --package OWNED_SOURCE_DIRECTORY`
-validates LCOV from the actual coverage generators. Invoke it separately for each
+validates TypeScript LCOV from the actual coverage generator. Invoke it separately for each
 maintained package source directory, and add `--critical SOURCE_FILE` for each
 money/inventory/authorization module. It requires every source in that directory
 in the report, checks line/branch records against their totals and actual source
@@ -57,6 +62,43 @@ a separate generated directory; exclusions require review rather than hidden
 filename filters. CI must generate reports on the candidate revision before
 calling this validator. Its hostile fixture tests prove the validator only;
 application coverage remains pending until actual app/crate reports pass.
+
+Rust coverage gates consume native LLVM JSON: stable line/region data and a
+separate pinned-nightly branch run. LLVM LCOV summary line totals include async
+and macro regions that do not map one-to-one to emitted DA records; do not rewrite
+those totals to manufacture consistency. LCOV remains the Sonar import format.
+The native validator requires every owned source and populated counters, with
+85% lines / 80% instrumented branches per package and 95% for money/preview authorization. LLVM reports
+zero instrumented branches for match-only and SQL adapter code; this is recorded
+as `(0, 0)`, never 100%. Those packages additionally require >=95% region coverage.
+Missing branch counters still fail. This compiler limitation remains explicit;
+negative tests cover every locale arm and database failure/corruption outcome.
+
+Keyboard assertions traverse each destination with keys and verify disabled
+controls are skipped in both directions. A negative control removes a field from
+Tab order and must fail at that field. macOS WebKit uses Apple's documented
+[Option-Tab traversal](https://support.apple.com/en-gb/guide/safari/cpsh003/mac);
+Linux CI uses Tab. This does not replace manual Safari/assistive-technology acceptance.
+
+The P1 browser scope is the authenticated, noindex, read-only preview. The gallery,
+locale/theme and fixture catalogue run on Chromium/Firefox/WebKit; Lighthouse
+uses the production build for home/detail/gallery and k6 runs the isolated
+catalogue fixture. Checkout/payment/account/room-planner acceptance stays pending
+until those features exist. No passing dummy journeys are substituted. Initial visual candidates are captured
+separately. `config/visual-approval.json` must record actual human approval and
+bind every baseline image hash to the current UI source digest. Missing/stale
+approval fails before comparison; snapshot updating is disabled in normal gates.
+The CI browser artifact contains the candidate gallery for review. Local evidence
+controls attest the contributor's record; they are not cryptographic proof of a
+human review. Never create that record without the user's actual approval.
+
+Capture and comparison use native browser defaults at an explicit 1x pixel
+density and the same viewport sizes. A correction limited to that comparison
+environment can retain approval of identical images only when application UI and
+assets are unchanged, all image hashes are preserved, the original approval and
+source binding remain in provenance, independent review approves the correction,
+and Linux CI compares every image successfully. Changed images or application
+rendering require fresh human approval. Normal gates never update the binding.
 
 Critical cases: last shared foam component contested by two orders; covers-only reserves no foam; payment-create timeout and late paid after expiry; duplicated/reordered webhooks; partial refund/tax/discount rounding; coupon exhaustion; expired guest token; cross-customer access; worker crash after provider acceptance; duplicate restock mail; incomplete translation/private-cache leak. Mutation testing on financial/authorization invariants must demonstrate that the test detects the intended defect, not just a textual mutation.
 

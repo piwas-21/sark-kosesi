@@ -1,0 +1,171 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "commerce-api",
+    "description": "",
+    "license": {
+      "name": "LicenseRef-Piwas-Proprietary",
+      "identifier": "LicenseRef-Piwas-Proprietary"
+    },
+    "version": "0.1.0"
+  },
+  "paths": {
+    "/api/catalogue/{locale}": {
+      "get": {
+        "tags": [
+          "crate"
+        ],
+        "operationId": "get_catalogue",
+        "parameters": [
+          {
+            "name": "locale",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Catalogue"
+                }
+              }
+            }
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "504": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "preview": []
+          }
+        ]
+      }
+    }
+  },
+  "components": {
+    "schemas": {
+      "ApiError": {
+        "type": "object",
+        "required": [
+          "code"
+        ],
+        "properties": {
+          "code": {
+            "type": "string"
+          }
+        }
+      },
+      "Catalogue": {
+        "type": "object",
+        "required": [
+          "items",
+          "locale",
+          "production_enabled"
+        ],
+        "properties": {
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Product"
+            }
+          },
+          "locale": {
+            "type": "string"
+          },
+          "production_enabled": {
+            "type": "boolean"
+          }
+        }
+      },
+      "Product": {
+        "type": "object",
+        "required": [
+          "sku",
+          "slug",
+          "title",
+          "description",
+          "care",
+          "minor_units",
+          "currency",
+          "fill",
+          "fixture"
+        ],
+        "properties": {
+          "care": {
+            "type": "string"
+          },
+          "currency": {
+            "type": "string"
+          },
+          "description": {
+            "type": "string"
+          },
+          "fill": {
+            "type": "string"
+          },
+          "fixture": {
+            "type": "boolean"
+          },
+          "minor_units": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "sku": {
+            "type": "string"
+          },
+          "slug": {
+            "type": "string"
+          },
+          "title": {
+            "type": "string"
+          }
+        }
+      }
+    },
+    "securitySchemes": {
+      "preview": {
+        "type": "http",
+        "scheme": "bearer"
+      }
+    }
+  }
+}

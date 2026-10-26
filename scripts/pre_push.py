@@ -26,5 +26,7 @@ try:
 except (ValueError, OSError) as error:
     raise SystemExit(f"Push blocked: {error}") from error
 subprocess.run(["npm", "run", "check"], cwd=root, check=True)
+if subprocess.check_output(["git", "status", "--porcelain"], cwd=root, text=True).strip():
+    raise SystemExit("Checks changed the reviewed source/index; inspect before pushing.")
 subprocess.run(["python3", "scripts/scan_secrets.py"], cwd=root, check=True)
 print("Pre-push checks and current-head review receipt passed.")

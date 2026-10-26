@@ -1,0 +1,38 @@
+:root {
+  --paper: #e9eddf;
+  --surface: #f8f9f2;
+  --ink: #183c32;
+  --muted: #4e5b4c;
+  --line: #a4b09b;
+  --accent: #8f3040;
+  --button: #173e33;
+  --button-ink: #edf1d0;
+  --soft: #dce3cd;
+  --focus: #8f3040;
+  --forest: #153d31;
+  --pistachio: #e4ecb3;
+  --display: var(--font-display), "Avenir Next", sans-serif;
+  --body: var(--font-body), "Avenir Next", Arial, sans-serif;
+  color-scheme: light;
+}
+html[data-theme="dark"] {
+  --paper: #112d26;
+  --surface: #193d32;
+  --ink: #e8edcf;
+  --muted: #c0cdae;
+  --line: #687f64;
+  --accent: #e5a7a4;
+  --button: #e4ecb3;
+  --button-ink: #153d31;
+  --soft: #244738;
+  --focus: #e5a7a4;
+  color-scheme: dark;
+}
+@theme inline {
+  --color-paper: var(--paper);
+  --color-surface: var(--surface);
+  --color-ink: var(--ink);
+  --color-muted: var(--muted);
+  --color-accent: var(--accent);
+  --color-soft: var(--soft);
+}

@@ -1,0 +1,58 @@
+{
+  "cargo-llvm-cov": {
+    "version": "0.9.1",
+    "license": "MIT OR Apache-2.0",
+    "assets": {
+      "Darwin-arm64": {
+        "url": "https://github.com/taiki-e/cargo-llvm-cov/releases/download/v0.9.1/cargo-llvm-cov-aarch64-apple-darwin.tar.gz",
+        "sha256": "7e821a6c90c0884f79f759f5d9be50799ade67bb82515186d922f26032ef43b8"
+      },
+      "Linux-x86_64": {
+        "url": "https://github.com/taiki-e/cargo-llvm-cov/releases/download/v0.9.1/cargo-llvm-cov-x86_64-unknown-linux-gnu.tar.gz",
+        "sha256": "b3f68e625481fed9b16444174f3fa5ebcdbde4a1878803a35eabe2dcefcdc41a"
+      }
+    }
+  },
+  "cargo-audit": {
+    "version": "0.22.2",
+    "license": "MIT OR Apache-2.0",
+    "assets": {
+      "Darwin-arm64": {
+        "url": "https://github.com/rustsec/rustsec/releases/download/cargo-audit/v0.22.2/cargo-audit-aarch64-apple-darwin-v0.22.2.tgz",
+        "sha256": "ec7ca4263769593df4d909be85b94a6b79efa2897be5d2bb8ebd516e823175af"
+      },
+      "Linux-x86_64": {
+        "url": "https://github.com/rustsec/rustsec/releases/download/cargo-audit/v0.22.2/cargo-audit-x86_64-unknown-linux-gnu-v0.22.2.tgz",
+        "sha256": "ab28a1bdb54db4d5d8ad5981cf1f959410370b3d28250dbd35f6a44248620e39"
+      }
+    }
+  },
+  "cargo-deny": {
+    "version": "0.20.2",
+    "license": "MIT OR Apache-2.0",
+    "assets": {
+      "Darwin-arm64": {
+        "url": "https://github.com/EmbarkStudios/cargo-deny/releases/download/0.20.2/cargo-deny-0.20.2-aarch64-apple-darwin.tar.gz",
+        "sha256": "fe67d82a10d8597a3549364cb733a3f9cc1bfff9031b7ae46384a9f2a72090c3"
+      },
+      "Linux-x86_64": {
+        "url": "https://github.com/EmbarkStudios/cargo-deny/releases/download/0.20.2/cargo-deny-0.20.2-x86_64-unknown-linux-musl.tar.gz",
+        "sha256": "9f12ed4c49936e09b48bf862b595cde2fe64fcbd9d74dfacac6131ca824c8d5f"
+      }
+    }
+  },
+  "k6": {
+    "version": "2.3.0",
+    "license": "AGPL-3.0-only",
+    "assets": {
+      "Darwin-arm64": {
+        "url": "https://github.com/grafana/k6/releases/download/v2.3.0/k6-v2.3.0-macos-arm64.zip",
+        "sha256": "b2417a3038edc5fe81dc178a889237724b595c5c9cfed875822008e46e862c7d"
+      },
+      "Linux-x86_64": {
+        "url": "https://github.com/grafana/k6/releases/download/v2.3.0/k6-v2.3.0-linux-amd64.tar.gz",
+        "sha256": "39c3117b6af817592dcd0ce4242105c0a7af10948c2a425306f0be8f7a8a8ab1"
+      }
+    }
+  }
+}

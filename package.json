@@ -2,7 +2,7 @@
   "name": "@piwas/sark-kosesi",
   "version": "0.0.0",
   "private": true,
-  "description": "Piwas home seating commerce foundation; production implementation pending",
+  "description": "Piwas preview-only commerce application",
   "license": "UNLICENSED",
   "engines": {
     "node": ">=24.22.1 <25",
@@ -17,9 +17,26 @@
     "hooks:install": "python3 scripts/install_hooks.py",
     "release:check": "python3 scripts/release_readiness.py",
     "gate:merge": "python3 scripts/merge_gate.py",
-    "lint": "ruff check scripts tests/tooling && eslint .",
-    "format:check": "ruff format --check scripts tests/tooling && prettier --check \"*.{md,json,mjs}\" \"docs/**/*.md\" \"config/*.json\" \".github/**/*.{yml,md}\" \"tests/**/*.mjs\" \"design/*.md\"",
-    "test:tooling": "PYTHONPATH=scripts python3 -m coverage run -m unittest discover -s tests/tooling -v && python3 -m coverage report && python3 -m coverage xml"
+    "lint": "ruff check scripts tests/tooling && eslint . && python3 scripts/check_application.py",
+    "format:check": "ruff format --check scripts tests/tooling && prettier --check \"*.{md,json,mjs,mts}\" \"docs/**/*.md\" \"config/*.json\" \".github/**/*.{yml,md}\" \"tests/**/*.{mjs,js,ts}\" \"apps/**/*.{ts,tsx,css,json,mjs}\" \"packages/**/*.{ts,tsx,css,json}\" \"design/*.md\"",
+    "test:tooling": "PYTHONPATH=scripts python3 -m coverage run -m unittest discover -s tests/tooling -v && python3 -m coverage report && python3 -m coverage xml",
+    "check:rust": "mkdir -p coverage && cargo fmt --all -- --check && cargo clippy --workspace --all-targets --all-features --locked --message-format=json -- -D warnings > coverage/clippy.json",
+    "audit:rust": "python3 scripts/audit_rust.py",
+    "format:app": "prettier --write \"*.{json,mjs,mts}\" \"config/*.json\" \"tests/application/**/*.{mjs,js,ts}\" \"apps/**/*.{ts,tsx,css,json,mjs}\" \"packages/**/*.{ts,tsx,css,json}\"",
+    "typecheck": "tsc -p tsconfig.json",
+    "build": "cargo build --release --workspace --locked && npm run build --workspace @piwas/web",
+    "test:unit": "cargo test --locked -p commerce-domain -p commerce-application && python3 scripts/test_money_mutation.py && vitest run",
+    "test:integration": "python3 scripts/with_postgres.py -- cargo test --workspace --locked",
+    "test:migrations": "python3 scripts/with_postgres.py -- cargo test --locked -p commerce-infrastructure --test postgres -- --exact prior_schema_upgrade_preserves_old_reader_and_data",
+    "test:contracts": "python3 scripts/check_contracts.py",
+    "test:coverage": "cargo llvm-cov clean && python3 scripts/with_postgres.py -- cargo llvm-cov --workspace --all-features --locked --json --output-path coverage/rust-stable.json && cargo +nightly-2026-10-25 llvm-cov clean && python3 scripts/with_postgres.py -- cargo +nightly-2026-10-25 llvm-cov --workspace --all-features --locked --branch --json --output-path coverage/rust.json && cargo +nightly-2026-10-25 llvm-cov report --lcov --output-path coverage/rust.lcov && vitest run --coverage && python3 scripts/check_coverage_reports.py",
+    "test:e2e": "python3 scripts/with_postgres.py -- node tests/application/serve.mjs e2e",
+    "test:accessibility": "python3 scripts/with_postgres.py -- node tests/application/serve.mjs accessibility",
+    "test:visual": "python3 scripts/with_postgres.py -- node tests/application/serve.mjs visual",
+    "test:security": "python3 scripts/with_postgres.py -- node tests/application/serve.mjs security",
+    "test:discovery": "python3 scripts/with_postgres.py -- node tests/application/serve.mjs discovery",
+    "test:performance": "python3 scripts/with_postgres.py -- node tests/application/serve.mjs performance",
+    "test:browser": "python3 scripts/with_postgres.py -- node tests/application/serve.mjs e2e accessibility security discovery performance visual"
   },
   "devDependencies": {
     "@axe-core/playwright": "4.14.0",
@@ -27,6 +44,26 @@
     "@playwright/test": "1.64.1",
     "eslint": "10.13.0",
     "globals": "17.4.0",
-    "prettier": "3.9.10"
-  }
+    "prettier": "3.9.10",
+    "typescript": "5.9.3",
+    "typescript-eslint": "8.72.0",
+    "@types/react": "19.3.0",
+    "@types/react-dom": "19.3.0",
+    "@types/node": "24.19.2",
+    "tailwindcss": "4.3.3",
+    "@tailwindcss/postcss": "4.3.3",
+    "vitest": "5.0.5",
+    "@vitest/coverage-v8": "5.0.5",
+    "@testing-library/react": "16.3.3",
+    "@testing-library/jest-dom": "7.0.1",
+    "jsdom": "30.1.3",
+    "openapi-typescript": "7.13.0",
+    "lighthouse": "13.5.0",
+    "server-only": "0.0.1"
+  },
+  "workspaces": [
+    "apps/web",
+    "packages/design",
+    "packages/contracts"
+  ]
 }

@@ -1,0 +1,79 @@
+.hero {
+  display: grid;
+  grid-template-columns: 1.1fr 0.9fr;
+  gap: 3rem;
+  padding-block: 4rem;
+  align-items: center;
+}
+.arch {
+  background: var(--forest);
+  color: var(--pistachio);
+  border-radius: 50% 50% 0 0;
+  min-block-size: 30rem;
+  display: grid;
+  place-items: center;
+  padding: 4rem 2rem;
+  position: relative;
+  overflow: hidden;
+}
+.arch::before,
+.arch::after {
+  content: "";
+  position: absolute;
+  inset: 1rem;
+  border: 1px solid currentColor;
+  border-radius: inherit;
+  opacity: 0.3;
+  pointer-events: none;
+}
+.arch::after {
+  inset: 2rem;
+}
+.arch svg {
+  inline-size: 8rem;
+  block-size: 8rem;
+}
+.arch p {
+  position: absolute;
+  inset-block-end: 3rem;
+  text-align: center;
+  padding-inline: 2rem;
+}
+.collection {
+  border-block-start: 1px solid var(--line);
+  padding-block-start: 2rem;
+  display: grid;
+  grid-template-columns: 1fr 2fr;
+  gap: 2rem;
+}
+.product {
+  background: var(--surface);
+  padding: 2rem;
+  border-inline-start: 6px solid var(--accent);
+}
+.product h3 {
+  font-size: 2rem;
+  margin-block-start: 0.5rem;
+}
+.product dl {
+  display: grid;
+  grid-template-columns: 1fr 2fr;
+  gap: 0.5rem 1rem;
+}
+.product dd {
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+@media (width < 700px) {
+  .hero,
+  .collection {
+    grid-template-columns: 1fr;
+  }
+  .hero {
+    gap: 1rem;
+    padding-block: 2rem;
+  }
+  .arch {
+    min-block-size: 20rem;
+  }
+}
