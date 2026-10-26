@@ -27,13 +27,39 @@ export const options = {
     checks: ["rate==1"],
   },
 };
+let failureReported = false;
+function fixtureReadSucceeded(response) {
+  if (response.status !== 200) return false;
+  try {
+    return response.json("items.0.sku") === "DEMO-COURTYARD-COVERS";
+  } catch {
+    return false;
+  }
+}
 export default function () {
   const response = http.get(`${__ENV.API_URL}/api/catalogue/nl`, {
     headers: { Authorization: `Bearer ${__ENV.PREVIEW_TOKEN}` },
   });
-  check(response, {
-    "fixture read succeeds": (value) =>
-      value.status === 200 &&
-      value.json("items.0.sku") === "DEMO-COURTYARD-COVERS",
+  const passed = check(response, {
+    "fixture read succeeds": fixtureReadSucceeded,
   });
+  if (!passed && !failureReported) {
+    failureReported = true;
+    let code = "unexpected_response";
+    try {
+      const candidate = response.json("code");
+      if (
+        [
+          "capacity_exceeded",
+          "dependency_timeout",
+          "catalogue_unavailable",
+          "preview_authentication_required",
+        ].includes(candidate)
+      )
+        code = candidate;
+    } catch {
+      // Keep malformed responses failed without serializing response bodies.
+    }
+    console.error(JSON.stringify({ status: response.status, code }));
+  }
 }

@@ -20,6 +20,9 @@ use subtle::ConstantTimeEq;
 use tokio::sync::Semaphore;
 use utoipa::ToSchema;
 
+// The 25-user steady fixture may still drain when its 50-request burst starts.
+pub const PREVIEW_REQUEST_CAPACITY: usize = 96;
+
 #[derive(Clone)]
 pub struct AppState {
     pub pool: PgPool,

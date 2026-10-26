@@ -257,3 +257,32 @@ async fn request_dependency_timeout_is_redacted_and_recovers(pool: PgPool) {
         StatusCode::OK
     );
 }
+
+#[sqlx::test(migrator = "MIGRATOR")]
+async fn steady_users_and_burst_fit_the_real_request_bound(pool: PgPool) {
+    let mut transaction = pool.begin().await.expect("transaction");
+    sqlx::query("LOCK TABLE catalogue_items IN ACCESS EXCLUSIVE MODE")
+        .execute(&mut *transaction)
+        .await
+        .expect("hold every read pending");
+    let app = router(state(pool.clone(), commerce_api::PREVIEW_REQUEST_CAPACITY));
+    let mut requests = tokio::task::JoinSet::new();
+    // Independent load-fixture requirement: 25 draining users plus 50 arrivals.
+    for _ in 0..75 {
+        let app = app.clone();
+        requests.spawn(async move { app.oneshot(request("/api/catalogue/nl", Some(TOKEN))).await });
+    }
+    while let Some(response) = requests.join_next().await {
+        let response = response.expect("owned task").expect("HTTP");
+        // The deliberate DB lock reaches the request deadline, not admission failure.
+        assert_eq!(response.status(), StatusCode::GATEWAY_TIMEOUT);
+        let value: serde_json::Value = serde_json::from_slice(
+            &to_bytes(response.into_body(), 16384)
+                .await
+                .expect("bounded body"),
+        )
+        .expect("JSON");
+        assert_eq!(value, serde_json::json!({"code":"dependency_timeout"}));
+    }
+    transaction.rollback().await.expect("release lock");
+}
