@@ -1,5 +1,2 @@
 [extend]
 useDefault = true
-[allowlist]
-description = "Generated local dependencies and reports only"
-paths = ['''(^|/)node_modules/''', '''(^|/)\.local/''', '''(^|/)playwright-report/''', '''(^|/)test-results/''']

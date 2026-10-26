@@ -7,12 +7,17 @@ The workflow and `config/delivery.json` are the executable foundation inventory.
 | Check            | Evidence                                                                                                                                                        |
 | ---------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | Foundation       | Portable links/assets, pinned actions/images, branch/stage contract, Python and JS lint/format, hostile validation tests and coverage                           |
-| Secret scan      | Pinned Gitleaks over tracked history and current source, redacted output                                                                                        |
+| Secret scan      | Pinned Gitleaks over tracked history and Git-owned current source, redacted output and seeded detector control                                                  |
 | Dependency audit | Locked npm audit for high/critical advisories                                                                                                                   |
 | Prototype smoke  | Pinned Chromium/Playwright, seven locales, device defaults, configuration, room dimensions, keyboard/reduced motion and axe                                     |
 | CodeQL JS/Python | Current populated analysis and no open PR alerts; additional public-repository scanning                                                                         |
 | SonarQube        | Disposable Community Build, populated exact-revision analysis, quality conditions, zero unresolved issues and zero outstanding hotspots; JSON evidence artifact |
 | Quality gate     | Every prerequisite succeeded; no optional or skipped checks                                                                                                     |
+
+The current-source secret scan exports tracked and non-ignored untracked files.
+Ignored framework build/runtime keys are not source; force-tracked ignored files
+remain scanned, and the complete tracked history scan still runs. A generated
+fake credential must be detected before accepting the clean source result.
 
 `npm run check` runs format/lint, foundation contracts and tooling coverage. Python tools are hash-pinned in `requirements-dev.txt`; JavaScript tools in the npm lockfile. Coverage is a minimum 90% statements/branches combined for the pure gate-policy modules (`gate_policy`, `review_policy`, `sonar_policy`, `check_app_coverage`, `rust_coverage`); wrapper/network/tooling execution is separately exercised by CI and negative-control tests. Do not call this whole-application coverage. Prototype source is a reference design, checked for syntax/assets/browser behavior; production lint, coverage and size budgets cannot exempt production code by moving it under design.
 

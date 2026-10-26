@@ -3,9 +3,13 @@
 
 import hashlib
 import io
+import json
 import platform
+import secrets
+import shutil
 import subprocess
 import tarfile
+import tempfile
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -28,6 +32,90 @@ ARCHIVES = {
         "dfe101a4db2255fc85120ac7f3d25e4342c3c20cf749f2c20a18081af1952709",
     ),
 }
+
+
+def export_sources(root, destination):
+    selected = (
+        subprocess.check_output(
+            ["git", "ls-files", "--cached", "--others", "--exclude-standard", "-z"], cwd=root
+        )
+        .decode()
+        .split("\0")
+    )
+    files = sorted(set(value for value in selected if value))
+    if not files:
+        raise ValueError("Source secret scan cannot be empty")
+    for value in files:
+        relative = Path(value)
+        source = root / relative
+        if (
+            relative.is_absolute()
+            or ".." in relative.parts
+            or source.is_symlink()
+            or not source.is_file()
+        ):
+            raise ValueError("Source secret scan has a missing/unsafe file")
+        target = destination / relative
+        target.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copyfile(source, target)
+    return len(files)
+
+
+def scan_current_source(binary):
+    # Export Git's source inventory: ignored local runtime/build secrets are not
+    # repository source. Force-tracked ignored files are still scanned here and
+    # in history; no new global allowlist excludes compiled application bundles.
+    with tempfile.TemporaryDirectory(prefix="sark-secrets-", dir="/tmp") as temporary:
+        directory = Path(temporary)
+        source = directory / "source"
+        source.mkdir()
+        count = export_sources(ROOT, source)
+        control = directory / "control"
+        control.mkdir()
+        token = "ghp_" + "".join(
+            secrets.choice("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789")
+            for _ in range(36)
+        )
+        (control / "credential.txt").write_text("token=" + token)
+        report = directory / "control-report.json"
+        probe = subprocess.run(
+            [
+                str(binary),
+                "dir",
+                "--redact",
+                "--no-banner",
+                "--config",
+                str(ROOT / ".gitleaks.toml"),
+                "--report-format",
+                "json",
+                "--report-path",
+                str(report),
+                str(control),
+            ],
+            cwd=ROOT,
+            capture_output=True,
+            text=True,
+        )
+        findings = json.loads(report.read_text()) if report.is_file() else []
+        if probe.returncode == 0 or not any(
+            item.get("RuleID") == "github-pat" for item in findings
+        ):
+            raise ValueError("Secret scanner did not detect seeded credential control")
+        subprocess.run(
+            [
+                str(binary),
+                "dir",
+                "--redact",
+                "--no-banner",
+                "--config",
+                str(ROOT / ".gitleaks.toml"),
+                str(source),
+            ],
+            cwd=ROOT,
+            check=True,
+        )
+        print(f"Secret scan verified {count} source files and seeded detector control")
+
 
 if __name__ == "__main__":
     target, expected = ARCHIVES[(platform.system(), platform.machine())]
@@ -65,4 +153,4 @@ if __name__ == "__main__":
         cwd=ROOT,
         check=True,
     )
-    subprocess.run([str(binary), "dir", "--redact", "--no-banner", "."], cwd=ROOT, check=True)
+    scan_current_source(binary)
