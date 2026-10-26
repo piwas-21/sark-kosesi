@@ -1,30 +1,11 @@
-# Current implementation roadmap
+# Implementation status
 
-**State:** product research and direction-02 design are available; repository foundation and implementation handoff are configured. Commerce implementation has not started. Brand, real catalogue, provider onboarding and carrier/market contracts remain open. Production is disabled in `config/delivery.json`.
+**Current stage: foundation; production disabled.** The approved design, selected Rust architecture, implementation plan and repository checks are the starting point. No production commerce API, database, storefront or payment integration exists yet.
 
-**Next slice: P0.1 commerce proof.** Read the [handoff](docs/plans/IMPLEMENTATION-HANDOFF.md) and [ADR-001](docs/architecture/ADR-001-COMMERCE-FOUNDATION.md). Build isolated executable evidence for the candidate engine before production scaffolding.
+Next work: [P1 in the implementation plan](docs/IMPLEMENTATION.md). Establish the real Rust workspace, database migrations and server-rendered frontend; activate application CI in that same PR. Complete P0 business inputs alongside engineering. Do not restart stack comparisons or redesign the accepted courtyard direction.
 
-| Phase | Deliverable | Exit condition | State |
-| --- | --- | --- | --- |
-| Foundation | Standalone repo, migrated materials, rules, CI, branch protection and handoff | Current head verified by all configured checks and merge policy | Configured; current develop checks are the verification source |
-| P0.1 | Medusa/Next.js decision proof | Kits/last-stock concurrency, Mollie lifecycle, late pay, country quote, locale and permission proof; accepted ADR | Next |
-| P0.2 | Product and fulfilment contract | Real SKU/component model, sample measurements, package/shipping policy, supplier and 27-market checklist | Owner/supplier inputs pending; parallel with P0.1 |
-| P1 | App foundation, routes/themes/auth boundaries, CI | Actual application type/lint/build/test/security/performance/discovery jobs required; isolated preview | Pending |
-| P2 | Catalogue, inventory, quote and cart | Immutable quotes, component holds, market rules, realistic seeded fixtures, admin receiving/adjustments | Pending |
-| P3 | Checkout, Mollie, orders, fulfilment, returns | Provider sandbox evidence, recovery/reconciliation, idempotency, stock races and refund allocation tests | Pending |
-| P4 | Accounts, communications, support, feedback, operations | Ownership/consent/outbox tests; role matrix; diagnostics and worker failure controls | Pending |
-| P5 | Discovery, measured fit/photo placement, launch rehearsal | Performance/security/accessibility/discovery evidence; native language review; restore and carrier proof | Pending |
-| P6 | Optional 3D/camera AR | Measured assets and device validation; clear fit limitations | Deferred |
+Remaining delivery sequence: P0 business inputs → P1 application skeleton and real gates → P2 inventory/catalogue → P3 checkout/payments → P4 customer/admin operations → P5 room planning and content → P6 acceptance → P7 controlled launch. Each phase has explicit exit evidence in the plan.
 
-Do not wait for branding to begin isolated technical proof. Do not activate public sales without the applicable real product, legal, payment and destination evidence. Preserve EU-wide intent; a country cannot silently appear orderable before its shipping/tax/returns rules are validated.
+External blockers: final brand/domain, real product specification/media, market/carrier/tax readiness, Mollie retail website approval, translated legal/product content, email delivery and recovery evidence. EU-wide intent is unchanged; an unready country cannot take payment.
 
-## Decisions still open
-
-- Final brand/domain and exact first models/components. No trademark clearance implied by Dicle.
-- P0 engine decision, maintained Mollie adapter versus reviewed custom implementation, admin permission/localisation approach.
-- Carrier/parcel and bulky-return costs, customs/importer/product safety/packaging obligations, VAT treatment and accounting review.
-- Native-reviewed catalogue and transactional language coverage, real product photography and measured assets.
-- Production hosting, resource isolation, mail sender identity, backup storage and incident ownership.
-- Visibility after setup: keep enforced protection available before production; do not count local hooks as equivalent.
-
-See [launch inputs](docs/product/LAUNCH-INPUTS.md) for owners and evidence, and [CI gates](docs/engineering/CI-GATES.md) for implemented versus pending checks.
+Before any private-repository switch, run the protection audit and follow [operations](docs/OPERATIONS.md). A GitHub Free private repository does not retain the current public-repository enforcement. Do not declare production readiness while that is unresolved.

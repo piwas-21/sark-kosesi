@@ -10,7 +10,7 @@ This adapts the Sofra public-search-discovery approach to a single retail busine
 - Explicit locale URL wins. Unprefixed entry negotiates explicit stored preference, supported browser language, then Dutch. Do not cache one viewer’s negotiation for everyone. Explicit locale pages remain stable for crawlers and shared links.
 - Self canonical per indexable locale and reciprocal alternates only for complete equivalent content. Key parity is insufficient: missing product description/material/care or legal translation cannot be advertised as a complete locale. Draft-language previews remain noindex.
 - Use a neutral root selector for x-default if introduced. Never attach every possible language to every page blindly. Language switching preserves route, variant and required checkout/auth parameters.
-- Stable product-family landing page and shareable resolved variants. ADR-002 must settle canonical family/variant treatment. Crawlable variant links and feed landing pages must preselect the exact advertised SKU/fill/size, price and availability; filling is not an invented schema vocabulary.
+- Stable product-family landing page and shareable resolved variants. Use the family URL as canonical for ordinary option selections; separately index a variant only when it has distinct complete content and a deliberate publication decision. Crawlable variant links and feed landing pages must preselect the exact advertised SKU/fill/size, price and availability; filling is not an invented schema vocabulary.
 - Expected-to-return out-of-stock products retain useful pages and alerts. Delisted products follow a clear redirect/410 policy, not a home-page redirect for everything. Do not index sort/filter/session/coupon combinations or private saved-room configurations.
 
 ## Structured facts and merchant feeds
@@ -21,22 +21,22 @@ Only eligible, actually displayed product reviews can contribute to product Aggr
 
 Publish authentic product imagery with stable public derivative URLs, descriptive alt text, correct dimensions and rights records. Generated inspiration scenes must remain labelled and cannot substitute for product evidence or a merchant’s required product image.
 
-## Automated discovery acceptance (P1 skeleton, P5 complete)
+## Automated discovery acceptance (P1 skeleton, P6 complete)
 
 The checker fetches raw HTML, response headers, robots, sitemap and linked equivalents from the built app. Use Googlebot and an HTML-limited crawler as separate metadata cases when the framework streams metadata; test complete served output, not a mistaken assumption that all metadata arrives in the first head chunk.
 
-| Test | Positive and negative controls |
-| --- | --- |
-| Expected routes | Known published NL family/variant/guide must be present; deliberately omitted expected route must fail even if every emitted URL is valid |
-| Canonical | Exactly one absolute self canonical; reject alias/preview/foreign host, relative/multiple/missing canonical |
-| Language cluster | Correct lang/dir, reciprocal self/equivalent links, no incomplete translation; remove one reverse link and require failure |
-| Server content | JS-disabled HTML contains actual catalogue facts and actionable links; reject empty hydration shells and placeholder facts |
-| Product schema/feed | Parse JSON-LD; compare SKU/options, price minor units/currency, availability and landing variant to the authoritative fixture; inject one mismatch |
-| Private routes | Account/cart/checkout/payment return/admin/support/saved rooms absent from sitemap, correct noindex and authentication; test localized roots and descendants |
-| Preview policy | Authentication or access control plus noindex; production hostname only when explicitly enabled; no public indexing from preview builds |
-| Lifecycle | Product publication/update/stock/deletion updates affected pages/feed/sitemap with honest lastmod; unrelated URLs unchanged |
-| Navigation | Locale survives browse/product/cart/account/back-forward/reload and unavailable storage; selecting/preloading an alternate does not silently save a preference |
-| Host/cache isolation | Forged Host cannot alter canonical; another customer’s locale/private cart/quote cannot leak through cache |
+| Test                 | Positive and negative controls                                                                                                                                 |
+| -------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Expected routes      | Known published NL family/variant/guide must be present; deliberately omitted expected route must fail even if every emitted URL is valid                      |
+| Canonical            | Exactly one absolute self canonical; reject alias/preview/foreign host, relative/multiple/missing canonical                                                    |
+| Language cluster     | Correct lang/dir, reciprocal self/equivalent links, no incomplete translation; remove one reverse link and require failure                                     |
+| Server content       | JS-disabled HTML contains actual catalogue facts and actionable links; reject empty hydration shells and placeholder facts                                     |
+| Product schema/feed  | Parse JSON-LD; compare SKU/options, price minor units/currency, availability and landing variant to the authoritative fixture; inject one mismatch             |
+| Private routes       | Account/cart/checkout/payment return/admin/support/saved rooms absent from sitemap, correct noindex and authentication; test localized roots and descendants   |
+| Preview policy       | Authentication or access control plus noindex; production hostname only when explicitly enabled; no public indexing from preview builds                        |
+| Lifecycle            | Product publication/update/stock/deletion updates affected pages/feed/sitemap with honest lastmod; unrelated URLs unchanged                                    |
+| Navigation           | Locale survives browse/product/cart/account/back-forward/reload and unavailable storage; selecting/preloading an alternate does not silently save a preference |
+| Host/cache isolation | Forged Host cannot alter canonical; another customer’s locale/private cart/quote cannot leak through cache                                                     |
 
 Robots.txt is not authorisation. A crawler must be able to fetch a public noindex response to observe it; do not block that fetch and then claim noindex was processed. Protect private resources with authentication regardless of robots. Keep expected route inventory separate from the sitemap to detect missing pages.
 

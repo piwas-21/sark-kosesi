@@ -1,52 +1,29 @@
 # Piwas şark köşesi
 
-A focused EU furniture shop: Diyarbakır-inspired floor seating, stocked in the Netherlands, sold with foam or as covers only. Piwas is the legal company; the brand is undecided. **Dicle is a working design name.**
+A Piwas-owned shop for a focused Diyarbakır floor-seating collection, stocked in the Netherlands and intended for all 27 EU countries. Brand/domain pending. Production is disabled.
 
-This repository contains the product research, development plan, design prototype and implementation foundation. **It is not a working commerce application.** No live checkout, account system, inventory, email, shipment or AR service is connected.
+Start with [AGENTS.md](AGENTS.md) and [ROADMAP.md](ROADMAP.md). The [implementation plan](docs/IMPLEMENTATION.md) is the handoff for the next session. [Architecture](docs/ARCHITECTURE.md) defines the selected stack: Rust commerce API and workers, PostgreSQL, Next.js/React storefront and admin, Tailwind semantic tokens and CSS Modules for custom art/motion. No paid commerce engine or managed platform is required.
 
-## Start here
+- [Product and launch inputs](docs/PRODUCT.md)
+- [Quality and test gates](docs/QUALITY.md)
+- [Security baseline](docs/SECURITY.md)
+- [SEO / AEO / GEO](docs/DISCOVERY.md)
+- [Operations and release](docs/OPERATIONS.md)
+- [AI contribution workflow](docs/AI-WORKFLOW.md)
+- [Approved design](design/README.md)
 
-1. [Development rules](AGENTS.md)
-2. [Current roadmap](ROADMAP.md)
-3. [Next-session implementation handoff](docs/plans/IMPLEMENTATION-HANDOFF.md)
-4. [Complete commerce plan](docs/plans/COMMERCE-PLAN.md)
-5. [Architecture decision and proof](docs/architecture/ADR-001-COMMERCE-FOUNDATION.md)
-6. [CI and enforcement matrix](docs/engineering/CI-GATES.md)
+## Work locally
 
-## Setup
-
-Use Node **24.22.1**, npm **11.19.1**, Python 3.11+ and Git. `nvm install && nvm use` follows `.nvmrc` when nvm is available.
+Use Node from `.nvmrc`, npm from `package.json`, Python 3.12+ and a virtual environment. Rust is pinned in `rust-toolchain.toml`; application crates are created in P1, not replaced by dummy passing tests.
 
 ```sh
 npm ci --ignore-scripts
+python3 -m venv .local/venv
+.local/venv/bin/pip install --require-hashes -r requirements-dev.txt
+export PATH="$PWD/.local/venv/bin:$PATH"
 npm run hooks:install
 npm run check
 npm run preview
 ```
 
-Open [the local design studio](http://localhost:48763/studio.html). Set `PORT` if needed. The server binds to loopback and serves only the prototype directory. Do not expose it as a public shop.
-
-`npm run test:prototype` runs the browser regression suite after installing Playwright’s pinned Chromium runtime with `node node_modules/@playwright/test/cli.js install chromium`. CI uses the matching official Playwright container, pinned by digest, with browsers and system dependencies already installed. Tests are scoped to a local fixture, never a live provider.
-
-## Specifications
-
-| Area | Source of truth |
-| --- | --- |
-| Engineering and review | [Development](docs/engineering/DEVELOPMENT.md) |
-| Security and threat boundaries | [Security baseline](docs/security/BASELINE.md) |
-| Security disclosure | [Security policy](SECURITY.md) |
-| Test scenarios | [Test strategy](docs/quality/TEST-STRATEGY.md) |
-| Performance and accessibility | [Performance baseline](docs/quality/PERFORMANCE.md) |
-| SEO and answer-engine discovery | [Discovery strategy](docs/discovery/SEO-AEO-GEO.md) |
-| Release, backup and rollback | [Release runbook](docs/runbooks/RELEASE.md) |
-| Product, supplier and market inputs | [Launch inputs](docs/product/LAUNCH-INPUTS.md) |
-| Visual direction and media rights | [Design index](design/README.md) |
-| Research sources | [Commerce research](docs/research/commerce-research.md) |
-
-## Delivery
-
-`develop` is the integration/default branch. Feature PRs target `develop`; release PRs run `develop → main`. The owner requested public visibility for setup. Visibility changes require a fresh protection audit; GitHub Free does not protect private-repository branches. No automatic deployment exists yet.
-
-Foundation checks cover documentation/assets, gate tooling, prototype behavior, secrets, dependency vulnerabilities and CodeQL. Production gates are explicitly pending; `npm run release:check` fails until their evidence and the application exist. See the CI matrix for what is and is not enforced. Never describe this foundation’s green CI as a production security, performance, translation or commerce acceptance.
-
-Original planning and prototype files have been consolidated here. Old local conversation paths retain compatibility links; this repository is authoritative. Public visibility grants no project reuse licence; see [LICENSE](LICENSE) and [media provenance](design/README.md).
+The prototype is at `http://127.0.0.1:48763/studio.html`. It is a design specimen with sample data and concept imagery, not a store. Browser tests run with `npm run test:prototype` in the pinned CI image. The SonarQube CI job runs a disposable Community Build server; no SonarCloud account or paid subscription is needed. See [quality](docs/QUALITY.md) for the precise evidence boundary.

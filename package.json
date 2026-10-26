@@ -4,16 +4,29 @@
   "private": true,
   "description": "Piwas home seating commerce foundation; production implementation pending",
   "license": "UNLICENSED",
-  "engines": { "node": ">=24.22.1 <25", "npm": ">=11 <12" },
+  "engines": {
+    "node": ">=24.22.1 <25",
+    "npm": ">=11 <12"
+  },
   "packageManager": "npm@11.19.1",
   "scripts": {
-    "check": "python3 scripts/check_foundation.py && python3 -m unittest discover -s tests/tooling -v",
+    "check": "npm run lint && npm run format:check && python3 scripts/check_foundation.py && npm run test:tooling",
     "test:prototype": "playwright test",
     "audit:dependencies": "npm audit --audit-level=high",
     "preview": "python3 scripts/serve_preview.py",
     "hooks:install": "python3 scripts/install_hooks.py",
     "release:check": "python3 scripts/release_readiness.py",
-    "gate:merge": "python3 scripts/merge_gate.py"
+    "gate:merge": "python3 scripts/merge_gate.py",
+    "lint": "ruff check scripts tests/tooling && eslint .",
+    "format:check": "ruff format --check scripts tests/tooling && prettier --check \"*.{md,json,mjs}\" \"docs/**/*.md\" \"config/*.json\" \".github/**/*.{yml,md}\" \"tests/**/*.mjs\" \"design/*.md\"",
+    "test:tooling": "PYTHONPATH=scripts python3 -m coverage run -m unittest discover -s tests/tooling -v && python3 -m coverage report && python3 -m coverage xml"
   },
-  "devDependencies": { "@playwright/test": "1.64.1", "@axe-core/playwright": "4.14.0" }
+  "devDependencies": {
+    "@axe-core/playwright": "4.14.0",
+    "@eslint/js": "10.0.1",
+    "@playwright/test": "1.64.1",
+    "eslint": "10.13.0",
+    "globals": "17.4.0",
+    "prettier": "3.9.10"
+  }
 }
