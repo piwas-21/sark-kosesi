@@ -20,6 +20,10 @@ fn context_has_exact_injected_clock_and_opaque_id() {
     .expect("fixture");
     assert_eq!(context.unix_seconds, 1_700_000_000);
     assert_eq!(context.id.to_string(), "abababababababababababababababab");
+    let zero = RequestContext::capture(&FixedClock(Ok(0)), &FixedIdentifiers(Ok([0; 16])))
+        .expect("zero-valued fixture");
+    assert_eq!(zero.unix_seconds, 0);
+    assert_eq!(zero.id.to_string(), "00000000000000000000000000000000");
 }
 #[test]
 fn unavailable_sources_are_explicit_errors() {
