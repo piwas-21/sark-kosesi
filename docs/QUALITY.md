@@ -14,7 +14,7 @@ The workflow and `config/delivery.json` are the executable foundation inventory.
 | SonarQube        | Disposable Community Build, populated exact-revision analysis, quality conditions, zero unresolved issues and zero outstanding hotspots; JSON evidence artifact |
 | Quality gate     | Every prerequisite succeeded; no optional or skipped checks                                                                                                     |
 
-`npm run check` runs format/lint, foundation contracts and tooling coverage. Python tools are hash-pinned in `requirements-dev.txt`; JavaScript tools in the npm lockfile. Coverage is a minimum 90% statements/branches combined for the pure gate-policy modules (`gate_policy`, `review_policy`, `sonar_policy`); wrapper/network/tooling execution is separately exercised by CI and negative-control tests. Do not call this whole-application coverage. Prototype source is a reference design, checked for syntax/assets/browser behavior; production lint, coverage and size budgets cannot exempt production code by moving it under design.
+`npm run check` runs format/lint, foundation contracts and tooling coverage. Python tools are hash-pinned in `requirements-dev.txt`; JavaScript tools in the npm lockfile. Coverage is a minimum 90% statements/branches combined for the pure gate-policy modules (`gate_policy`, `review_policy`, `sonar_policy`, `check_app_coverage`); wrapper/network/tooling execution is separately exercised by CI and negative-control tests. Do not call this whole-application coverage. Prototype source is a reference design, checked for syntax/assets/browser behavior; production lint, coverage and size budgets cannot exempt production code by moving it under design.
 
 ## Sonar ownership and operation
 
@@ -45,6 +45,18 @@ No fake commands or passing jobs before code exists. Pin the following free tool
 | `npm run test:performance`                   | Production-build Lighthouse CI and payload budgets; k6 isolated API/load fixture in performance config                                                                                                        |
 
 Rust line/region coverage runs on the pinned stable release. Rust branch instrumentation currently requires nightly in cargo-llvm-cov: P1 must pin a separate tested nightly toolchain for the branch-coverage job and run `cargo +<pinned-nightly> llvm-cov --branch`. Production builds remain on stable. Missing branch data fails the coverage gate; do not report it as 100% or silently substitute line coverage. See the [upstream coverage requirements](https://github.com/taiki-e/cargo-llvm-cov#readme).
+
+`scripts/check_app_coverage.py --report REPORT.lcov --package OWNED_SOURCE_DIRECTORY`
+validates LCOV from the actual coverage generators. Invoke it separately for each
+maintained package source directory, and add `--critical SOURCE_FILE` for each
+money/inventory/authorization module. It requires every source in that directory
+in the report, checks line/branch records against their totals and actual source
+locations, and enforces 85% lines / 80% branches (95% / 95% for critical modules).
+Missing branches fail even when line coverage is full. Generated code belongs in
+a separate generated directory; exclusions require review rather than hidden
+filename filters. CI must generate reports on the candidate revision before
+calling this validator. Its hostile fixture tests prove the validator only;
+application coverage remains pending until actual app/crate reports pass.
 
 Critical cases: last shared foam component contested by two orders; covers-only reserves no foam; payment-create timeout and late paid after expiry; duplicated/reordered webhooks; partial refund/tax/discount rounding; coupon exhaustion; expired guest token; cross-customer access; worker crash after provider acceptance; duplicate restock mail; incomplete translation/private-cache leak. Mutation testing on financial/authorization invariants must demonstrate that the test detects the intended defect, not just a textual mutation.
 

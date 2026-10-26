@@ -11,7 +11,7 @@ select = ["E4", "E7", "E9", "F", "I", "B", "UP"]
 [tool.coverage.run]
 branch = true
 relative_files = true
-source = ["gate_policy", "review_policy", "sonar_policy"]
+source = ["gate_policy", "review_policy", "sonar_policy", "check_app_coverage"]
 
 [tool.coverage.report]
 fail_under = 90
