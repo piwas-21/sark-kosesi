@@ -22,6 +22,7 @@ for (const [name, type] of Object.entries({ chromium, firefox, webkit })) {
         for (const locale of surface.locales)
           for (const theme of ["light", "dark"]) {
             const context = await browser.newContext({
+              deviceScaleFactor: 1,
               viewport: { width, height: width === 390 ? 844 : 900 },
               httpCredentials: { username: "preview", password: token },
               reducedMotion: "reduce",

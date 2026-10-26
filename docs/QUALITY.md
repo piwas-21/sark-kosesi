@@ -92,6 +92,14 @@ The CI browser artifact contains the candidate gallery for review. Local evidenc
 controls attest the contributor's record; they are not cryptographic proof of a
 human review. Never create that record without the user's actual approval.
 
+Capture and comparison use native browser defaults at an explicit 1x pixel
+density and the same viewport sizes. A correction limited to that comparison
+environment can retain approval of identical images only when application UI and
+assets are unchanged, all image hashes are preserved, the original approval and
+source binding remain in provenance, independent review approves the correction,
+and Linux CI compares every image successfully. Changed images or application
+rendering require fresh human approval. Normal gates never update the binding.
+
 Critical cases: last shared foam component contested by two orders; covers-only reserves no foam; payment-create timeout and late paid after expiry; duplicated/reordered webhooks; partial refund/tax/discount rounding; coupon exhaustion; expired guest token; cross-customer access; worker crash after provider acceptance; duplicate restock mail; incomplete translation/private-cache leak. Mutation testing on financial/authorization invariants must demonstrate that the test detects the intended defect, not just a textual mutation.
 
 ## Accessibility and performance acceptance
