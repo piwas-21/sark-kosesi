@@ -26,9 +26,6 @@ def run(*args, **kwargs):
 def native_cluster(directory, binaries):
     data = directory / "data"
     password = secrets.token_urlsafe(32)
-    credential = directory / "password"
-    credential.write_text(password)
-    credential.chmod(0o600)
     with socket.socket() as listener:
         listener.bind(("127.0.0.1", 0))
         port = listener.getsockname()[1]
@@ -41,9 +38,11 @@ def native_cluster(directory, binaries):
         "-A",
         "scram-sha-256",
         "--pwfile",
-        str(credential),
+        "/dev/stdin",
         "--no-locale",
         "--encoding=UTF8",
+        # initdb reads an anonymous subprocess pipe; no plaintext credential file.
+        input=password + "\n",
     )
     run(
         str(binaries / "pg_ctl"),
@@ -80,7 +79,6 @@ def native_cluster(directory, binaries):
     )
     if negative.returncode == 0 or "password authentication failed" not in negative.stderr:
         raise ValueError("Native PostgreSQL authentication negative control failed")
-    credential.unlink()
     return f"postgresql://p1_test:{password}@127.0.0.1:{port}/postgres"
 
 
