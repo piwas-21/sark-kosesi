@@ -1,10 +1,18 @@
 # Implementation status
 
-**Current stage: foundation; production disabled.** The approved design, selected Rust architecture, implementation plan and repository checks are the starting point. No production commerce API, database, storefront or payment integration exists yet.
+**Current stage: P1 preview application in development; production disabled.**
 
-P1 coverage-report validation is implemented with positive and negative controls. Actual application coverage and application CI remain pending.
+The read-only Rust/SQLx catalogue, migrations, typed contracts and courtyard
+Next.js shells are implemented on an owned feature branch. The first application
+PR activates real source/coverage/audit, PostgreSQL, component/browser/accessibility,
+visual, performance and discovery gates together. Application CI, independent
+review and manual visual-baseline approval must pass before merging; local test
+results do not establish this exit evidence.
 
-Next work: [P1 in the implementation plan](docs/IMPLEMENTATION.md). Establish the real Rust workspace, database migrations and server-rendered frontend; activate application CI in that same PR. Complete P0 business inputs alongside engineering. Do not restart stack comparisons or redesign the accepted courtyard direction.
+Next work: finish [P1 acceptance](docs/IMPLEMENTATION.md), then P2 catalogue/BOM
+and stock. P0 inputs remain pending. All seven languages are draft previews,
+fixtures are explicitly not for sale, and admin operations remain unavailable.
+Do not restart stack comparisons or redesign the accepted courtyard direction.
 
 Remaining delivery sequence: P0 business inputs → P1 application skeleton and real gates → P2 inventory/catalogue → P3 checkout/payments → P4 customer/admin operations → P5 room planning and content → P6 acceptance → P7 controlled launch. Each phase has explicit exit evidence in the plan.
 

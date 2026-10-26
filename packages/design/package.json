@@ -1,0 +1,12 @@
+{
+  "name": "@piwas/design",
+  "version": "0.1.0",
+  "private": true,
+  "exports": {
+    ".": "./src/primitives.tsx",
+    "./tokens.css": "./src/tokens.css"
+  },
+  "peerDependencies": {
+    "react": "19.3.1"
+  }
+}

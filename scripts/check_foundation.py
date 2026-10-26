@@ -60,6 +60,7 @@ def project_files():
         ".ruff_cache",
         ".scannerwork",
         "target",
+        ".next",
     }
     for parent, dirs, files in os.walk(ROOT):
         dirs[:] = [d for d in dirs if d not in excluded]
@@ -170,7 +171,12 @@ def check_source(path, package):
             raise ValueError(f"Prototype must remain noindex: {path}")
     if path.suffix == ".css":
         for target in re.findall(r"url\(['\"]?([^)'\"]+)", text):
-            local_target(path, target)
+            if target.startswith("/") and path.is_relative_to(ROOT / "apps/web"):
+                asset = (ROOT / "apps/web/public" / target.lstrip("/")).resolve()
+                if not asset.is_relative_to(ROOT / "apps/web/public") or not asset.is_file():
+                    raise ValueError(f"Missing or unsafe public asset: {target}")
+            else:
+                local_target(path, target)
     if path.suffix in (".js", ".mjs"):
         subprocess.run(["node", "--check", str(path)], check=True, capture_output=True)
     if path.parent == ROOT / ".github/workflows":

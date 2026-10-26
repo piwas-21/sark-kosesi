@@ -57,6 +57,10 @@
           {
             "context": "SonarQube",
             "integration_id": 15368
+          },
+          {
+            "context": "Application gate",
+            "integration_id": 15368
           }
         ]
       }

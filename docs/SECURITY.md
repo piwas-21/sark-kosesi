@@ -16,3 +16,26 @@ Use OWASP ASVS level 2 as the verification inventory at P1; map applicable contr
 P1 supplies automated authorization/header/abuse tests and a local-only scanner fixture. P6 runs an authenticated dynamic scan against isolated seeded staging and manual threat review. Do not scan production or trigger real orders/messages as a test. Release requires restored backup proof, rollback and incident procedures, dependency/SBOM review and exact-revision evidence.
 
 Report vulnerabilities through the root [disclosure policy](../SECURITY.md). Do not include secrets or customer information in public issues/CI artifacts.
+
+## P1 verification scope
+
+ASVS level 2 is the inventory target. The implemented trust boundaries are the
+private browser preview, thin same-origin Next proxy, Rust read API and isolated
+PostgreSQL. Test data is invented and cannot be published by the schema; both
+runtimes reject production configuration. Constant-time token checks guard the
+preview; no real customer/admin session is implemented.
+
+| Applicable area      | P1 evidence                                                                                   | Remaining acceptance                                    |
+| -------------------- | --------------------------------------------------------------------------------------------- | ------------------------------------------------------- |
+| Input/output         | Typed config, checked money, SQL parameters, decoded HTTP responses, Rust-generated contracts | P2 publication/import validation                        |
+| Access control       | Missing/wrong preview credentials rejected; mutations and private commerce routes unavailable | P3/P4 customer ownership, roles, MFA, CSRF and sessions |
+| Resource limits      | Bounded DB pool/readiness/request duration/concurrency; overload and locked-database controls | Measured production capacity/rate limits                |
+| Browser security     | Nonce CSP, no framing, nosniff, no-referrer, no-store; raw anonymous/forged-host probes       | HTTPS/HSTS acceptance on chosen domain                  |
+| Secrets/dependencies | Redacted errors, history/source Gitleaks, current RustSec/npm audit, licence/source policies  | Release SBOM/notices and secret provisioning            |
+| Data isolation       | Every DB test creates its own disposable cluster; no public DB listener in native mode        | Staging/production backup and restore rehearsal         |
+
+No customer accounts, write endpoints, upload processing, provider callbacks,
+payment methods or outbound mail exist in P1. Their controls are deferred to their
+owning phases, not marked passed or represented by mocks. Preview authentication
+is not the future admin authorization system. The worker binary probes real DB
+readiness and performs no durable effects; P3 owns outbox processing/recovery.
