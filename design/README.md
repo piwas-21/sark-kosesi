@@ -1,19 +1,15 @@
-# Design materials
+# Approved design: The living courtyard
 
-The current direction is **The living courtyard (direction 02)**. It is the preferred implementation reference after the owner’s visual review; detailed production design, typography/localisation and accessibility acceptance remain part of P1/P5.
+Direction 02 is the implementation reference. Keep the basalt courtyard, warm plaster, madder red textile, monumental type, consistent custom 24px icons and restrained ornamental detail. Motion should respond to interaction: textile disclosure, configuration, favourite, room fit and navigation. No scroll hijacking or compulsory animation. Product/admin tasks remain legible and direct.
 
-- [Interactive studio](prototype/studio.html): serve with `npm run preview` from the repository root.
-- [Design notes](prototype/DESIGN-NOTES.md)
-- [Desktop](prototype/direction-02-desktop.png), [phone](prototype/direction-02-mobile.png), [full page](prototype/direction-02-full-page.png), [product](prototype/direction-02-product.png), [admin](prototype/direction-02-admin.png), [Arabic dark](prototype/direction-02-arabic-dark.png)
-- [Image briefs](prototype/IMAGE-PROMPT-V2.txt)
-- [Asset inventory with hashes](asset-manifest.json)
+[Interactive studio](prototype/studio.html), [desktop](prototype/direction-02-desktop.png), [phone](prototype/direction-02-mobile.png), [product](prototype/direction-02-product.png), [admin](prototype/direction-02-admin.png), [Arabic dark](prototype/direction-02-arabic-dark.png), [full page](prototype/direction-02-full-page.png). Run `npm run preview` from the repository root.
 
-The earlier direction and screenshots are retained as design reference under `prototype/`; they are not the current implementation target. This is a design specimen, not production source architecture.
+Adapt the visual system into production components; the prototype is not production architecture. Bricolage Grotesque and DM Sans licences are retained beside the fonts. Add a deliberately paired Arabic family with native-reader review. Verify every theme/state, responsive crop, keyboard path, focus ring and reduced-motion alternative. Tailwind consumes semantic tokens; CSS Modules handle bespoke scene/motion composition.
 
-## Media and content status
+## Provenance and limits
 
-The reference product photograph came from the owner as an external model example. It is not Piwas inventory, and no resale/marketing licence has been verified. Generated interiors and the seating cutout illustrate the direction; neither product accuracy nor measured dimensions can be inferred. Keep concept/reference labels during development. Replace with permissioned actual product images before public merchandising.
+`reference-only.jpg` is the owner's external model example, not Piwas inventory; marketing rights are unverified. `courtyard-v2.png` and `seating-cutout-v2.png` are generated concept images, not a real location or measured product. Replace these with permissioned product imagery before merchandising. Keep illustration disclosures in previews.
 
-Bricolage Grotesque and DM Sans font licences are included under `prototype/assets/fonts/`. Keep them with redistributed font files. Production needs a paired Arabic type family and native-reader review. Do not treat prototype translations or illustrative prices as approved catalogue data.
+Prices, sizes, reviews/admin rows and translations are sample/draft content. No checkout, actual inventory, accounts, email, room uploads or AR exists in this specimen. The rectangular planner does not validate doors, obstacles or manufacturing tolerance. Production requirements and acceptance are in [the plan](../docs/IMPLEMENTATION.md).
 
-`asset-manifest.json` records the consolidated binary files. Future intentional changes must update it. It is an integrity inventory, not a statement of rights clearance.
+[Asset hashes](asset-manifest.json) establish file integrity, not rights clearance. Earlier directions and research have been removed; git history provides the audit trail.

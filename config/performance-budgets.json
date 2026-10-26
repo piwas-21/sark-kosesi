@@ -1,9 +1,29 @@
 {
   "status": "production-targets-not-prototype-measurements",
   "field": { "percentile": 75, "lcpMs": 2500, "inpMs": 200, "cls": 0.1 },
-  "lab": { "runs": 3, "aggregation": "median", "lighthousePerformance": 90, "lcpMs": 2500, "tbtMs": 200, "cls": 0.1 },
-  "transfer": { "initialFirstPartyJsGzipKiB": 170, "mobileLcpImageKiB": 250, "initialFontsKiB": 150, "initialMobileTotalKiB": 750 },
-  "api": { "quoteP95MsExcludingProviders": 500, "catalogueP95Ms": 300, "errorRateMaximum": 0.01 },
+  "lab": {
+    "runs": 3,
+    "aggregation": "median",
+    "lighthousePerformance": 90,
+    "lcpMs": 2500,
+    "tbtMs": 200,
+    "cls": 0.1
+  },
+  "transfer": {
+    "initialFirstPartyJsGzipKiB": 170,
+    "mobileLcpImageKiB": 250,
+    "initialFontsKiB": 150,
+    "initialMobileTotalKiB": 750
+  },
+  "api": {
+    "quoteP95MsExcludingProviders": 500,
+    "catalogueP95Ms": 300,
+    "errorRateMaximum": 0.01
+  },
   "interaction": { "localConfigurationMs": 100 },
-  "loadFixture": { "virtualUsers": 25, "steadyStateMinutes": 10, "burstConcurrency": 50 }
+  "loadFixture": {
+    "virtualUsers": 25,
+    "steadyStateMinutes": 10,
+    "burstConcurrency": 50
+  }
 }

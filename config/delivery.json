@@ -3,7 +3,16 @@
   "repository": "piwas-21/sark-kosesi",
   "integrationBranch": "develop",
   "productionBranch": "main",
-  "requiredChecks": ["Foundation", "Secret scan", "Dependency audit", "Prototype smoke", "CodeQL (javascript-typescript)", "CodeQL (python)", "Quality gate"],
+  "requiredChecks": [
+    "Foundation",
+    "Secret scan",
+    "Dependency audit",
+    "Prototype smoke",
+    "CodeQL (javascript-typescript)",
+    "CodeQL (python)",
+    "SonarQube",
+    "Quality gate"
+  ],
   "productionEnabled": false,
   "productionGates": {
     "architectureProof": "pending",

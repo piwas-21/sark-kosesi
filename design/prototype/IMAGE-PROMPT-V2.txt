@@ -1,7 +1,0 @@
-Built-in image generation. Input reference: the user-provided red şark köşesi model; not actual Piwas inventory.
-
-Courtyard: photorealistic editorial furniture campaign, 3:2. Diyarbakır-inspired basalt arches, dark bottle-green left wall and quiet space for pale headline; warm limestone, pomegranate geometric low seats on right, two tea glasses on a low walnut table. Golden directional sunlight and olive shadows. Restrained props, no people, text, UI or logos. Generated image: exec-2bbb8f9f-ccb4-4d99-ba53-485852c538fe.png.
-
-Seating cutout: transparent-background product illustration based on reference low seat silhouette. Two low rectangular seat pads, two upright patterned back cushions and two bolster pillows. Deep red, forest green, cream and ochre geometric textile. Slightly high three-quarter view, full set in frame, no room, table, rug or text. Generated image: exec-ce5d6827-55ef-44ce-83be-90ec0f0181ed.png.
-
-Both assets are illustrative and labelled in the preview. They are not product specification evidence.

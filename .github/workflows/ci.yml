@@ -6,7 +6,7 @@ on:
     branches: [develop, main]
   workflow_dispatch:
   schedule:
-    - cron: '37 5 * * 1'
+    - cron: "37 5 * * 1"
 permissions: {}
 concurrency:
   group: ci-${{ github.workflow }}-${{ github.ref }}
@@ -27,6 +27,10 @@ jobs:
           node-version-file: .nvmrc
           cache: npm
       - run: npm ci --ignore-scripts
+      - run: |
+          python3 -m venv .local/venv
+          .local/venv/bin/pip install --require-hashes -r requirements-dev.txt
+          echo "$PWD/.local/venv/bin" >> "$GITHUB_PATH"
       - run: npm run check
   secrets:
     name: Secret scan
@@ -97,10 +101,59 @@ jobs:
       - uses: github/codeql-action/analyze@9b3254085494b55a0f7c4c2b3d2d52cc712ce370
         with:
           category: /language:${{ matrix.language }}
+  sonar:
+    name: SonarQube
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    permissions:
+      contents: read
+    env:
+      ANALYSIS_REVISION: ${{ github.event.pull_request.head.sha || github.sha }}
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+      - run: npm ci --ignore-scripts
+      - name: Generate actual tooling coverage
+        run: |
+          python3 -m venv .local/venv
+          .local/venv/bin/pip install --require-hashes -r requirements-dev.txt
+          export PATH="$PWD/.local/venv/bin:$PATH"
+          npm run test:tooling
+      - name: Start isolated Community Build
+        run: |
+          sudo sysctl -w vm.max_map_count=524288
+          sudo sysctl -w fs.file-max=131072
+          docker run --detach --name sonar-ci --publish 127.0.0.1:9000:9000 \
+            --ulimit nofile=131072:131072 --ulimit nproc=8192:8192 \
+            sonarqube:26.10.0.133078-community@sha256:0b3408443fb6a311253de27941b10977c9b977fd53be2265947bfe14161308b8
+          python3 scripts/sonar_ci.py bootstrap
+      - uses: SonarSource/sonarqube-scan-action@38f03825196cad93cbb3d92e9d20d1f1fe7dc2a7
+        with:
+          scannerVersion: 8.2.0.6438
+          args: >-
+            -Dsonar.scm.revision=${{ env.ANALYSIS_REVISION }}
+      - run: python3 scripts/sonar_ci.py verify
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+        with:
+          name: sonar-${{ env.ANALYSIS_REVISION }}
+          path: .local/sonar-evidence.json
+          include-hidden-files: true
+          if-no-files-found: error
+          retention-days: 30
+      - name: Dispose isolated server
+        if: always()
+        run: docker rm --force --volumes sonar-ci
   quality:
     name: Quality gate
     if: always()
-    needs: [foundation, secrets, dependencies, prototype, sast]
+    needs: [foundation, secrets, dependencies, prototype, sast, sonar]
     runs-on: ubuntu-24.04
     timeout-minutes: 2
     permissions: {}
