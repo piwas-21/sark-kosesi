@@ -118,9 +118,7 @@ def verify():
     gate = api("api/qualitygates/project_status", credential, analysisId=analysis_id)
     measures = api("api/measures/component", credential, component=PROJECT, metricKeys="ncloc")
     issues = api("api/issues/search", credential, componentKeys=PROJECT, resolved="false", ps=100)
-    hotspots = api(
-        "api/hotspots/search", credential, projectKey=PROJECT, status="TO_REVIEW", ps=100
-    )
+    hotspots = api("api/hotspots/search", credential, project=PROJECT, status="TO_REVIEW", ps=100)
     for issue in issues.get("issues", []):
         print(
             json.dumps({k: issue.get(k) for k in ("key", "rule", "component", "line", "message")})
