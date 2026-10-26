@@ -45,6 +45,7 @@ test('covers-only basket has the independent expected amount and content', async
   await expect(page.locator('#bundle-summary')).toHaveText('Sample bundle: 2 seat covers, 3 back covers and 2 bolster covers. All arrive empty.');
   await page.getByRole('button', { name: 'Add to sample basket', exact: true }).click();
   await expect(page.locator('#basket')).toBeVisible();
+  await expect(page.locator('.bag')).toHaveAccessibleName('Your sample basket: 1');
   await expect(page.locator('#basket-content')).toContainText('180 × 70 cm · Covers only · €189');
   await expect(page.locator('.basket-total')).toContainText('€189');
   await expect(page.locator('#basket-content')).toContainText('Checkout is not connected');
@@ -72,6 +73,7 @@ test('reduced motion disables ornament and preserves disclosure', async ({ page 
 
 test('product controls have no serious or critical accessibility findings', async ({ page }) => {
   await page.goto('/index.html?embed=1&lang=en&theme=light#product');
+  await expect(page.locator('#product-view')).toHaveCSS('opacity', '1');
   const results = await new AxeBuilder({ page }).analyze();
   expect(results.violations.filter(v => ['serious', 'critical'].includes(v.impact))).toEqual([]);
 });

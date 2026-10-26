@@ -153,6 +153,7 @@ footer>div:last-child { color: #c1d0ac; }
 .choice { border-radius: 9px; padding: 16px; transition: background .2s, border .2s; }
 .choice strong { font-weight: 600; }
 .choice:has(input:checked) { background: var(--highlight); border-color: var(--olive); }
+.choice:has(input:checked) span { color: var(--ink); }
 .radio-mark { border-color: var(--muted); }
 .choice:has(input:checked) .radio-mark { border-color: var(--olive); }
 .config-group h2,.config-group legend { font-family: var(--body); font-weight: 600; }
