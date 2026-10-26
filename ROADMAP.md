@@ -1,20 +1,20 @@
 # Implementation status
 
-**Current stage: P1 preview application in development; production disabled.**
+**Current stage: P1 skeleton implemented; production disabled.**
 
-The read-only Rust/SQLx catalogue, migrations, typed contracts and courtyard
-Next.js shells are implemented on an owned feature branch. The first application
-PR activates real source/coverage/audit, PostgreSQL, component/browser/accessibility,
-visual, performance and discovery gates together. The initial visual baselines
-have user approval. Current-revision application CI and independent review must
-still pass before merging; local test results do not establish this exit evidence.
+The read-only Rust/SQLx catalogue, migrations, typed contracts, API/worker readiness
+and courtyard Next.js shells are implemented. Explicit clock/identifier ports
+support deterministic diagnostics and generated request correlation. Real
+source/coverage/audit, PostgreSQL, component/browser/accessibility, approved visual,
+performance and discovery gates are required from the first application PR.
+Current-revision CI, independent review and the merge gate remain mandatory.
 
-Next work: finish [P1 acceptance](docs/IMPLEMENTATION.md), then P2 catalogue/BOM
-and stock. P0 inputs remain pending. All seven languages are draft previews,
+Next work: P2 catalogue/BOM and stock under the [implementation plan](docs/IMPLEMENTATION.md).
+P0 inputs remain pending. All seven languages are draft previews,
 fixtures are explicitly not for sale, and admin operations remain unavailable.
 Do not restart stack comparisons or redesign the accepted courtyard direction.
 
-Remaining delivery sequence: P0 business inputs → P1 application skeleton and real gates → P2 inventory/catalogue → P3 checkout/payments → P4 customer/admin operations → P5 room planning and content → P6 acceptance → P7 controlled launch. Each phase has explicit exit evidence in the plan.
+Remaining delivery sequence: P0 business inputs in parallel → P2 inventory/catalogue → P3 checkout/payments → P4 customer/admin operations → P5 room planning and content → P6 acceptance → P7 controlled launch. Each phase has explicit exit evidence in the plan.
 
 External blockers: final brand/domain, real product specification/media, market/carrier/tax readiness, Mollie retail website approval, translated legal/product content, email delivery and recovery evidence. EU-wide intent is unchanged; an unready country cannot take payment.
 

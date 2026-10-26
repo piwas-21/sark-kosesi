@@ -14,6 +14,7 @@ commerce-domain.workspace = true
 commerce-application.workspace = true
 sqlx.workspace = true
 tokio.workspace = true
+getrandom.workspace = true
 
 [dev-dependencies]
 serde_json.workspace = true
