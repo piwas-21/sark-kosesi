@@ -46,7 +46,7 @@ No fake commands or passing jobs before code exists. Pin the following free tool
 
 Rust line/region coverage runs on the pinned stable release. Rust branch instrumentation currently requires nightly in cargo-llvm-cov: P1 must pin a separate tested nightly toolchain for the branch-coverage job and run `cargo +<pinned-nightly> llvm-cov --branch`. Production builds remain on stable. Missing branch data fails the coverage gate; do not report it as 100% or silently substitute line coverage. See the [upstream coverage requirements](https://github.com/taiki-e/cargo-llvm-cov#readme).
 
-`scripts/check_app_coverage.py --report REPORT.lcov --package OWNED_SOURCE_DIRECTORY`
+`python3 scripts/check_app_coverage.py --report REPORT.lcov --package OWNED_SOURCE_DIRECTORY`
 validates LCOV from the actual coverage generators. Invoke it separately for each
 maintained package source directory, and add `--critical SOURCE_FILE` for each
 money/inventory/authorization module. It requires every source in that directory
