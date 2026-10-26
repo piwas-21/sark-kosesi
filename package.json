@@ -29,7 +29,7 @@
     "test:integration": "python3 scripts/with_postgres.py -- cargo test --workspace --locked",
     "test:migrations": "python3 scripts/with_postgres.py -- cargo test --locked -p commerce-infrastructure --test postgres -- --exact prior_schema_upgrade_preserves_old_reader_and_data",
     "test:contracts": "python3 scripts/check_contracts.py",
-    "test:coverage": "python3 scripts/with_postgres.py -- cargo llvm-cov --workspace --all-features --locked --json --output-path coverage/rust-stable.json && python3 scripts/with_postgres.py -- cargo +nightly-2026-10-25 llvm-cov --workspace --all-features --locked --branch --json --output-path coverage/rust.json && cargo +nightly-2026-10-25 llvm-cov report --lcov --output-path coverage/rust.lcov && vitest run --coverage && python3 scripts/check_coverage_reports.py",
+    "test:coverage": "cargo llvm-cov clean && python3 scripts/with_postgres.py -- cargo llvm-cov --workspace --all-features --locked --json --output-path coverage/rust-stable.json && cargo +nightly-2026-10-25 llvm-cov clean && python3 scripts/with_postgres.py -- cargo +nightly-2026-10-25 llvm-cov --workspace --all-features --locked --branch --json --output-path coverage/rust.json && cargo +nightly-2026-10-25 llvm-cov report --lcov --output-path coverage/rust.lcov && vitest run --coverage && python3 scripts/check_coverage_reports.py",
     "test:e2e": "python3 scripts/with_postgres.py -- node tests/application/serve.mjs e2e",
     "test:accessibility": "python3 scripts/with_postgres.py -- node tests/application/serve.mjs accessibility",
     "test:visual": "python3 scripts/with_postgres.py -- node tests/application/serve.mjs visual",

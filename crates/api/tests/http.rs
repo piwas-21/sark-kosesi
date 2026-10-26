@@ -225,3 +225,35 @@ async fn api_binary_serves_and_stops_gracefully(pool: PgPool) {
         .expect("shutdown");
     assert!(child.wait().expect("stopped").success());
 }
+
+#[sqlx::test(migrator = "MIGRATOR")]
+async fn request_dependency_timeout_is_redacted_and_recovers(pool: PgPool) {
+    let mut transaction = pool.begin().await.expect("transaction");
+    sqlx::query("LOCK TABLE catalogue_items IN ACCESS EXCLUSIVE MODE")
+        .execute(&mut *transaction)
+        .await
+        .expect("hold lock");
+    let app = router(state(pool.clone(), 32));
+    let response = app
+        .clone()
+        .oneshot(request("/api/catalogue/nl", Some(TOKEN)))
+        .await
+        .expect("bounded request");
+    assert_eq!(response.status(), StatusCode::GATEWAY_TIMEOUT);
+    assert_eq!(response.headers()["cache-control"], "private, no-store");
+    let value: serde_json::Value = serde_json::from_slice(
+        &to_bytes(response.into_body(), 16384)
+            .await
+            .expect("bounded body"),
+    )
+    .expect("JSON");
+    assert_eq!(value, serde_json::json!({"code":"dependency_timeout"}));
+    transaction.rollback().await.expect("release lock");
+    assert_eq!(
+        app.oneshot(request("/api/catalogue/nl", Some(TOKEN)))
+            .await
+            .expect("recovered")
+            .status(),
+        StatusCode::OK
+    );
+}

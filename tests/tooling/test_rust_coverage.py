@@ -70,3 +70,49 @@ class RustCoverage(unittest.TestCase):
                 files[0]["filename"] = "/outside.rs"
             with self.subTest(change=change), self.assertRaises(ValueError):
                 validate(document, self.root)
+
+    def lcov(self, document=None):
+        document = document or self.document
+        records = []
+        for item in document["data"][0]["files"]:
+            records.append(f"SF:{item['filename']}")
+            records += [f"DA:{line},1" for line in range(1, 21)]
+            records += [f"BRDA:{line},0,0,1" for line in range(1, 21)]
+            records += ["LF:20", "LH:20", "BRF:20", "BRH:20", "end_of_record"]
+        return "\n".join(records)
+
+    def test_rust_sonar_import_is_populated_and_matches_native(self):
+        from rust_coverage import validate_lcov
+
+        self.assertEqual(validate_lcov(self.lcov(), self.document, self.root), 5)
+        # Native LLVM may count macro/async regions beyond physical DA records.
+        native = copy.deepcopy(self.document)
+        native["data"][0]["files"][0]["summary"]["lines"] = {"count": 22, "covered": 22}
+        text = self.lcov().replace("LF:20\nLH:20", "LF:22\nLH:22", 1)
+        self.assertEqual(validate_lcov(text, native, self.root), 5)
+
+    def test_empty_absent_unrelated_and_inconsistent_rust_imports_fail(self):
+        from rust_coverage import validate_lcov
+
+        valid = self.lcov()
+        first = self.document["data"][0]["files"][0]["filename"]
+        for text in (
+            "",
+            "TN:empty",
+            valid.split("end_of_record")[0],
+            valid.replace("SF:" + first, "SF:/unrelated.rs", 1),
+            valid.replace("LH:20", "LH:19", 1),
+            valid.replace("DA:1,1", "DA:1,1\nDA:1,1", 1),
+            valid.replace("BRDA:1,0,0,1\n", "", 1),
+            valid.replace("DA:1,1", "DA:21,1", 1),
+            valid + "\n" + valid,
+        ):
+            with self.subTest(text=text[:60]), self.assertRaises(ValueError):
+                validate_lcov(text, self.document, self.root)
+        no_lines = "\n".join(line for line in valid.splitlines() if not line.startswith("DA:"))
+        with self.assertRaisesRegex(ValueError, "line records missing"):
+            validate_lcov(no_lines, self.document, self.root)
+        with self.assertRaises(ValueError):
+            validate_lcov(
+                valid.split("end_of_record")[0] + "\nend_of_record", self.document, self.root
+            )

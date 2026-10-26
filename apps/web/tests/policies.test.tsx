@@ -65,7 +65,15 @@ describe("untrusted catalogue response", () => {
 });
 describe("locale policy", () => {
   it("resolves language mappings without claiming Sorani", () => {
-    for (const tag of ["kmr", "kmr-TR", "ku", "ku-Latn", "ku-Latn-TR"])
+    for (const tag of [
+      "kmr",
+      "kmr-TR",
+      "ku",
+      "ku-TR",
+      "ku-TR-u-nu-latn",
+      "ku-Latn",
+      "ku-Latn-TR",
+    ])
       expect(deviceLocale(tag)).toBe("ku");
     for (const tag of ["ckb", "ku-Arab", "ku-IQ", "zz"])
       expect(deviceLocale(tag)).toBeUndefined();
@@ -78,6 +86,7 @@ describe("locale policy", () => {
   });
   it("honours stored choice and weighted device preferences", () => {
     expect(resolveLocale("fr", "de;q=1")).toBe("fr");
+    expect(resolveLocale(undefined, "ku-TR,en;q=0.8")).toBe("ku");
     expect(resolveLocale("bad", "de;q=0.2, ar;q=0.8")).toBe("ar");
     expect(resolveLocale(undefined, "de;q=0,en;q=0.5")).toBe("en");
     expect(resolveLocale(undefined, "xx, fr;q=0.3")).toBe("fr");

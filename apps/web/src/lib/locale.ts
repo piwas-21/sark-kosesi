@@ -15,6 +15,7 @@ export function deviceLocale(tag: string): Locale | undefined {
     normalized === "kmr" ||
     normalized.startsWith("kmr-") ||
     normalized === "ku" ||
+    /^ku-tr(?:-|$)/.test(normalized) ||
     normalized === "ku-latn" ||
     normalized.startsWith("ku-latn-")
   )

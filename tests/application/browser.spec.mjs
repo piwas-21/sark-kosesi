@@ -1,6 +1,42 @@
 import { test, expect } from "@playwright/test";
 import AxeBuilder from "@axe-core/playwright";
 const locales = ["nl", "de", "fr", "en", "ar", "tr", "ku"];
+async function assertGalleryTabOrder(page, browserName) {
+  const forward =
+    browserName === "webkit" && process.platform === "darwin"
+      ? "Alt+Tab"
+      : "Tab";
+  const reverse =
+    browserName === "webkit" && process.platform === "darwin"
+      ? "Alt+Shift+Tab"
+      : "Shift+Tab";
+  // Reset only the starting point; every destination is reached by actual keys.
+  await page.evaluate(() => {
+    document.body.tabIndex = -1;
+    document.body.focus();
+    document.body.removeAttribute("tabindex");
+  });
+  const order = [
+    page.getByRole("link", { name: "Skip to content" }),
+    page.getByRole("link", { name: "dicle." }),
+    page.getByRole("link", { name: "Collection", exact: true }),
+    page.getByRole("link", { name: "Components", exact: true }),
+    page.getByRole("link", { name: "Admin", exact: true }),
+    page.getByLabel("Language"),
+    page.getByLabel("Theme"),
+    page.getByRole("button", { name: "Preview action" }),
+    page.getByLabel("Room width (cm)"),
+  ];
+  for (const destination of order) {
+    await page.keyboard.press(forward);
+    await expect(destination).toBeFocused({ timeout: 500 });
+  }
+  await page.keyboard.press(reverse);
+  await expect(
+    page.getByRole("button", { name: "Preview action" }),
+  ).toBeFocused();
+}
+
 test("@journey seeded catalogue is readable before hydration", async ({
   page,
 }) => {
@@ -44,13 +80,12 @@ for (const locale of locales)
   for (const theme of ["light", "dark"]) {
     test(`@a11y ${locale} ${theme} gallery keyboard and axe`, async ({
       page,
+      browserName,
     }) => {
       await page.setViewportSize({ width: 390, height: 844 });
       await page.goto(`/${locale}/gallery`);
       await page.getByLabel("Theme").selectOption(theme);
-      await page.keyboard.press("Tab"); // Keyboard navigation is exercised independently of axe.
-      await page.getByLabel("Room width (cm)").focus();
-      await expect(page.getByLabel("Room width (cm)")).toBeFocused();
+      await assertGalleryTabOrder(page, browserName);
       const result = await new AxeBuilder({ page })
         .withTags(["wcag2a", "wcag2aa", "wcag21aa", "wcag22aa"])
         .analyze();
@@ -117,4 +152,18 @@ test("@security auth, private cache, CSP and unavailable mutations", async ({
     "/nl/checkout",
   ])
     expect((await page.request.get(path)).status()).toBe(404);
+});
+
+test("@a11y traversal detects an input removed from keyboard order", async ({
+  page,
+  browserName,
+}) => {
+  await page.goto("/nl/gallery");
+  await assertGalleryTabOrder(page, browserName);
+  await page.getByLabel("Room width (cm)").evaluate((input) => {
+    input.tabIndex = -1;
+  });
+  await expect(assertGalleryTabOrder(page, browserName)).rejects.toThrow(
+    /Room width/,
+  );
 });

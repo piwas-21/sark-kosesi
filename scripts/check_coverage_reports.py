@@ -5,7 +5,7 @@ import json
 from pathlib import Path
 
 from check_app_coverage import check
-from rust_coverage import validate
+from rust_coverage import validate, validate_lcov
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -13,7 +13,9 @@ ROOT = Path(__file__).resolve().parents[1]
 def main():
     validate(json.loads((ROOT / "coverage/rust-stable.json").read_text()), ROOT, branches=False)
     rust = ROOT / "coverage/rust.json"
-    results = validate(json.loads(rust.read_text()), ROOT)
+    document = json.loads(rust.read_text())
+    results = validate(document, ROOT)
+    validate_lcov((ROOT / "coverage/rust.lcov").read_text(), document, ROOT)
     for result in results:
         print(json.dumps(result))
     typescript = ROOT / "coverage/typescript/lcov.info"

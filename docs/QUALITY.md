@@ -69,6 +69,12 @@ as `(0, 0)`, never 100%. Those packages additionally require >=95% region covera
 Missing branch counters still fail. This compiler limitation remains explicit;
 negative tests cover every locale arm and database failure/corruption outcome.
 
+Keyboard assertions traverse each destination with keys and verify disabled
+controls are skipped in both directions. A negative control removes a field from
+Tab order and must fail at that field. macOS WebKit uses Apple's documented
+[Option-Tab traversal](https://support.apple.com/en-gb/guide/safari/cpsh003/mac);
+Linux CI uses Tab. This does not replace manual Safari/assistive-technology acceptance.
+
 The P1 browser scope is the authenticated, noindex, read-only preview. The gallery,
 locale/theme and fixture catalogue run on Chromium/Firefox/WebKit; Lighthouse
 uses the production build for home/detail/gallery and k6 runs the isolated

@@ -56,3 +56,83 @@ def validate(document, root, branches=True):
                 raise ValueError(f"Rust {name} {kind} evidence below {minimum}%")
         results.append({"package": name, "counts": totals})
     return results
+
+
+def validate_lcov(text, document, root):
+    """Check the Sonar import against native counters, preserving LLVM semantics."""
+    native = {
+        Path(item["filename"]).resolve(): item["summary"]
+        for unit in document.get("data", [])
+        for item in unit.get("files", [])
+    }
+    records, current = {}, None
+    for line in text.splitlines():
+        if line.startswith("SF:"):
+            path = (root / line[3:]).resolve()
+            if current is not None or path in records or path not in native or not path.is_file():
+                raise ValueError("Unrelated, duplicate or incomplete Rust LCOV source")
+            current = {"path": path, "lines": {}, "branches": {}, "totals": {}}
+        elif line == "end_of_record":
+            if current is None:
+                raise ValueError("Rust LCOV record has no source")
+            records[current["path"]] = current
+            current = None
+        elif line.startswith(("DA:", "BRDA:", "LF:", "LH:", "BRF:", "BRH:")):
+            if current is None:
+                raise ValueError("Rust LCOV data has no source")
+            key, value = line.split(":", 1)
+            parts = value.split(",")
+            if key == "DA":
+                if len(parts) not in (2, 3):
+                    raise ValueError("Invalid Rust LCOV line")
+                number, hits = int(parts[0]), int(parts[1])
+                if number in current["lines"] or hits < 0:
+                    raise ValueError("Duplicate or invalid Rust LCOV line")
+                current["lines"][number] = hits
+            elif key == "BRDA":
+                if len(parts) != 4:
+                    raise ValueError("Invalid Rust LCOV branch")
+                identity = tuple(int(part) for part in parts[:3])
+                hits = 0 if parts[3] == "-" else int(parts[3])
+                if (
+                    identity in current["branches"]
+                    or hits < 0
+                    or any(value < 0 for value in identity)
+                ):
+                    raise ValueError("Duplicate or invalid Rust LCOV branch")
+                current["branches"][identity] = hits
+            else:
+                if key in current["totals"] or not value.isdecimal():
+                    raise ValueError("Duplicate or invalid Rust LCOV total")
+                current["totals"][key] = int(value)
+    if current is not None or not records:
+        raise ValueError("Missing or incomplete Rust LCOV import")
+    sources = {
+        path
+        for name in ("domain", "application", "infrastructure", "api", "worker")
+        for path in (root / f"crates/{name}/src").rglob("*.rs")
+    }
+    if not sources or not sources <= records.keys():
+        raise ValueError("Rust LCOV import omits maintained source")
+    for path, record in records.items():
+        summary = native[path]
+        lines, covered_lines = counter(summary, "lines")
+        branches, covered_branches = counter(summary, "branches")
+        expected = {"LF": lines, "LH": covered_lines, "BRF": branches, "BRH": covered_branches}
+        if record["totals"] != expected:
+            raise ValueError("Rust LCOV/native coverage summaries disagree")
+        maximum = len(path.read_text().splitlines())
+        locations = [*record["lines"], *(key[0] for key in record["branches"])]
+        if not record["lines"] or any(number < 1 or number > maximum for number in locations):
+            raise ValueError("Rust LCOV line records missing or outside source")
+        if (
+            len(record["lines"]) > lines
+            or sum(value > 0 for value in record["lines"].values()) > covered_lines
+        ):
+            raise ValueError("Rust LCOV line population exceeds native summaries")
+        if (
+            len(record["branches"]) != branches
+            or sum(value > 0 for value in record["branches"].values()) != covered_branches
+        ):
+            raise ValueError("Rust LCOV branch population differs from native evidence")
+    return len(sources)
