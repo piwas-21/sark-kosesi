@@ -2,6 +2,9 @@ import { render, screen, fireEvent, waitFor } from "@testing-library/react";
 import { it, expect, vi } from "vitest";
 import type { ReactNode } from "react";
 const push = vi.hoisted(() => vi.fn());
+vi.mock("next/font/local", () => ({
+  default: () => ({ variable: "fixture-font" }),
+}));
 vi.mock("next/navigation", () => ({
   useRouter: () => ({ push }),
   usePathname: () => "/nl/products/courtyard-demo",

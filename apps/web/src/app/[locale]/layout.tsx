@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import localFont from "next/font/local";
 import { headers } from "next/headers";
 import { notFound } from "next/navigation";
 import { Suspense, type ReactNode } from "react";
@@ -8,6 +9,20 @@ import { Preferences } from "../../components/preferences";
 import { direction, isLocale, languageTag } from "../../lib/locale";
 import { themeBootstrap } from "../../lib/theme";
 import "../globals.css";
+const displayFont = localFont({
+  src: "../../../public/fonts/bricolage-bold.woff",
+  weight: "700",
+  display: "swap",
+  variable: "--font-display",
+  preload: true,
+});
+const bodyFont = localFont({
+  src: "../../../public/fonts/dm-sans.woff",
+  weight: "400",
+  display: "swap",
+  variable: "--font-body",
+  preload: true,
+});
 export const dynamic = "force-dynamic";
 export const metadata: Metadata = {
   title: "Dicle design preview",
@@ -27,6 +42,7 @@ export default async function Layout({
   const nonce = (await headers()).get("x-nonce") ?? undefined;
   return (
     <html
+      className={`${displayFont.variable} ${bodyFont.variable}`}
       lang={languageTag(locale)}
       dir={direction(locale)}
       suppressHydrationWarning

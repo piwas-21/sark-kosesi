@@ -15,11 +15,18 @@ const base = process.env.WEB_BASE_URL;
 if (!base || !process.env.PREVIEW_TOKEN)
   throw new Error("Owned app fixture required");
 const authorization = `Basic ${Buffer.from(`preview:${process.env.PREVIEW_TOKEN}`).toString("base64")}`;
+const database = JSON.parse(
+  await readFile(".local/evidence/postgres-fixture.json", "utf8"),
+);
+assert.equal(database.catalogueItems, 1);
+assert.equal(database.translations, 7);
+assert.ok(database.databaseBytes > 0);
+const evidence = [];
+await mkdir(".local/evidence", { recursive: true });
 const browser = await chromium.launch({
   headless: true,
   args: [`--remote-debugging-port=${debuggingPort}`],
 });
-const evidence = [];
 try {
   for (const path of ["/nl", "/nl/products/courtyard-demo", "/nl/gallery"]) {
     const reports = [];
@@ -33,6 +40,22 @@ try {
       });
       assert.ok(report?.lhr);
       reports.push(report.lhr);
+      const diagnostics = {
+        path,
+        run,
+        performance: 100 * (report.lhr.categories.performance?.score ?? 0),
+        lcpMs: report.lhr.audits["largest-contentful-paint"]?.numericValue,
+        tbtMs: report.lhr.audits["total-blocking-time"]?.numericValue,
+        cls: report.lhr.audits["cumulative-layout-shift"]?.numericValue,
+        fcpMs: report.lhr.audits["first-contentful-paint"]?.numericValue,
+        lcpBreakdown: report.lhr.audits["lcp-breakdown-insight"]?.details,
+        lcpDiscovery: report.lhr.audits["lcp-discovery-insight"]?.details,
+        warnings: report.lhr.runWarnings,
+      };
+      await writeFile(
+        `.local/evidence/lighthouse-${path.replaceAll("/", "_")}-${run}.json`,
+        JSON.stringify(diagnostics, null, 2),
+      );
     }
     const median = (values) =>
       values.sort((a, b) => a - b)[Math.floor(values.length / 2)];
@@ -45,13 +68,22 @@ try {
       median(
         reports.map((report) => report.audits[id]?.numericValue ?? Infinity),
       );
+    console.log(
+      JSON.stringify({
+        path,
+        performance,
+        lcpMs: metric("largest-contentful-paint"),
+        tbtMs: metric("total-blocking-time"),
+        cls: metric("cumulative-layout-shift"),
+      }),
+    );
     assert.ok(
       performance >= budgets.lab.lighthousePerformance,
       `${path} performance ${performance}`,
     );
     assert.ok(
       metric("largest-contentful-paint") <= budgets.lab.lcpMs,
-      `${path} LCP`,
+      `${path} LCP ${metric("largest-contentful-paint")}ms`,
     );
     assert.ok(
       metric("total-blocking-time") <= budgets.lab.tbtMs,
@@ -146,6 +178,7 @@ await writeFile(
   JSON.stringify(
     {
       scope: "P1 preview production build",
+      database,
       revision: process.env.ANALYSIS_REVISION ?? "uncommitted-local-run",
       hardware: {
         cpu: os.cpus()[0]?.model,

@@ -72,7 +72,7 @@ def scan_current_source(binary):
     # Export Git's source inventory: ignored local runtime/build secrets are not
     # repository source. Force-tracked ignored files are still scanned here and
     # in history; no new global allowlist excludes compiled application bundles.
-    with tempfile.TemporaryDirectory(prefix="sark-secrets-", dir="/tmp") as temporary:
+    with tempfile.TemporaryDirectory(prefix="sark-secrets-") as temporary:
         directory = Path(temporary)
         source = directory / "source"
         source.mkdir()

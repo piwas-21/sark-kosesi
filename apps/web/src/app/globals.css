@@ -155,15 +155,3 @@ footer {
     transition-duration: 0.01ms !important;
   }
 }
-@font-face {
-  font-family: "Bricolage Grotesque";
-  src: url("/fonts/bricolage-bold.woff") format("woff");
-  font-display: swap;
-  font-weight: 700;
-}
-@font-face {
-  font-family: "DM Sans";
-  src: url("/fonts/dm-sans.woff") format("woff");
-  font-display: swap;
-  font-weight: 400;
-}

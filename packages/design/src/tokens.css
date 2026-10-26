@@ -11,8 +11,8 @@
   --focus: #8f3040;
   --forest: #153d31;
   --pistachio: #e4ecb3;
-  --display: "Bricolage Grotesque", "Avenir Next", sans-serif;
-  --body: "DM Sans", "Avenir Next", Arial, sans-serif;
+  --display: var(--font-display), "Avenir Next", sans-serif;
+  --body: var(--font-body), "Avenir Next", Arial, sans-serif;
   color-scheme: light;
 }
 html[data-theme="dark"] {

@@ -50,7 +50,7 @@ npm run test:browser
 
 DB commands own a disposable digest-pinned PostgreSQL container. Alternatively set
 `P1_POSTGRES_BIN` to a local PostgreSQL binary directory; the harness creates a
-private temporary Unix-socket cluster and removes only that cluster afterwards.
+private temporary loopback-only cluster with generated SCRAM credentials and removes only that cluster afterwards.
 Existing DATABASE_URL values are replaced by this owned test environment. Browser
 commands start and stop their own authenticated API/web processes. Visual checks
 require manually approved screenshots; never use automatic baseline updates to

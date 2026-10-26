@@ -4,6 +4,7 @@
 import argparse
 import os
 import secrets
+import socket
 import subprocess
 import tempfile
 import time
@@ -23,8 +24,14 @@ def run(*args, **kwargs):
 
 
 def native_cluster(directory, binaries):
-    data, sockets = directory / "data", directory / "socket"
-    sockets.mkdir(mode=0o700)
+    data = directory / "data"
+    password = secrets.token_urlsafe(32)
+    credential = directory / "password"
+    credential.write_text(password)
+    credential.chmod(0o600)
+    with socket.socket() as listener:
+        listener.bind(("127.0.0.1", 0))
+        port = listener.getsockname()[1]
     run(
         str(binaries / "initdb"),
         "-D",
@@ -32,7 +39,9 @@ def native_cluster(directory, binaries):
         "-U",
         "p1_test",
         "-A",
-        "trust",
+        "scram-sha-256",
+        "--pwfile",
+        str(credential),
         "--no-locale",
         "--encoding=UTF8",
     )
@@ -43,10 +52,36 @@ def native_cluster(directory, binaries):
         "-l",
         str(directory / "postgres.log"),
         "-o",
-        f"-c listen_addresses='' -k {sockets} -p 56541",
+        f"-c listen_addresses=127.0.0.1 -c unix_socket_directories='' -p {port}",
         "start",
     )
-    return f"postgresql://p1_test@localhost/postgres?host={sockets}&port=56541"
+    negative = subprocess.run(
+        [
+            str(binaries / "psql"),
+            "--host",
+            "127.0.0.1",
+            "--port",
+            str(port),
+            "--username",
+            "p1_test",
+            "--dbname",
+            "postgres",
+            "--no-password",
+            "--command",
+            "SELECT 1",
+        ],
+        env={
+            **{key: value for key, value in os.environ.items() if not key.startswith("PG")},
+            "PGPASSWORD": password + "-invalid",
+        },
+        capture_output=True,
+        text=True,
+        timeout=10,
+    )
+    if negative.returncode == 0 or "password authentication failed" not in negative.stderr:
+        raise ValueError("Native PostgreSQL authentication negative control failed")
+    credential.unlink()
+    return f"postgresql://p1_test:{password}@127.0.0.1:{port}/postgres"
 
 
 def docker_cluster(name):
@@ -89,11 +124,15 @@ def main():
     (ROOT / ".local").mkdir(exist_ok=True)
     name = "sark-p1-" + secrets.token_hex(8)
     binaries = Path(os.environ["P1_POSTGRES_BIN"]) if os.environ.get("P1_POSTGRES_BIN") else None
-    with tempfile.TemporaryDirectory(prefix="sark-p1-pg-", dir="/tmp") as temporary:
+    with tempfile.TemporaryDirectory(prefix="sark-p1-pg-") as temporary:
         directory = Path(temporary)
         try:
             database = native_cluster(directory, binaries) if binaries else docker_cluster(name)
-            environment = {**os.environ, "DATABASE_URL": database, "APP_ENV": "test"}
+            environment = {
+                **{key: value for key, value in os.environ.items() if not key.startswith("PG")},
+                "DATABASE_URL": database,
+                "APP_ENV": "test",
+            }
             result = subprocess.run(command, cwd=ROOT, env=environment, check=False)
             return result.returncode
         finally:
