@@ -3,7 +3,7 @@
   "humanApproved": true,
   "reviewer": "User in Codex chat 01a178f3-15f8-79a3-978a-10e42cb5628c",
   "reviewedAt": "2026-10-26T19:51:57.347629+00:00",
-  "evidence": "The user explicitly answered \"Approve these baselines\" to the review request for all 108 CI screenshots from run40386296489, artifact12680139846, head4b542693483edd94a0b856434c62ce0713ce92bf. Question call_d8d0cfde020843dd9dddb3494cda9732. The gallery was served locally and saved under outputs/p1-visual-review. This records visual regression baselines for the private draft preview; production remains disabled.",
+  "evidence": "The user explicitly answered \"Approve these baselines\" to the review request for all 108 CI screenshots from run 40386296489, artifact 12680139846, revision 4b542693483edd94a0b856434c62ce0713ce92bf. Question call_d8d0cfde020843dd9dddb3494cda9732. The gallery was served locally and saved under outputs/p1-visual-review. This records visual regression baselines for the private draft preview; production remains disabled.",
   "sourceSha256": "0c205e328fa596a7e467e38ce3860aa076b962e66f8a49a0929f1011f1e58260",
   "images": {
     "tests/application/baselines/chromium/courtyard-ar-dark-1280.png": "88b30fe9936c564d39dd197b8531cf669de7f2a65e184da1c4de275c1d981cf9",

@@ -5,9 +5,9 @@
 The read-only Rust/SQLx catalogue, migrations, typed contracts and courtyard
 Next.js shells are implemented on an owned feature branch. The first application
 PR activates real source/coverage/audit, PostgreSQL, component/browser/accessibility,
-visual, performance and discovery gates together. Application CI, independent
-review and manual visual-baseline approval must pass before merging; local test
-results do not establish this exit evidence.
+visual, performance and discovery gates together. The initial visual baselines
+have user approval. Current-revision application CI and independent review must
+still pass before merging; local test results do not establish this exit evidence.
 
 Next work: finish [P1 acceptance](docs/IMPLEMENTATION.md), then P2 catalogue/BOM
 and stock. P0 inputs remain pending. All seven languages are draft previews,
