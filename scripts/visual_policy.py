@@ -10,7 +10,12 @@ def source_digest(root):
         paths.extend(path for path in (root / directory).rglob("*") if path.is_file())
     paths.extend(
         root / name
-        for name in ("tests/application/browser.spec.mjs", "playwright.application.config.mjs")
+        for name in (
+            "tests/application/browser.spec.mjs",
+            "tests/application/capture.mjs",
+            "tests/application/visual-context.mjs",
+            "playwright.application.config.mjs",
+        )
     )
     digest = hashlib.sha256()
     for path in sorted(paths):

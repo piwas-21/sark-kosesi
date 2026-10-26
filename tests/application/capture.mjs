@@ -1,6 +1,7 @@
 // Initial candidates for human review; this never updates or passes the visual gate.
 import { chromium, firefox, webkit } from "@playwright/test";
 import { mkdir, writeFile } from "node:fs/promises";
+import { visualContext } from "./visual-context.mjs";
 const base = process.env.WEB_BASE_URL;
 const token = process.env.PREVIEW_TOKEN;
 if (!base || !token) throw new Error("Owned app fixture required");
@@ -22,10 +23,8 @@ for (const [name, type] of Object.entries({ chromium, firefox, webkit })) {
         for (const locale of surface.locales)
           for (const theme of ["light", "dark"]) {
             const context = await browser.newContext({
-              deviceScaleFactor: 1,
-              viewport: { width, height: width === 390 ? 844 : 900 },
+              ...visualContext({ width, height: width === 390 ? 844 : 900 }),
               httpCredentials: { username: "preview", password: token },
-              reducedMotion: "reduce",
             });
             const page = await context.newPage();
             await page.goto(`${base}/${locale}${surface.path}`);

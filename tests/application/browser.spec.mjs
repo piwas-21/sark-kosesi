@@ -1,5 +1,6 @@
 import { test, expect } from "@playwright/test";
 import AxeBuilder from "@axe-core/playwright";
+import { visualContext } from "./visual-context.mjs";
 const locales = ["nl", "de", "fr", "en", "ar", "tr", "ku"];
 async function assertGalleryTabOrder(page, browserName) {
   const forward =
@@ -101,29 +102,30 @@ for (const viewport of [
   { width: 1280, height: 900 },
   { width: 390, height: 844 },
 ]) {
-  for (const surface of [
-    { name: "courtyard", path: "", locales: ["nl", "ar"] },
-    { name: "gallery", path: "/gallery", locales },
-  ]) {
-    for (const locale of surface.locales)
-      for (const theme of ["light", "dark"]) {
-        test(`@visual ${surface.name} ${locale} ${theme} ${viewport.width}`, async ({
-          page,
-        }) => {
-          await page.setViewportSize(viewport);
-          await page.emulateMedia({ reducedMotion: "reduce" });
-          await page.goto(`/${locale}${surface.path}`);
-          await page.getByLabel("Theme").selectOption(theme);
-          if (surface.name === "gallery")
-            await page.getByLabel("Room width (cm)").focus();
-          await page.evaluate(() => document.fonts.ready);
-          await expect(page).toHaveScreenshot(
-            `${surface.name}-${locale}-${theme}-${viewport.width}.png`,
-            { fullPage: true, animations: "disabled" },
-          );
-        });
-      }
-  }
+  test.describe(`${viewport.width}px visual context`, () => {
+    test.use(visualContext(viewport));
+    for (const surface of [
+      { name: "courtyard", path: "", locales: ["nl", "ar"] },
+      { name: "gallery", path: "/gallery", locales },
+    ]) {
+      for (const locale of surface.locales)
+        for (const theme of ["light", "dark"]) {
+          test(`@visual ${surface.name} ${locale} ${theme} ${viewport.width}`, async ({
+            page,
+          }) => {
+            await page.goto(`/${locale}${surface.path}`);
+            await page.getByLabel("Theme").selectOption(theme);
+            if (surface.name === "gallery")
+              await page.getByLabel("Room width (cm)").focus();
+            await page.evaluate(() => document.fonts.ready);
+            await expect(page).toHaveScreenshot(
+              `${surface.name}-${locale}-${theme}-${viewport.width}.png`,
+              { fullPage: true, animations: "disabled" },
+            );
+          });
+        }
+    }
+  });
 }
 test("@security auth, private cache, CSP and unavailable mutations", async ({
   page,

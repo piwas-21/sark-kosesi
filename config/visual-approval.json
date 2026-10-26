@@ -4,7 +4,7 @@
   "reviewer": "User in Codex chat 01a178f3-15f8-79a3-978a-10e42cb5628c",
   "reviewedAt": "2026-10-26T19:51:57.347629+00:00",
   "evidence": "The user explicitly answered \"Approve these baselines\" to the review request for all 108 CI screenshots from run 40386296489, artifact 12680139846, revision 4b542693483edd94a0b856434c62ce0713ce92bf. Question call_d8d0cfde020843dd9dddb3494cda9732. The gallery was served locally and saved under outputs/p1-visual-review. This records visual regression baselines for the private draft preview; production remains disabled.",
-  "sourceSha256": "9f500707b7ede34b8597dfe4a0ff20cf16fd0c01532efd634890942731103c10",
+  "sourceSha256": "4704dbcd9e02c7bb55982022d9dc606d12e1116ece3d41d4a1cf7195db7c5661",
   "images": {
     "tests/application/baselines/chromium/courtyard-ar-dark-1280.png": "88b30fe9936c564d39dd197b8531cf669de7f2a65e184da1c4de275c1d981cf9",
     "tests/application/baselines/chromium/courtyard-ar-dark-390.png": "71ce11756a758c17887778b3e5a8cfe17f2caedbc924089147a7fd74f424e270",
@@ -116,10 +116,10 @@
     "tests/application/baselines/webkit/gallery-tr-light-390.png": "1772b336723f19021f4f50e50b1d5cb47ebb2e79fdd4da67a3c9308bde07db5a"
   },
   "sourceBindingCorrection": {
-    "recordedAt": "2026-10-26T20:23:28.194298+00:00",
+    "recordedAt": "2026-10-26T20:27:55.896739+00:00",
     "originalSourceSha256": "0c205e328fa596a7e467e38ce3860aa076b962e66f8a49a0929f1011f1e58260",
     "originalApprovalRevision": "56662e0b975476005df74d3cb97080c1f80a63c7",
-    "reason": "Comparison-only environment correction: original candidates used default browser contexts at DPR 1. Desktop Safari test emulation used DPR 2 and different UA/screen defaults. Comparison now uses the same native browser defaults and explicit DPR 1. All three engines and all 108 cases remain; no thresholds or approved image bytes changed.",
+    "reason": "Comparison-only environment correction: original candidates used native browser defaults at DPR 1. Desktop Safari test emulation used DPR 2 and different UA/screen defaults. Capture and comparison now share a single viewport/screen/DPR 1/reduced-motion factory and native browser engines. All three engines and all 108 cases remain; no thresholds or approved image bytes changed. The capture and factory are included in the binding so later harness changes fail closed.",
     "approvalScope": "Retains the user's existing approval of the same 108 images. Original reviewer, reviewedAt and evidence are unchanged. This is not a new human approval. Application UI/assets are byte-identical. Independent code review and successful Linux comparison remain required."
   }
 }

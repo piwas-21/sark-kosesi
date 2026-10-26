@@ -15,6 +15,8 @@ class VisualApproval(unittest.TestCase):
         self.root = Path(self.temp.name)
         for name in (
             "tests/application/browser.spec.mjs",
+            "tests/application/capture.mjs",
+            "tests/application/visual-context.mjs",
             "playwright.application.config.mjs",
             "apps/web/src/page.tsx",
         ):
@@ -61,3 +63,17 @@ class VisualApproval(unittest.TestCase):
         image.write_bytes(b"changed")
         with self.assertRaisesRegex(ValueError, "screenshot missing/changed"):
             validate(self.approval, self.root)
+
+    def test_capture_and_comparison_environment_changes_invalidate_binding(self):
+        for name in (
+            "tests/application/browser.spec.mjs",
+            "tests/application/capture.mjs",
+            "tests/application/visual-context.mjs",
+            "playwright.application.config.mjs",
+        ):
+            path = self.root / name
+            original = path.read_text()
+            path.write_text("changed capture/comparison environment")
+            with self.subTest(name=name), self.assertRaisesRegex(ValueError, "source changed"):
+                validate(self.approval, self.root)
+            path.write_text(original)
