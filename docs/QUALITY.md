@@ -44,6 +44,8 @@ No fake commands or passing jobs before code exists. Pin the following free tool
 | `npm run test:discovery`                     | Served HTML, sitemap, canonical/hreflang, product/feed and negative controls in DISCOVERY                                                                                                                     |
 | `npm run test:performance`                   | Production-build Lighthouse CI and payload budgets; k6 isolated API/load fixture in performance config                                                                                                        |
 
+Rust line/region coverage runs on the pinned stable release. Rust branch instrumentation currently requires nightly in cargo-llvm-cov: P1 must pin a separate tested nightly toolchain for the branch-coverage job and run `cargo +<pinned-nightly> llvm-cov --branch`. Production builds remain on stable. Missing branch data fails the coverage gate; do not report it as 100% or silently substitute line coverage. See the [upstream coverage requirements](https://github.com/taiki-e/cargo-llvm-cov#readme).
+
 Critical cases: last shared foam component contested by two orders; covers-only reserves no foam; payment-create timeout and late paid after expiry; duplicated/reordered webhooks; partial refund/tax/discount rounding; coupon exhaustion; expired guest token; cross-customer access; worker crash after provider acceptance; duplicate restock mail; incomplete translation/private-cache leak. Mutation testing on financial/authorization invariants must demonstrate that the test detects the intended defect, not just a textual mutation.
 
 ## Accessibility and performance acceptance

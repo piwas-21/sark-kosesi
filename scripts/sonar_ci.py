@@ -125,6 +125,7 @@ def verify():
         )
     for hotspot in hotspots.get("hotspots", []):
         print(json.dumps({k: hotspot.get(k) for k in ("key", "component", "line", "message")}))
+    print(json.dumps({"qualityGate": gate.get("projectStatus")}))
     evidence = validate_analysis(
         component,
         analyses,

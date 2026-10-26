@@ -95,6 +95,15 @@ class Assets(HTMLParser):
                 local_target(self.source, values[key])
 
 
+def placeholder_command(command):
+    return (
+        not command
+        or re.search(r"^echo\b", command) is not None
+        or "passWithNoTests" in command
+        or "exit 0" in command
+    )
+
+
 def check_stage(config, package):
     files = [
         p
@@ -109,11 +118,9 @@ def check_stage(config, package):
     if config["stage"] == "application":
         if not any(p.suffix == ".rs" for p in production):
             raise ValueError("Application stage requires Rust source")
-        if not production:
-            raise ValueError("Application stage has no application files")
         for name in APPLICATION_SCRIPTS:
             command = package.get("scripts", {}).get(name, "")
-            if not command or re.search(r"(^echo\b|passWithNoTests|exit 0)", command):
+            if placeholder_command(command):
                 raise ValueError(f"Missing real application command: {name}")
         if "Application gate" not in config["requiredChecks"]:
             raise ValueError("Application gate must be required in GitHub and CI")

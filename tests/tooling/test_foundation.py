@@ -3,7 +3,13 @@ import unittest
 from pathlib import Path
 from unittest.mock import patch
 
-from check_foundation import APPLICATION_SCRIPTS, check_stage, check_workflow, local_target
+from check_foundation import (
+    APPLICATION_SCRIPTS,
+    check_stage,
+    check_workflow,
+    local_target,
+    placeholder_command,
+)
 
 
 class Foundation(unittest.TestCase):
@@ -14,6 +20,14 @@ class Foundation(unittest.TestCase):
         self.patcher = patch("check_foundation.ROOT", self.root)
         self.patcher.start()
         self.addCleanup(self.patcher.stop)
+
+    def test_placeholder_commands_cannot_claim_application_success(self):
+        for command in ("", "echo success", "vitest --passWithNoTests", "cargo test; exit 0"):
+            with self.subTest(command=command):
+                self.assertTrue(placeholder_command(command))
+        for command in ("cargo clippy --locked", "node tests/checks.mjs", "vitest run"):
+            with self.subTest(command=command):
+                self.assertFalse(placeholder_command(command))
 
     def test_crates_cannot_sneak_through_foundation_stage(self):
         config = {"stage": "foundation"}
