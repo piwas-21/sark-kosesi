@@ -29,7 +29,7 @@ P1 acceptance activates application CI; it does not activate payment or establis
    remains P3; late payment must attempt explicit atomic reallocation. Prepacked
    stock still needs explicit kit conversion without counting contents twice.
 2. Add materials, measured specifications, media rights and reviewed translations,
-   versioned prices and publication validation. Missing P0 facts and fixture data
+   plus publication validation and activation of approved price revisions. Missing P0 facts and fixture data
    must fail publication. Apply the staff capability guard to catalogue mutations,
    retaining audit reasons and no exposed preview write route.
 3. Connect approved catalogue/availability projections to HTML and feeds, with
@@ -66,6 +66,16 @@ unrevoked/unexpired session and recent MFA attestation, with locks held through
 the operation and clock checks after lock waits. Warehouse changes require explicit confirmation; audit identity comes
 from the session. Installation has no staff authority. Actual login/MFA/session
 issuance and HTTP mutations remain P4 work; no preview token grants staff access.
+
+Draft price history now uses the catalogue capability guard. Each immutable
+revision records integer EUR minor units, a bounded evidence reference, reason
+and session-derived actor. Explicit confirmation and the expected prior revision
+are required. Effect keys bind the complete request, including actor; exact
+retries return the original revision, while conflicting or stale edits fail.
+All writers serialize on the variant; stale repeatable-read imports must retry.
+Authority is checked again after lock waits before commit or receipt return.
+No price history is seeded, activated, published or substituted into the preview.
+Evidence references are records for review, not proof of factual approval.
 
 ## Next session prompt
 
