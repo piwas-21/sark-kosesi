@@ -75,10 +75,15 @@ BEGIN
     UPDATE catalogue_variants SET stock_policy=stock_policy WHERE sku=NEW.sku;
     SELECT * INTO draft FROM catalogue_translation_revisions WHERE sku=NEW.sku AND locale=NEW.locale AND revision=NEW.translation_revision;
     SELECT max(revision) INTO current_translation FROM catalogue_translation_revisions WHERE sku=NEW.sku AND locale=NEW.locale;
-    IF draft.actor IS NULL OR NEW.actor=draft.actor OR NEW.translation_revision IS DISTINCT FROM current_translation THEN
-        RAISE EXCEPTION 'Review requires current copy and an independent actor' USING ERRCODE='23514';
+    IF draft.actor IS NULL OR NEW.actor=draft.actor THEN
+        RAISE EXCEPTION 'Review requires an independent actor' USING ERRCODE='23514';
     END IF;
-    PERFORM assert_translation_source(NEW.sku,NEW.locale,draft.specification_revision,draft.source_revision);
+    IF NEW.decision='approved' THEN
+        IF NEW.translation_revision IS DISTINCT FROM current_translation THEN
+            RAISE EXCEPTION 'Approval requires current copy' USING ERRCODE='23514';
+        END IF;
+        PERFORM assert_translation_source(NEW.sku,NEW.locale,draft.specification_revision,draft.source_revision);
+    END IF;
     SELECT coalesce(max(revision),0) INTO current_review FROM catalogue_translation_reviews WHERE sku=NEW.sku AND locale=NEW.locale AND translation_revision=NEW.translation_revision;
     IF current_review=2147483647 OR NEW.revision<>current_review+1 THEN
         RAISE EXCEPTION 'Review revision must follow current history' USING ERRCODE='23514';

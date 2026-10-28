@@ -55,16 +55,17 @@ pub async fn record_review(
     }
     let (current_translation,current_review):(Option<i32>,i32)=sqlx::query_as("SELECT (SELECT max(revision) FROM catalogue_translation_revisions WHERE sku=$1 AND locale=$2),(SELECT coalesce(max(revision),0) FROM catalogue_translation_reviews WHERE sku=$1 AND locale=$2 AND translation_revision=$3)")
         .bind(request.sku).bind(request.locale.internal()).bind(request.translation_revision).fetch_one(&mut *access.tx).await?;
-    if current_translation != Some(request.translation_revision)
-        || current_review != request.expected_review_revision
-        || !current_source(
-            &mut access.tx,
-            request.sku,
-            request.locale,
-            draft.specification_revision,
-            draft.source_revision,
-        )
-        .await?
+    if current_review != request.expected_review_revision
+        || (request.decision == TranslationDecision::Approved
+            && (current_translation != Some(request.translation_revision)
+                || !current_source(
+                    &mut access.tx,
+                    request.sku,
+                    request.locale,
+                    draft.specification_revision,
+                    draft.source_revision,
+                )
+                .await?))
     {
         return Err(TranslationError::Conflict);
     }

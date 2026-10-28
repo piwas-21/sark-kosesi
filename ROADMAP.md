@@ -51,8 +51,9 @@ product/permission/SKU approval follows from decoding.
 Catalogue copy now has immutable drafts tied to specification revisions and, for
 non-Dutch locales, an exact Dutch source revision. A separate catalogue-review
 grant and a different account are required to record approval/rejection with
-review and qualification references. Source changes block stale new reviews;
-exact historical retries do not reactivate old decisions. These records do not
+review and qualification references. Source changes block stale new approvals;
+independent rejection can withdraw a historical approval after newer drafts exist.
+Exact historical retries do not reactivate old decisions. These records do not
 provide actual native-reader acceptance or activate public copy.
 
 Next work: factual/image review, publication validation, guarded catalogue

@@ -127,7 +127,8 @@ approval/rejection records require a separate `catalogue.review` grant, a differ
 actor from the draft author, explicit confirmation, review evidence and a
 qualification reference. Installation grants no authority or approval.
 Variant serialization protects source/version checks across edits and reviews;
-stale specification, source or target copy cannot receive a new review. Exact
+stale specification, source or target copy cannot receive a new approval.
+Independent rejection can withdraw historical copy despite newer drafts. Exact
 historical retries return their original receipt without changing the latest
 decision. Reads revalidate stored copy, source content and references. All new
 operations consume the existing recent-MFA/session guard and check authority at

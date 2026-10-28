@@ -137,7 +137,10 @@ author and supply evidence and qualification references with confirmation/reason
 These are auditable attestations, not automated proof of linguistic accuracy or
 qualification. Real native-reader acceptance remains P0 evidence. Review decisions
 are immutable approval/rejection history; the latest decision for that exact draft
-applies. A fresh decision requires current specification, source and target copy.
+applies. New approvals require current specification, source and target copy.
+An independent reviewer can reject historical copy after newer drafts exist,
+allowing withdrawal of an older approval. Every decision retains optimistic
+review-version checks and fresh authority.
 Historical retries preserve their original receipt and cannot restore a withdrawn
 approval. Effect identity includes actor, target/version, decision, references and
 reason. Authority locks span effects and final clock checks.

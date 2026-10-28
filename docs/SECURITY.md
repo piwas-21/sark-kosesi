@@ -80,7 +80,8 @@ Copy review uses a separate, unseeded `catalogue.review` grant and rejects the
 target draft's own author even if that account holds both grants. The recent-MFA
 consumer and authority locks protect review effects and reads. Immutable decisions
 bind exact copy/source/specification revisions, actor, evidence and qualification
-references, with current-version and final clock checks. References are not fetched
+references, with current-version checks for approvals and final clock checks for
+every decision. Independent rejection can withdraw historical copy. References are not fetched
 and cannot establish native qualification or semantic accuracy by themselves.
 Historical replay cannot restore a later rejected decision. Corrupt copy or Dutch
 source data fails private reads/new review; public publication and invalidation

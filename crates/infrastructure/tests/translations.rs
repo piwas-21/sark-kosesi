@@ -13,6 +13,105 @@ use sqlx::{Executor, PgPool};
 include!("../../../tests/fixtures/specification.rs");
 
 #[sqlx::test(migrator = "MIGRATOR")]
+async fn historical_approvals_can_be_withdrawn_after_source_and_specification_changes(
+    pool: PgPool,
+) {
+    seed(&pool).await;
+    let author = SessionToken::from_bytes([1; 32]);
+    let reader = SessionToken::from_bytes([2; 32]);
+    let clock = FixedClock(1100);
+    let content = copy();
+    record_translation(&pool, &author, &clock, request(&content, Locale::Nl, "nl1"))
+        .await
+        .expect("source");
+    record_translation(&pool, &author, &clock, request(&content, Locale::De, "de1"))
+        .await
+        .expect("target");
+    record_review(&pool, &reader, &clock, review(Locale::Nl, "nl-approval"))
+        .await
+        .expect("old source approval");
+    record_review(&pool, &reader, &clock, review(Locale::De, "de-approval"))
+        .await
+        .expect("old target approval");
+    let mut newer = request(&content, Locale::Nl, "nl2");
+    newer.expected_revision = 1;
+    record_translation(&pool, &author, &clock, newer)
+        .await
+        .expect("newer source draft");
+    let mut facts = draft(true);
+    facts.footprint.width_mm = 1300;
+    record_specification(
+        &pool,
+        &author,
+        &clock,
+        SpecificationRequest {
+            sku: "DEMO-FILLED",
+            bom_revision: 1,
+            expected_revision: 1,
+            effect_key: "facts2",
+            draft: &facts,
+            reason: "isolated changed facts",
+            confirmed: true,
+        },
+    )
+    .await
+    .expect("new specification");
+    let mut source = request(&content, Locale::Nl, "nl3");
+    source.expected_revision = 2;
+    source.specification_revision = 2;
+    record_translation(&pool, &author, &clock, source)
+        .await
+        .expect("new fact source");
+    let mut target = request(&content, Locale::De, "de2");
+    target.expected_revision = 1;
+    target.specification_revision = 2;
+    target.source_revision = Some(3);
+    record_translation(&pool, &author, &clock, target)
+        .await
+        .expect("new target draft");
+    for (locale, old_key, withdraw_key) in [
+        (Locale::Nl, "nl-approval", "withdraw-old-nl"),
+        (Locale::De, "de-approval", "withdraw-old-de"),
+    ] {
+        let mut withdrawal = review(locale, withdraw_key);
+        withdrawal.expected_review_revision = 1;
+        withdrawal.decision = TranslationDecision::Rejected;
+        let result = record_review(&pool, &reader, &clock, withdrawal)
+            .await
+            .expect("withdraw historical approval");
+        assert_eq!((result.revision, result.replayed), (2, false));
+        assert!(
+            record_review(&pool, &reader, &clock, review(locale, old_key))
+                .await
+                .expect("old immutable receipt")
+                .replayed
+        );
+        let history = translation(&pool, &author, &clock, "DEMO-FILLED", locale, 1)
+            .await
+            .expect("historical read")
+            .expect("copy");
+        assert_eq!(
+            history.review.expect("latest historical decision").decision,
+            TranslationDecision::Rejected
+        );
+        let mut approval = review(locale, "stale-new-approval");
+        approval.expected_review_revision = 2;
+        assert!(matches!(
+            record_review(&pool, &reader, &clock, approval).await,
+            Err(TranslationError::Conflict)
+        ));
+        let mut stale = review(locale, "stale-rejection-version");
+        stale.expected_review_revision = 1;
+        stale.decision = TranslationDecision::Rejected;
+        assert!(matches!(
+            record_review(&pool, &reader, &clock, stale).await,
+            Err(TranslationError::Conflict)
+        ));
+    }
+    assert_eq!(counts(&pool).await, (5, 4));
+}
+
+#[sqlx::test(migrator = "MIGRATOR")]
 async fn bounded_effect_storage_failure_rolls_back_and_allows_an_exact_retry(pool: PgPool) {
     seed(&pool).await;
     let author = SessionToken::from_bytes([1; 32]);
