@@ -91,6 +91,36 @@ is missing. Inspection holds a share claim and evaluates licence/session time
 from one fresh authorized timestamp after lock waits. These private consumers
 are not publication/image-verification endpoints and do not activate storage.
 
+## Verified private image storage
+
+The image-ingestion adapter has an authorization/read phase, CPU-only processing,
+and a fresh authorization/write phase. The immutable registry snapshot must match
+on both sides of processing. An unforgeable internal decoded result binds actual
+SHA-256, codec, raw geometry and oriented derivative bytes; callers provide no
+verified flag. JPEG/PNG/WebP are enabled in pinned image-rs with other formats
+excluded. Animation is rejected.
+WebP RIFF sizes, chunk ranges/padding and static canvas/native geometry are checked
+without payload allocation before decoder construction or metadata access. This
+prevents declared metadata lengths from escaping the actual bounded input.
+Animation chunks are rejected even when the container's animation flag is clear.
+New encoders preserve alpha where applicable and
+exclude personal EXIF/XMP/IPTC/comments; originals stay private. Colour, visual
+quality, rights and actual SKU suitability still require P0 review.
+
+Two process-wide ingestion permits remain held through storage, and decoder
+permits also survive cancellation of an awaiting caller until CPU work finishes.
+Overload is rejected rather than queued. Input is at most 20MiB; dimensions obey the registry's 16,384-side/64Mp bounds,
+with an additional 128MiB decoded-output check. Derivatives have long-edge targets
+320/640/960 without enlargement, each at most 250KiB. Library allocation accounting
+is best-effort, so these are not a hard process-memory guarantee; P7 must measure
+capacity and enforce process resources. The private PostgreSQL storage boundary
+atomically records originals and a complete hash-bound derivative set under a
+fixed recipe. No external storage network call or decoding spans a transaction.
+Deferred complete-set checks and immutable rows reject partial commits; recipe
+identity supports future explicit processing-version expansion. Private reads
+validate stored bytes/geometry/metadata and recheck authority after CPU work.
+No public original/rendition route, image approval or automatic publication exists.
+
 ## Inventory and finance
 
 Model sellable variants separately from physical components. A configuration has a versioned bill of materials: seat/back/bolster covers and optional matching foam inserts. Covers-only does not reserve foam. Prepacked and separable stock require explicit warehouse rules; never count both kit stock and its contents as independently available.

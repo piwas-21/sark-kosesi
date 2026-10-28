@@ -59,7 +59,7 @@ async fn lock_effect(
         .await?;
     Ok(())
 }
-async fn asset(
+pub(super) async fn asset(
     tx: &mut Transaction<'_, Postgres>,
     asset_id: &str,
 ) -> Result<Option<MediaAssetDraft>, MediaError> {
