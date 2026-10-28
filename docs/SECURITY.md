@@ -86,4 +86,14 @@ and cannot establish native qualification or semantic accuracy by themselves.
 Historical replay cannot restore a later rejected decision. Corrupt copy or Dutch
 source data fails private reads/new review; public publication and invalidation
 must use validated assembled snapshots and remain unimplemented.
+
+Catalogue authoring accepts bounded, closed commands under `catalogue.manage` with
+confirmation, a supplier/source reference, a reason and final authority checks.
+Actor identity comes only from the guarded session. Canonical command/effect
+identity and immutable, complete creation events prevent silent replacement or
+partial history. Known fixtures cannot be relabelled or combined with merchant
+component pools. Candidate creation supplies no price, URL, stock or approval;
+legacy preview copy rejects merchant rows. Source references are never fetched.
+Supplier truth and publication eligibility require separate acceptance; default
+installation still creates no staff authority and production stays disabled.
 Permission, source/colour fidelity and SKU suitability remain human review inputs.
