@@ -13,8 +13,12 @@ Product families, separable variants, shared cover/foam components and sealed,
 immutable BOM revisions are implemented behind the existing read-only preview.
 The database rejects fill mismatches and serializes sealing against line edits.
 Existing P1 fixtures receive no invented BOM; prepacked stock remains unavailable.
+Physical component stock now has append-only movements, receiving/counting,
+quarantine inspection/release/disposal, reasons and actor records. The trusted
+Rust primitive serializes component changes and rejects conflicting effect-key
+retries; no warehouse HTTP operation is exposed.
 
-Next work: component stock ledger, atomic holds/expiry and quarantine under the
+Next work: atomic BOM holds, ownership, expiry and release under the
 [implementation plan](docs/IMPLEMENTATION.md), followed by publication validation,
 catalogue/warehouse permissions and projection invalidation.
 P0 inputs remain pending. All seven languages are draft previews,

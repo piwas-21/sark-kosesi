@@ -68,7 +68,8 @@ separate pinned-nightly branch run. LLVM LCOV summary line totals include async
 and macro regions that do not map one-to-one to emitted DA records; do not rewrite
 those totals to manufacture consistency. LCOV remains the Sonar import format.
 The native validator requires every owned source and populated counters, with
-85% lines / 80% instrumented branches per package and 95% for money/preview authorization. LLVM reports
+85% lines / 80% instrumented branches per package and 95% for money, inventory
+domain/stock adapter modules and preview authorization. LLVM reports
 zero instrumented branches for match-only and SQL adapter code; this is recorded
 as `(0, 0)`, never 100%. Those packages additionally require >=95% region coverage.
 Missing branch counters still fail. This compiler limitation remains explicit;
