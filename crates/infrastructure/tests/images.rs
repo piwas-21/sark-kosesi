@@ -383,6 +383,33 @@ async fn webp_metadata_ranges_are_bounded_before_processing_and_valid_orientatio
     ));
     assert_eq!(counts(&pool).await, (0, 0));
     let valid = extended_webp_with_exif();
+    let image = encoded(ImageFormat::WebP, 2, 3);
+    let mut nested = vec![0; 16];
+    nested.extend(b"EXIF");
+    nested.extend(65536_u32.to_le_bytes());
+    nested.extend([0; 16]);
+    for (id, animation_chunk) in [
+        ("hidden-frame", riff_chunk(b"ANMF", &nested)),
+        ("hidden-animation", riff_chunk(b"ANIM", &[0; 6])),
+    ] {
+        let mut payload = b"WEBP".to_vec();
+        payload.extend(riff_chunk(b"VP8X", &[0, 0, 0, 0, 1, 0, 0, 2, 0, 0]));
+        payload.extend_from_slice(&image[12..]);
+        payload.extend(animation_chunk);
+        let mut hidden = b"RIFF".to_vec();
+        hidden.extend(
+            u32::try_from(payload.len())
+                .expect("bounded fixture")
+                .to_le_bytes(),
+        );
+        hidden.extend(payload);
+        register(&pool, id, &metadata(&hidden, ImageType::Webp, 2, 3)).await;
+        assert!(matches!(
+            ingest_image(&pool, &token, &FixedClock(1100), request(id, &hidden, id)).await,
+            Err(ImageError::UnsupportedImage)
+        ));
+    }
+    assert_eq!(counts(&pool).await, (0, 0));
     register(
         &pool,
         "valid-webp-exif",

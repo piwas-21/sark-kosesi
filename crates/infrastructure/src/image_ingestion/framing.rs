@@ -36,6 +36,8 @@ pub(super) fn webp(bytes: &[u8]) -> Result<(), ImageError> {
         }
         let data = &bytes[header_end..data_end];
         match &header[..4] {
+            // The decoder inspects frame subchunks even with a clear animation flag.
+            b"ANIM" | b"ANMF" => return Err(ImageError::UnsupportedImage),
             b"VP8X" => {
                 if data.len() != 10 || canvas.is_some() || offset != 12 {
                     return Err(ImageError::InvalidImage);

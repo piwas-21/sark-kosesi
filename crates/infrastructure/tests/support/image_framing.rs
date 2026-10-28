@@ -103,4 +103,18 @@ fn static_canvas_and_native_bitstream_agree_before_any_decoder_allocation() {
         webp(&container(&[chunk(b"VP8X", &animated)])),
         Err(ImageError::UnsupportedImage)
     ));
+    let mut nested = vec![0; 16];
+    nested.extend(b"EXIF");
+    nested.extend(u32::MAX.to_le_bytes());
+    nested.extend([0; 16]);
+    for animation_chunk in [chunk(b"ANIM", &[0; 6]), chunk(b"ANMF", &nested)] {
+        assert!(matches!(
+            webp(&container(&[
+                chunk(b"VP8X", EXTENDED),
+                chunk(b"VP8L", LOSSLESS),
+                animation_chunk
+            ])),
+            Err(ImageError::UnsupportedImage)
+        ));
+    }
 }
