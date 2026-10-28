@@ -72,7 +72,9 @@ The native validator requires every owned source and populated counters, with
 domain/stock/hold adapter modules and preview authorization. The match-only hold
 SQL helper module has zero compiler-instrumented branches and requires 95% region
 coverage. The staff guard, policy, operation wrappers and draft price adapter require
-positive branch counters at the 95% critical line/branch thresholds.
+positive branch counters at the 95% critical line/branch thresholds. The draft
+specification domain policy and guarded adapter have the same positive-counter
+requirements; malformed stored JSON and logical corruption cannot bypass them.
 Zero stays explicit rather than being reported as 100%. Existing critical
 money/preview authorization still require positive branch counters. LLVM reports
 zero instrumented branches for match-only and SQL adapter code; this is recorded

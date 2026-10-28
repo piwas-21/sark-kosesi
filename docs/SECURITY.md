@@ -58,4 +58,8 @@ P4 owns those controls and P6/P7 own operational acceptance. Guarded draft price
 writes require explicit confirmation, immutable evidence/reason/actor history,
 optimistic revision checks and idempotency. Late expiry rolls back draft changes;
 even receipt replay requires current staff authority. These records never grant
-publication or validate the truth of a pricing reference.
+publication or validate the truth of a pricing reference. Specification writes use
+the same authority/confirmation/history controls. Closed typed decoding, bounded
+payloads and BOM validation protect staff reads from malformed direct imports.
+A stored measurement, material or source reference does not verify its factual
+truth or grant public use; no arbitrary reference URL is fetched.

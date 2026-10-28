@@ -5,6 +5,7 @@ pub mod bom;
 pub mod catalogue_prices;
 pub mod holds;
 pub mod runtime;
+pub mod specifications;
 pub mod staff_access;
 pub mod staff_operations;
 pub mod stock;

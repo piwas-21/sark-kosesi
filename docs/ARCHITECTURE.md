@@ -56,6 +56,22 @@ rolls back prices if authority expires during locks. This adapter adds no HTTP
 write route, publication approval, scheduled activation or advertised price.
 Existing fixture-only catalogue constraints remain in force.
 
+## Draft product specifications
+
+Each immutable specification revision references a sealed BOM and a closed typed
+payload. The domain validates exact component membership/kinds, bounded integer
+measurements/tolerances, cover composition in basis points, foam evidence, parcels
+and source/traceability references. The staff catalogue transaction records the
+session actor, confirmation, reason and expected revision; effect-key retries bind
+the full snapshot. Variant locking and a no-op write in the database trigger also
+serialize direct imports and reject stale repeatable-read history advances.
+Rust bounds the encoded payload at 64 KiB; the database additionally bounds its
+JSONB text at 128 KiB. Guarded reads treat stored JSON as untrusted, reject unknown
+fields and revalidate it against the immutable BOM before returning staff data.
+References are opaque records and are never fetched. This is draft input capture,
+not supplier verification, a public content source, fit approval or publishing.
+No installed data or HTTP mutation is added; fixture-only identities remain.
+
 ## Inventory and finance
 
 Model sellable variants separately from physical components. A configuration has a versioned bill of materials: seat/back/bolster covers and optional matching foam inserts. Covers-only does not reserve foam. Prepacked and separable stock require explicit warehouse rules; never count both kit stock and its contents as independently available.

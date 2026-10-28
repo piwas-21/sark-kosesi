@@ -34,3 +34,8 @@ compliance of a future distributed image.
 for hashing opaque 256-bit staff session tokens. Its MIT/Apache-2.0 terms are in the
 same reviewed allowlist. This is not password hashing or an MFA implementation;
 P4 still owns maintained password/MFA verification and secure session issuance.
+
+The already pinned `serde_json` is promoted from an infrastructure test dependency
+to runtime use for closed, validated specification snapshots. It adds no new
+version or hosted service; its MIT/Apache-2.0 licence remains in the existing
+reviewed Rust allowlist.

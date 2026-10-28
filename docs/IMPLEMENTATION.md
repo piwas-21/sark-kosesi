@@ -28,8 +28,8 @@ P1 acceptance activates application CI; it does not activate payment or establis
 1. Verify expiry supervision before operational stock use. Provider recovery
    remains P3; late payment must attempt explicit atomic reallocation. Prepacked
    stock still needs explicit kit conversion without counting contents twice.
-2. Add materials, measured specifications, media rights and reviewed translations,
-   plus publication validation and activation of approved price revisions. Missing P0 facts and fixture data
+2. Add media rights, reviewed translations, factual review/publication validation
+   and activation of approved price/specification revisions. Missing P0 facts and fixture data
    must fail publication. Apply the staff capability guard to catalogue mutations,
    retaining audit reasons and no exposed preview write route.
 3. Connect approved catalogue/availability projections to HTML and feeds, with
@@ -76,6 +76,18 @@ All writers serialize on the variant; stale repeatable-read imports must retry.
 Authority is checked again after lock waits before commit or receipt return.
 No price history is seeded, activated, published or substituted into the preview.
 Evidence references are records for review, not proof of factual approval.
+
+Specification drafts now snapshot a sealed BOM and its exact physical component
+membership/kinds. They retain millimetre measurements/tolerances, cover fibre
+fractions (integer basis points totalling 10000), care references, foam density
+in grams per cubic metre with firmness evidence, parcel dimensions/gross grams,
+and assembly/supplier/traceability evidence references. Input bounds are sanity
+limits, not carrier or product promises. Staff writes require catalogue authority,
+confirmation and the expected prior revision; immutable audit/effect history and
+post-wait clock checks match the price guard. Staff reads decode closed typed JSON
+and revalidate every stored snapshot. Drafts have no approval/publication state,
+no seeded measurements and no effect on the preview or stock. P0 verification,
+media/translation review and public projections remain pending.
 
 ## Next session prompt
 
