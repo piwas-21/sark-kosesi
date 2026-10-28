@@ -27,14 +27,22 @@ def validate(document, root, branches=True):
             for kind in ("lines", "regions", "branches"):
                 counter(item["summary"], kind)
             files[path] = item["summary"]
-    for name in ("crates/domain/src/lib.rs", "crates/api/src/lib.rs"):
-        summary = files.get(root / name)
+    critical = [root / "crates/domain/src/lib.rs", root / "crates/api/src/lib.rs"]
+    critical += [
+        path
+        for pattern in ("crates/*/src/inventory.rs", "crates/*/src/stock.rs")
+        for path in root.glob(pattern)
+    ]
+    for path in critical:
+        summary = files.get(path)
         if not summary:
             raise ValueError("Critical Rust source unmeasured")
         for kind in ("lines", "branches") if branches else ("lines",):
             total, covered = counter(summary, kind)
             if total <= 0 or covered * 100 < total * 95:
-                raise ValueError("Critical Rust money/authorization coverage below 95%")
+                raise ValueError(
+                    f"Critical Rust money/inventory/authorization coverage below 95%: {path.name}"
+                )
     results = []
     for name in ("domain", "application", "infrastructure", "api", "worker"):
         sources = set((root / f"crates/{name}/src").rglob("*.rs"))

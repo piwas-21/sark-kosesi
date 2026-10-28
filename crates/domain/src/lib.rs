@@ -3,6 +3,8 @@
 
 use serde::{Deserialize, Serialize};
 
+pub mod inventory;
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub enum Currency {
     EUR,

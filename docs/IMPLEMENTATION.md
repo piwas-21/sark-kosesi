@@ -25,9 +25,7 @@ P1 acceptance activates application CI; it does not activate payment or establis
 
 ## P2 work packages
 
-1. Build component stock balances and an append-only movement ledger with unique
-   effect keys, movement reasons and separate quarantine quantities. Atomically
-   reserve the exact sealed BOM revision using deterministic component locking;
+1. Atomically reserve the exact sealed BOM revision using deterministic component locking;
    cover-only configurations cannot consume foam. Prove conservation, scarcity,
    duplicate/reordered effects, rollback and overflow against isolated PostgreSQL.
 2. Add owned holds, bounded expiry and explicit release/consumption transitions;
@@ -45,6 +43,12 @@ The current component catalogue supports only separable fixture variants. Sealed
 BOMs are immutable and contain 1–64 distinct cover/foam components, each requiring
 1–10000 units. Rust reads only sealed revisions, ordered by physical component
 code. Legacy preview rows remain valid without inventing missing BOM data.
+Warehouse receiving, counting, quarantine/release and disposal now maintain
+component balances and append-only movement history in one transaction. Effect
+keys bind the full request, including actor/reason; exact retries return the
+original receipt without reapplying stock. Holds and warehouse HTTP/authenticated
+admin operations remain unimplemented. Supplier batch and prepacked procedures
+still require P0 evidence before real warehouse use.
 
 ## Next session prompt
 

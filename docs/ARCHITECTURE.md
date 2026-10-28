@@ -60,6 +60,18 @@ revisions in component-code order. Prepacked kits and non-fixture catalogue data
 remain disallowed pending their owning policies. These tables add no admin write
 endpoint and do not publish merchant facts.
 
+Warehouse movements use the deterministic `StockBalance` domain value. Receiving
+and counts change physical on-hand quantity; quarantine/release change usability;
+disposal removes inspected quarantine from physical stock. None changes reserved
+stock or implements a refund. The SQLx primitive locks one component balance,
+validates the transition and writes both balance and append-only deltas in one
+transaction, with bounded database waits. Effect keys are globally unique and bind
+component/action/quantity/actor/reason; exact replay returns the stored receipt.
+Cross-component key collisions roll back the losing balance. Ledger timestamps
+are PostgreSQL transaction audit time, never inputs to domain transitions. This
+trusted persistence primitive has no HTTP entry point; future warehouse use cases
+must supply server-authorized identity/capabilities and the P0 batch procedure.
+
 The Rust quote service computes item/discount/tax/shipping allocations in integer minor units and a single currency (EUR at launch). Persist immutable order line, bundle, price, VAT, discount, address and policy snapshots. A later catalogue edit cannot rewrite order history. Discounts have explicit eligibility, budget, per-customer limits, stacking and time-zone rules; concurrent redemption cannot exceed a limit.
 
 ## Payments and durable work

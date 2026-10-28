@@ -3,6 +3,7 @@
 
 pub mod bom;
 pub mod runtime;
+pub mod stock;
 
 use commerce_application::Locale;
 use commerce_domain::{CatalogueItem, Money};

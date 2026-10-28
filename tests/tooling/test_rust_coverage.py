@@ -36,6 +36,27 @@ class RustCoverage(unittest.TestCase):
         with self.assertRaises(ValueError):
             validate(self.document, self.root)
 
+    def test_inventory_and_stock_each_require_critical_coverage(self):
+        files = self.document["data"][0]["files"]
+        for name in ("crates/domain/src/inventory.rs", "crates/infrastructure/src/stock.rs"):
+            source = self.root / name
+            source.write_text("// critical fixture\n" * 20)
+            item = copy.deepcopy(files[0])
+            item["filename"] = str(source)
+            files.append(item)
+            self.assertEqual(len(validate(self.document, self.root)), 5)
+            for counter in ("lines", "branches"):
+                item["summary"][counter]["covered"] = 18
+                with self.assertRaisesRegex(ValueError, "Critical Rust"):
+                    validate(self.document, self.root)
+                item["summary"][counter]["covered"] = 19
+                self.assertEqual(len(validate(self.document, self.root)), 5)
+                item["summary"][counter]["covered"] = 20
+            files.pop()
+            with self.assertRaisesRegex(ValueError, "Critical Rust source unmeasured"):
+                validate(self.document, self.root)
+            source.unlink()
+
     def test_missing_stale_empty_and_inflated_coverage_fail(self):
         for change in (
             "type",
