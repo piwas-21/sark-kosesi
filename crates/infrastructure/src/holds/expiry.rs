@@ -28,6 +28,11 @@ pub async fn expire_due_holds(
     let mut batch = ExpiryBatch::default();
     for _ in 0..limit {
         let mut tx = pool.begin().await?;
+        // The eligibility recheck below must see commits after candidate selection,
+        // even if the connection's default isolation was configured differently.
+        sqlx::query("SET TRANSACTION ISOLATION LEVEL READ COMMITTED")
+            .execute(&mut *tx)
+            .await?;
         limits(&mut tx).await?;
         let candidate=sqlx::query_as::<_,StoredHold>(
             "SELECT h.* FROM stock_holds h LEFT JOIN stock_hold_expiry_failures f ON f.hold_id=h.id
@@ -38,6 +43,12 @@ pub async fn expire_due_holds(
             tx.rollback().await?;
             break;
         };
+        let (cooling_down,):(bool,)=sqlx::query_as("SELECT EXISTS (SELECT 1 FROM stock_hold_expiry_failures WHERE hold_id=$1 AND next_attempt_at>$2)")
+            .bind(&stored.id).bind(now).fetch_one(&mut *tx).await?;
+        if cooling_down {
+            tx.rollback().await?;
+            continue;
+        }
         // Keep the row claim across rollback of a failed component transition.
         sqlx::query("SAVEPOINT expiry_effect")
             .execute(&mut *tx)

@@ -378,3 +378,73 @@ async fn expiry_upgrade_preserves_existing_hold_balances_and_old_reader(pool: Pg
     );
     conserved(&pool).await;
 }
+
+#[sqlx::test(migrator = "MIGRATOR")]
+async fn cooldown_committed_between_snapshot_and_claim_prevents_an_immediate_retry(pool: PgPool) {
+    seed(&pool).await;
+    hold(&pool, 1, "DEMO-COVERS", 1100).await;
+    // A restricted role lets RLS pause the real candidate statement before its
+    // row lock, without adding timing hooks to production worker code.
+    pool.execute("CREATE ROLE expiry_overlap_role;
+        GRANT USAGE ON SCHEMA public TO expiry_overlap_role;
+        GRANT SELECT,INSERT,UPDATE,DELETE ON ALL TABLES IN SCHEMA public TO expiry_overlap_role;
+        GRANT USAGE ON ALL SEQUENCES IN SCHEMA public TO expiry_overlap_role;
+        CREATE FUNCTION pause_expiry_snapshot() RETURNS boolean LANGUAGE plpgsql AS $$ BEGIN PERFORM pg_advisory_xact_lock(917268); RETURN true; END; $$;
+        ALTER TABLE stock_holds ENABLE ROW LEVEL SECURITY;
+        CREATE POLICY pause_expiry_snapshot ON stock_holds FOR ALL TO expiry_overlap_role USING (pause_expiry_snapshot()) WITH CHECK (true)")
+        .await.expect("isolated timing role");
+    let restricted = sqlx::postgres::PgPoolOptions::new()
+        .max_connections(1)
+        .after_connect(|connection, _| {
+            Box::pin(async move {
+                sqlx::query("SET ROLE expiry_overlap_role")
+                    .execute(&mut *connection)
+                    .await?;
+                sqlx::query("SET default_transaction_isolation='repeatable read'")
+                    .execute(&mut *connection)
+                    .await?;
+                Ok(())
+            })
+        })
+        .connect_with((*pool.connect_options()).clone())
+        .await
+        .expect("restricted pool");
+    let mut blocker = pool.begin().await.expect("timing blocker");
+    sqlx::query("SELECT pg_advisory_xact_lock(917268)")
+        .execute(&mut *blocker)
+        .await
+        .expect("pause candidate");
+    let worker_pool = restricted.clone();
+    let worker = tokio::spawn(async move { expire_due_holds(&worker_pool, 1100, 1).await });
+    tokio::time::timeout(std::time::Duration::from_millis(800),async {
+        loop {
+            let (waiting,):(bool,)=sqlx::query_as("SELECT EXISTS (SELECT 1 FROM pg_stat_activity WHERE datname=current_database() AND wait_event='advisory')")
+                .fetch_one(&pool).await.expect("candidate snapshot reached");
+            if waiting {break;}
+            tokio::task::yield_now().await;
+        }
+    }).await.expect("paused before row claim");
+    let mut failing_worker = pool.begin().await.expect("competing worker claim");
+    sqlx::query("SELECT id FROM stock_holds WHERE id=$1 FOR UPDATE")
+        .bind(id(1))
+        .execute(&mut *failing_worker)
+        .await
+        .expect("claim before failure");
+    sqlx::query("INSERT INTO stock_hold_expiry_failures (hold_id,attempts,last_attempt_at,next_attempt_at,code) VALUES ($1,1,1100,1160,'database_error')")
+        .bind(id(1)).execute(&mut *failing_worker).await.expect("record cooldown");
+    failing_worker
+        .commit()
+        .await
+        .expect("newer failure metadata committed");
+    blocker.rollback().await.expect("resume stale candidate");
+    assert_eq!(
+        worker.await.expect("worker").expect("cooldown skipped"),
+        ExpiryBatch::default()
+    );
+    assert_eq!(state(&pool, 1).await, "active");
+    let retry:(i32,i64,Option<i64>)=sqlx::query_as("SELECT attempts,next_attempt_at,resolved_at FROM stock_hold_expiry_failures WHERE hold_id=$1")
+        .bind(id(1)).fetch_one(&pool).await.expect("untouched retry state");
+    assert_eq!(retry, (1, 1160, None));
+    conserved(&pool).await;
+    restricted.close().await;
+}

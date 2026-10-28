@@ -85,7 +85,11 @@ deadline fails; P3 must explicitly reallocate late paid orders and surface failu
 These are trusted primitives without HTTP exposure. The worker's explicit
 `--expire-holds` command captures a clock and processes at most 1–100 holds per
 pass (25 by default). It claims active due rows with `FOR UPDATE SKIP LOCKED` and
-uses the same transition policy as owned release/consumption. A per-hold savepoint
+uses the same transition policy as owned release/consumption.
+The claim transaction explicitly uses read committed and rechecks retry eligibility
+in a fresh statement under the hold lock, so a cooldown committed during candidate
+selection cannot be bypassed, including on connections defaulting to repeatable read.
+A per-hold savepoint
 rolls back failed balance/ledger effects without releasing the claim, then records
 bounded retry state with a static code and a 60-second delay. Successful expiry or
 another terminal transition marks the retained failure record resolved. Crashed
