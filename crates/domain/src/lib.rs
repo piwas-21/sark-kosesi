@@ -3,6 +3,7 @@
 
 use serde::{Deserialize, Serialize};
 
+pub mod holds;
 pub mod inventory;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]

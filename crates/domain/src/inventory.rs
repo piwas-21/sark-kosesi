@@ -66,6 +66,35 @@ impl StockBalance {
         self.on_hand - self.quarantine - self.reserved
     }
 
+    pub fn reserve(self, quantity: i64) -> Result<Self, StockError> {
+        if quantity <= 0 {
+            return Err(StockError::InvalidQuantity);
+        }
+        let reserved = self
+            .reserved
+            .checked_add(quantity)
+            .ok_or(StockError::Overflow)?;
+        Self::new(self.on_hand, self.quarantine, reserved)
+    }
+
+    pub fn release(self, quantity: i64) -> Result<Self, StockError> {
+        if quantity <= 0 {
+            return Err(StockError::InvalidQuantity);
+        }
+        Self::new(self.on_hand, self.quarantine, self.reserved - quantity)
+    }
+
+    pub fn consume(self, quantity: i64) -> Result<Self, StockError> {
+        if quantity <= 0 {
+            return Err(StockError::InvalidQuantity);
+        }
+        Self::new(
+            self.on_hand - quantity,
+            self.quarantine,
+            self.reserved - quantity,
+        )
+    }
+
     pub fn warehouse_change(self, change: WarehouseChange) -> Result<Self, StockError> {
         let (_, quantity) = change.descriptor();
         if quantity < 0 || (quantity == 0 && !matches!(change, WarehouseChange::Count(_))) {

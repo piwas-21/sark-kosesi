@@ -25,17 +25,14 @@ P1 acceptance activates application CI; it does not activate payment or establis
 
 ## P2 work packages
 
-1. Atomically reserve the exact sealed BOM revision using deterministic component locking;
-   cover-only configurations cannot consume foam. Prove conservation, scarcity,
-   duplicate/reordered effects, rollback and overflow against isolated PostgreSQL.
-2. Add owned holds, bounded expiry and explicit release/consumption transitions;
-   expiry and payment recovery remain distinct. Do not add provider effects before
-   P3. Prepacked stock needs explicit kit conversion without counting contents twice.
-3. Add materials, measured specifications, media rights and reviewed translations,
+1. Add a bounded expiry worker before operational stock use. Provider recovery
+   remains P3; late payment must attempt explicit atomic reallocation. Prepacked
+   stock still needs explicit kit conversion without counting contents twice.
+2. Add materials, measured specifications, media rights and reviewed translations,
    versioned prices and publication validation. Missing P0 facts and fixture data
    must fail publication. Catalogue and warehouse capabilities require Rust-side
    least-privilege authorization, audit reasons and no exposed preview write route.
-4. Connect approved catalogue/availability projections to HTML and feeds, with
+3. Connect approved catalogue/availability projections to HTML and feeds, with
    publication/price/stock invalidation tests and agreement on exact variant facts.
    Keep the courtyard UI baseline and draft/noindex preview boundaries intact.
 
@@ -46,8 +43,14 @@ code. Legacy preview rows remain valid without inventing missing BOM data.
 Warehouse receiving, counting, quarantine/release and disposal now maintain
 component balances and append-only movement history in one transaction. Effect
 keys bind the full request, including actor/reason; exact retries return the
-original receipt without reapplying stock. Holds and warehouse HTTP/authenticated
-admin operations remain unimplemented. Supplier batch and prepacked procedures
+original receipt without reapplying stock. Atomic holds now snapshot a sealed
+BOM, multiply component requirements by bounded variant units, and lock physical
+balances in component-code order. Release, consumption and expiry are distinct,
+idempotent transitions, with owner checks for release/consumption. Windows use
+explicit clock inputs and a maximum 30-minute TTL. A deferred database constraint
+rejects incomplete holds; sealed snapshots cannot change. Late consumption fails
+without silently releasing or reallocating stock. Warehouse HTTP/authenticated
+admin operations and an expiry scheduler remain unimplemented. Supplier batch and prepacked procedures
 still require P0 evidence before real warehouse use.
 
 ## Next session prompt

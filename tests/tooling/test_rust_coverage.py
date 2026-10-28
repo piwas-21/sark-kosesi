@@ -38,8 +38,15 @@ class RustCoverage(unittest.TestCase):
 
     def test_inventory_and_stock_each_require_critical_coverage(self):
         files = self.document["data"][0]["files"]
-        for name in ("crates/domain/src/inventory.rs", "crates/infrastructure/src/stock.rs"):
+        for name in (
+            "crates/domain/src/inventory.rs",
+            "crates/infrastructure/src/stock.rs",
+            "crates/domain/src/holds.rs",
+            "crates/infrastructure/src/holds/create.rs",
+            "crates/infrastructure/src/holds/mod.rs",
+        ):
             source = self.root / name
+            source.parent.mkdir(parents=True, exist_ok=True)
             source.write_text("// critical fixture\n" * 20)
             item = copy.deepcopy(files[0])
             item["filename"] = str(source)
@@ -52,10 +59,27 @@ class RustCoverage(unittest.TestCase):
                 item["summary"][counter]["covered"] = 19
                 self.assertEqual(len(validate(self.document, self.root)), 5)
                 item["summary"][counter]["covered"] = 20
+            item["summary"]["branches"] = {"count": 0, "covered": 0}
+            if name != "crates/infrastructure/src/holds/mod.rs":
+                with self.assertRaisesRegex(ValueError, "Critical Rust"):
+                    validate(self.document, self.root)
+                item["summary"]["branches"] = {"count": 20, "covered": 20}
+            self.assertEqual(len(validate(self.document, self.root)), 5)
+            if name == "crates/infrastructure/src/holds/mod.rs":
+                item["summary"]["regions"]["covered"] = 18
+                with self.assertRaisesRegex(ValueError, "Critical Rust"):
+                    validate(self.document, self.root)
             files.pop()
             with self.assertRaisesRegex(ValueError, "Critical Rust source unmeasured"):
                 validate(self.document, self.root)
             source.unlink()
+
+    def test_money_and_preview_authorization_still_reject_zero_branches(self):
+        for index in (0, 3):
+            document = copy.deepcopy(self.document)
+            document["data"][0]["files"][index]["summary"]["branches"] = {"count": 0, "covered": 0}
+            with self.assertRaisesRegex(ValueError, "Critical Rust"):
+                validate(document, self.root)
 
     def test_missing_stale_empty_and_inflated_coverage_fail(self):
         for change in (
