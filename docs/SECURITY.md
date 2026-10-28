@@ -67,6 +67,12 @@ and permission history preserve immutable content classification, scoped terms,
 revocation and audit identity; a new ID cannot promote known fixture/generated
 digests. Rights reads reject malformed latest events and missing serialization
 controls, and evaluate expiry after lock waits using the authorized clock sample.
-No upload, decoded-image proof, public storage or image publication is implemented
-by these consumers. P2 must still verify originals/derivatives; P4 owns safe HTTP
-upload/session/CSRF controls.
+The permission consumers alone do not verify image bytes. A separate guarded
+private ingestion adapter now decodes/re-encodes bounded actual bytes, compares
+claimed digest/codec/raw dimensions and excludes personal derivative metadata.
+It performs CPU work outside transactions, with bounded concurrency and fresh
+authority before effects/private return; immutable complete hash-bound sets are
+stored atomically. There is no arbitrary URL fetching or caller-selected path.
+No public storage/delivery or image publication is enabled. P4 still owns safe
+HTTP upload/session/CSRF controls; P7 owns measured process memory/CPU isolation.
+Permission, source/colour fidelity and SKU suitability remain human review inputs.

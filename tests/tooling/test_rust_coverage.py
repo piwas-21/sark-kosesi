@@ -54,6 +54,9 @@ class RustCoverage(unittest.TestCase):
             ("crates/infrastructure/src/media/mod.rs", False),
             ("crates/infrastructure/src/media/register.rs", False),
             ("crates/infrastructure/src/media/rights.rs", False),
+            ("crates/infrastructure/src/image_ingestion/mod.rs", False),
+            ("crates/infrastructure/src/image_ingestion/process.rs", False),
+            ("crates/infrastructure/src/image_ingestion/store.rs", False),
         ):
             source = self.root / name
             source.parent.mkdir(parents=True, exist_ok=True)

@@ -41,6 +41,7 @@ def validate(document, root, branches=True):
             "crates/*/src/specifications.rs",
             "crates/*/src/media.rs",
             "crates/*/src/media/*.rs",
+            "crates/*/src/image_ingestion/*.rs",
         )
         for path in root.glob(pattern)
     ]

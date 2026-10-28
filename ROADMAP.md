@@ -42,8 +42,14 @@ or receive product-photo rights. Rights consumers check explicit scope, terms,
 revocation and fresh server time; positive rights do not verify image bytes or
 product suitability. No public image delivery or publication is enabled.
 
-Next work: verified image ingestion, reviewed translations, publication validation,
-guarded catalogue authoring and projection
+Actual original bytes can now be verified against registered digest/codec/raw
+pixel dimensions. Bounded decoding normalizes orientation and produces private
+privacy-metadata-free derivatives without upscaling. Fresh authority protects an
+atomic, immutable PostgreSQL original/rendition set; no public delivery or
+product/permission/SKU approval follows from decoding.
+
+Next work: reviewed translations, publication validation, guarded catalogue
+authoring and projection
 invalidation under the [implementation plan](docs/IMPLEMENTATION.md). P3 owns
 late-payment reallocation. Supervision of expiry remains a deployment gate.
 P0 inputs remain pending. All seven languages are draft previews,

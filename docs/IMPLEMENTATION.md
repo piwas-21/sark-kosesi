@@ -28,8 +28,8 @@ P1 acceptance activates application CI; it does not activate payment or establis
 1. Verify expiry supervision before operational stock use. Provider recovery
    remains P3; late payment must attempt explicit atomic reallocation. Prepacked
    stock still needs explicit kit conversion without counting contents twice.
-2. Add verified image ingestion, reviewed translations, factual review/publication
-   validation and activation of approved catalogue revisions. Missing P0 facts and fixture data
+2. Add reviewed translations, factual review/publication validation and activation
+   of approved catalogue revisions, including safe public derivative delivery. Missing P0 facts and fixture data
    must fail publication. Apply the staff capability guard to catalogue mutations,
    retaining audit reasons and no exposed preview write route.
 3. Connect approved catalogue/availability projections to HTML and feeds, with
@@ -102,6 +102,21 @@ concurrent changes and stale imports. Captured dimensions/digests/provenance are
 drafts; the safe private object key does not prove decoded bytes, actual permission
 or SKU suitability. Original-byte/derivative verification and public delivery
 remain P2 work; HTTP upload/login/MFA controls remain P4. No media is seeded.
+
+Private image ingestion now verifies actual JPEG/PNG/WebP bytes against the
+immutable registry digest, codec and raw pixel dimensions. It rejects animation,
+malformed/oversized data and over-budget derivatives, normalizes orientation and
+re-encodes bounded 320/640/960-edge variants without upscaling or copying private
+metadata. There are at most two CPU jobs and two admitted ingestion workflows, including
+storage waits, with no pending CPU queue. Decoding happens
+outside database transactions; fresh authority is required before atomic storage
+and private byte return. Originals remain private in a bounded PostgreSQL bytea
+adapter; hashes, metadata bindings, complete sets and recipe version are protected
+by constraints/immutable history. A byte receipt proves processing, not authentic
+merchandising/permission or SKU suitability. Actual asset/colour/quality review,
+translation and publication gates plus public serving/cache policy remain open.
+Decoder allocation limits are best-effort in the library; owned byte/dimension/
+output-buffer checks supplement them, and P7 still needs process resource caps.
 
 ## Next session prompt
 

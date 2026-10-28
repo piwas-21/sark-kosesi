@@ -39,3 +39,11 @@ The already pinned `serde_json` is promoted from an infrastructure test dependen
 to runtime use for closed, validated specification snapshots. It adds no new
 version or hosted service; its MIT/Apache-2.0 licence remains in the existing
 reviewed Rust allowlist.
+
+`image` 0.25.10 is pinned for native JPEG/PNG/WebP verification and re-encoding with
+default features disabled. Its released MIT/Apache-2.0 package and transitive
+licences are checked by the existing Rust audit/deny gates. Other existing locked
+versions are preserved. Decoding uses the upstream [limit API](https://docs.rs/image/0.25.10/image/struct.Limits.html)
+with additional owned resource checks; the library documents allocation limits as
+best-effort. This adds no hosted image service. New release-image SBOM/notices and
+actual photographic acceptance remain release requirements.

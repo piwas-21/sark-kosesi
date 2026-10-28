@@ -78,6 +78,10 @@ requirements; malformed stored JSON and logical corruption cannot bypass them.
 Media policy, registry, rights and inspection modules also require positive
 branch counters and 95% critical line/branch coverage. Tests distinguish rights
 attestation validity from verified image bytes and publication acceptance.
+Image-ingestion service/processor/storage modules require the same positive
+critical branch counters. Tests use actual encoded synthetic bytes, orientation
+and metadata fixtures, animation/truncation/header-bomb negatives, corrupt storage,
+resource budgets, fresh authority, atomic complete sets and cancellation recovery.
 Zero stays explicit rather than being reported as 100%. Existing critical
 money/preview authorization still require positive branch counters. LLVM reports
 zero instrumented branches for match-only and SQL adapter code; this is recorded
