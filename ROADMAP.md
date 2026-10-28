@@ -32,7 +32,8 @@ P0 inputs remain pending. All seven languages are draft previews,
 fixtures are explicitly not for sale, and admin operations remain unavailable.
 Server-side capability guards now protect catalogue/BOM inspection and warehouse
 commands using persisted staff sessions, recent MFA attestations and grants.
-Revocation locks span the stock commit; audit actors come from the session.
+Warehouse changes require explicit confirmation. Revocation locks span the stock
+commit; audit actors come from the session.
 Installation seeds no staff authority. Login/MFA verification, session issuance
 and HTTP admin writes remain unimplemented; publication mutations must adopt the
 same guard.

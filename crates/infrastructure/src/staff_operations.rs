@@ -11,6 +11,7 @@ pub struct StaffWarehouseRequest<'a> {
     pub component_code: &'a str,
     pub change: WarehouseChange,
     pub reason: &'a str,
+    pub confirmed: bool,
 }
 pub async fn warehouse_change(
     pool: &PgPool,
@@ -19,6 +20,9 @@ pub async fn warehouse_change(
     request: StaffWarehouseRequest<'_>,
 ) -> Result<MovementReceipt, StaffError> {
     let mut access = lock_staff(pool, token, clock, Capability::WarehouseManage).await?;
+    if !request.confirmed {
+        return Err(StaffError::InvalidRequest);
+    }
     let result = movement_in_transaction(
         &mut access.tx,
         WarehouseRequest {

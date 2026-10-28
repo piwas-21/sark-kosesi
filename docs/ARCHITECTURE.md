@@ -118,8 +118,8 @@ P2 staff capability guards consume server-side account, session and grant record
 Installation creates no accounts, grants or sessions; accounts default disabled.
 Opaque 256-bit session tokens are stored only as SHA-256 digests and never implement
 Debug/Serialize. Catalogue/BOM inspection requires `catalogue.manage`; warehouse
-mutations require `warehouse.manage`. The public warehouse command has no actor
-field: the session supplies the ledger actor. No owner/all-role shortcut exists.
+mutations require `warehouse.manage` and explicit confirmation. The public warehouse
+command has no actor field: the session supplies the ledger actor. No owner/all-role shortcut exists.
 
 The guard locks the account, session and grant with `FOR SHARE` in the same read
 committed transaction as the operation, blocking disabling, revocation and grant

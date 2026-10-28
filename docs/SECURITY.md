@@ -49,7 +49,8 @@ P2 adds separate catalogue/warehouse capability checks on server-side staff
 session records. Tests cover unknown/wrong-role/disabled/revoked/expired sessions,
 missing/stale/future MFA, identity tampering and revocation or expiry during lock
 waits. Authorization locks remain held through the stock transaction; caller
-payloads cannot choose the audit actor. Tokens are hashed at rest and have no
+payloads cannot choose the audit actor, and warehouse changes require explicit
+confirmation. Tokens are hashed at rest and have no
 Debug/Serialize implementation. These tests prove the authorization consumer,
 not a completed MFA ceremony: installation seeds no staff authority, and no staff
 login/MFA/session issuer, cookie mutation route or admin write endpoint exists.

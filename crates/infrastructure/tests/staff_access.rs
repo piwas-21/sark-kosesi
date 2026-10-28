@@ -22,6 +22,7 @@ fn command(effect: &str) -> StaffWarehouseRequest<'_> {
         component_code: "DEMO-COVER",
         change: WarehouseChange::Receive(4),
         reason: "isolated staff test",
+        confirmed: true,
     }
 }
 async fn seed(pool: &PgPool) {
@@ -99,6 +100,13 @@ async fn catalogue_and_warehouse_grants_are_separate_and_actor_is_server_owned(p
         warehouse_change(&pool, &catalogue, &clock(1100), command("catalogue-denied")).await,
         Err(StaffError::Denied)
     ));
+    let mut unconfirmed = command("unconfirmed");
+    unconfirmed.confirmed = false;
+    assert!(matches!(
+        warehouse_change(&pool, &warehouse, &clock(1100), unconfirmed).await,
+        Err(StaffError::InvalidRequest)
+    ));
+    assert_eq!(effect_count(&pool).await, 0);
     let received = warehouse_change(
         &pool,
         &warehouse,
