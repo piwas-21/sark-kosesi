@@ -82,8 +82,17 @@ are never attributed to a customer merely because they own the hold. Release and
 free reserved units; consumption removes both physical and reserved units. The
 hold row serializes competing terminal transitions. Consumption at or after the
 deadline fails; P3 must explicitly reallocate late paid orders and surface failure.
-These are trusted primitives without HTTP exposure. The expiry scheduler and real
-session/capability adapters remain required before operational use.
+These are trusted primitives without HTTP exposure. The worker's explicit
+`--expire-holds` command captures a clock and processes at most 1–100 holds per
+pass (25 by default). It claims active due rows with `FOR UPDATE SKIP LOCKED` and
+uses the same transition policy as owned release/consumption. A per-hold savepoint
+rolls back failed balance/ledger effects without releasing the claim, then records
+bounded retry state with a static code and a 60-second delay. Successful expiry or
+another terminal transition marks the retained failure record resolved. Crashed
+transactions roll back; another pass can safely recover. The default probe is
+read-only, and both modes reject production configuration. Real expiry supervision
+and session/capability adapters remain required before operational use. P3 owns
+outbox processing for external effects; hold expiry performs only database work.
 
 The Rust quote service computes item/discount/tax/shipping allocations in integer minor units and a single currency (EUR at launch). Persist immutable order line, bundle, price, VAT, discount, address and policy snapshots. A later catalogue edit cannot rewrite order history. Discounts have explicit eligibility, budget, per-customer limits, stacking and time-zone rules; concurrent redemption cannot exceed a limit.
 

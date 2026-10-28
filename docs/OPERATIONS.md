@@ -8,6 +8,16 @@ The repository is public and the protection audit verifies its server rules. CI 
 
 On GitHub Free, a private organization repository does not retain the former public server protection/native security availability. Restore an eligible protected setup before merging: obtain the owner's explicit decision before restoring public visibility, establish and verify an equivalent no-bypass private workflow on a Piwas-controlled free forge/runner (for example, self-hosted Forgejo with branch rules, required statuses and isolated runners), or explicitly choose a GitHub plan that supplies those controls. Do not buy a plan or migrate automatically. Adapt and test the merge/audit tooling before a move; local hooks alone are insufficient. Sonar Community, Gitleaks, Rust/TS checks and tests remain self-hostable without paid subscriptions; GitHub-specific CodeQL/native secret scanning need an available alternative on the target platform. Production remains blocked while enforcement is unavailable.
 
+For isolated local/test inventory work, the default `commerce-worker` command is
+a read-only dependency probe. The explicit `commerce-worker --expire-holds`
+command performs one bounded pass; `HOLD_EXPIRY_BATCH` is 1–100, default 25. It uses
+only that environment's database and rejects production. Failed holds retain
+redacted retry metadata and return a nonzero process status; a fresh pass retries
+eligible failures after 60 seconds. Log output includes counts, never owner IDs,
+database URLs or raw SQL errors. Do not configure production supervision until P7
+environment, restore/rollback and operational gates pass. The command is not a
+payment reconciler and cannot consume or reallocate a late paid order.
+
 Use only reviewed free self-hostable libraries/tools; retain licences/notices and produce an SBOM for release images. Exact direct dependencies and committed lockfiles; actions commit-pinned and images digest-pinned. Weekly update PRs, prompt security updates, no automatic major upgrades. Rebuild reproducibly, run contract/migration/regression checks and retain image provenance. Reject unknown/restrictive licences until reviewed; no dependency that requires a paid service to keep checkout working.
 
 ## Environments and credentials

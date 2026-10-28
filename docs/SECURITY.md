@@ -37,5 +37,10 @@ preview; no real customer/admin session is implemented.
 No customer accounts, write endpoints, upload processing, provider callbacks,
 payment methods or outbound mail exist in P1. Their controls are deferred to their
 owning phases, not marked passed or represented by mocks. Preview authentication
-is not the future admin authorization system. The worker binary probes real DB
-readiness and performs no durable effects; P3 owns outbox processing/recovery.
+is not the future admin authorization system. The worker's default command probes
+real DB readiness without effects. Its explicit local/test expiry command only
+releases due hold reservations through the shared stock transition policy. Batch
+limits, row claims, transactional rollback and durable redacted retry state bound
+that capability; production configuration is rejected. It exposes no HTTP/admin
+write route or arbitrary SQL execution. P3 owns outbox processing/recovery for
+external effects.

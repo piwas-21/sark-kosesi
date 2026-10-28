@@ -217,6 +217,8 @@ dependencies = [
 name = "commerce-worker"
 version = "0.1.0"
 dependencies = [
+ "commerce-application",
+ "commerce-domain",
  "commerce-infrastructure",
  "sqlx",
  "tokio",

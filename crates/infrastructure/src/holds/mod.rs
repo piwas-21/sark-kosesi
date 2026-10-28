@@ -1,8 +1,10 @@
 //! Trusted reservation primitives. Session authorization/provider recovery follow.
 
 mod create;
+mod expiry;
 mod transition;
 pub use create::reserve_bom;
+pub use expiry::{ExpiryBatch, expire_due_holds};
 pub use transition::transition_hold;
 
 use commerce_domain::{
