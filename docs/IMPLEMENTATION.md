@@ -30,8 +30,8 @@ P1 acceptance activates application CI; it does not activate payment or establis
    stock still needs explicit kit conversion without counting contents twice.
 2. Add materials, measured specifications, media rights and reviewed translations,
    versioned prices and publication validation. Missing P0 facts and fixture data
-   must fail publication. Catalogue and warehouse capabilities require Rust-side
-   least-privilege authorization, audit reasons and no exposed preview write route.
+   must fail publication. Apply the staff capability guard to catalogue mutations,
+   retaining audit reasons and no exposed preview write route.
 3. Connect approved catalogue/availability projections to HTML and feeds, with
    publication/price/stock invalidation tests and agreement on exact variant facts.
    Keep the courtyard UI baseline and draft/noindex preview boundaries intact.
@@ -59,6 +59,13 @@ holds receive a static failure code, attempt count and a 60-second retry deadlin
 other eligible holds can proceed. Resolution retains the failure audit record.
 The default worker command remains a read-only probe. Supplier batch and prepacked procedures
 still require P0 evidence before real warehouse use.
+
+Server-side staff session/grant consumers now separate catalogue/BOM inspection
+from warehouse mutations. They require an enabled account, matching capability,
+unrevoked/unexpired session and recent MFA attestation, with locks held through
+the operation and clock checks after lock waits. Warehouse changes require explicit confirmation; audit identity comes
+from the session. Installation has no staff authority. Actual login/MFA/session
+issuance and HTTP mutations remain P4 work; no preview token grants staff access.
 
 ## Next session prompt
 

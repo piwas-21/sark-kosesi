@@ -209,6 +209,7 @@ dependencies = [
  "commerce-domain",
  "getrandom 0.4.3",
  "serde_json",
+ "sha2 0.10.9",
  "sqlx",
  "tokio",
 ]

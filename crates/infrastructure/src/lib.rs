@@ -4,6 +4,8 @@
 pub mod bom;
 pub mod holds;
 pub mod runtime;
+pub mod staff_access;
+pub mod staff_operations;
 pub mod stock;
 
 use commerce_application::Locale;

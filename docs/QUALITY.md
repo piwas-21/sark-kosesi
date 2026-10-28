@@ -71,7 +71,8 @@ The native validator requires every owned source and populated counters, with
 85% lines / 80% instrumented branches per package and 95% for money, inventory
 domain/stock/hold adapter modules and preview authorization. The match-only hold
 SQL helper module has zero compiler-instrumented branches and requires 95% region
-coverage; zero stays explicit rather than being reported as 100%. Existing critical
+coverage. The staff guard, policy and operation wrappers require positive branch counters.
+Zero stays explicit rather than being reported as 100%. Existing critical
 money/preview authorization still require positive branch counters. LLVM reports
 zero instrumented branches for match-only and SQL adapter code; this is recorded
 as `(0, 0)`, never 100%. Those packages additionally require >=95% region coverage.

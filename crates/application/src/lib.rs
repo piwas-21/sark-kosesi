@@ -2,6 +2,7 @@
 #![forbid(unsafe_code)]
 
 pub mod request_context;
+pub mod staff_access;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Locale {

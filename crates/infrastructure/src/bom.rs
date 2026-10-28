@@ -1,7 +1,7 @@
 //! Only sealed revisions may become reservation inputs. Drafts remain invisible.
 
 use commerce_domain::{BillOfMaterials, BomComponent, ComponentKind};
-use sqlx::PgPool;
+use sqlx::{Executor, PgPool, Postgres};
 
 #[derive(sqlx::FromRow)]
 struct ComponentRow {
@@ -15,6 +15,13 @@ pub async fn bill_of_materials(
     sku: &str,
     revision: i32,
 ) -> Result<Option<BillOfMaterials>, sqlx::Error> {
+    load(pool, sku, revision).await
+}
+pub(super) async fn load<'e, E: Executor<'e, Database = Postgres>>(
+    executor: E,
+    sku: &str,
+    revision: i32,
+) -> Result<Option<BillOfMaterials>, sqlx::Error> {
     let rows = sqlx::query_as::<_, ComponentRow>(
         "SELECT c.code, c.kind, l.quantity FROM catalogue_boms b
          JOIN catalogue_bom_lines l USING (sku, revision)
@@ -23,7 +30,7 @@ pub async fn bill_of_materials(
     )
     .bind(sku)
     .bind(revision)
-    .fetch_all(pool)
+    .fetch_all(executor)
     .await?;
     if rows.is_empty() {
         return Ok(None);

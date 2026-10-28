@@ -35,6 +35,8 @@ def validate(document, root, branches=True):
             "crates/*/src/stock.rs",
             "crates/*/src/holds.rs",
             "crates/*/src/holds/*.rs",
+            "crates/*/src/staff_access.rs",
+            "crates/*/src/staff_operations.rs",
         )
         for path in root.glob(pattern)
     ]
@@ -47,7 +49,7 @@ def validate(document, root, branches=True):
             if (
                 kind == "branches"
                 and total == 0
-                and path.relative_to(root).as_posix() == "crates/infrastructure/src/holds/mod.rs"
+                and path.relative_to(root).as_posix() in ("crates/infrastructure/src/holds/mod.rs",)
             ):
                 total, covered = counter(summary, "regions")
             if total <= 0 or covered * 100 < total * 95:
