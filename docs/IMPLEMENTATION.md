@@ -25,7 +25,7 @@ P1 acceptance activates application CI; it does not activate payment or establis
 
 ## P2 work packages
 
-1. Add a bounded expiry worker before operational stock use. Provider recovery
+1. Verify expiry supervision before operational stock use. Provider recovery
    remains P3; late payment must attempt explicit atomic reallocation. Prepacked
    stock still needs explicit kit conversion without counting contents twice.
 2. Add materials, measured specifications, media rights and reviewed translations,
@@ -50,7 +50,14 @@ idempotent transitions, with owner checks for release/consumption. Windows use
 explicit clock inputs and a maximum 30-minute TTL. A deferred database constraint
 rejects incomplete holds; sealed snapshots cannot change. Late consumption fails
 without silently releasing or reallocating stock. Warehouse HTTP/authenticated
-admin operations and an expiry scheduler remain unimplemented. Supplier batch and prepacked procedures
+admin operations and production expiry supervision remain unimplemented. The
+non-production worker's explicit `--expire-holds` command performs one bounded
+pass using an injected clock; `HOLD_EXPIRY_BATCH` accepts 1–100 (default 25).
+Concurrent workers skip locked holds. Each hold has its own transaction and
+failed effects roll back to a savepoint while retaining the row claim. Failed
+holds receive a static failure code, attempt count and a 60-second retry deadline;
+other eligible holds can proceed. Resolution retains the failure audit record.
+The default worker command remains a read-only probe. Supplier batch and prepacked procedures
 still require P0 evidence before real warehouse use.
 
 ## Next session prompt
