@@ -17,10 +17,14 @@ Physical component stock now has append-only movements, receiving/counting,
 quarantine inspection/release/disposal, reasons and actor records. The trusted
 Rust primitive serializes component changes and rejects conflicting effect-key
 retries; no warehouse HTTP operation is exposed.
+Atomic holds now reserve a sealed BOM snapshot in physical-component order.
+Release, consumption and expiry are distinct, owned, idempotent transitions;
+covers-only never consumes foam. Clock inputs are explicit, with a maximum
+30-minute window. No expiry scheduler or payment recovery is implemented yet.
 
-Next work: atomic BOM holds, ownership, expiry and release under the
-[implementation plan](docs/IMPLEMENTATION.md), followed by publication validation,
-catalogue/warehouse permissions and projection invalidation.
+Next work: publication validation, catalogue/warehouse permissions and projection
+invalidation under the [implementation plan](docs/IMPLEMENTATION.md). Add a bounded
+expiry worker before operational stock use; P3 owns late-payment reallocation.
 P0 inputs remain pending. All seven languages are draft previews,
 fixtures are explicitly not for sale, and admin operations remain unavailable.
 Do not restart stack comparisons or redesign the accepted courtyard direction.
@@ -28,5 +32,9 @@ Do not restart stack comparisons or redesign the accepted courtyard direction.
 Remaining delivery sequence: P0 business inputs in parallel → P2 inventory/catalogue → P3 checkout/payments → P4 customer/admin operations → P5 room planning and content → P6 acceptance → P7 controlled launch. Each phase has explicit exit evidence in the plan.
 
 External blockers: final brand/domain, real product specification/media, market/carrier/tax readiness, Mollie retail website approval, translated legal/product content, email delivery and recovery evidence. EU-wide intent is unchanged; an unready country cannot take payment.
+
+The repository is public and the protection audit passes. Current-revision CI
+remains mandatory, including successful evidence uploads, browser acceptance and
+populated Sonar/CodeQL results; do not merge based on local checks alone.
 
 Before any private-repository switch, run the protection audit and follow [operations](docs/OPERATIONS.md). A GitHub Free private repository does not retain the current public-repository enforcement. Do not declare production readiness while that is unresolved.

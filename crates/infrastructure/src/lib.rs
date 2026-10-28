@@ -2,6 +2,7 @@
 #![forbid(unsafe_code)]
 
 pub mod bom;
+pub mod holds;
 pub mod runtime;
 pub mod stock;
 

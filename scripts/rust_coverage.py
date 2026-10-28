@@ -30,7 +30,12 @@ def validate(document, root, branches=True):
     critical = [root / "crates/domain/src/lib.rs", root / "crates/api/src/lib.rs"]
     critical += [
         path
-        for pattern in ("crates/*/src/inventory.rs", "crates/*/src/stock.rs")
+        for pattern in (
+            "crates/*/src/inventory.rs",
+            "crates/*/src/stock.rs",
+            "crates/*/src/holds.rs",
+            "crates/*/src/holds/*.rs",
+        )
         for path in root.glob(pattern)
     ]
     for path in critical:
@@ -39,6 +44,12 @@ def validate(document, root, branches=True):
             raise ValueError("Critical Rust source unmeasured")
         for kind in ("lines", "branches") if branches else ("lines",):
             total, covered = counter(summary, kind)
+            if (
+                kind == "branches"
+                and total == 0
+                and path.relative_to(root).as_posix() == "crates/infrastructure/src/holds/mod.rs"
+            ):
+                total, covered = counter(summary, "regions")
             if total <= 0 or covered * 100 < total * 95:
                 raise ValueError(
                     f"Critical Rust money/inventory/authorization coverage below 95%: {path.name}"

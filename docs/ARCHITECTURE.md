@@ -72,6 +72,19 @@ are PostgreSQL transaction audit time, never inputs to domain transitions. This
 trusted persistence primitive has no HTTP entry point; future warehouse use cases
 must supply server-authorized identity/capabilities and the P0 batch procedure.
 
+Hold creation stores an immutable owner, SKU/BOM revision, unit count and explicit
+clock window (1–1800 seconds), then reserves all snapshot components in code order
+in the same transaction. A building hold cannot commit; activation requires an
+exact sealed-BOM snapshot. Hold identity binds retries, and each component effect
+has a unique hold/action reference in the movement ledger. Terminal transitions
+carry an explicit server actor, separate from the hold owner, so worker effects
+are never attributed to a customer merely because they own the hold. Release and expiry
+free reserved units; consumption removes both physical and reserved units. The
+hold row serializes competing terminal transitions. Consumption at or after the
+deadline fails; P3 must explicitly reallocate late paid orders and surface failure.
+These are trusted primitives without HTTP exposure. The expiry scheduler and real
+session/capability adapters remain required before operational use.
+
 The Rust quote service computes item/discount/tax/shipping allocations in integer minor units and a single currency (EUR at launch). Persist immutable order line, bundle, price, VAT, discount, address and policy snapshots. A later catalogue edit cannot rewrite order history. Discounts have explicit eligibility, budget, per-customer limits, stacking and time-zone rules; concurrent redemption cannot exceed a limit.
 
 ## Payments and durable work
