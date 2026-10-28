@@ -62,4 +62,11 @@ publication or validate the truth of a pricing reference. Specification writes u
 the same authority/confirmation/history controls. Closed typed decoding, bounded
 payloads and BOM validation protect staff reads from malformed direct imports.
 A stored measurement, material or source reference does not verify its factual
-truth or grant public use; no arbitrary reference URL is fetched.
+truth or grant public use; no arbitrary reference URL is fetched. Media metadata
+and permission history preserve immutable content classification, scoped terms,
+revocation and audit identity; a new ID cannot promote known fixture/generated
+digests. Rights reads reject malformed latest events and missing serialization
+controls, and evaluate expiry after lock waits using the authorized clock sample.
+No upload, decoded-image proof, public storage or image publication is implemented
+by these consumers. P2 must still verify originals/derivatives; P4 owns safe HTTP
+upload/session/CSRF controls.

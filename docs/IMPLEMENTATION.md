@@ -28,8 +28,8 @@ P1 acceptance activates application CI; it does not activate payment or establis
 1. Verify expiry supervision before operational stock use. Provider recovery
    remains P3; late payment must attempt explicit atomic reallocation. Prepacked
    stock still needs explicit kit conversion without counting contents twice.
-2. Add media rights, reviewed translations, factual review/publication validation
-   and activation of approved price/specification revisions. Missing P0 facts and fixture data
+2. Add verified image ingestion, reviewed translations, factual review/publication
+   validation and activation of approved catalogue revisions. Missing P0 facts and fixture data
    must fail publication. Apply the staff capability guard to catalogue mutations,
    retaining audit reasons and no exposed preview write route.
 3. Connect approved catalogue/availability projections to HTML and feeds, with
@@ -88,6 +88,20 @@ post-wait clock checks match the price guard. Staff reads decode closed typed JS
 and revalidate every stored snapshot. Drafts have no approval/publication state,
 no seeded measurements and no effect on the preview or stock. P0 verification,
 media/translation review and public projections remain pending.
+
+Media metadata registration and permission grant/revoke consumers now use the
+catalogue staff guard, explicit confirmation, immutable reason/actor history and
+intent-bound retries. One digest has one immutable classification, preventing a
+known fixture/generated image from receiving product rights through an alias.
+Grant scopes distinguish product photography from labelled inspiration; terms
+explicitly represent perpetual permission or an expiry. Current rights are the
+latest revision, never a fallback to an older grant. Rights inspection uses the
+same freshly authorized server timestamp for session and licence evaluation.
+Serialization locks, a deferred anchor relationship and MVCC writes protect
+concurrent changes and stale imports. Captured dimensions/digests/provenance are
+drafts; the safe private object key does not prove decoded bytes, actual permission
+or SKU suitability. Original-byte/derivative verification and public delivery
+remain P2 work; HTTP upload/login/MFA controls remain P4. No media is seeded.
 
 ## Next session prompt
 

@@ -72,6 +72,25 @@ References are opaque records and are never fetched. This is draft input capture
 not supplier verification, a public content source, fit approval or publishing.
 No installed data or HTTP mutation is added; fixture-only identities remain.
 
+## Media registry and permission history
+
+Media metadata is immutable, closed typed JSON with bounded dimensions and source
+references. Its SHA-256 digest is unique: a new asset ID cannot relabel known
+fixture/generated content as an original product image. Storage keys derive only
+from the digest and codec under a private Piwas prefix; arbitrary URLs are never
+fetched. Registration does not inspect image bytes or approve their factual use.
+
+Staff grant/revoke commands append scoped permission attestations with explicit
+terms, expected prior revision and reason/actor/effect history. Fixture/generated
+assets cannot receive product-photo grants, in Rust or the database. Inspiration
+stays a separate labelled use. The newest rights event governs; old grant receipt
+replays cannot undo a later revocation. A separate serialization row lets metadata
+stay immutable while no-op MVCC writes force stale repeatable-read writers to
+retry. A deferred FK requires the row, and guarded readers also fail closed if it
+is missing. Inspection holds a share claim and evaluates licence/session time
+from one fresh authorized timestamp after lock waits. These private consumers
+are not publication/image-verification endpoints and do not activate storage.
+
 ## Inventory and finance
 
 Model sellable variants separately from physical components. A configuration has a versioned bill of materials: seat/back/bolster covers and optional matching foam inserts. Covers-only does not reserve foam. Prepacked and separable stock require explicit warehouse rules; never count both kit stock and its contents as independently available.

@@ -4,6 +4,7 @@
 pub mod bom;
 pub mod catalogue_prices;
 pub mod holds;
+pub mod media;
 pub mod runtime;
 pub mod specifications;
 pub mod staff_access;

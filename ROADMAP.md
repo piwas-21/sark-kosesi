@@ -36,8 +36,14 @@ cover fibre fractions, foam evidence, assembly footprint, measured parcels and
 traceability references. Staff reads decode and revalidate stored drafts; no
 measurement/evidence entry grants factual approval or publication.
 
-Next work: media rights, reviewed translations, publication validation, guarded
-catalogue authoring and projection
+Media metadata now has an immutable content identity and audited rights grant/
+revoke history. Known fixture/generated digests cannot be relabelled under a new asset ID
+or receive product-photo rights. Rights consumers check explicit scope, terms,
+revocation and fresh server time; positive rights do not verify image bytes or
+product suitability. No public image delivery or publication is enabled.
+
+Next work: verified image ingestion, reviewed translations, publication validation,
+guarded catalogue authoring and projection
 invalidation under the [implementation plan](docs/IMPLEMENTATION.md). P3 owns
 late-payment reallocation. Supervision of expiry remains a deployment gate.
 P0 inputs remain pending. All seven languages are draft previews,
