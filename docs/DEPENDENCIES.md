@@ -7,7 +7,7 @@ contracts remain separate and pending.
 
 | Dependencies                                                                   | Reviewed licence                     | Handling                                                                                                                                                                         |
 | ------------------------------------------------------------------------------ | ------------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Axum, Tokio, serde, SQLx, tracing, utoipa, tower, subtle, getrandom            | MIT / Apache-2.0                     | Retain notices; Rust licence/source allowlist enforced by cargo-deny                                                                                                             |
+| Axum, Tokio, serde, SQLx, tracing, utoipa, tower, subtle, getrandom, sha2      | MIT / Apache-2.0                     | Retain notices; Rust licence/source allowlist enforced by cargo-deny                                                                                                             |
 | Next.js 16.4.3, React 19.3.1, Tailwind 4.3.3, openapi-fetch 0.17.0, TS tooling | MIT / Apache-2.0                     | Self-hosted SSR; no Vercel service required                                                                                                                                      |
 | TypeScript 5.9.3                                                               | Apache-2.0                           | Kept within the declared openapi-typescript 7.13.0 peer range; no forced peer resolution                                                                                         |
 | Bricolage Grotesque, DM Sans                                                   | OFL-1.1                              | Existing project font sources subset to WOFF; licences retained in public/fonts; no reserved font names declared in supplied notices                                             |
@@ -29,3 +29,8 @@ binaries; a release still requires an image SBOM and complete distribution notic
 Upgrade policy remains weekly reviewed updates and prompt security fixes. P1 has
 no production deployment; a green metadata allowlist alone does not establish
 compliance of a future distributed image.
+
+`sha2` 0.10.9 was already transitively locked and is now an exact direct dependency
+for hashing opaque 256-bit staff session tokens. Its MIT/Apache-2.0 terms are in the
+same reviewed allowlist. This is not password hashing or an MFA implementation;
+P4 still owns maintained password/MFA verification and secure session issuance.

@@ -38,12 +38,15 @@ class RustCoverage(unittest.TestCase):
 
     def test_inventory_and_stock_each_require_critical_coverage(self):
         files = self.document["data"][0]["files"]
-        for name in (
-            "crates/domain/src/inventory.rs",
-            "crates/infrastructure/src/stock.rs",
-            "crates/domain/src/holds.rs",
-            "crates/infrastructure/src/holds/create.rs",
-            "crates/infrastructure/src/holds/mod.rs",
+        for name, zero_allowed in (
+            ("crates/domain/src/inventory.rs", False),
+            ("crates/infrastructure/src/stock.rs", False),
+            ("crates/domain/src/holds.rs", False),
+            ("crates/infrastructure/src/holds/create.rs", False),
+            ("crates/infrastructure/src/holds/mod.rs", True),
+            ("crates/application/src/staff_access.rs", False),
+            ("crates/infrastructure/src/staff_access.rs", False),
+            ("crates/infrastructure/src/staff_operations.rs", False),
         ):
             source = self.root / name
             source.parent.mkdir(parents=True, exist_ok=True)
@@ -60,12 +63,12 @@ class RustCoverage(unittest.TestCase):
                 self.assertEqual(len(validate(self.document, self.root)), 5)
                 item["summary"][counter]["covered"] = 20
             item["summary"]["branches"] = {"count": 0, "covered": 0}
-            if name != "crates/infrastructure/src/holds/mod.rs":
+            if not zero_allowed:
                 with self.assertRaisesRegex(ValueError, "Critical Rust"):
                     validate(self.document, self.root)
                 item["summary"]["branches"] = {"count": 20, "covered": 20}
             self.assertEqual(len(validate(self.document, self.root)), 5)
-            if name == "crates/infrastructure/src/holds/mod.rs":
+            if zero_allowed:
                 item["summary"]["regions"]["covered"] = 18
                 with self.assertRaisesRegex(ValueError, "Critical Rust"):
                     validate(self.document, self.root)

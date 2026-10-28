@@ -114,6 +114,26 @@ Write domain changes and outbox events in one transaction. Workers claim leases 
 
 Rust owns secure sessions and server-side authorization. Use a maintained password/session implementation with Argon2id where passwords are stored; verified email, rotating sessions, hashed reset tokens, admin MFA and separate guest-order access tokens. Browser credentials are HttpOnly/Secure/SameSite cookies; never store bearer tokens in browser local storage. CSRF and origin checks protect cookie-authenticated mutations. No duplicate identity system in Next.js.
 
+P2 staff capability guards consume server-side account, session and grant records.
+Installation creates no accounts, grants or sessions; accounts default disabled.
+Opaque 256-bit session tokens are stored only as SHA-256 digests and never implement
+Debug/Serialize. Catalogue/BOM inspection requires `catalogue.manage`; warehouse
+mutations require `warehouse.manage`. The public warehouse command has no actor
+field: the session supplies the ledger actor. No owner/all-role shortcut exists.
+
+The guard locks the account, session and grant with `FOR SHARE` in the same read
+committed transaction as the operation, blocking disabling, revocation and grant
+deletion through commit. Clock capture happens after lock acquisition, so waiting
+cannot reuse a timestamp from before session or recent-MFA expiry. A second check
+before commit/return rejects expiry or clock failure during inventory/data waits,
+rolling back pending stock effects. Sessions last
+at most 12 hours; MFA evidence must be present, not future-dated and at most 900
+seconds old. Role, clock and database failures leave no stock effect. Idempotent
+receipt reads require the same live authority checks. These are scoped Rust
+operations with no new HTTP route. P4 must supply genuine login/MFA verification,
+session issuance, cookie/CSRF controls and revocation endpoints before admin use;
+the current tests use labelled session attestations in disposable databases.
+
 Public catalogue HTML is cacheable by explicit locale/product version. Private cart, account, admin and quote data are never shared-cache responses. Invalidation follows publication/price/stock changes. Public facts and JSON-LD come from the same approved catalogue projection.
 
 Room planning starts with local dimensions and a calibrated 2D footprint. A photo overlay is an explicitly approximate visual aid. Camera AR is deferred until measured product assets/device support and accessibility fallback are proven. Default room images stay on-device; opt-in persistence uses private storage, quotas, expiry and deletion.

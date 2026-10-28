@@ -1,7 +1,7 @@
 //! Trusted warehouse primitive; no preview/admin mutation endpoint is exposed.
 
 use commerce_domain::inventory::{StockBalance, StockError, WarehouseChange};
-use sqlx::PgPool;
+use sqlx::{PgPool, Postgres, Transaction};
 
 #[derive(Debug)]
 pub enum StockWriteError {
@@ -69,6 +69,35 @@ pub async fn warehouse_movement(
     pool: &PgPool,
     request: WarehouseRequest<'_>,
 ) -> Result<MovementReceipt, StockWriteError> {
+    let mut tx = pool.begin().await?;
+    let result = movement_in_transaction(&mut tx, request).await;
+    finish_movement(tx, result).await
+}
+
+pub(super) async fn finish_movement(
+    tx: Transaction<'_, Postgres>,
+    result: Result<MovementReceipt, StockWriteError>,
+) -> Result<MovementReceipt, StockWriteError> {
+    match result {
+        Ok(receipt) => {
+            if receipt.replayed {
+                tx.rollback().await?;
+            } else {
+                tx.commit().await?;
+            }
+            Ok(receipt)
+        }
+        Err(error) => {
+            tx.rollback().await?;
+            Err(error)
+        }
+    }
+}
+
+pub(super) async fn movement_in_transaction(
+    tx: &mut Transaction<'_, Postgres>,
+    request: WarehouseRequest<'_>,
+) -> Result<MovementReceipt, StockWriteError> {
     if !bounded(request.effect_key, 128)
         || !bounded(request.actor, 128)
         || !bounded(request.reason, 500)
@@ -77,26 +106,25 @@ pub async fn warehouse_movement(
         return Err(StockWriteError::InvalidRequest);
     }
     let (action, quantity) = request.change.descriptor();
-    let mut tx = pool.begin().await?;
     sqlx::query("SET LOCAL lock_timeout='1s'")
-        .execute(&mut *tx)
+        .execute(&mut **tx)
         .await?;
     sqlx::query("SET LOCAL statement_timeout='2s'")
-        .execute(&mut *tx)
+        .execute(&mut **tx)
         .await?;
     sqlx::query("INSERT INTO stock_balances (component_code) VALUES ($1) ON CONFLICT DO NOTHING")
         .bind(request.component_code)
-        .execute(&mut *tx)
+        .execute(&mut **tx)
         .await?;
     let before = sqlx::query_as::<_, BalanceRow>(
         "SELECT on_hand,quarantine,reserved FROM stock_balances WHERE component_code=$1 FOR UPDATE",
     )
     .bind(request.component_code)
-    .fetch_one(&mut *tx)
+    .fetch_one(&mut **tx)
     .await?
     .balance()?;
     let existing = sqlx::query_as::<_,StoredMovement>("SELECT component_code,action,quantity,actor,reason,on_hand_after,quarantine_after,reserved_after FROM stock_movements WHERE effect_key=$1")
-        .bind(request.effect_key).fetch_optional(&mut *tx).await?;
+        .bind(request.effect_key).fetch_optional(&mut **tx).await?;
     if let Some(existing) = existing {
         if existing.component_code != request.component_code
             || existing.action != action
@@ -111,7 +139,6 @@ pub async fn warehouse_movement(
             existing.quarantine_after,
             existing.reserved_after,
         )?;
-        tx.rollback().await?;
         return Ok(MovementReceipt {
             balance,
             replayed: true,
@@ -125,16 +152,15 @@ pub async fn warehouse_movement(
     .bind(after.on_hand())
     .bind(after.quarantine())
     .bind(after.reserved())
-    .execute(&mut *tx)
+    .execute(&mut **tx)
     .await?;
     let recorded = sqlx::query("INSERT INTO stock_movements (effect_key,component_code,action,quantity,actor,reason,on_hand_delta,quarantine_delta,reserved_delta,on_hand_after,quarantine_after,reserved_after) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,0,$9,$10,$11)")
         .bind(request.effect_key).bind(request.component_code).bind(action).bind(quantity)
         .bind(request.actor).bind(request.reason)
         .bind(after.on_hand()-before.on_hand()).bind(after.quarantine()-before.quarantine())
         .bind(after.on_hand()).bind(after.quarantine()).bind(after.reserved())
-        .execute(&mut *tx).await;
+        .execute(&mut **tx).await;
     if let Err(error) = recorded {
-        tx.rollback().await?;
         if error
             .as_database_error()
             .is_some_and(|error| error.is_unique_violation())
@@ -143,7 +169,6 @@ pub async fn warehouse_movement(
         }
         return Err(error.into());
     }
-    tx.commit().await?;
     Ok(MovementReceipt {
         balance: after,
         replayed: false,

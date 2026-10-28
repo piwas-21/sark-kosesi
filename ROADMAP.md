@@ -25,11 +25,17 @@ one pass claims at most 1–100 due holds with `SKIP LOCKED`. Failed effects rol
 back, retain redacted retry state and retry after 60 seconds. The default probe
 remains read-only. No production scheduler or payment recovery is enabled.
 
-Next work: publication validation, catalogue/warehouse permissions and projection
+Next work: publication validation, guarded catalogue mutations and projection
 invalidation under the [implementation plan](docs/IMPLEMENTATION.md). P3 owns
 late-payment reallocation. Supervision of expiry remains a deployment gate.
 P0 inputs remain pending. All seven languages are draft previews,
 fixtures are explicitly not for sale, and admin operations remain unavailable.
+Server-side capability guards now protect catalogue/BOM inspection and warehouse
+commands using persisted staff sessions, recent MFA attestations and grants.
+Revocation locks span the stock commit; audit actors come from the session.
+Installation seeds no staff authority. Login/MFA verification, session issuance
+and HTTP admin writes remain unimplemented; publication mutations must adopt the
+same guard.
 Do not restart stack comparisons or redesign the accepted courtyard direction.
 
 Remaining delivery sequence: P0 business inputs in parallel → P2 inventory/catalogue → P3 checkout/payments → P4 customer/admin operations → P5 room planning and content → P6 acceptance → P7 controlled launch. Each phase has explicit exit evidence in the plan.

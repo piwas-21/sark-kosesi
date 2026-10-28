@@ -44,3 +44,13 @@ limits, row claims, transactional rollback and durable redacted retry state boun
 that capability; production configuration is rejected. It exposes no HTTP/admin
 write route or arbitrary SQL execution. P3 owns outbox processing/recovery for
 external effects.
+
+P2 adds separate catalogue/warehouse capability checks on server-side staff
+session records. Tests cover unknown/wrong-role/disabled/revoked/expired sessions,
+missing/stale/future MFA, identity tampering and revocation or expiry during lock
+waits. Authorization locks remain held through the stock transaction; caller
+payloads cannot choose the audit actor. Tokens are hashed at rest and have no
+Debug/Serialize implementation. These tests prove the authorization consumer,
+not a completed MFA ceremony: installation seeds no staff authority, and no staff
+login/MFA/session issuer, cookie mutation route or admin write endpoint exists.
+P4 owns those controls and P6/P7 own operational acceptance.
