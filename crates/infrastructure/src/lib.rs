@@ -11,6 +11,7 @@ pub mod specifications;
 pub mod staff_access;
 pub mod staff_operations;
 pub mod stock;
+pub mod translations;
 
 use commerce_application::Locale;
 use commerce_domain::{CatalogueItem, Money};

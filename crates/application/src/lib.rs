@@ -16,6 +16,18 @@ pub enum Locale {
 }
 
 impl Locale {
+    pub fn from_internal(value: &str) -> Option<Self> {
+        match value {
+            "nl" => Some(Self::Nl),
+            "de" => Some(Self::De),
+            "fr" => Some(Self::Fr),
+            "en" => Some(Self::En),
+            "ar" => Some(Self::Ar),
+            "tr" => Some(Self::Tr),
+            "kmr" => Some(Self::Kmr),
+            _ => None,
+        }
+    }
     pub fn from_public(value: &str) -> Option<Self> {
         match value {
             "nl" => Some(Self::Nl),
@@ -55,6 +67,7 @@ mod tests {
             ("tr", "tr"),
             ("ku", "kmr"),
         ] {
+            assert_eq!(Locale::from_internal(internal), Locale::from_public(public));
             assert_eq!(
                 Locale::from_public(public).map(Locale::internal),
                 Some(internal)
@@ -62,6 +75,9 @@ mod tests {
         }
         for unsupported in ["kmr", "ckb", "", "EN", "../../", "ku-Arab"] {
             assert_eq!(Locale::from_public(unsupported), None);
+        }
+        for unsupported in ["ku", "ckb", "", "EN", "../../", "ku-Arab"] {
+            assert_eq!(Locale::from_internal(unsupported), None);
         }
     }
 }

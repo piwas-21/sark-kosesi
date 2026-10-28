@@ -75,4 +75,15 @@ authority before effects/private return; immutable complete hash-bound sets are
 stored atomically. There is no arbitrary URL fetching or caller-selected path.
 No public storage/delivery or image publication is enabled. P4 still owns safe
 HTTP upload/session/CSRF controls; P7 owns measured process memory/CPU isolation.
+
+Copy review uses a separate, unseeded `catalogue.review` grant and rejects the
+target draft's own author even if that account holds both grants. The recent-MFA
+consumer and authority locks protect review effects and reads. Immutable decisions
+bind exact copy/source/specification revisions, actor, evidence and qualification
+references, with current-version checks for approvals and final clock checks for
+every decision. Independent rejection can withdraw historical copy. References are not fetched
+and cannot establish native qualification or semantic accuracy by themselves.
+Historical replay cannot restore a later rejected decision. Corrupt copy or Dutch
+source data fails private reads/new review; public publication and invalidation
+must use validated assembled snapshots and remain unimplemented.
 Permission, source/colour fidelity and SKU suitability remain human review inputs.
