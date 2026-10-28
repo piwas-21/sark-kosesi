@@ -25,6 +25,12 @@ one pass claims at most 1–100 due holds with `SKIP LOCKED`. Failed effects rol
 back, retain redacted retry state and retry after 60 seconds. The default probe
 remains read-only. No production scheduler or payment recovery is enabled.
 
+Catalogue staff can now record immutable draft price revisions with explicit
+confirmation, an evidence reference, a reason and session-derived audit actor.
+Optimistic revision checks and effect-key replay prevent lost edits and duplicate
+history. These draft records do not change preview prices or establish approved
+merchant facts. Publication and public price activation remain unimplemented.
+
 Next work: publication validation, guarded catalogue mutations and projection
 invalidation under the [implementation plan](docs/IMPLEMENTATION.md). P3 owns
 late-payment reallocation. Supervision of expiry remains a deployment gate.

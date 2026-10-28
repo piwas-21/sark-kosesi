@@ -54,4 +54,8 @@ confirmation. Tokens are hashed at rest and have no
 Debug/Serialize implementation. These tests prove the authorization consumer,
 not a completed MFA ceremony: installation seeds no staff authority, and no staff
 login/MFA/session issuer, cookie mutation route or admin write endpoint exists.
-P4 owns those controls and P6/P7 own operational acceptance.
+P4 owns those controls and P6/P7 own operational acceptance. Guarded draft price
+writes require explicit confirmation, immutable evidence/reason/actor history,
+optimistic revision checks and idempotency. Late expiry rolls back draft changes;
+even receipt replay requires current staff authority. These records never grant
+publication or validate the truth of a pricing reference.

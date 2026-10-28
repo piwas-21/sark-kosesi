@@ -2,6 +2,7 @@
 #![forbid(unsafe_code)]
 
 pub mod bom;
+pub mod catalogue_prices;
 pub mod holds;
 pub mod runtime;
 pub mod staff_access;

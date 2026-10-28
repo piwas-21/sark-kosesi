@@ -43,6 +43,19 @@ redacted 503; there is no predictable fallback ID. Failure events include only t
 generated correlation context, static code and status, with no request URL,
 credentials or body. Successful catalogue reads do not generate per-read logs.
 
+## Draft catalogue price history
+
+Catalogue price revisions are append-only rows, separate from the preview read
+projection. The catalogue staff guard spans the entire transaction. A caller
+must confirm the change, supply the expected prior revision and retain a bounded
+pricing evidence reference and reason; the session supplies the actor. A global
+effect key serializes exact retries before variant locking. The variant row
+serializes revision allocation and a database trigger rejects history edits or
+revision gaps, including stale repeatable-read imports. Final clock validation
+rolls back prices if authority expires during locks. This adapter adds no HTTP
+write route, publication approval, scheduled activation or advertised price.
+Existing fixture-only catalogue constraints remain in force.
+
 ## Inventory and finance
 
 Model sellable variants separately from physical components. A configuration has a versioned bill of materials: seat/back/bolster covers and optional matching foam inserts. Covers-only does not reserve foam. Prepacked and separable stock require explicit warehouse rules; never count both kit stock and its contents as independently available.
