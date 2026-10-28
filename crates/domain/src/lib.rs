@@ -7,6 +7,7 @@ pub mod holds;
 pub mod inventory;
 pub mod media;
 pub mod specifications;
+pub mod translations;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub enum Currency {

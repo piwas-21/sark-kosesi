@@ -28,7 +28,7 @@ P1 acceptance activates application CI; it does not activate payment or establis
 1. Verify expiry supervision before operational stock use. Provider recovery
    remains P3; late payment must attempt explicit atomic reallocation. Prepacked
    stock still needs explicit kit conversion without counting contents twice.
-2. Add reviewed translations, factual review/publication validation and activation
+2. Connect factual/image review and reviewed copy to publication validation and activation
    of approved catalogue revisions, including safe public derivative delivery. Missing P0 facts and fixture data
    must fail publication. Apply the staff capability guard to catalogue mutations,
    retaining audit reasons and no exposed preview write route.
@@ -119,6 +119,21 @@ merchandising/permission or SKU suitability. Actual asset/colour/quality review,
 translation and publication gates plus public serving/cache policy remain open.
 Decoder allocation limits are best-effort in the library; owned byte/dimension/
 output-buffer checks supplement them, and P7 still needs process resource caps.
+
+Copy drafts now require explicit title, description, materials, care, safety and
+assembly text in each locale. They reference an immutable specification and an
+exact Dutch source version; previews cannot supply missing source copy. Versioned
+approval/rejection records require a separate `catalogue.review` grant, a different
+actor from the draft author, explicit confirmation, review evidence and a
+qualification reference. Installation grants no authority or approval.
+Variant serialization protects source/version checks across edits and reviews;
+stale specification, source or target copy cannot receive a new review. Exact
+historical retries return their original receipt without changing the latest
+decision. Reads revalidate stored copy, source content and references. All new
+operations consume the existing recent-MFA/session guard and check authority at
+completion, including private reads. Actual qualified native review, legal/UI copy
+review, factual approval, image suitability, public activation and invalidation
+remain required; an attestation reference alone cannot establish those facts.
 
 ## Next session prompt
 

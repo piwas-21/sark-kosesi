@@ -121,6 +121,34 @@ identity supports future explicit processing-version expansion. Private reads
 validate stored bytes/geometry/metadata and recheck authority after CPU work.
 No public original/rendition route, image approval or automatic publication exists.
 
+## Versioned copy and review
+
+Catalogue copy is separate from the fixture preview projection. Closed, bounded
+drafts contain title, description, materials, care, safety and assembly fields,
+with an exact specification revision. Dutch is the source-copy locale; other
+locales also bind an exact Dutch draft revision. There is no legacy-copy or
+missing-language fallback. The same variant serialization row used by specification
+edits protects copy and review writes. No-op writes provide MVCC conflicts for
+stale repeatable-read importers as well as ordinary row locking.
+
+`catalogue.manage` owns drafts; `catalogue.review` is a separate, unseeded grant
+for review reads and decisions. Reviewers must differ from the target draft's
+author and supply evidence and qualification references with confirmation/reason.
+These are auditable attestations, not automated proof of linguistic accuracy or
+qualification. Real native-reader acceptance remains P0 evidence. Review decisions
+are immutable approval/rejection history; the latest decision for that exact draft
+applies. A fresh decision requires current specification, source and target copy.
+Historical retries preserve their original receipt and cannot restore a withdrawn
+approval. Effect identity includes actor, target/version, decision, references and
+reason. Authority locks span effects and final clock checks.
+
+Private reads validate closed stored copy and the referenced Dutch source, rather
+than trusting a stored reviewed flag. Historical records remain inspectable and do
+not establish current publication eligibility. Publication must validate the exact
+assembled facts, copy, rights and image approvals and invalidate affected public
+projections; those consumers remain unimplemented. There is no public copy or
+indexing activation and no new HTTP authoring endpoint.
+
 ## Inventory and finance
 
 Model sellable variants separately from physical components. A configuration has a versioned bill of materials: seat/back/bolster covers and optional matching foam inserts. Covers-only does not reserve foam. Prepacked and separable stock require explicit warehouse rules; never count both kit stock and its contents as independently available.

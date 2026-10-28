@@ -3,12 +3,14 @@
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Capability {
     CatalogueManage,
+    CatalogueReview,
     WarehouseManage,
 }
 impl Capability {
     pub fn code(self) -> &'static str {
         match self {
             Self::CatalogueManage => "catalogue.manage",
+            Self::CatalogueReview => "catalogue.review",
             Self::WarehouseManage => "warehouse.manage",
         }
     }

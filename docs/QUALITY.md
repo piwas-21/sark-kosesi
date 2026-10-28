@@ -120,6 +120,14 @@ rendering require fresh human approval. Normal gates never update the binding.
 
 Critical cases: last shared foam component contested by two orders; covers-only reserves no foam; payment-create timeout and late paid after expiry; duplicated/reordered webhooks; partial refund/tax/discount rounding; coupon exhaustion; expired guest token; cross-customer access; worker crash after provider acceptance; duplicate restock mail; incomplete translation/private-cache leak. Mutation testing on financial/authorization invariants must demonstrate that the test detects the intended defect, not just a textual mutation.
 
+Translation history and review adapters retain the 95% critical line/branch gates.
+Isolated PostgreSQL cases cover role separation, self-review, stale specification/
+source/target revisions, full effect intent, competing editors/reviewers, expiry
+through real lock waits, grant revocation, cancellation, immutable history,
+malformed stored/source copy and schema upgrades without implicit review grants.
+Native language quality and qualification are human acceptance evidence; fixtures
+and passing tests cannot supply that evidence or make a locale indexable.
+
 ## Accessibility and performance acceptance
 
 Target WCAG 2.2 AA. Automated checks require zero serious/critical violations and triage all lower findings; manual review covers complete journeys with keyboard only, VoiceOver/Safari, NVDA/Firefox, 200/400% zoom, 320px reflow, high contrast, reduced motion and Arabic RTL. Check focus restoration, error summary, accessible names/live regions, contrast in every state and touch targets. Planner dragging has keyboard/input alternatives; 3D never hides the only dimensions. Native speakers review seven locales and fonts. Automated scores do not certify compliance.
