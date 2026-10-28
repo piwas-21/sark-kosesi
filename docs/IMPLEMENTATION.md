@@ -23,6 +23,29 @@ Read [architecture](ARCHITECTURE.md), [product](PRODUCT.md), [quality](QUALITY.m
 
 P1 acceptance activates application CI; it does not activate payment or establish release readiness. Missing business inputs can remain pending while tests use clearly isolated fixtures.
 
+## P2 work packages
+
+1. Build component stock balances and an append-only movement ledger with unique
+   effect keys, movement reasons and separate quarantine quantities. Atomically
+   reserve the exact sealed BOM revision using deterministic component locking;
+   cover-only configurations cannot consume foam. Prove conservation, scarcity,
+   duplicate/reordered effects, rollback and overflow against isolated PostgreSQL.
+2. Add owned holds, bounded expiry and explicit release/consumption transitions;
+   expiry and payment recovery remain distinct. Do not add provider effects before
+   P3. Prepacked stock needs explicit kit conversion without counting contents twice.
+3. Add materials, measured specifications, media rights and reviewed translations,
+   versioned prices and publication validation. Missing P0 facts and fixture data
+   must fail publication. Catalogue and warehouse capabilities require Rust-side
+   least-privilege authorization, audit reasons and no exposed preview write route.
+4. Connect approved catalogue/availability projections to HTML and feeds, with
+   publication/price/stock invalidation tests and agreement on exact variant facts.
+   Keep the courtyard UI baseline and draft/noindex preview boundaries intact.
+
+The current component catalogue supports only separable fixture variants. Sealed
+BOMs are immutable and contain 1–64 distinct cover/foam components, each requiring
+1–10000 units. Rust reads only sealed revisions, ordered by physical component
+code. Legacy preview rows remain valid without inventing missing BOM data.
+
 ## Next session prompt
 
 > Read AGENTS.md and ROADMAP.md, then docs/IMPLEMENTATION.md and its linked requirements. Implement P2 catalogue/BOM and stock in small reviewed PRs to develop using the selected Rust/Axum/SQLx/PostgreSQL and Next.js stack. Model product families/variants, shared physical components, publication validation, stock ledger/holds/quarantine and catalogue/warehouse permissions. Keep production disabled and the approved courtyard design. P0 inputs remain pending; use isolated labelled fixtures and never invent publishable facts. Use only free, self-hostable dependencies with reviewed licences. Retain every P1 gate and add hostile PostgreSQL concurrency, component-conservation, publication/RBAC and cache-invalidation tests. Preserve shared work; use the independent review receipt and merge gate. Report code/CI, provider and deployment evidence separately.

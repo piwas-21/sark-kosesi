@@ -1,6 +1,7 @@
 //! Parameterized PostgreSQL catalogue adapter and forward migration owner.
 #![forbid(unsafe_code)]
 
+pub mod bom;
 pub mod runtime;
 
 use commerce_application::Locale;

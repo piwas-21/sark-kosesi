@@ -49,6 +49,17 @@ Model sellable variants separately from physical components. A configuration has
 
 Maintain append-only stock movements, on-hand/quarantine/reserved quantities, reservation ownership and expiry. Reserve all components atomically in deterministic locking order. Database constraints prevent negative usable balances; unique keys prevent duplicate event application. Test competing orders against real isolated PostgreSQL. Receiving, returns inspection and release of reservations are distinct movements.
 
+The component catalogue expands the P1 preview schema without changing its read
+contract. A variant links one SKU to a product family, size/textile codes and an
+explicit separable stock policy. Cover/foam physical component codes are shared
+between variants. Draft BOM lines become immutable when the revision is sealed;
+database triggers serialize edits with sealing and reject empty, oversized or
+fill-inconsistent revisions. Component identity/kind cannot be rewritten and a
+sealed revision fixes the variant's fill. The Rust adapter loads only sealed
+revisions in component-code order. Prepacked kits and non-fixture catalogue data
+remain disallowed pending their owning policies. These tables add no admin write
+endpoint and do not publish merchant facts.
+
 The Rust quote service computes item/discount/tax/shipping allocations in integer minor units and a single currency (EUR at launch). Persist immutable order line, bundle, price, VAT, discount, address and policy snapshots. A later catalogue edit cannot rewrite order history. Discounts have explicit eligibility, budget, per-customer limits, stacking and time-zone rules; concurrent redemption cannot exceed a limit.
 
 ## Payments and durable work
