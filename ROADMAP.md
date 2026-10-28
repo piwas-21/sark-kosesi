@@ -33,10 +33,8 @@ Remaining delivery sequence: P0 business inputs in parallel → P2 inventory/cat
 
 External blockers: final brand/domain, real product specification/media, market/carrier/tax readiness, Mollie retail website approval, translated legal/product content, email delivery and recovery evidence. EU-wide intent is unchanged; an unready country cannot take payment.
 
-Delivery is also blocked: the repository currently reports private, GitHub denies
-branch-protection/ruleset access and CodeQL uploads, and artifact storage quota
-prevents CI evidence uploads. Keep every gate active. An owner decision on public
-visibility or an eligible protected private setup is pending; do not merge based
-on local checks alone.
+The repository is public and the protection audit passes. Current-revision CI
+remains mandatory, including successful evidence uploads, browser acceptance and
+populated Sonar/CodeQL results; do not merge based on local checks alone.
 
 Before any private-repository switch, run the protection audit and follow [operations](docs/OPERATIONS.md). A GitHub Free private repository does not retain the current public-repository enforcement. Do not declare production readiness while that is unresolved.
