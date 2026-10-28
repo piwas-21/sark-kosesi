@@ -31,7 +31,13 @@ Optimistic revision checks and effect-key replay prevent lost edits and duplicat
 history. These draft records do not change preview prices or establish approved
 merchant facts. Publication and public price activation remain unimplemented.
 
-Next work: publication validation, guarded catalogue mutations and projection
+Immutable specification drafts now record BOM-linked component measurements,
+cover fibre fractions, foam evidence, assembly footprint, measured parcels and
+traceability references. Staff reads decode and revalidate stored drafts; no
+measurement/evidence entry grants factual approval or publication.
+
+Next work: media rights, reviewed translations, publication validation, guarded
+catalogue authoring and projection
 invalidation under the [implementation plan](docs/IMPLEMENTATION.md). P3 owns
 late-payment reallocation. Supervision of expiry remains a deployment gate.
 P0 inputs remain pending. All seven languages are draft previews,
