@@ -50,6 +50,10 @@ class RustCoverage(unittest.TestCase):
             ("crates/infrastructure/src/catalogue_prices.rs", False),
             ("crates/domain/src/specifications.rs", False),
             ("crates/infrastructure/src/specifications.rs", False),
+            ("crates/domain/src/media.rs", False),
+            ("crates/infrastructure/src/media/mod.rs", False),
+            ("crates/infrastructure/src/media/register.rs", False),
+            ("crates/infrastructure/src/media/rights.rs", False),
         ):
             source = self.root / name
             source.parent.mkdir(parents=True, exist_ok=True)

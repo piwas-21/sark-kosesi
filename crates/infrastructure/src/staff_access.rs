@@ -41,11 +41,15 @@ pub(super) struct StaffTransaction {
 }
 impl StaffTransaction {
     pub fn check_time(&self, clock: &dyn Clock) -> Result<(), StaffError> {
+        self.authorized_at(clock).map(|_| ())
+    }
+    pub fn authorized_at(&self, clock: &dyn Clock) -> Result<i64, StaffError> {
         let seconds = clock
             .unix_seconds()
             .map_err(|_| StaffError::ClockUnavailable)?;
         let now = i64::try_from(seconds).map_err(|_| StaffError::ClockUnavailable)?;
-        check_session(self.state, now).map_err(|_| StaffError::Denied)
+        check_session(self.state, now).map_err(|_| StaffError::Denied)?;
+        Ok(now)
     }
 }
 #[derive(sqlx::FromRow)]

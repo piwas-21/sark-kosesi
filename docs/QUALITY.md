@@ -75,6 +75,9 @@ coverage. The staff guard, policy, operation wrappers and draft price adapter re
 positive branch counters at the 95% critical line/branch thresholds. The draft
 specification domain policy and guarded adapter have the same positive-counter
 requirements; malformed stored JSON and logical corruption cannot bypass them.
+Media policy, registry, rights and inspection modules also require positive
+branch counters and 95% critical line/branch coverage. Tests distinguish rights
+attestation validity from verified image bytes and publication acceptance.
 Zero stays explicit rather than being reported as 100%. Existing critical
 money/preview authorization still require positive branch counters. LLVM reports
 zero instrumented branches for match-only and SQL adapter code; this is recorded

@@ -5,6 +5,7 @@ use serde::{Deserialize, Serialize};
 
 pub mod holds;
 pub mod inventory;
+pub mod media;
 pub mod specifications;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
