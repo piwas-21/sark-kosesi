@@ -63,3 +63,24 @@ pub struct CatalogueItem {
     pub fill: String,
     pub fixture: bool,
 }
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum ComponentKind {
+    Cover,
+    Foam,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct BomComponent {
+    pub code: String,
+    pub kind: ComponentKind,
+    pub quantity: u32,
+}
+
+/// A versioned configuration requirement, never an independent stock pool.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct BillOfMaterials {
+    pub sku: String,
+    pub revision: i32,
+    pub components: Vec<BomComponent>,
+}
