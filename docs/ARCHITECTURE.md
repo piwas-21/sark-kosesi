@@ -98,7 +98,11 @@ and a fresh authorization/write phase. The immutable registry snapshot must matc
 on both sides of processing. An unforgeable internal decoded result binds actual
 SHA-256, codec, raw geometry and oriented derivative bytes; callers provide no
 verified flag. JPEG/PNG/WebP are enabled in pinned image-rs with other formats
-excluded. Animation is rejected. New encoders preserve alpha where applicable and
+excluded. Animation is rejected.
+WebP RIFF sizes, chunk ranges/padding and static canvas/native geometry are checked
+without payload allocation before decoder construction or metadata access. This
+prevents declared metadata lengths from escaping the actual bounded input.
+New encoders preserve alpha where applicable and
 exclude personal EXIF/XMP/IPTC/comments; originals stay private. Colour, visual
 quality, rights and actual SKU suitability still require P0 review.
 

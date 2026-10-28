@@ -104,7 +104,9 @@ or SKU suitability. Original-byte/derivative verification and public delivery
 remain P2 work; HTTP upload/login/MFA controls remain P4. No media is seeded.
 
 Private image ingestion now verifies actual JPEG/PNG/WebP bytes against the
-immutable registry digest, codec and raw pixel dimensions. It rejects animation,
+immutable registry digest, codec and raw pixel dimensions. It validates WebP
+container/chunk ranges and canvas/native dimensions before decoder construction.
+It rejects animation,
 malformed/oversized data and over-budget derivatives, normalizes orientation and
 re-encodes bounded 320/640/960-edge variants without upscaling or copying private
 metadata. There are at most two CPU jobs and two admitted ingestion workflows, including

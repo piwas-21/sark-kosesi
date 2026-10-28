@@ -6,6 +6,7 @@ use super::{
 use commerce_application::{request_context::Clock, staff_access::Capability};
 use commerce_domain::{media::valid_command_id, specifications::bounded_text};
 use sqlx::PgPool;
+mod framing;
 mod process;
 mod store;
 static INGESTIONS: tokio::sync::Semaphore = tokio::sync::Semaphore::const_new(2);

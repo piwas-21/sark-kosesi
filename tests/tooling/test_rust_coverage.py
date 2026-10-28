@@ -56,6 +56,7 @@ class RustCoverage(unittest.TestCase):
             ("crates/infrastructure/src/media/rights.rs", False),
             ("crates/infrastructure/src/image_ingestion/mod.rs", False),
             ("crates/infrastructure/src/image_ingestion/process.rs", False),
+            ("crates/infrastructure/src/image_ingestion/framing.rs", False),
             ("crates/infrastructure/src/image_ingestion/store.rs", False),
         ):
             source = self.root / name

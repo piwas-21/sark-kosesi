@@ -337,6 +337,73 @@ fn animated_webp() -> Vec<u8> {
     result.extend(payload);
     result
 }
+fn extended_webp_with_exif() -> Vec<u8> {
+    let image = encoded(ImageFormat::WebP, 2, 3);
+    // TIFF orientation6. WebP EXIF carries the TIFF bytes without JPEG's prefix.
+    let exif = [
+        b'I', b'I', 42, 0, 8, 0, 0, 0, 1, 0, 0x12, 1, 3, 0, 1, 0, 0, 0, 6, 0, 0, 0, 0, 0, 0, 0,
+    ];
+    let mut payload = b"WEBP".to_vec();
+    payload.extend(riff_chunk(b"VP8X", &[8, 0, 0, 0, 1, 0, 0, 2, 0, 0]));
+    payload.extend_from_slice(&image[12..]);
+    payload.extend(riff_chunk(b"EXIF", &exif));
+    let mut bytes = b"RIFF".to_vec();
+    bytes.extend(u32::try_from(payload.len()).expect("fixture").to_le_bytes());
+    bytes.extend(payload);
+    bytes
+}
+#[sqlx::test(migrator = "MIGRATOR")]
+async fn webp_metadata_ranges_are_bounded_before_processing_and_valid_orientation_is_preserved(
+    pool: PgPool,
+) {
+    let _case = CASES.lock().await;
+    seed(&pool).await;
+    let token = SessionToken::from_bytes([1; 32]);
+    let mut invalid = extended_webp_with_exif();
+    let exif = invalid
+        .windows(4)
+        .position(|part| part == b"EXIF")
+        .expect("metadata chunk");
+    invalid[exif + 4..exif + 8].copy_from_slice(&65536_u32.to_le_bytes());
+    register(
+        &pool,
+        "range-bomb",
+        &metadata(&invalid, ImageType::Webp, 2, 3),
+    )
+    .await;
+    assert!(matches!(
+        ingest_image(
+            &pool,
+            &token,
+            &FixedClock(1100),
+            request("range-bomb", &invalid, "range-bomb")
+        )
+        .await,
+        Err(ImageError::ResourceLimit)
+    ));
+    assert_eq!(counts(&pool).await, (0, 0));
+    let valid = extended_webp_with_exif();
+    register(
+        &pool,
+        "valid-webp-exif",
+        &metadata(&valid, ImageType::Webp, 2, 3),
+    )
+    .await;
+    let receipt = ingest_image(
+        &pool,
+        &token,
+        &FixedClock(1100),
+        request("valid-webp-exif", &valid, "valid-webp-exif"),
+    )
+    .await
+    .expect("actual WebP orientation");
+    assert_eq!((receipt.display_width, receipt.display_height), (3, 2));
+    let output = private_rendition(&pool, &token, &FixedClock(1100), "valid-webp-exif", 320)
+        .await
+        .expect("metadata-free read")
+        .expect("rendition");
+    assert_eq!((output.width, output.height), (3, 2));
+}
 #[sqlx::test(migrator = "MIGRATOR")]
 async fn unsupported_animated_truncated_and_header_bombs_never_create_image_records(pool: PgPool) {
     let _case = CASES.lock().await;

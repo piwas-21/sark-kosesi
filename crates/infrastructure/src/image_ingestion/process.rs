@@ -56,6 +56,7 @@ fn decode<'a>(
             Box::new(decoder)
         }
         ImageFormat::WebP => {
+            super::framing::webp(bytes)?;
             let decoder = WebPDecoder::new(Cursor::new(bytes))?;
             if decoder.has_animation() {
                 return Err(ImageError::UnsupportedImage);
