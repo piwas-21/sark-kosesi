@@ -14,6 +14,10 @@ def source_digest(root):
             "tests/application/browser.spec.mjs",
             "tests/application/capture.mjs",
             "tests/application/visual-context.mjs",
+            "tests/application/serve.mjs",
+            "crates/infrastructure/tests/seed_preview.rs",
+            "crates/infrastructure/tests/support/browser_catalogue.rs",
+            "tests/fixtures/approved_catalogue.rs",
             "playwright.application.config.mjs",
         )
     )
@@ -27,9 +31,21 @@ def expected_images():
     return {
         f"tests/application/baselines/{browser}/{surface}-{locale}-{theme}-{width}.png"
         for browser in ("chromium", "firefox", "webkit")
-        for surface in ("courtyard", "gallery")
+        for surface in (
+            "courtyard",
+            "gallery",
+            "collection",
+            "covers",
+            "filled",
+            "empty",
+            "missing",
+        )
         for locale in (
-            ("nl", "ar") if surface == "courtyard" else ("nl", "de", "fr", "en", "ar", "tr", "ku")
+            ("nl", "de", "fr", "en", "ar", "tr", "ku")
+            if surface == "gallery"
+            else ("en", "ku")
+            if surface == "empty"
+            else ("nl", "ar")
         )
         for theme in ("light", "dark")
         for width in (1280, 390)

@@ -381,3 +381,17 @@ They do not enable production. Image delivery accepts a SKU/locale/publication/
 edge, checks eligibility, loads only its sanitized derivative, ends the transaction
 before bounded CPU verification, then rechecks current eligibility and the exact
 image identity before returning bytes. No original/asset-path route is exposed.
+
+The private collection and family/variant HTML use the same validated projection
+as the preview XML feed. Each feed/collection traversal is bounded and fails as a
+whole on dependency/cursor errors; no missing locale or selected SKU falls back.
+Language switching preserves the SKU and resolves its current locale family path.
+Ordinary variants share the configured family canonical; draft previews emit no
+indexable alternates or merchant Offer schema. Public selling feeds/schema remain
+P6/P0 acceptance work. The specimen stays a separate clearly labelled route.
+
+Approved collection routes await their data before the response starts. The shared
+loading boundary is scoped to specimen products/gallery so an unavailable SKU can
+return a genuine 404. Every Next/API/image request remains private/no-store. Image
+proxy paths accept only locale/SKU/revision/edge and bound response bytes while
+reading; private credentials and original/asset paths never reach browser props.

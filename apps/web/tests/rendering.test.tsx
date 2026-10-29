@@ -35,7 +35,7 @@ import { Preferences } from "../src/components/preferences";
 import Gallery from "../src/app/[locale]/gallery/page";
 import Admin from "../src/app/[locale]/admin/page";
 import ErrorBoundary from "../src/app/[locale]/error";
-import Loading from "../src/app/[locale]/loading";
+import Loading from "../src/components/catalogue-loading";
 it("loads explicit saved theme and switches language preserving query", async () => {
   localStorage.setItem("theme", "dark");
   render(<Preferences locale="nl" />);

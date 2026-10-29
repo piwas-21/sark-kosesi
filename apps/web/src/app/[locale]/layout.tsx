@@ -69,6 +69,7 @@ export default async function Layout({
             </Link>
             <nav aria-label="Main" lang="en">
               <Link href={`/${locale}#collection`}>Collection</Link>
+              <Link href={`/${locale}/collection`}>Product preview</Link>
               <Link href={`/${locale}/gallery`}>Components</Link>
               <Link href={`/${locale}/admin`}>Admin</Link>
             </nav>

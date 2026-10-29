@@ -86,9 +86,12 @@ reactivating them. Historical receipts never change the latest publication.
 Authenticated non-production HTTP reads now expose a current approved customer
 projection and exact revision-bound sanitized images. Physical BOM availability
 is read through with no shared cache. No actual merchant facts or publication
-records are seeded; storefront HTML/feed agreement remains to be connected.
+records are seeded. Private collection/family HTML and a labelled XML preview
+feed now consume the same projection, with exact SKU links, complete customer
+facts and read-through stock/publication invalidation. Human visual approval
+of the expanded candidate gallery remains required before accepting this UI.
 
-Next work: approved catalogue HTML/feed agreement and visual acceptance under the [implementation plan](docs/IMPLEMENTATION.md). P3 owns
+Next work: finish human visual acceptance, then P3 checkout/payment work under the [implementation plan](docs/IMPLEMENTATION.md). P3 owns
 late-payment reallocation. Supervision of expiry remains a deployment gate.
 P0 inputs remain pending. All seven languages are draft previews,
 fixtures are explicitly not for sale, and admin operations remain unavailable.

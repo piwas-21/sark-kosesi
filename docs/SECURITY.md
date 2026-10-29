@@ -140,3 +140,12 @@ actor, qualification, stock balance or storage path is emitted. Preview bearer
 protection, loopback-only non-production configuration, noindex, no-store and
 nosniff remain in force. Read/dependency/clock failures are redacted and never
 become partial product facts. There is no shared product/image cache to invalidate.
+
+Preview HTML/feed/image routes consume only decoded customer DTOs, never staff
+bundles or private evidence. Unknown fields, wrong locale/SKU identities, malformed
+or repeated cursors and dependency errors fail closed. XML escapes customer copy
+and rejects text outside XML's character envelope rather than silently editing it.
+The image proxy permits only exact revision-bound raster routes, forbids redirects,
+and cancels upstream reads above the byte bound. It does not forward credentials,
+private headers, arbitrary URLs or originals. Fixture merchant feeds and selling
+schema are not advertised; preview authentication/noindex/no-store remain required.

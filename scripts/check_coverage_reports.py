@@ -20,7 +20,15 @@ def main():
         print(json.dumps(result))
     typescript = ROOT / "coverage/typescript/lcov.info"
     for package in ("apps/web/src", "packages/design/src"):
-        critical = ["apps/web/src/proxy.ts"] if package == "apps/web/src" else []
+        critical = (
+            [
+                "apps/web/src/proxy.ts",
+                "apps/web/src/lib/published-price.ts",
+                "apps/web/src/lib/read-image.ts",
+            ]
+            if package == "apps/web/src"
+            else []
+        )
         check(typescript, package, critical, root=ROOT)
     messages = [
         json.loads(line)

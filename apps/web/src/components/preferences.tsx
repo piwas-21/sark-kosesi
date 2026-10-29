@@ -53,6 +53,8 @@ export function Preferences({ locale }: { locale: Locale }) {
                 path,
                 search.size ? `?${search.toString()}` : "",
                 next,
+                document.querySelector<HTMLElement>("[data-selected-sku]")
+                  ?.dataset.selectedSku,
               ),
             );
           }}

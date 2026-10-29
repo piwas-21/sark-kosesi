@@ -18,7 +18,7 @@ const authorization = `Basic ${Buffer.from(`preview:${process.env.PREVIEW_TOKEN}
 const database = JSON.parse(
   await readFile(".local/evidence/postgres-fixture.json", "utf8"),
 );
-assert.equal(database.catalogueItems, 1);
+assert.equal(database.catalogueItems, 5);
 assert.equal(database.translations, 7);
 assert.ok(database.databaseBytes > 0);
 const evidence = [];
@@ -28,7 +28,13 @@ const browser = await chromium.launch({
   args: [`--remote-debugging-port=${debuggingPort}`],
 });
 try {
-  for (const path of ["/nl", "/nl/products/courtyard-demo", "/nl/gallery"]) {
+  for (const path of [
+    "/nl",
+    "/nl/products/courtyard-demo",
+    "/nl/gallery",
+    "/nl/collection",
+    "/nl/collection/isolated-room?variant=SET-COVERS",
+  ]) {
     const reports = [];
     for (let run = 0; run < budgets.lab.runs; run++) {
       const report = await lighthouse(base + path, {

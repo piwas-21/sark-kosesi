@@ -1,6 +1,6 @@
 import { test, expect } from "@playwright/test";
 import AxeBuilder from "@axe-core/playwright";
-import { visualContext } from "./visual-context.mjs";
+import { visualContext, themeReady } from "./visual-context.mjs";
 const locales = ["nl", "de", "fr", "en", "ar", "tr", "ku"];
 async function assertGalleryTabOrder(page, browserName) {
   const forward =
@@ -21,6 +21,7 @@ async function assertGalleryTabOrder(page, browserName) {
     page.getByRole("link", { name: "Skip to content" }),
     page.getByRole("link", { name: "dicle." }),
     page.getByRole("link", { name: "Collection", exact: true }),
+    page.getByRole("link", { name: "Product preview", exact: true }),
     page.getByRole("link", { name: "Components", exact: true }),
     page.getByRole("link", { name: "Admin", exact: true }),
     page.getByLabel("Language"),
@@ -107,17 +108,36 @@ for (const viewport of [
     for (const surface of [
       { name: "courtyard", path: "", locales: ["nl", "ar"] },
       { name: "gallery", path: "/gallery", locales },
+      { name: "collection", path: "/collection", locales: ["nl", "ar"] },
+      {
+        name: "covers",
+        path: "/collection/isolated-room?variant=SET-COVERS",
+        locales: ["nl", "ar"],
+      },
+      {
+        name: "filled",
+        path: "/collection/isolated-room?variant=SET-FILLED",
+        locales: ["nl", "ar"],
+      },
+      { name: "empty", path: "/collection", locales: ["en", "ku"] },
+      {
+        name: "missing",
+        path: "/collection/missing?variant=MISSING",
+        locales: ["nl", "ar"],
+      },
     ]) {
       for (const locale of surface.locales)
         for (const theme of ["light", "dark"]) {
           test(`@visual ${surface.name} ${locale} ${theme} ${viewport.width}`, async ({
             page,
           }) => {
+            // The declared fixture theme is also the device preference from first paint.
+            await page.emulateMedia({ colorScheme: theme });
             await page.goto(`/${locale}${surface.path}`);
             await page.getByLabel("Theme").selectOption(theme);
             if (surface.name === "gallery")
               await page.getByLabel("Room width (cm)").focus();
-            await page.evaluate(() => document.fonts.ready);
+            await themeReady(page, theme);
             await expect(page).toHaveScreenshot(
               `${surface.name}-${locale}-${theme}-${viewport.width}.png`,
               { fullPage: true, animations: "disabled" },
@@ -167,5 +187,99 @@ test("@a11y traversal detects an input removed from keyboard order", async ({
   });
   await expect(assertGalleryTabOrder(page, browserName)).rejects.toThrow(
     /Room width/,
+  );
+});
+
+test("@journey exact configurations and language changes preserve the selected SKU", async ({
+  page,
+}) => {
+  await page.goto("/nl/collection/isolated-room?variant=SET-COVERS");
+  await expect(page.locator("[data-price]")).toHaveAttribute(
+    "data-price",
+    "98.76",
+  );
+  await expect(page.locator("[data-availability]")).toHaveAttribute(
+    "data-availability",
+    "in_stock",
+  );
+  await page.getByRole("link", { name: /with-foam.*SET-FILLED/ }).click();
+  await expect(page).toHaveURL(/variant=SET-FILLED$/);
+  await expect(page.locator("[data-price]")).toHaveAttribute(
+    "data-price",
+    "123.45",
+  );
+  await expect(page.locator("[data-availability]")).toHaveAttribute(
+    "data-availability",
+    "out_of_stock",
+  );
+  await expect(page.getByText("35000 g/m³")).toBeVisible();
+  await page.getByLabel("Language").selectOption("ar");
+  await expect(page).toHaveURL(
+    /\/ar\/collection\/isolated-ar-room\?variant=SET-FILLED$/,
+  );
+  await expect(page.locator("html")).toHaveAttribute("dir", "rtl");
+  await expect(page.locator('a[aria-current="true"]')).toHaveAttribute(
+    "href",
+    /variant=SET-FILLED$/,
+  );
+  await page.getByLabel("Language").selectOption("ku");
+  await expect(page.locator("html")).toHaveAttribute("lang", "ku-Latn");
+  await expect(page.locator("[data-price]")).toHaveCount(0);
+});
+for (const locale of ["nl", "ar"])
+  for (const theme of ["light", "dark"])
+    test(`@a11y approved configuration ${locale} ${theme}`, async ({
+      page,
+      browserName,
+    }) => {
+      await page.setViewportSize({ width: 390, height: 844 });
+      await page.goto(`/${locale}/collection/isolated-room?variant=SET-COVERS`);
+      await page.getByLabel("Theme").selectOption(theme);
+      expect(
+        (
+          await new AxeBuilder({ page })
+            .withTags(["wcag2a", "wcag2aa", "wcag21aa", "wcag22aa"])
+            .analyze()
+        ).violations,
+      ).toEqual([]);
+      await page.evaluate(() => {
+        document.body.tabIndex = -1;
+        document.body.focus();
+        document.body.removeAttribute("tabindex");
+      });
+      const forward =
+        browserName === "webkit" && process.platform === "darwin"
+          ? "Alt+Tab"
+          : "Tab";
+      await page.keyboard.press(forward);
+      await expect(
+        page.getByRole("link", { name: "Skip to content" }),
+      ).toBeFocused();
+      expect(
+        await page.evaluate(
+          () => document.documentElement.scrollWidth <= innerWidth,
+        ),
+      ).toBe(true);
+    });
+
+test("@journey default family selection survives locale-specific family slugs", async ({
+  page,
+}) => {
+  await page.goto("/nl/collection/isolated-room");
+  await expect(page.locator("article[data-selected-sku]")).toHaveAttribute(
+    "data-selected-sku",
+    "SET-COVERS",
+  );
+  await page.getByLabel("Language").selectOption("ar");
+  await expect(page).toHaveURL(
+    /\/ar\/collection\/isolated-ar-room\?variant=SET-COVERS$/,
+  );
+  await expect(page.locator("[data-price]")).toHaveAttribute(
+    "data-price",
+    "98.76",
+  );
+  await expect(page.locator("article[data-selected-sku]")).toHaveAttribute(
+    "data-selected-sku",
+    "SET-COVERS",
   );
 });

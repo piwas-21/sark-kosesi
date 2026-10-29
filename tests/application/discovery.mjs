@@ -105,3 +105,4 @@ await writeFile(
 console.log(
   `Discovery: ${measured} served HTML cases and hostile controls passed; no public indexable catalogue.`,
 );
+await import("./published-discovery.mjs");
