@@ -28,7 +28,7 @@ P1 acceptance activates application CI; it does not activate payment or establis
 1. Verify expiry supervision before operational stock use. Provider recovery
    remains P3; late payment must attempt explicit atomic reallocation. Prepacked
    stock still needs explicit kit conversion without counting contents twice.
-2. Connect factual/image review and reviewed copy to publication validation and activation
+2. Connect image suitability review, factual decisions and reviewed copy to publication validation and activation
    of approved catalogue revisions, including safe public derivative delivery. Missing P0 facts and fixture data
    must fail publication. Apply the staff capability guard to catalogue mutations,
    retaining audit reasons and no exposed preview write route.
@@ -36,7 +36,7 @@ P1 acceptance activates application CI; it does not activate payment or establis
    publication/price/stock invalidation tests and agreement on exact variant facts.
    Keep the courtyard UI baseline and draft/noindex preview boundaries intact.
 
-The current component catalogue supports only separable fixture variants. Sealed
+The current component catalogue supports separable fixtures and private merchant candidates. Sealed
 BOMs are immutable and contain 1–64 distinct cover/foam components, each requiring
 1–10000 units. Rust reads only sealed revisions, ordered by physical component
 code. Legacy preview rows remain valid without inventing missing BOM data.
@@ -148,6 +148,19 @@ fields; real prices and URLs must come from approved publication. Legacy copy is
 fixture-only, preserving prior readers and the courtyard preview. Creation never
 receives physical stock; warehouse authority and movements remain separate. No
 merchant fact, image, copy or publication approval follows from definition entry.
+
+Factual review now records independent attestations over an exact merchant SKU,
+sealed BOM, specification and EUR draft price. Reviewer-only reads return the
+validated identity/BOM audit events, specification measurements/materials and
+price evidence, plus the latest decision for that target. A reviewer must differ
+from the identity, BOM, specification and price authors. New approvals require
+current versions of all three histories; rejection can withdraw historical
+approvals. Confirmed, optimistic decisions carry session-derived actors, reasons,
+evidence and qualification references; full-intent retries return old receipts
+without changing later decisions. Database guards serialize raw imports, reject
+stale snapshots and preserve immutable history. No approval is seeded and no
+attestation activates products, URLs, stock, copy or public prices. Real supplier,
+qualified reviewer, image and publication acceptance remain required.
 
 ## Next session prompt
 

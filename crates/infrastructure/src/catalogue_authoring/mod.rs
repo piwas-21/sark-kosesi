@@ -8,6 +8,7 @@ use sqlx::{PgPool, Postgres, Transaction};
 mod apply;
 mod events;
 pub use events::definition_event;
+pub(crate) use events::load as load_event;
 
 pub struct DefinitionRequest<'a> {
     pub effect_key: &'a str,

@@ -137,6 +137,15 @@ stock conservation. Fixtures cannot become merchant stock or public catalogue
 facts through the authoring path. Actual supplier and warehouse acceptance remain
 P0 evidence.
 
+Factual-review coverage includes exact-target inspection, each stale source,
+historical withdrawal and non-reactivating receipts, all intent/actor fields,
+review-only capability/confirmation, each independent source author, malformed
+stored records, real lock-wait expiry/cancellation, revocation ordering, competing
+reviews, raw-import history/independence/version constraints, stale repeatable-read
+conflicts and upgrade from the previous schema. Domain and adapter sources retain
+unchanged critical native line/branch thresholds; no zero-counter waiver applies.
+Tests use invented merchant candidates only in isolated PostgreSQL databases.
+
 ## Accessibility and performance acceptance
 
 Target WCAG 2.2 AA. Automated checks require zero serious/critical violations and triage all lower findings; manual review covers complete journeys with keyboard only, VoiceOver/Safari, NVDA/Firefox, 200/400% zoom, 320px reflow, high contrast, reduced motion and Arabic RTL. Check focus restoration, error summary, accessible names/live regions, contrast in every state and touch targets. Planner dragging has keyboard/input alternatives; 3D never hides the only dimensions. Native speakers review seven locales and fonts. Automated scores do not certify compliance.

@@ -31,7 +31,7 @@ fn decode(row: StoredEvent) -> Result<DefinitionEvent, DefinitionError> {
         reason: row.reason,
     })
 }
-pub(super) async fn load(
+pub(crate) async fn load(
     tx: &mut Transaction<'_, Postgres>,
     key: &str,
 ) -> Result<Option<DefinitionEvent>, DefinitionError> {
