@@ -9,6 +9,7 @@ pub mod holds;
 pub mod image_ingestion;
 pub mod image_review;
 pub mod media;
+pub mod publication;
 pub mod runtime;
 pub mod specifications;
 pub mod staff_access;

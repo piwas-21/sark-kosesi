@@ -10,6 +10,7 @@ use sqlx::{PgPool, Postgres, Transaction};
 mod read;
 mod review;
 mod write;
+pub(crate) use read::assembled as load_bundle;
 pub use read::{translation, translation_for_review};
 pub use review::record_review;
 pub use write::record_translation;

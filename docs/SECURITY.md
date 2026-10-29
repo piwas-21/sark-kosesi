@@ -117,3 +117,16 @@ and fresh licence/session checks protect new approvals, with variant/asset locks
 and SQL constraints spanning commit. Historical rejection and intent-bound replay
 cannot silently restore withdrawn decisions. Attestation references do not prove
 photographic truth or qualification and never enable public delivery by themselves.
+
+Publication uses catalogue-management authority, confirmation, optimistic history
+and a fully bound audit/effect intent. It consumes exact independently approved
+source decisions, including the approved Dutch source of a translation, and never
+trusts a caller's actor, current-eligibility flag or draft fallback. Fresh session
+and licence checks after actual waits protect the atomic activation/path commit.
+Private status locks before selecting the latest history; withdrawal and later
+source/review/rights changes cannot be hidden by an earlier active row or receipt.
+Raw schema imports retain source/version/decision guards and immutable route/event
+binding. Full Rust source revalidation remains necessary alongside SQL checks.
+Private audit/qualification/source records are not public product DTOs. Public
+image delivery and projection/cache controls remain unimplemented; actual facts,
+qualified review and production acceptance are separate evidence requirements.

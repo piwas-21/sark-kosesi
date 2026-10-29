@@ -41,6 +41,8 @@ def validate(document, root, branches=True):
             "crates/*/src/catalogue_authoring.rs",
             "crates/*/src/catalogue_authoring/*.rs",
             "crates/*/src/specifications.rs",
+            "crates/*/src/publication.rs",
+            "crates/*/src/publication/*.rs",
             "crates/*/src/image_review.rs",
             "crates/*/src/image_review/*.rs",
             "crates/*/src/factual_review.rs",

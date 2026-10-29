@@ -232,6 +232,47 @@ material fidelity and reviewer qualification remain human acceptance evidence.
 Future publication must check latest decisions, source freshness and rights again;
 no public image serving or production activation follows from an attestation.
 
+## Explicit publication and current eligibility
+
+`catalogue_publication_revisions` records confirmed catalogue-manager decisions
+over exact factual, image-suitability and locale-copy review revisions. A translated
+selection also pins its Dutch-source approval. Closed commands contain no actor or
+eligibility flag. The existing recent-MFA/session guard supplies audit identity and
+holds authority locks through the commit. Installation seeds no publication.
+
+Activation locks the variant before the asset serialization row, reuses validated
+transaction-scoped fact/image/copy loaders, and requires current source histories,
+the selected latest approved decisions and fresh active product-photo rights.
+Prices remain integer EUR and must fit JavaScript's exact integer range before
+becoming a public selection. The SQL predicate complements complete Rust payload
+validation; it cannot alone establish safe public content. No private source bundle
+or its evidence/actor/qualification records should become a public response DTO.
+
+`catalogue_family_routes` assigns one immutable family path per locale, unique in
+that locale. The first activation and its route commit atomically. Deferred binding
+rejects a path without its exact activation event. Variants in a family must use
+that assigned path; renaming requires a future explicit redirect policy. Merchant
+prices and URLs never enter the legacy fixture-only columns.
+
+Every decision uses optimistic publication history and full-intent retry identity.
+Raw imports have contiguous immutable history and variant/asset MVCC writes.
+Final clocks roll back both activation and path assignment after licence/session
+expiry during waits. Deferred constraints run before the last clock sample, and
+the locked permission snapshot is checked without another database wait before
+commit. Withdrawal retains history and paths. Receipt replay returns
+the original revision without changing later decisions and is not eligibility.
+
+Private status claims the variant before selecting the latest publication, so a
+withdrawal committed during a wait cannot be missed. It validates sources and
+latest review decisions under the variant/asset claims and samples a fresh clock.
+The assigned path's original activation binding is revalidated on reads and reuse;
+the final clock is sampled after the eligibility query finishes.
+Changed drafts, withdrawn/reapproved reviews and revoked/expired/replaced rights
+invalidate an earlier activation; there is no older-source or approval fallback.
+A new explicit activation must consume the new approved versions. Public serving,
+safe derivative access, availability projections and cache/HTML/feed agreement are
+still separate P2 work; these records enable no production route or sale.
+
 ## Inventory and finance
 
 Model sellable variants separately from physical components. A configuration has a versioned bill of materials: seat/back/bolster covers and optional matching foam inserts. Covers-only does not reserve foam. Prepacked and separable stock require explicit warehouse rules; never count both kit stock and its contents as independently available.

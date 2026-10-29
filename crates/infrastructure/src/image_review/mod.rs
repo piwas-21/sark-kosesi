@@ -16,6 +16,7 @@ use commerce_domain::{
 use sqlx::{PgPool, Postgres, Transaction};
 mod read;
 mod write;
+pub(crate) use read::load as load_bundle;
 pub use read::{image_for_review, image_review_bundle};
 pub use write::record_image_review;
 

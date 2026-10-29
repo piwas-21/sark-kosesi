@@ -35,7 +35,7 @@ impl Sources {
         Ok(rights)
     }
 }
-pub(super) async fn load(
+pub(crate) async fn load(
     tx: &mut Transaction<'_, Postgres>,
     sku: &str,
     target: &ImageTarget,
