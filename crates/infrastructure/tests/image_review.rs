@@ -72,8 +72,9 @@ fn request<'a>(key: &'a str, target: &'a ImageTarget) -> ImageReviewRequest<'a> 
     }
 }
 static SEEDS: tokio::sync::Mutex<()> = tokio::sync::Mutex::const_new(());
-async fn media_seed(pool: &PgPool) {
-    let _seed = SEEDS.lock().await;
+// Retain this guard for the whole case: byte inspection shares the decoder budget.
+async fn media_seed(pool: &PgPool) -> tokio::sync::MutexGuard<'static, ()> {
+    let case = SEEDS.lock().await;
     seed(pool).await;
     let mut bytes = Vec::new();
     image::DynamicImage::new_rgb8(32, 24)
@@ -127,6 +128,7 @@ async fn media_seed(pool: &PgPool) {
         },
     )
     .await;
+    case
 }
 async fn rights(pool: &PgPool, expected: i32, change: &MediaRightsChange) {
     record_media_rights(
@@ -160,7 +162,7 @@ async fn raw(pool: &PgPool, decision: &str, revision: i32, actor: &str) -> Resul
 async fn reviewers_inspect_exact_sources_and_safe_bytes_without_manage_or_publication(
     pool: PgPool,
 ) {
-    media_seed(&pool).await;
+    let _case = media_seed(&pool).await;
     let t = target();
     let bundle = image_review_bundle(&pool, &reviewer(), &FixedClock(1100), "SET-FILLED", &t)
         .await
@@ -223,7 +225,7 @@ async fn reviewers_inspect_exact_sources_and_safe_bytes_without_manage_or_public
 
 #[sqlx::test(migrator = "MIGRATOR")]
 async fn independent_author_confirmation_role_and_bounded_intent_are_mandatory(pool: PgPool) {
-    media_seed(&pool).await;
+    let _case = media_seed(&pool).await;
     let t = target();
     for token in [
         author(),
@@ -295,7 +297,7 @@ async fn independent_author_confirmation_role_and_bounded_intent_are_mandatory(p
 
 #[sqlx::test(migrator = "MIGRATOR")]
 async fn stale_sources_rights_expiry_and_withdrawal_never_reactivate_old_approvals(pool: PgPool) {
-    media_seed(&pool).await;
+    let _case = media_seed(&pool).await;
     let t = target();
     record_image_review(
         &pool,
@@ -399,7 +401,7 @@ fn closed_targets_and_decisions_cannot_claim_publication_or_server_authority() {
 
 #[sqlx::test(migrator = "MIGRATOR")]
 async fn each_source_change_requires_a_new_exact_review_but_price_does_not(pool: PgPool) {
-    media_seed(&pool).await;
+    let _case = media_seed(&pool).await;
     let mut t = target();
     // Price is outside an image's visual/material suitability target.
     price(&pool, 1, "price-update").await;
@@ -498,7 +500,7 @@ async fn each_source_change_requires_a_new_exact_review_but_price_does_not(pool:
 
 #[sqlx::test(migrator = "MIGRATOR")]
 async fn future_and_inspiration_rights_cannot_approve_product_images(pool: PgPool) {
-    media_seed(&pool).await;
+    let _case = media_seed(&pool).await;
     let mut t = target();
     for (revision, scope, start) in [
         (2, MediaUse::ProductPhotography, 1200),
@@ -536,7 +538,7 @@ async fn future_and_inspiration_rights_cannot_approve_product_images(pool: PgPoo
 
 #[sqlx::test(migrator = "MIGRATOR")]
 async fn every_retry_intent_field_is_bound_and_competing_reviewers_commit_once(pool: PgPool) {
-    media_seed(&pool).await;
+    let _case = media_seed(&pool).await;
     let t = target();
     let reviewer_token = reviewer();
     let other_token = SessionToken::from_bytes([3; 32]);
@@ -607,7 +609,7 @@ async fn every_retry_intent_field_is_bound_and_competing_reviewers_commit_once(p
 
 #[sqlx::test(migrator = "MIGRATOR")]
 async fn final_authority_and_licence_clocks_guard_writes_reads_and_replays(pool: PgPool) {
-    media_seed(&pool).await;
+    let _case = media_seed(&pool).await;
     let t = target();
     for (after, value) in [
         (1, Ok(2000)),
@@ -657,17 +659,18 @@ async fn final_authority_and_licence_clocks_guard_writes_reads_and_replays(pool:
             after,
             value: Ok(4600),
         };
-        assert!(
-            image_for_review(&pool, &reviewer(), &clock, "SET-FILLED", &t, 320)
-                .await
-                .is_err()
-        );
+        assert!(matches!(
+            image_for_review(&pool, &reviewer(), &clock, "SET-FILLED", &t, 320).await,
+            Err(ImageReviewError::Image(ImageError::Staff(
+                StaffError::Denied
+            )))
+        ));
     }
 }
 
 #[sqlx::test(migrator = "MIGRATOR")]
 async fn schema_is_immutable_independent_current_contiguous_and_merchant_only(pool: PgPool) {
-    media_seed(&pool).await;
+    let _case = media_seed(&pool).await;
     assert!(raw(&pool, "approved", 1, "author").await.is_err());
     assert!(raw(&pool, "approved", 2, "reviewer").await.is_err());
     raw(&pool, "approved", 1, "reviewer")
@@ -691,7 +694,7 @@ async fn schema_is_immutable_independent_current_contiguous_and_merchant_only(po
 async fn real_source_lock_wait_expiry_cancellation_and_bounded_timeout_leave_no_effect(
     pool: PgPool,
 ) {
-    media_seed(&pool).await;
+    let _case = media_seed(&pool).await;
     let t = target();
     let mut blocker = pool.begin().await.expect("blocker");
     blocker
@@ -717,7 +720,7 @@ async fn real_source_lock_wait_expiry_cancellation_and_bounded_timeout_leave_no_
     while clock.calls.load(Ordering::SeqCst) == 0 {
         tokio::task::yield_now().await;
     }
-    tokio::time::sleep(std::time::Duration::from_millis(60)).await;
+    waiting_on(&pool, "UPDATE catalogue_variants%").await;
     blocker.rollback().await.expect("release");
     assert!(task.await.expect("task").is_err());
     assert_eq!(count(&pool).await, 0);
@@ -736,9 +739,13 @@ async fn real_source_lock_wait_expiry_cancellation_and_bounded_timeout_leave_no_
         )
         .await
     });
-    tokio::time::sleep(std::time::Duration::from_millis(60)).await;
+    waiting_on(&pool, "SELECT asset_id FROM catalogue_media_serialization%").await;
     task.abort();
-    let _ = task.await;
+    assert!(
+        task.await
+            .expect_err("cancelled while waiting")
+            .is_cancelled()
+    );
     assert!(
         record_image_review(
             &pool,
@@ -760,7 +767,7 @@ async fn real_source_lock_wait_expiry_cancellation_and_bounded_timeout_leave_no_
 
 #[sqlx::test(migrator = "MIGRATOR")]
 async fn stale_repeatable_read_import_cannot_overlook_new_rights_or_specification(pool: PgPool) {
-    media_seed(&pool).await;
+    let _case = media_seed(&pool).await;
     let mut stale = pool.begin().await.expect("snapshot");
     stale
         .execute("SET TRANSACTION ISOLATION LEVEL REPEATABLE READ")
@@ -788,7 +795,7 @@ async fn stale_repeatable_read_import_cannot_overlook_new_rights_or_specificatio
 #[sqlx::test(migrations = false)]
 async fn upgrade_preserves_old_readers_candidates_and_private_bytes_without_approval(pool: PgPool) {
     MIGRATOR.run_to(14, &pool).await.expect("prior schema");
-    media_seed(&pool).await;
+    let _case = media_seed(&pool).await;
     let old = commerce_infrastructure::catalogue(&pool, commerce_application::Locale::Nl)
         .await
         .expect("old reader");
@@ -812,7 +819,7 @@ async fn upgrade_preserves_old_readers_candidates_and_private_bytes_without_appr
 
 #[sqlx::test(migrator = "MIGRATOR")]
 async fn source_or_permission_authors_cannot_review_even_when_separately_granted(pool: PgPool) {
-    media_seed(&pool).await;
+    let _case = media_seed(&pool).await;
     // Distinct source actors exercise each independence constraint.
     for (n, id) in [
         (5, "bom-author"),
@@ -895,7 +902,7 @@ async fn source_or_permission_authors_cannot_review_even_when_separately_granted
 
 #[sqlx::test(migrator = "MIGRATOR")]
 async fn revocation_is_serialized_through_commit_and_then_denies_reads_and_receipts(pool: PgPool) {
-    media_seed(&pool).await;
+    let _case = media_seed(&pool).await;
     let mut blocker = pool.begin().await.expect("blocker");
     blocker
         .execute("LOCK TABLE catalogue_image_reviews IN SHARE MODE")
@@ -953,7 +960,7 @@ async fn rights_cannot_expire_during_a_real_insert_wait_and_leave_approval(pool:
             Ok(self.0.load(Ordering::SeqCst))
         }
     }
-    media_seed(&pool).await;
+    let _case = media_seed(&pool).await;
     let mut blocker = pool.begin().await.expect("blocker");
     blocker
         .execute("LOCK TABLE catalogue_image_reviews IN SHARE MODE")
@@ -983,7 +990,7 @@ async fn rights_cannot_expire_during_a_real_insert_wait_and_leave_approval(pool:
 
 #[sqlx::test(migrator = "MIGRATOR")]
 async fn corrupt_sources_rights_hashes_and_decisions_fail_private_reads_and_replays(pool: PgPool) {
-    media_seed(&pool).await;
+    let _case = media_seed(&pool).await;
     let t = target();
     record_image_review(
         &pool,
