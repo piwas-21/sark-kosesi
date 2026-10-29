@@ -56,8 +56,13 @@ independent rejection can withdraw a historical approval after newer drafts exis
 Exact historical retries do not reactivate old decisions. These records do not
 provide actual native-reader acceptance or activate public copy.
 
-Next work: factual/image review, publication validation, guarded catalogue
-authoring and projection
+Catalogue staff can now create unpublished merchant family/component/variant
+definitions and sealed BOM revisions with immutable source/actor audit events.
+Known fixture identity cannot be promoted; fixture and merchant component graphs
+cannot mix. Candidate definitions receive no legacy price, URL or stock. Existing
+preview data stays separate and shared physical stock remains component-based.
+
+Next work: factual/image review, publication validation and projection
 invalidation under the [implementation plan](docs/IMPLEMENTATION.md). P3 owns
 late-payment reallocation. Supervision of expiry remains a deployment gate.
 P0 inputs remain pending. All seven languages are draft previews,

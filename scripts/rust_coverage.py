@@ -38,6 +38,8 @@ def validate(document, root, branches=True):
             "crates/*/src/staff_access.rs",
             "crates/*/src/staff_operations.rs",
             "crates/*/src/catalogue_prices.rs",
+            "crates/*/src/catalogue_authoring.rs",
+            "crates/*/src/catalogue_authoring/*.rs",
             "crates/*/src/specifications.rs",
             "crates/*/src/translations.rs",
             "crates/*/src/translations/*.rs",

@@ -128,6 +128,15 @@ malformed stored/source copy and schema upgrades without implicit review grants.
 Native language quality and qualification are human acceptance evidence; fixtures
 and passing tests cannot supply that evidence or make a locale indexable.
 
+Catalogue definition policy and adapters have 95% critical line/branch requirements.
+Isolated PostgreSQL checks exercise complete creation, canonical retries, competing
+definitions/BOM edits, expiry through locks, revocation, cancellation, immutable
+fixture identity, both directions of graph separation, partial commit rejection,
+stored event binding, prior-reader migration compatibility and shared-component
+stock conservation. Fixtures cannot become merchant stock or public catalogue
+facts through the authoring path. Actual supplier and warehouse acceptance remain
+P0 evidence.
+
 ## Accessibility and performance acceptance
 
 Target WCAG 2.2 AA. Automated checks require zero serious/critical violations and triage all lower findings; manual review covers complete journeys with keyboard only, VoiceOver/Safari, NVDA/Firefox, 200/400% zoom, 320px reflow, high contrast, reduced motion and Arabic RTL. Check focus restoration, error summary, accessible names/live regions, contrast in every state and touch targets. Planner dragging has keyboard/input alternatives; 3D never hides the only dimensions. Native speakers review seven locales and fonts. Automated scores do not certify compliance.

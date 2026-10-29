@@ -152,6 +152,38 @@ assembled facts, copy, rights and image approvals and invalidate affected public
 projections; those consumers remain unimplemented. There is no public copy or
 indexing activation and no new HTTP authoring endpoint.
 
+## Catalogue definition authoring
+
+Catalogue staff can create private merchant families, physical component identities,
+variants and sealed BOM revisions. Merchant classification means a candidate for
+the business; it does not prove facts or approve sale. The write surface has no
+caller-supplied actor, fixture flag, price, URL, stock or publication status.
+New company identifiers use bounded uppercase ASCII letters/digits/hyphens and
+cannot reuse the DEMO namespace. Supplier identifiers/references remain separate.
+
+Creation events are immutable and bind the complete normalized command, assigned
+BOM revision, session-derived actor, supplier/source reference and reason.
+Confirmation and recent catalogue authority are mandatory. Exact retries preserve
+their original result, while changed actors, evidence or configuration conflict.
+Unordered BOM lines are normalized only after collection/string validation.
+An entity and its matching sealed BOM/event commit atomically; deferred checks
+reject incomplete or mismatched journals. Reads revalidate stored command shapes
+and the actual event-to-entity/BOM binding. No-op variant writes also protect
+sequential BOM creation against stale repeatable-read importers.
+
+Known fixture identity/classification is immutable. Fixture and merchant family/
+component graphs cannot mix, and merchant identities retain their audit history.
+Existing fixture rows and legacy readers remain compatible. Legacy item price and
+slug are NULL for merchant candidates, avoiding fabricated preview prices/URLs.
+The legacy translation table accepts fixtures only, and its reader explicitly
+filters fixtures. Merchant public prices, URLs and content require future approved
+publication snapshots. No new HTTP authoring route or production activation exists.
+
+Definition creation has no stock effect. Warehouse receiving creates or changes
+physical balances under its separate capability; no variant stock pool is added.
+Sealed historical BOMs remain explicit reservation inputs after new revisions.
+Prepacked stock remains unavailable pending an explicit conversion policy.
+
 ## Inventory and finance
 
 Model sellable variants separately from physical components. A configuration has a versioned bill of materials: seat/back/bolster covers and optional matching foam inserts. Covers-only does not reserve foam. Prepacked and separable stock require explicit warehouse rules; never count both kit stock and its contents as independently available.

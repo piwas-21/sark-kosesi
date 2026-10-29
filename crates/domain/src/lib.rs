@@ -3,6 +3,7 @@
 
 use serde::{Deserialize, Serialize};
 
+pub mod catalogue_authoring;
 pub mod holds;
 pub mod inventory;
 pub mod media;
@@ -70,10 +71,19 @@ pub struct CatalogueItem {
     pub fixture: bool,
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
 pub enum ComponentKind {
     Cover,
     Foam,
+}
+impl ComponentKind {
+    pub fn code(self) -> &'static str {
+        match self {
+            Self::Cover => "cover",
+            Self::Foam => "foam",
+        }
+    }
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]

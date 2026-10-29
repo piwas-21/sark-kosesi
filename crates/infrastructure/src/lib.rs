@@ -2,6 +2,7 @@
 #![forbid(unsafe_code)]
 
 pub mod bom;
+pub mod catalogue_authoring;
 pub mod catalogue_prices;
 pub mod holds;
 pub mod image_ingestion;
@@ -55,7 +56,7 @@ struct CatalogueRow {
 }
 
 pub async fn catalogue(pool: &PgPool, locale: Locale) -> Result<Vec<CatalogueItem>, sqlx::Error> {
-    let rows = sqlx::query_as::<_, CatalogueRow>("SELECT i.sku, i.slug, i.minor_units, i.fill, i.fixture, t.title, t.description, t.care FROM catalogue_items i JOIN catalogue_translations t USING (sku) WHERE t.locale = $1 ORDER BY i.sku LIMIT 50")
+    let rows = sqlx::query_as::<_, CatalogueRow>("SELECT i.sku, i.slug, i.minor_units, i.fill, i.fixture, t.title, t.description, t.care FROM catalogue_items i JOIN catalogue_translations t USING (sku) WHERE i.fixture AND t.locale = $1 ORDER BY i.sku LIMIT 50")
         .bind(locale.internal()).fetch_all(pool).await?;
     rows.into_iter()
         .map(|row| {

@@ -136,6 +136,19 @@ completion, including private reads. Actual qualified native review, legal/UI co
 review, factual approval, image suitability, public activation and invalidation
 remain required; an attestation reference alone cannot establish those facts.
 
+Guarded catalogue authoring now creates merchant candidates and sealed BOM
+revisions. Company identifiers cannot reuse the DEMO namespace. Immutable creation
+events bind the exact entity/variant/BOM, supplier/source reference, actor and
+reason, with explicit confirmation and fresh catalogue authority. BOM lines are
+bounded, deduplicated and canonicalized for order-independent retries. Source
+versions serialize on the same variant row used by other catalogue drafts.
+Known fixture flags/identities cannot change and fixture/merchant families or
+components cannot mix. Merchant definitions retain NULL legacy preview price/URL
+fields; real prices and URLs must come from approved publication. Legacy copy is
+fixture-only, preserving prior readers and the courtyard preview. Creation never
+receives physical stock; warehouse authority and movements remain separate. No
+merchant fact, image, copy or publication approval follows from definition entry.
+
 ## Next session prompt
 
 > Read AGENTS.md and ROADMAP.md, then docs/IMPLEMENTATION.md and its linked requirements. Implement P2 catalogue/BOM and stock in small reviewed PRs to develop using the selected Rust/Axum/SQLx/PostgreSQL and Next.js stack. Model product families/variants, shared physical components, publication validation, stock ledger/holds/quarantine and catalogue/warehouse permissions. Keep production disabled and the approved courtyard design. P0 inputs remain pending; use isolated labelled fixtures and never invent publishable facts. Use only free, self-hostable dependencies with reviewed licences. Retain every P1 gate and add hostile PostgreSQL concurrency, component-conservation, publication/RBAC and cache-invalidation tests. Preserve shared work; use the independent review receipt and merge gate. Report code/CI, provider and deployment evidence separately.
