@@ -9,6 +9,7 @@ use sqlx::PgPool;
 mod framing;
 mod process;
 mod store;
+pub(crate) use store::receipt as load_receipt;
 static INGESTIONS: tokio::sync::Semaphore = tokio::sync::Semaphore::const_new(2);
 fn ingestion_slot() -> Result<tokio::sync::SemaphorePermit<'static>, ImageError> {
     INGESTIONS.try_acquire().map_err(|_| ImageError::Busy)
@@ -139,7 +140,25 @@ pub async fn private_rendition(
     asset_id: &str,
     edge: i32,
 ) -> Result<Option<PrivateRendition>, ImageError> {
-    let mut access = lock_staff(pool, token, clock, Capability::CatalogueManage).await?;
+    rendition(
+        pool,
+        token,
+        clock,
+        asset_id,
+        edge,
+        Capability::CatalogueManage,
+    )
+    .await
+}
+pub(super) async fn rendition(
+    pool: &PgPool,
+    token: &SessionToken,
+    clock: &dyn Clock,
+    asset_id: &str,
+    edge: i32,
+    capability: Capability,
+) -> Result<Option<PrivateRendition>, ImageError> {
+    let mut access = lock_staff(pool, token, clock, capability).await?;
     if !valid_command_id(asset_id) || ![320, 640, 960].contains(&edge) {
         return Err(ImageError::InvalidRequest);
     }
@@ -160,7 +179,7 @@ pub async fn private_rendition(
     access.check_time(clock)?;
     access.tx.rollback().await?;
     let result = process::validate_output(image_type, width, height, bytes, digest).await?;
-    let fresh = lock_staff(pool, token, clock, Capability::CatalogueManage).await?;
+    let fresh = lock_staff(pool, token, clock, capability).await?;
     fresh.check_time(clock)?;
     fresh.tx.rollback().await?;
     Ok(Some(result))

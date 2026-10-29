@@ -146,6 +146,15 @@ conflicts and upgrade from the previous schema. Domain and adapter sources retai
 unchanged critical native line/branch thresholds; no zero-counter waiver applies.
 Tests use invented merchant candidates only in isolated PostgreSQL databases.
 
+Image-suitability policy and adapter sources retain positive 95% critical native
+line/branch counters. Real isolated PostgreSQL tests exercise current source/rights
+checks, independent authors, historical withdrawal, full-intent retries, competing
+reviews, permission/session expiry through real waits, authority revocation,
+cancelled writes, immutable schema history, stale imports, private derivative
+access, corrupt records and prior-schema upgrades without seeded approvals.
+Synthetic encoded test bytes never establish actual photography or merchant
+acceptance; no visual baseline or publication gate is replaced by these tests.
+
 ## Accessibility and performance acceptance
 
 Target WCAG 2.2 AA. Automated checks require zero serious/critical violations and triage all lower findings; manual review covers complete journeys with keyboard only, VoiceOver/Safari, NVDA/Firefox, 200/400% zoom, 320px reflow, high contrast, reduced motion and Arabic RTL. Check focus restoration, error summary, accessible names/live regions, contrast in every state and touch targets. Planner dragging has keyboard/input alternatives; 3D never hides the only dimensions. Native speakers review seven locales and fonts. Automated scores do not certify compliance.

@@ -107,3 +107,13 @@ older decision after source changes; replay returns a receipt without restoring
 that decision. Private reads revalidate stored facts and enforce fresh authority.
 Reference strings are untrusted records, never fetched and never proof of actual
 supplier truth or qualified review. Public activation remains unimplemented.
+
+Image suitability uses the separate review grant and rejects actors who authored
+the identity, BOM, specification, media registration, ingestion or permissions.
+Reviewer inspection reuses bounded derivative decoding and reauthorizes after CPU
+work; originals and authoring operations retain their existing access boundary.
+Decisions bind exact immutable sources and verified private bytes. Current-source
+and fresh licence/session checks protect new approvals, with variant/asset locks
+and SQL constraints spanning commit. Historical rejection and intent-bound replay
+cannot silently restore withdrawn decisions. Attestation references do not prove
+photographic truth or qualification and never enable public delivery by themselves.
