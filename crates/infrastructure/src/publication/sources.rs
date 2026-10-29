@@ -1,6 +1,6 @@
 use super::*;
 
-pub(super) struct Sources {
+pub(crate) struct Sources {
     pub family_code: String,
     pub facts: FactBundle,
     pub image: ImageReviewBundle,
@@ -31,7 +31,7 @@ impl Sources {
             && self.facts.price.minor_units() <= 9_007_199_254_740_991
     }
 }
-pub(super) async fn load(
+pub(crate) async fn load(
     tx: &mut Transaction<'_, Postgres>,
     sku: &str,
     locale: Locale,

@@ -1,5 +1,15 @@
 use super::*;
 
+/// Caller holds the variant claim before selecting the latest immutable decision.
+pub(crate) async fn latest_record(
+    tx: &mut Transaction<'_, Postgres>,
+    sku: &str,
+    locale: Locale,
+) -> Result<Option<PublicationRecord>, PublicationError> {
+    let row=sqlx::query_as::<_,Stored>("SELECT sku,locale,revision,choice::text,evidence_ref,actor,reason,evaluated_at FROM catalogue_publication_revisions WHERE sku=$1 AND locale=$2 ORDER BY revision DESC LIMIT 1")
+        .bind(sku).bind(locale.internal()).fetch_optional(&mut **tx).await?;
+    row.map(|row| row.decode(sku, locale)).transpose()
+}
 pub async fn publication_status(
     pool: &PgPool,
     token: &SessionToken,
@@ -17,14 +27,13 @@ pub async fn publication_status(
         .bind(sku)
         .execute(&mut *access.tx)
         .await?;
-    let row=sqlx::query_as::<_,Stored>("SELECT sku,locale,revision,choice::text,evidence_ref,actor,reason,evaluated_at FROM catalogue_publication_revisions WHERE sku=$1 AND locale=$2 ORDER BY revision DESC LIMIT 1")
-        .bind(sku).bind(locale.internal()).fetch_optional(&mut *access.tx).await?;
+    let row = latest_record(&mut access.tx, sku, locale).await?;
     let Some(row) = row else {
         access.check_time(clock)?;
         access.tx.rollback().await?;
         return Ok(None);
     };
-    let record = row.decode(sku, locale)?;
+    let record = row;
     let (approved, rights) = if let PublicationChoice::Activate { selection } = &record.choice {
         let claim: Option<String> = sqlx::query_scalar(
             "SELECT asset_id FROM catalogue_media_serialization WHERE asset_id=$1 FOR SHARE",

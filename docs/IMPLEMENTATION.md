@@ -186,10 +186,13 @@ the exact JavaScript integer range; no rounding or draft-price fallback is allow
 Private status reads revalidate complete source bundles and latest decisions under
 locks. A historical activation can be ineligible after a source/review/rights
 change; reapproval never silently reactivates it. Withdrawal keeps history and the
-stable path, and historical retries return only their original receipt. No public
-projection, HTTP mutation, derivative delivery or production activation follows
-from these database records. Those connections and their invalidation/HTML/feed
-acceptance remain P2 work; actual product and qualified-review evidence stays P0.
+stable path, and historical retries return only their original receipt. Authenticated preview HTTP now reads a complete customer-field projection and
+revision-bound sanitized derivatives from these records. Availability comes from
+the sealed BOM and physical balances. Current-source, review and rights checks
+run on each no-store request; image eligibility is checked again after decoding.
+HTTP mutations and production remain disabled. Storefront HTML/feed agreement
+and human visual acceptance remain P2 work; actual product and qualified-review
+evidence stays P0.
 
 ## Next session prompt
 

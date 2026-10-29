@@ -83,11 +83,12 @@ approval for translations. Current source revisions and fresh product-photo righ
 are required. Stable family paths are assigned atomically; source changes or later
 review decisions make old activations ineligible without falling back or silently
 reactivating them. Historical receipts never change the latest publication.
-This is a guarded database boundary; public HTTP, image and storefront projections
-are not connected, and no actual merchant facts or publication records are seeded.
+Authenticated non-production HTTP reads now expose a current approved customer
+projection and exact revision-bound sanitized images. Physical BOM availability
+is read through with no shared cache. No actual merchant facts or publication
+records are seeded; storefront HTML/feed agreement remains to be connected.
 
-Next work: safe public derivative delivery and catalogue/availability projection
-invalidation under the [implementation plan](docs/IMPLEMENTATION.md). P3 owns
+Next work: approved catalogue HTML/feed agreement and visual acceptance under the [implementation plan](docs/IMPLEMENTATION.md). P3 owns
 late-payment reallocation. Supervision of expiry remains a deployment gate.
 P0 inputs remain pending. All seven languages are draft previews,
 fixtures are explicitly not for sale, and admin operations remain unavailable.
