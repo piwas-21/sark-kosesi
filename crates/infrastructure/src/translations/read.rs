@@ -112,6 +112,22 @@ pub async fn translation_for_review(
     )
     .await
 }
+pub(crate) async fn assembled(
+    tx: &mut Transaction<'_, Postgres>,
+    sku: &str,
+    locale: Locale,
+    revision: i32,
+) -> Result<Option<TranslationRecord>, TranslationError> {
+    let mut record = load(tx, sku, locale, revision).await?;
+    if let Some(draft) = &mut record {
+        let row = sqlx::query_as::<_,StoredReview>("SELECT sku,locale,translation_revision,revision,decision,evidence_ref,qualification_ref,actor,reason FROM catalogue_translation_reviews WHERE sku=$1 AND locale=$2 AND translation_revision=$3 ORDER BY revision DESC LIMIT 1")
+            .bind(sku).bind(locale.internal()).bind(revision).fetch_optional(&mut **tx).await?;
+        if let Some(review) = row {
+            draft.review = Some(decode_review(review, &draft.actor)?);
+        }
+    }
+    Ok(record)
+}
 async fn inspect(
     pool: &PgPool,
     token: &SessionToken,
@@ -125,14 +141,7 @@ async fn inspect(
     if !valid_sku(sku) || revision <= 0 {
         return Err(TranslationError::InvalidRequest);
     }
-    let mut record = load(&mut access.tx, sku, locale, revision).await?;
-    if let Some(draft) = &mut record {
-        let row = sqlx::query_as::<_,StoredReview>("SELECT sku,locale,translation_revision,revision,decision,evidence_ref,qualification_ref,actor,reason FROM catalogue_translation_reviews WHERE sku=$1 AND locale=$2 AND translation_revision=$3 ORDER BY revision DESC LIMIT 1")
-            .bind(sku).bind(locale.internal()).bind(revision).fetch_optional(&mut *access.tx).await?;
-        if let Some(review) = row {
-            draft.review = Some(decode_review(review, &draft.actor)?);
-        }
-    }
+    let record = assembled(&mut access.tx, sku, locale, revision).await?;
     access.check_time(clock)?;
     access.tx.rollback().await?;
     Ok(record)

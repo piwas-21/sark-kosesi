@@ -77,7 +77,16 @@ Approvals require current sources and active product-photo rights, including aft
 lock waits. Historical withdrawal and receipt replay preserve later decisions.
 These records do not establish actual photographic fidelity or product acceptance.
 
-Next work: publication validation, safe public derivative delivery and projection
+Catalogue managers can now record explicit activation/withdrawal history over
+exact approved fact, image and locale-copy decisions, including the Dutch source
+approval for translations. Current source revisions and fresh product-photo rights
+are required. Stable family paths are assigned atomically; source changes or later
+review decisions make old activations ineligible without falling back or silently
+reactivating them. Historical receipts never change the latest publication.
+This is a guarded database boundary; public HTTP, image and storefront projections
+are not connected, and no actual merchant facts or publication records are seeded.
+
+Next work: safe public derivative delivery and catalogue/availability projection
 invalidation under the [implementation plan](docs/IMPLEMENTATION.md). P3 owns
 late-payment reallocation. Supervision of expiry remains a deployment gate.
 P0 inputs remain pending. All seven languages are draft previews,

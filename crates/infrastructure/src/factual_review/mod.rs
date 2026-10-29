@@ -15,6 +15,7 @@ use commerce_domain::{
 use sqlx::{PgPool, Postgres, Transaction};
 mod read;
 mod write;
+pub(crate) use read::assembled as load_bundle;
 pub use read::facts_for_review;
 pub use write::record_factual_review;
 

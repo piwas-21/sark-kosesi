@@ -28,10 +28,10 @@ P1 acceptance activates application CI; it does not activate payment or establis
 1. Verify expiry supervision before operational stock use. Provider recovery
    remains P3; late payment must attempt explicit atomic reallocation. Prepacked
    stock still needs explicit kit conversion without counting contents twice.
-2. Connect image suitability decisions, factual decisions and reviewed copy to publication validation and activation
-   of approved catalogue revisions, including safe public derivative delivery. Missing P0 facts and fixture data
-   must fail publication. Apply the staff capability guard to catalogue mutations,
-   retaining audit reasons and no exposed preview write route.
+2. Connect validated publication eligibility to safe public derivative delivery.
+   Missing P0 facts and fixture data must fail publication. Retain current-source,
+   review/rights and authority checks, audited mutations and no exposed preview
+   write route. Actual HTTP admin/session/upload controls remain P4 work.
 3. Connect approved catalogue/availability projections to HTML and feeds, with
    publication/price/stock invalidation tests and agreement on exact variant facts.
    Keep the courtyard UI baseline and draft/noindex preview boundaries intact.
@@ -174,6 +174,22 @@ Historical rejection remains possible after source or rights changes, and replay
 never restores a later withdrawn approval. Immutable SQL history also serializes
 direct imports. These attestations do not verify actual visual/material/colour
 fidelity or qualified review and do not publish products or derivatives.
+
+Explicit catalogue publication history now binds approved facts, verified-image
+suitability and reviewed locale copy to exact immutable versions. Non-Dutch copy
+also requires the exact current approved Dutch source. Catalogue managers confirm
+activation/withdrawal with optimistic history, a full-intent effect key and audit
+evidence/reason. Independent source reviewers remain separate from source authors.
+Variant-before-asset locks, raw-import/MVCC guards and final session/licence clocks
+span activation and stable family-path assignment. Public integer prices must fit
+the exact JavaScript integer range; no rounding or draft-price fallback is allowed.
+Private status reads revalidate complete source bundles and latest decisions under
+locks. A historical activation can be ineligible after a source/review/rights
+change; reapproval never silently reactivates it. Withdrawal keeps history and the
+stable path, and historical retries return only their original receipt. No public
+projection, HTTP mutation, derivative delivery or production activation follows
+from these database records. Those connections and their invalidation/HTML/feed
+acceptance remain P2 work; actual product and qualified-review evidence stays P0.
 
 ## Next session prompt
 

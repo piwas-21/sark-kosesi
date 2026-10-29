@@ -62,6 +62,21 @@ pub(super) async fn load(
         review: None,
     }))
 }
+pub(crate) async fn assembled(
+    tx: &mut Transaction<'_, Postgres>,
+    sku: &str,
+    target: FactTarget,
+) -> Result<Option<FactBundle>, FactError> {
+    let mut bundle = load(tx, sku, target).await?;
+    if let Some(bundle) = &mut bundle {
+        let review=sqlx::query_as::<_,StoredReview>("SELECT sku,bom_revision,specification_revision,price_revision,revision,decision,evidence_ref,qualification_ref,actor,reason FROM catalogue_factual_reviews WHERE sku=$1 AND bom_revision=$2 AND specification_revision=$3 AND price_revision=$4 ORDER BY revision DESC LIMIT 1")
+            .bind(sku).bind(target.bom_revision).bind(target.specification_revision).bind(target.price_revision).fetch_optional(&mut **tx).await?;
+        if let Some(review) = review {
+            bundle.review = Some(review.validated(bundle)?);
+        }
+    }
+    Ok(bundle)
+}
 /// A private inspection record, not a current publication-eligibility assertion.
 pub async fn facts_for_review(
     pool: &PgPool,
@@ -74,14 +89,7 @@ pub async fn facts_for_review(
     if !merchant_code(sku) || !target.valid() {
         return Err(FactError::InvalidRequest);
     }
-    let mut bundle = load(&mut access.tx, sku, target).await?;
-    if let Some(bundle) = &mut bundle {
-        let review=sqlx::query_as::<_,StoredReview>("SELECT sku,bom_revision,specification_revision,price_revision,revision,decision,evidence_ref,qualification_ref,actor,reason FROM catalogue_factual_reviews WHERE sku=$1 AND bom_revision=$2 AND specification_revision=$3 AND price_revision=$4 ORDER BY revision DESC LIMIT 1")
-            .bind(sku).bind(target.bom_revision).bind(target.specification_revision).bind(target.price_revision).fetch_optional(&mut *access.tx).await?;
-        if let Some(review) = review {
-            bundle.review = Some(review.validated(bundle)?);
-        }
-    }
+    let bundle = assembled(&mut access.tx, sku, target).await?;
     access.check_time(clock)?;
     access.tx.rollback().await?;
     Ok(bundle)

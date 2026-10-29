@@ -155,6 +155,18 @@ access, corrupt records and prior-schema upgrades without seeded approvals.
 Synthetic encoded test bytes never establish actual photography or merchant
 acceptance; no visual baseline or publication gate is replaced by these tests.
 
+Publication domain/adapter sources retain positive 95% native critical line/branch
+requirements. Isolated PostgreSQL cases cover complete approved selections,
+missing/withdrawn/reapproved source decisions, Dutch-source dependency, each draft
+change, exact integer prices, closed raw imports, immutable contiguous history,
+stable path binding, full-intent retries and competing publishers. Real wait cases
+cover licence/session expiry, cancellation, status/withdrawal ordering, revocation,
+bounded failures and stale repeatable-read imports. Stored-row/source corruption
+and corrupted original path bindings are rejected. Real eligibility-query and
+deferred-constraint waits must finish before final session/licence evaluation.
+Upgrade starts without publication or path records. No test
+claims real supplier truth, qualified native review or public storefront acceptance.
+
 ## Accessibility and performance acceptance
 
 Target WCAG 2.2 AA. Automated checks require zero serious/critical violations and triage all lower findings; manual review covers complete journeys with keyboard only, VoiceOver/Safari, NVDA/Firefox, 200/400% zoom, 320px reflow, high contrast, reduced motion and Arabic RTL. Check focus restoration, error summary, accessible names/live regions, contrast in every state and touch targets. Planner dragging has keyboard/input alternatives; 3D never hides the only dimensions. Native speakers review seven locales and fonts. Automated scores do not certify compliance.
