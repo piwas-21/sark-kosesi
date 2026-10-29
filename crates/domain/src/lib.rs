@@ -6,6 +6,7 @@ use serde::{Deserialize, Serialize};
 pub mod catalogue_authoring;
 pub mod factual_review;
 pub mod holds;
+pub mod image_review;
 pub mod inventory;
 pub mod media;
 pub mod specifications;

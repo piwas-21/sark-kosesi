@@ -208,6 +208,30 @@ publication consumer must check fresh authority/current facts, latest decisions,
 reviewed copy, image suitability and rights explicitly. Nothing in this history
 activates a public projection or changes the courtyard preview.
 
+## Image suitability history
+
+`catalogue_image_reviews` binds exact SKU/BOM/specification/asset/rights revisions
+and the immutable `image-v1` rendition set. Review-only consumers revalidate source
+events, measured specifications, closed permission data and hash-bound complete
+private image sets. Private inspection returns sanitized derivatives after CPU
+validation outside transactions and fresh review authority; it never returns
+originals or grants catalogue management. Historical inspection is not eligibility.
+
+Review writes lock the variant, then the media serialization row. The SQL trigger
+uses the same order and no-op MVCC writes, rejecting stale repeatable-read imports
+after either source or permission changes. Separate review capability,
+confirmation, expected revision and full-intent effect identity protect decisions.
+The reviewer differs from all product/specification and media/permission authors.
+New approvals require the current sealed BOM, specification and product-photo
+rights, evaluated with fresh authorized server time before and after the insert.
+Licence expiry during an insert wait rolls back approval. Historical rejections
+and receipt replay preserve withdrawal without activating old decisions.
+
+No source data, original, derivative or review is seeded. Actual product/colour/
+material fidelity and reviewer qualification remain human acceptance evidence.
+Future publication must check latest decisions, source freshness and rights again;
+no public image serving or production activation follows from an attestation.
+
 ## Inventory and finance
 
 Model sellable variants separately from physical components. A configuration has a versioned bill of materials: seat/back/bolster covers and optional matching foam inserts. Covers-only does not reserve foam. Prepacked and separable stock require explicit warehouse rules; never count both kit stock and its contents as independently available.

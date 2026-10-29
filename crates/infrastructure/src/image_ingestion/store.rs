@@ -79,7 +79,7 @@ pub(super) async fn persist(
     access.tx.commit().await?;
     Ok(result)
 }
-pub(super) async fn receipt(
+pub(crate) async fn receipt(
     tx: &mut Transaction<'_, Postgres>,
     asset_id: &str,
     replayed: bool,

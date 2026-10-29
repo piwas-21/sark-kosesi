@@ -28,7 +28,7 @@ P1 acceptance activates application CI; it does not activate payment or establis
 1. Verify expiry supervision before operational stock use. Provider recovery
    remains P3; late payment must attempt explicit atomic reallocation. Prepacked
    stock still needs explicit kit conversion without counting contents twice.
-2. Connect image suitability review, factual decisions and reviewed copy to publication validation and activation
+2. Connect image suitability decisions, factual decisions and reviewed copy to publication validation and activation
    of approved catalogue revisions, including safe public derivative delivery. Missing P0 facts and fixture data
    must fail publication. Apply the staff capability guard to catalogue mutations,
    retaining audit reasons and no exposed preview write route.
@@ -161,6 +161,19 @@ without changing later decisions. Database guards serialize raw imports, reject
 stale snapshots and preserve immutable history. No approval is seeded and no
 attestation activates products, URLs, stock, copy or public prices. Real supplier,
 qualified reviewer, image and publication acceptance remain required.
+
+Image suitability decisions bind a merchant SKU's exact BOM/specification, immutable
+asset bytes and fixed processing recipe, and an exact permission revision.
+Separate catalogue-review authority permits source inspection and sanitized private
+derivative reads without granting authoring or original-byte access. New approvals
+require current sources and active original product-photo rights, an independent
+actor from identity/BOM/specification/registration/ingestion/rights authors, explicit
+confirmation, evidence and qualification references. Variant and asset locks span
+decisions; final session and licence clock checks reject expiry during waits.
+Historical rejection remains possible after source or rights changes, and replay
+never restores a later withdrawn approval. Immutable SQL history also serializes
+direct imports. These attestations do not verify actual visual/material/colour
+fidelity or qualified review and do not publish products or derivatives.
 
 ## Next session prompt
 

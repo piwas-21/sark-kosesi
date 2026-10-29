@@ -70,7 +70,14 @@ historical rejection remains available, and receipt retries cannot reactivate a
 withdrawn decision. These attestations neither verify actual supplier evidence nor
 activate public product facts.
 
-Next work: image suitability review, publication validation and projection
+Image suitability review now binds exact merchant identity/BOM, specification,
+verified private image recipe and rights revisions. Review-only staff can inspect
+sanitized private derivatives; source authors cannot review their own work.
+Approvals require current sources and active product-photo rights, including after
+lock waits. Historical withdrawal and receipt replay preserve later decisions.
+These records do not establish actual photographic fidelity or product acceptance.
+
+Next work: publication validation, safe public derivative delivery and projection
 invalidation under the [implementation plan](docs/IMPLEMENTATION.md). P3 owns
 late-payment reallocation. Supervision of expiry remains a deployment gate.
 P0 inputs remain pending. All seven languages are draft previews,
