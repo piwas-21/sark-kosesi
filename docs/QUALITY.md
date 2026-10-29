@@ -174,3 +174,11 @@ Target WCAG 2.2 AA. Automated checks require zero serious/critical violations an
 Budgets are in `config/performance-budgets.json`: field p75 LCP <=2.5s, INP <=200ms, CLS <=0.1; lab median of three controlled runs Lighthouse >=90, LCP <=2.5s, TBT <=200ms; initial first-party JS <=170KiB gzip, mobile LCP image <=250KiB, fonts <=150KiB, total <=750KiB. Test home/product/cart/checkout/account and planner-open separately. Lazy-load room tools and nonessential motion; responsive images with dimensions, self-host subset fonts and cache-safe SSR. Never score the unoptimized specimen as production.
 
 At 25 concurrent users for 10 minutes plus a 50-request burst, catalogue p95 <=300ms and quote p95 <=500ms excluding separately reported provider time, errors <=1%; no overselling, leaked resources or unbounded queue growth. Record hardware, DB size, seed, cache state and exact SHA. Resource caps and profiling matter more than language claims. P6 captures lab evidence; post-launch field data validates real-user performance separately.
+
+Approved preview read/stock/image boundaries and HTTP mapping retain 95% critical
+native line/branch gates. Isolated cases cover exact customer facts/price, missing
+locale and fixture rejection, all-component stock/quarantine/reservation effects,
+shared covers-only stock, pagination through withdrawals, source/review/rights
+invalidation, final/post-decode clocks, withdrawal ordering, cancellation, corrupt
+storage, redacted failures and authenticated no-store sanitized image responses.
+These synthetic cases do not establish merchant truth or human visual acceptance.

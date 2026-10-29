@@ -130,3 +130,13 @@ binding. Full Rust source revalidation remains necessary alongside SQL checks.
 Private audit/qualification/source records are not public product DTOs. Public
 image delivery and projection/cache controls remain unimplemented; actual facts,
 qualified review and production acceptance are separate evidence requirements.
+
+Approved preview projection is an explicit whitelist, not serialization of private
+review bundles. It revalidates exact current sources/decisions and product rights
+under variant/asset claims, with a final clock after database work. Image delivery
+repeats eligibility after bounded decoding outside the transaction and requires
+the same publication and rendition identity. No original, asset ID, evidence,
+actor, qualification, stock balance or storage path is emitted. Preview bearer
+protection, loopback-only non-production configuration, noindex, no-store and
+nosniff remain in force. Read/dependency/clock failures are redacted and never
+become partial product facts. There is no shared product/image cache to invalidate.

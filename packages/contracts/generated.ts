@@ -20,6 +20,54 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/published/{locale}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["page"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/published/{locale}/images/{sku}/{revision}/{edge}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["image"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/published/{locale}/products/{sku}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["product"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
@@ -27,10 +75,51 @@ export interface components {
         ApiError: {
             code: string;
         };
+        /** @enum {string} */
+        Availability: "in_stock" | "out_of_stock";
         Catalogue: {
             items: components["schemas"]["Product"][];
             locale: string;
             production_enabled: boolean;
+        };
+        Component: {
+            code: string;
+            dimensions: components["schemas"]["Measurements"];
+            material: components["schemas"]["Material"];
+            /** Format: int32 */
+            quantity: number;
+        };
+        Fibre: {
+            /** Format: int32 */
+            basis_points: number;
+            name: string;
+        };
+        /** Format: binary */
+        ImageBytes: string;
+        Material: {
+            fibres: components["schemas"]["Fibre"][];
+            /** @enum {string} */
+            kind: "cover";
+        } | {
+            /** Format: int32 */
+            density_g_per_m3: number;
+            /** @enum {string} */
+            kind: "foam";
+        };
+        Measurements: {
+            /** Format: int32 */
+            depth_mm: number;
+            /** Format: int32 */
+            height_mm: number;
+            /** Format: int32 */
+            tolerance_mm: number;
+            /** Format: int32 */
+            width_mm: number;
+        };
+        Parcel: {
+            dimensions: components["schemas"]["Measurements"];
+            /** Format: int32 */
+            gross_weight_g: number;
         };
         Product: {
             care: string;
@@ -43,6 +132,50 @@ export interface components {
             sku: string;
             slug: string;
             title: string;
+        };
+        ProductCopy: {
+            assembly: string;
+            care: string;
+            description: string;
+            materials: string;
+            safety: string;
+            title: string;
+        };
+        ProductImage: {
+            /** Format: int32 */
+            edge: number;
+            /** Format: int32 */
+            height: number;
+            url: string;
+            /** Format: int32 */
+            width: number;
+        };
+        PublishedCatalogue: {
+            items: components["schemas"]["PublishedProduct"][];
+            locale: string;
+            next_after?: string | null;
+            production_enabled: boolean;
+        };
+        PublishedProduct: {
+            availability: components["schemas"]["Availability"];
+            components: components["schemas"]["Component"][];
+            copy: components["schemas"]["ProductCopy"];
+            currency: string;
+            family_code: string;
+            family_slug: string;
+            fill: string;
+            footprint: components["schemas"]["Measurements"];
+            images: components["schemas"]["ProductImage"][];
+            locale: string;
+            /** Format: int64 */
+            minor_units: number;
+            parcels: components["schemas"]["Parcel"][];
+            price_decimal: string;
+            /** Format: int32 */
+            publication_revision: number;
+            size_code: string;
+            sku: string;
+            textile_code: string;
         };
     };
     responses: never;
@@ -81,6 +214,189 @@ export interface operations {
                 };
             };
             401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            504: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+        };
+    };
+    page: {
+        parameters: {
+            query?: {
+                after?: string;
+            };
+            header?: never;
+            path: {
+                locale: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PublishedCatalogue"];
+                };
+            };
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            504: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+        };
+    };
+    image: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                locale: string;
+                sku: string;
+                revision: number;
+                edge: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Verified sanitized JPEG or PNG derivative */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "image/jpeg": components["schemas"]["ImageBytes"];
+                    "image/png": components["schemas"]["ImageBytes"];
+                };
+            };
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            504: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+        };
+    };
+    product: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                locale: string;
+                sku: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PublishedProduct"];
+                };
+            };
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            404: {
                 headers: {
                     [name: string]: unknown;
                 };

@@ -19,7 +19,9 @@ use sqlx::{PgPool, Postgres, Transaction};
 mod read;
 mod sources;
 mod write;
+pub(crate) use read::latest_record;
 pub use read::publication_status;
+pub(crate) use sources::{Sources, load as load_sources};
 pub use write::record_publication;
 
 pub struct PublicationRequest<'a> {
@@ -141,7 +143,7 @@ impl Stored {
         })
     }
 }
-async fn current(
+pub(crate) async fn current(
     tx: &mut Transaction<'_, Postgres>,
     sku: &str,
     locale: Locale,

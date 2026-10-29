@@ -40,6 +40,12 @@ impl Locale {
             _ => None,
         }
     }
+    pub fn public(self) -> &'static str {
+        match self {
+            Self::Kmr => "ku",
+            _ => self.internal(),
+        }
+    }
     pub fn internal(self) -> &'static str {
         match self {
             Self::Nl => "nl",
@@ -68,6 +74,10 @@ mod tests {
             ("ku", "kmr"),
         ] {
             assert_eq!(Locale::from_internal(internal), Locale::from_public(public));
+            assert_eq!(
+                Locale::from_public(public).map(Locale::public),
+                Some(public)
+            );
             assert_eq!(
                 Locale::from_public(public).map(Locale::internal),
                 Some(internal)

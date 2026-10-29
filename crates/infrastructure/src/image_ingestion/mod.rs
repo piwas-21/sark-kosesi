@@ -126,7 +126,7 @@ pub async fn image_receipt(
     Ok(receipt)
 }
 #[derive(sqlx::FromRow)]
-struct StoredRendition {
+pub(crate) struct StoredRendition {
     image_type: String,
     width_px: i32,
     height_px: i32,
@@ -162,25 +162,38 @@ pub(super) async fn rendition(
     if !valid_command_id(asset_id) || ![320, 640, 960].contains(&edge) {
         return Err(ImageError::InvalidRequest);
     }
-    let row=sqlx::query_as::<_,StoredRendition>("SELECT image_type,width_px,height_px,bytes,sha256 FROM catalogue_image_renditions WHERE asset_id=$1 AND recipe='image-v1' AND edge=$2")
-        .bind(asset_id).bind(edge).fetch_optional(&mut *access.tx).await?;
-    let Some(StoredRendition {
-        image_type,
-        width_px: width,
-        height_px: height,
-        bytes,
-        sha256: digest,
-    }) = row
-    else {
-        access.check_time(clock)?;
-        access.tx.rollback().await?;
-        return Ok(None);
-    };
+    let row = load_output(&mut access.tx, asset_id, edge).await?;
     access.check_time(clock)?;
     access.tx.rollback().await?;
-    let result = process::validate_output(image_type, width, height, bytes, digest).await?;
+    let Some(row) = row else {
+        return Ok(None);
+    };
+    let result = row.validate().await?;
     let fresh = lock_staff(pool, token, clock, capability).await?;
     fresh.check_time(clock)?;
     fresh.tx.rollback().await?;
     Ok(Some(result))
+}
+
+// Opaque stored derivatives stay crate-private. Callers must establish eligibility
+// before loading and revalidate it after bounded CPU work outside the transaction.
+pub(crate) async fn load_output(
+    tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
+    asset_id: &str,
+    edge: i32,
+) -> Result<Option<StoredRendition>, ImageError> {
+    Ok(sqlx::query_as::<_,StoredRendition>("SELECT image_type,width_px,height_px,bytes,sha256 FROM catalogue_image_renditions WHERE asset_id=$1 AND recipe='image-v1' AND edge=$2")
+        .bind(asset_id).bind(edge).fetch_optional(&mut **tx).await?)
+}
+impl StoredRendition {
+    pub(crate) async fn validate(self) -> Result<PrivateRendition, ImageError> {
+        process::validate_output(
+            self.image_type,
+            self.width_px,
+            self.height_px,
+            self.bytes,
+            self.sha256,
+        )
+        .await
+    }
 }

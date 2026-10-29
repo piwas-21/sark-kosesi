@@ -79,6 +79,282 @@
           }
         ]
       }
+    },
+    "/api/published/{locale}": {
+      "get": {
+        "tags": [
+          "crate::published"
+        ],
+        "operationId": "page",
+        "parameters": [
+          {
+            "name": "locale",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "after",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PublishedCatalogue"
+                }
+              }
+            }
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "504": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "preview": []
+          }
+        ]
+      }
+    },
+    "/api/published/{locale}/images/{sku}/{revision}/{edge}": {
+      "get": {
+        "tags": [
+          "crate::published"
+        ],
+        "operationId": "image",
+        "parameters": [
+          {
+            "name": "locale",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "sku",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "revision",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int32"
+            }
+          },
+          {
+            "name": "edge",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int32"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Verified sanitized JPEG or PNG derivative",
+            "content": {
+              "image/jpeg": {
+                "schema": {
+                  "$ref": "#/components/schemas/ImageBytes"
+                }
+              },
+              "image/png": {
+                "schema": {
+                  "$ref": "#/components/schemas/ImageBytes"
+                }
+              }
+            }
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "504": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "preview": []
+          }
+        ]
+      }
+    },
+    "/api/published/{locale}/products/{sku}": {
+      "get": {
+        "tags": [
+          "crate::published"
+        ],
+        "operationId": "product",
+        "parameters": [
+          {
+            "name": "locale",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "sku",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PublishedProduct"
+                }
+              }
+            }
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "504": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "preview": []
+          }
+        ]
+      }
     }
   },
   "components": {
@@ -93,6 +369,13 @@
             "type": "string"
           }
         }
+      },
+      "Availability": {
+        "type": "string",
+        "enum": [
+          "in_stock",
+          "out_of_stock"
+        ]
       },
       "Catalogue": {
         "type": "object",
@@ -113,6 +396,145 @@
           },
           "production_enabled": {
             "type": "boolean"
+          }
+        }
+      },
+      "Component": {
+        "type": "object",
+        "required": [
+          "code",
+          "quantity",
+          "dimensions",
+          "material"
+        ],
+        "properties": {
+          "code": {
+            "type": "string"
+          },
+          "dimensions": {
+            "$ref": "#/components/schemas/Measurements"
+          },
+          "material": {
+            "$ref": "#/components/schemas/Material"
+          },
+          "quantity": {
+            "type": "integer",
+            "format": "int32",
+            "minimum": 0
+          }
+        }
+      },
+      "Fibre": {
+        "type": "object",
+        "required": [
+          "name",
+          "basis_points"
+        ],
+        "properties": {
+          "basis_points": {
+            "type": "integer",
+            "format": "int32",
+            "minimum": 0
+          },
+          "name": {
+            "type": "string"
+          }
+        }
+      },
+      "ImageBytes": {
+        "type": "string",
+        "format": "binary"
+      },
+      "Material": {
+        "oneOf": [
+          {
+            "type": "object",
+            "required": [
+              "fibres",
+              "kind"
+            ],
+            "properties": {
+              "fibres": {
+                "type": "array",
+                "items": {
+                  "$ref": "#/components/schemas/Fibre"
+                }
+              },
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "cover"
+                ]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "density_g_per_m3",
+              "kind"
+            ],
+            "properties": {
+              "density_g_per_m3": {
+                "type": "integer",
+                "format": "int32",
+                "minimum": 0
+              },
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "foam"
+                ]
+              }
+            }
+          }
+        ]
+      },
+      "Measurements": {
+        "type": "object",
+        "required": [
+          "width_mm",
+          "depth_mm",
+          "height_mm",
+          "tolerance_mm"
+        ],
+        "properties": {
+          "depth_mm": {
+            "type": "integer",
+            "format": "int32",
+            "minimum": 0
+          },
+          "height_mm": {
+            "type": "integer",
+            "format": "int32",
+            "minimum": 0
+          },
+          "tolerance_mm": {
+            "type": "integer",
+            "format": "int32",
+            "minimum": 0
+          },
+          "width_mm": {
+            "type": "integer",
+            "format": "int32",
+            "minimum": 0
+          }
+        }
+      },
+      "Parcel": {
+        "type": "object",
+        "required": [
+          "dimensions",
+          "gross_weight_g"
+        ],
+        "properties": {
+          "dimensions": {
+            "$ref": "#/components/schemas/Measurements"
+          },
+          "gross_weight_g": {
+            "type": "integer",
+            "format": "int32",
+            "minimum": 0
           }
         }
       },
@@ -156,6 +578,177 @@
             "type": "string"
           },
           "title": {
+            "type": "string"
+          }
+        }
+      },
+      "ProductCopy": {
+        "type": "object",
+        "required": [
+          "title",
+          "description",
+          "materials",
+          "care",
+          "safety",
+          "assembly"
+        ],
+        "properties": {
+          "assembly": {
+            "type": "string"
+          },
+          "care": {
+            "type": "string"
+          },
+          "description": {
+            "type": "string"
+          },
+          "materials": {
+            "type": "string"
+          },
+          "safety": {
+            "type": "string"
+          },
+          "title": {
+            "type": "string"
+          }
+        }
+      },
+      "ProductImage": {
+        "type": "object",
+        "required": [
+          "url",
+          "edge",
+          "width",
+          "height"
+        ],
+        "properties": {
+          "edge": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "height": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "url": {
+            "type": "string"
+          },
+          "width": {
+            "type": "integer",
+            "format": "int32"
+          }
+        }
+      },
+      "PublishedCatalogue": {
+        "type": "object",
+        "required": [
+          "items",
+          "locale",
+          "production_enabled"
+        ],
+        "properties": {
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/PublishedProduct"
+            }
+          },
+          "locale": {
+            "type": "string"
+          },
+          "next_after": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "production_enabled": {
+            "type": "boolean"
+          }
+        }
+      },
+      "PublishedProduct": {
+        "type": "object",
+        "required": [
+          "sku",
+          "locale",
+          "publication_revision",
+          "family_code",
+          "family_slug",
+          "size_code",
+          "textile_code",
+          "fill",
+          "minor_units",
+          "currency",
+          "price_decimal",
+          "copy",
+          "footprint",
+          "components",
+          "parcels",
+          "images",
+          "availability"
+        ],
+        "properties": {
+          "availability": {
+            "$ref": "#/components/schemas/Availability"
+          },
+          "components": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Component"
+            }
+          },
+          "copy": {
+            "$ref": "#/components/schemas/ProductCopy"
+          },
+          "currency": {
+            "type": "string"
+          },
+          "family_code": {
+            "type": "string"
+          },
+          "family_slug": {
+            "type": "string"
+          },
+          "fill": {
+            "type": "string"
+          },
+          "footprint": {
+            "$ref": "#/components/schemas/Measurements"
+          },
+          "images": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ProductImage"
+            }
+          },
+          "locale": {
+            "type": "string"
+          },
+          "minor_units": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "parcels": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Parcel"
+            }
+          },
+          "price_decimal": {
+            "type": "string"
+          },
+          "publication_revision": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "size_code": {
+            "type": "string"
+          },
+          "sku": {
+            "type": "string"
+          },
+          "textile_code": {
             "type": "string"
           }
         }

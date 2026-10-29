@@ -367,3 +367,17 @@ the current tests use labelled session attestations in disposable databases.
 Public catalogue HTML is cacheable by explicit locale/product version. Private cart, account, admin and quote data are never shared-cache responses. Invalidation follows publication/price/stock changes. Public facts and JSON-LD come from the same approved catalogue projection.
 
 Room planning starts with local dimensions and a calibrated 2D footprint. A photo overlay is an explicitly approximate visual aid. Camera AR is deferred until measured product assets/device support and accessibility fallback are proven. Default room images stay on-device; opt-in persistence uses private storage, quotas, expiry and deletion.
+
+Approved-catalogue preview reads use an explicit customer-field projection of the
+current activation and revalidated immutable sources. Variant claims precede all
+ordered asset claims; no previous activation, missing locale or draft is a
+fallback. Stock availability uses one statement over the sealed physical BOM and
+available balances; an unreceived component has zero availability. Audit/source/
+qualification references and warehouse counts never enter the HTTP DTO.
+
+The preview HTTP collection, exact-SKU detail and revision-bound image routes
+retain bearer authentication, bounded requests, noindex and private/no-store.
+They do not enable production. Image delivery accepts a SKU/locale/publication/
+edge, checks eligibility, loads only its sanitized derivative, ends the transaction
+before bounded CPU verification, then rechecks current eligibility and the exact
+image identity before returning bytes. No original/asset-path route is exposed.
