@@ -97,3 +97,13 @@ legacy preview copy rejects merchant rows. Source references are never fetched.
 Supplier truth and publication eligibility require separate acceptance; default
 installation still creates no staff authority and production stays disabled.
 Permission, source/colour fidelity and SKU suitability remain human review inputs.
+
+Independent factual decisions require the separate catalogue-review capability,
+recent MFA and confirmation. Reviewers cannot approve their own identity, BOM,
+specification or price work. Each decision binds exact immutable source versions,
+current source checks for approval, expected review history, evidence,
+qualification, reason and session-derived actor. Historical rejection withdraws an
+older decision after source changes; replay returns a receipt without restoring
+that decision. Private reads revalidate stored facts and enforce fresh authority.
+Reference strings are untrusted records, never fetched and never proof of actual
+supplier truth or qualified review. Public activation remains unimplemented.

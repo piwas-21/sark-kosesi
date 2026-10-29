@@ -184,6 +184,30 @@ physical balances under its separate capability; no variant stock pool is added.
 Sealed historical BOMs remain explicit reservation inputs after new revisions.
 Prepacked stock remains unavailable pending an explicit conversion policy.
 
+## Independent factual review
+
+`catalogue_factual_reviews` is immutable history per exact SKU/BOM/specification/
+price tuple. It references private merchant candidates only, with an independent
+actor from each source author. `catalogue.review` permits private inspection and
+confirmed decisions; it does not grant catalogue authoring. Inspection reuses the
+specification and definition transaction loaders, decoding and revalidating stored
+source data. Historical inspection is not current publication eligibility.
+
+New approvals serialize on the variant used by source writers and require the
+current sealed BOM, specification and price. A specification must bind that exact
+BOM. Rejections remain possible for historical targets. Expected review versions
+and namespaced effect locks bind the complete intent, actor and evidence. Exact
+receipt replay does not overwrite a later rejection; authority is rechecked after
+waits before write/read/replay completion. SQL triggers preserve independence,
+source linkage, contiguous history and stale-repeatable-read conflicts for raw
+imports as well. Installation creates no reviews.
+
+An evidence or qualification reference records a human attestation; software does
+not fetch it or establish supplier accuracy or reviewer qualification. The next
+publication consumer must check fresh authority/current facts, latest decisions,
+reviewed copy, image suitability and rights explicitly. Nothing in this history
+activates a public projection or changes the courtyard preview.
+
 ## Inventory and finance
 
 Model sellable variants separately from physical components. A configuration has a versioned bill of materials: seat/back/bolster covers and optional matching foam inserts. Covers-only does not reserve foam. Prepacked and separable stock require explicit warehouse rules; never count both kit stock and its contents as independently available.

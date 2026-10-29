@@ -5,7 +5,7 @@ use super::{
 };
 use commerce_application::{request_context::Clock, staff_access::Capability};
 use commerce_domain::specifications::{SpecificationDraft, bounded_text};
-use sqlx::PgPool;
+use sqlx::{PgPool, Postgres, Transaction};
 
 pub struct SpecificationRequest<'a> {
     pub sku: &'a str,
@@ -155,23 +155,34 @@ pub async fn specification(
     if !valid_identity(sku, revision) {
         return Err(SpecificationWriteError::InvalidRequest);
     }
+    let record = load(&mut access.tx, sku, revision).await?;
+    access.check_time(clock)?;
+    access.tx.rollback().await?;
+    Ok(record)
+}
+
+/// Caller owns staff authority and any required variant serialization lock.
+pub(crate) async fn load(
+    tx: &mut Transaction<'_, Postgres>,
+    sku: &str,
+    revision: i32,
+) -> Result<Option<SpecificationRecord>, SpecificationWriteError> {
     let row:Option<(i32,String)>=sqlx::query_as("SELECT bom_revision,payload::text FROM catalogue_specification_revisions WHERE sku=$1 AND revision=$2")
-        .bind(sku).bind(revision).fetch_optional(&mut *access.tx).await?;
+        .bind(sku).bind(revision).fetch_optional(&mut **tx).await?;
     let Some((bom_revision, payload)) = row else {
-        access.check_time(clock)?;
-        access.tx.rollback().await?;
         return Ok(None);
     };
+    if payload.len() > 131072 {
+        return Err(SpecificationWriteError::InvalidStoredData);
+    }
     let draft: SpecificationDraft =
         serde_json::from_str(&payload).map_err(|_| SpecificationWriteError::InvalidStoredData)?;
-    let sealed = bom::load(&mut *access.tx, sku, bom_revision)
+    let sealed = bom::load(&mut **tx, sku, bom_revision)
         .await?
         .ok_or(SpecificationWriteError::InvalidStoredData)?;
     draft
         .validate(&sealed)
         .map_err(|_| SpecificationWriteError::InvalidStoredData)?;
-    access.check_time(clock)?;
-    access.tx.rollback().await?;
     Ok(Some(SpecificationRecord {
         bom_revision,
         draft,

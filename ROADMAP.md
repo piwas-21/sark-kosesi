@@ -62,7 +62,15 @@ Known fixture identity cannot be promoted; fixture and merchant component graphs
 cannot mix. Candidate definitions receive no legacy price, URL or stock. Existing
 preview data stays separate and shared physical stock remains component-based.
 
-Next work: factual/image review, publication validation and projection
+Independent factual review now binds exact merchant identity/BOM, specification
+and draft price revisions. Review-only staff inspect revalidated source snapshots;
+a separate actor from each source author records confirmed decisions with evidence
+and qualification references. New approvals require all current source revisions;
+historical rejection remains available, and receipt retries cannot reactivate a
+withdrawn decision. These attestations neither verify actual supplier evidence nor
+activate public product facts.
+
+Next work: image suitability review, publication validation and projection
 invalidation under the [implementation plan](docs/IMPLEMENTATION.md). P3 owns
 late-payment reallocation. Supervision of expiry remains a deployment gate.
 P0 inputs remain pending. All seven languages are draft previews,
