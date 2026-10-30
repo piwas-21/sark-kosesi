@@ -12,11 +12,12 @@ struct Balance {
 }
 pub(super) async fn check(
     tx: &mut Transaction<'_, Postgres>,
-    products: &[PublishedProduct],
+    products: &[crate::published_catalogue::EligibleProduct],
     lines: &[BasketLine],
 ) -> Result<(), QuoteFailure> {
     let mut demand = BTreeMap::<&str, i64>::new();
-    for product in products {
+    for eligible in products {
+        let product = &eligible.product;
         let quantity = lines
             .iter()
             .find(|l| l.sku == product.sku)

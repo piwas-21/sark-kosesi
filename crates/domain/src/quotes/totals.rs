@@ -36,6 +36,16 @@ fn money(value: i64) -> Result<Money, QuoteError> {
         .filter(|m| bounded_money(*m))
         .ok_or(QuoteError::AmountTooLarge)
 }
+fn wide_money(value: i128) -> Result<Money, QuoteError> {
+    money(i64::try_from(value).map_err(|_| QuoteError::AmountTooLarge)?)
+}
+fn add(left: Money, right: Money) -> Result<Money, QuoteError> {
+    money(
+        left.checked_add(right)
+            .map_err(|_| QuoteError::AmountTooLarge)?
+            .minor_units(),
+    )
+}
 /// VAT-inclusive gross. Round VAT half up once per extended SKU line and shipping.
 /// The total sums those allocations; it never recomputes VAT over mixed rates.
 fn split(gross: Money, rate: u16) -> Result<AmountBreakdown, QuoteError> {
@@ -45,11 +55,11 @@ fn split(gross: Money, rate: u16) -> Result<AmountBreakdown, QuoteError> {
     let gross = money(gross.minor_units())?;
     let denominator = 10_000 + i128::from(rate);
     let vat = (i128::from(gross.minor_units()) * i128::from(rate) + denominator / 2) / denominator;
-    let vat = i64::try_from(vat).map_err(|_| QuoteError::AmountTooLarge)?;
+    let vat = wide_money(vat)?;
     Ok(AmountBreakdown {
         gross,
-        net: money(gross.minor_units() - vat)?,
-        vat: money(vat)?,
+        net: money(gross.minor_units() - vat.minor_units())?,
+        vat,
     })
 }
 pub fn calculate(
@@ -81,27 +91,9 @@ pub fn calculate(
             .map_err(|_| QuoteError::AmountTooLarge)?;
         let amounts = split(gross, item.vat_basis_points)?;
         total = AmountBreakdown {
-            gross: money(
-                total
-                    .gross
-                    .checked_add(amounts.gross)
-                    .map_err(|_| QuoteError::AmountTooLarge)?
-                    .minor_units(),
-            )?,
-            net: money(
-                total
-                    .net
-                    .checked_add(amounts.net)
-                    .map_err(|_| QuoteError::AmountTooLarge)?
-                    .minor_units(),
-            )?,
-            vat: money(
-                total
-                    .vat
-                    .checked_add(amounts.vat)
-                    .map_err(|_| QuoteError::AmountTooLarge)?
-                    .minor_units(),
-            )?,
+            gross: add(total.gross, amounts.gross)?,
+            net: add(total.net, amounts.net)?,
+            vat: add(total.vat, amounts.vat)?,
         };
         lines.push(QuoteLine {
             sku: item.sku.clone(),
@@ -119,3 +111,7 @@ pub fn calculate(
         total,
     })
 }
+
+#[cfg(test)]
+#[path = "../../tests/support/quote_money.rs"]
+mod tests;

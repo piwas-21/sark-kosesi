@@ -391,3 +391,5 @@ async fn dependency_failure_never_returns_partial_quote(pool: PgPool) {
     ));
 }
 include!("support/quote_waits.rs");
+
+include!("support/quote_covers.rs");

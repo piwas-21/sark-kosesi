@@ -1,8 +1,5 @@
 //! Trusted non-selling quote consumer. No HTTP route, persisted cart or provider I/O.
-use crate::{
-    publication,
-    published_catalogue::{self, PublishedError, PublishedProduct},
-};
+use crate::published_catalogue::{self, PublishedError, PublishedProduct};
 use commerce_application::{Locale, request_context::Clock};
 use commerce_domain::quotes::{
     MarketPolicy, PricedItem, QuoteError, QuoteRequest, QuoteTotals, calculate,
@@ -74,14 +71,15 @@ pub async fn server_quote(
     let mut skus: Vec<_> = request.lines.iter().map(|l| l.sku.clone()).collect();
     skus.sort();
     let mut tx = published_catalogue::begin(pool).await?;
-    let products = published_catalogue::load(&mut tx, clock, locale, &skus).await?;
+    let products = published_catalogue::load_eligible(&mut tx, clock, locale, &skus).await?;
     if products.len() != skus.len() {
         return Err(QuoteError::ProductUnavailable.into());
     }
     let mut priced = Vec::with_capacity(products.len());
     let mut parcels = 0_u64;
     let mut weight = 0_u64;
-    for product in &products {
+    for eligible in &products {
+        let product = &eligible.product;
         let quantity = request
             .lines
             .iter()
@@ -106,29 +104,14 @@ pub async fn server_quote(
     )?;
     // Variant and asset claims still span all reads. Evaluate every source's timed
     // eligibility after stock waits, using one final clock for the whole basket.
-    let mut rights = Vec::with_capacity(products.len());
-    for product in &products {
-        let record = publication::latest_record(&mut tx, &product.sku, locale)
-            .await
-            .map_err(PublishedError::from)?
-            .ok_or(QuoteFailure::InvalidStoredData)?;
-        let commerce_domain::publication::PublicationChoice::Activate { selection } = record.choice
-        else {
-            return Err(QuoteFailure::InvalidStoredData);
-        };
-        let sources = publication::load_sources(&mut tx, &product.sku, locale, &selection)
-            .await
-            .map_err(PublishedError::from)?;
-        rights.push((sources.image.rights, sources.image.asset));
-    }
     let evaluated_at = now(clock)?;
     if evaluated_at < started {
         return Err(QuoteFailure::ClockUnavailable);
     }
     policy.permits(&request.destination, evaluated_at)?;
-    if rights
+    if products
         .iter()
-        .any(|(right, asset)| !right.product_rights_active(asset, evaluated_at))
+        .any(|eligible| !eligible.rights_active(evaluated_at))
     {
         return Err(QuoteError::ProductUnavailable.into());
     }

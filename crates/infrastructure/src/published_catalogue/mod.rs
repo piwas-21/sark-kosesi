@@ -18,7 +18,7 @@ mod product;
 mod read;
 mod stock;
 pub use image::published_image;
-pub(crate) use read::load;
+pub(crate) use read::load_eligible;
 pub use read::{published_page, published_product};
 pub const PAGE_SIZE: usize = 25;
 
@@ -39,6 +39,18 @@ pub struct PublishedProduct {
     pub parcels: Vec<PublishedParcel>,
     pub image: PublishedImage,
     pub in_stock: bool,
+}
+/// Internal eligibility context retained only while the caller holds source claims.
+/// Kept separate from the customer projection and never exposed by HTTP.
+pub(crate) struct EligibleProduct {
+    pub product: PublishedProduct,
+    rights: commerce_domain::media::MediaRightsChange,
+    asset: commerce_domain::media::MediaAssetDraft,
+}
+impl EligibleProduct {
+    pub(crate) fn rights_active(&self, now: i64) -> bool {
+        self.rights.product_rights_active(&self.asset, now)
+    }
 }
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct PublishedComponent {
