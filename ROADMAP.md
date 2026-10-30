@@ -1,6 +1,6 @@
 # Implementation status
 
-**Current stage: P2 catalogue/BOM source implemented; production disabled.**
+**Current stage: P3 server quotes in progress; production disabled.**
 
 The read-only Rust/SQLx catalogue, migrations, typed contracts, API/worker readiness
 and courtyard Next.js shells are implemented. Explicit clock/identifier ports
@@ -92,7 +92,12 @@ facts and read-through stock/publication invalidation. The owner approved all
 228 Linux screenshot baselines for the expanded preview; the approval record
 binds the exact UI/fixture source digest and every image hash.
 
-Next work: P3 checkout/payment work under the [implementation plan](docs/IMPLEMENTATION.md). P3 owns
+Server quote source now reads approved publications and aggregated shared-component
+stock with explicit exact-destination policies and bounded integer tax/shipping
+allocations. No policies are seeded or accepted from clients. Quotes are indicative:
+no stock is reserved and no payment is authorized. Durable reviewed readiness,
+promotions, guest checkout/orders, Mollie sandbox attempts/reconciliation, invoices
+and refunds remain P3 work under the [implementation plan](docs/IMPLEMENTATION.md). P3 owns
 late-payment reallocation. Supervision of expiry remains a deployment gate.
 P0 inputs remain pending. All seven languages are draft previews,
 fixtures are explicitly not for sale, and admin operations remain unavailable.

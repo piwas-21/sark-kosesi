@@ -18,6 +18,7 @@ mod product;
 mod read;
 mod stock;
 pub use image::published_image;
+pub(crate) use read::load;
 pub use read::{published_page, published_product};
 pub const PAGE_SIZE: usize = 25;
 
@@ -105,7 +106,7 @@ fn now(clock: &dyn Clock) -> Result<i64, PublishedError> {
     )
     .map_err(|_| PublishedError::ClockUnavailable)
 }
-async fn begin(pool: &PgPool) -> Result<Transaction<'static, Postgres>, PublishedError> {
+pub(crate) async fn begin(pool: &PgPool) -> Result<Transaction<'static, Postgres>, PublishedError> {
     let mut tx = pool.begin().await?;
     sqlx::query("SET TRANSACTION ISOLATION LEVEL READ COMMITTED")
         .execute(&mut *tx)

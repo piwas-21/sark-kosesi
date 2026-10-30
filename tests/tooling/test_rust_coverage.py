@@ -40,6 +40,11 @@ class RustCoverage(unittest.TestCase):
         files = self.document["data"][0]["files"]
         for name, zero_allowed in (
             ("crates/domain/src/inventory.rs", False),
+            ("crates/domain/src/quotes/mod.rs", False),
+            ("crates/domain/src/quotes/policy.rs", False),
+            ("crates/domain/src/quotes/totals.rs", False),
+            ("crates/infrastructure/src/quotes/mod.rs", False),
+            ("crates/infrastructure/src/quotes/stock.rs", False),
             ("crates/infrastructure/src/stock.rs", False),
             ("crates/domain/src/holds.rs", False),
             ("crates/infrastructure/src/holds/create.rs", False),

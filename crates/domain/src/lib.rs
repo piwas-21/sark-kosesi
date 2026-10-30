@@ -10,6 +10,7 @@ pub mod image_review;
 pub mod inventory;
 pub mod media;
 pub mod publication;
+pub mod quotes;
 pub mod specifications;
 pub mod translations;
 

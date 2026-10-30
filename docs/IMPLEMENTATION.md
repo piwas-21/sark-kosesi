@@ -200,6 +200,40 @@ requests. Human visual approval of the expanded gallery remains required; actual
 product and qualified-review evidence stays P0, and released merchant feeds/Offer
 schema/indexability stay P6 acceptance work.
 
+## P3 work packages
+
+1. Server quotes now read exact currently eligible catalogue publications under
+   variant/asset claims and check aggregated basket demand against physical
+   component balances. The closed request contains only destination and SKU/unit
+   selections. Trusted server policies bind exact country/postcode, publication
+   revisions, quantity limits, explicit item/shipping VAT and bounded parcel service.
+   No policies are installed; missing or ambiguous readiness fails closed. These
+   indicative reads neither reserve stock nor authorize payment. The initial
+   VAT-inclusive arithmetic rounds VAT half up per extended SKU line and shipping,
+   then sums allocations, with an exact JavaScript integer ceiling. Actual tax,
+   carrier, territory and rounding acceptance remain P0/P6 requirements.
+2. Persist reviewed market/tax/shipping policies with independently authorized
+   versioned changes and a complete explicit country/postcode/territory readiness
+   matrix. Add promotions with eligibility, time windows, stacking, atomic budget/
+   redemption limits and exact discount/refund allocations. No coupon is currently
+   accepted and no policy supplied by a customer may grant readiness.
+3. Add durable guest baskets, ownership/CSRF/abuse controls, immutable quote/order/
+   address/policy snapshots and atomic whole-basket holds. Revalidate publications,
+   policy and amounts during order creation; an earlier quote grants no authority.
+   Expose the same-origin API/contracts and checkout UI only with those controls.
+4. Add Mollie sandbox adapter and stable persisted payment attempts/idempotency
+   keys before provider I/O; timeouts retain unknown outcomes for reconciliation.
+   Fetch and verify webhook identifiers against order/amount/currency/profile/mode.
+   Add durable outbox/reconciler, duplicate/reordered notifications and atomic late
+   paid reallocation with visible recovery when components are unavailable.
+5. Add separate order/payment/fulfilment/refund state, invoices/credit documents,
+   bounded audited refunds and independent restock actions. Prove sandbox outcomes,
+   concurrency, cent allocations and crash recovery without duplicate effects.
+
+No guest checkout route, order persistence, provider calls, payment acceptance or
+production activation follows from the initial server quote consumer. Preserve
+all nine CI gates and the approved courtyard visual source/baselines.
+
 ## Next session prompt
 
-> Read AGENTS.md and ROADMAP.md, then docs/IMPLEMENTATION.md and its linked requirements. Implement P2 catalogue/BOM and stock in small reviewed PRs to develop using the selected Rust/Axum/SQLx/PostgreSQL and Next.js stack. Model product families/variants, shared physical components, publication validation, stock ledger/holds/quarantine and catalogue/warehouse permissions. Keep production disabled and the approved courtyard design. P0 inputs remain pending; use isolated labelled fixtures and never invent publishable facts. Use only free, self-hostable dependencies with reviewed licences. Retain every P1 gate and add hostile PostgreSQL concurrency, component-conservation, publication/RBAC and cache-invalidation tests. Preserve shared work; use the independent review receipt and merge gate. Report code/CI, provider and deployment evidence separately.
+> Read AGENTS.md and ROADMAP.md, then docs/IMPLEMENTATION.md and its linked requirements. Continue P3 in small independently reviewed PRs to develop. Start with persisted reviewed market/tax/shipping readiness and promotions, then durable guest checkout, atomic basket holds and immutable orders. Keep missing P0 facts and unready destinations blocked. Mollie work is sandbox-only; preserve stable payment attempts, reconcile unknown outcomes, fetch/verify notifications and recover late paid stock explicitly. Retain exact money/refund allocations, all real CI/review/merge gates, the approved courtyard design and disabled production. Report source/CI, provider, deployment and fulfilment evidence separately.

@@ -38,7 +38,7 @@ pub async fn published_product(
     tx.rollback().await?;
     Ok(products.pop())
 }
-async fn load(
+pub(crate) async fn load(
     tx: &mut Transaction<'_, Postgres>,
     clock: &dyn Clock,
     locale: Locale,
