@@ -143,3 +143,46 @@ async fn policy_storage_fault_is_never_a_readiness_default(pool: PgPool) {
         Err(MarketError::Database(_))
     ));
 }
+
+#[sqlx::test(migrator = "MIGRATOR")]
+async fn malformed_stored_review_headers_fail_the_production_reader(pool: PgPool) {
+    seed(&pool).await;
+    draft(&pool, &policy(), "draft").await.expect("draft");
+    decide(&pool, "review", 1, 0, true).await.expect("review");
+    pool.execute("ALTER TABLE market_policy_reviews DISABLE TRIGGER ALL; ALTER TABLE market_policy_reviews DROP CONSTRAINT market_policy_reviews_revision_check; ALTER TABLE market_policy_reviews DROP CONSTRAINT market_policy_reviews_decision_check").await.expect("isolated corruption bypass");
+    pool.execute("UPDATE market_policy_reviews SET revision=0")
+        .await
+        .expect("corrupt stored revision");
+    assert!(matches!(
+        inspect(&pool, 1).await,
+        Err(MarketError::InvalidStoredData)
+    ));
+    pool.execute("UPDATE market_policy_reviews SET revision=1,decision='unknown'")
+        .await
+        .expect("corrupt stored decision");
+    assert!(matches!(
+        inspect(&pool, 1).await,
+        Err(MarketError::InvalidStoredData)
+    ));
+    pool.execute("UPDATE market_policy_reviews SET decision='approved',draft_revision=0")
+        .await
+        .expect("corrupt stored target");
+    assert!(
+        inspect(&pool, 1)
+            .await
+            .expect("mismatched targets are excluded")
+            .review
+            .is_none()
+    );
+    pool.execute("UPDATE market_policy_reviews SET draft_revision=1")
+        .await
+        .expect("restore positive control");
+    assert!(
+        inspect(&pool, 1)
+            .await
+            .expect("restored")
+            .review
+            .expect("decision")
+            .approved
+    );
+}

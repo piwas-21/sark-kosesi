@@ -21,8 +21,7 @@ pub(super) struct StoredReview {
 }
 impl StoredReview {
     pub fn valid(&self, draft: &StoredDraft) -> bool {
-        self.draft_revision > 0
-            && self.revision > 0
+        self.revision > 0
             && ["approved", "rejected"].contains(&self.decision.as_str())
             && self.actor != draft.actor
             && text(&self.evidence_ref)
@@ -123,11 +122,10 @@ mod tests {
             reason: "synthetic".into(),
         };
         assert!(valid().valid(&draft));
-        for case in 0..3 {
+        for case in 0..2 {
             let mut row = valid();
             match case {
-                0 => row.draft_revision = 0,
-                1 => row.revision = 0,
+                0 => row.revision = 0,
                 _ => row.decision = "unknown".into(),
             }
             assert!(!row.valid(&draft));
