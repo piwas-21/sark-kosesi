@@ -1,6 +1,6 @@
 # Implementation status
 
-**Current stage: P3 server quotes in progress; production disabled.**
+**Current stage: P3 quote/readiness controls in progress; production disabled.**
 
 The read-only Rust/SQLx catalogue, migrations, typed contracts, API/worker readiness
 and courtyard Next.js shells are implemented. Explicit clock/identifier ports

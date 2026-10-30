@@ -69,7 +69,6 @@ pub async fn record_review(
             || stored.qualification_ref != request.qualification_ref
             || stored.actor != access.actor
             || stored.reason != audit.reason
-            || !stored.valid(&draft)
         {
             return Err(MarketError::Conflict);
         }
@@ -101,4 +100,37 @@ pub async fn record_review(
         revision,
         replayed: false,
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn corrupt_stored_review_headers_are_not_decisions() {
+        let draft = StoredDraft {
+            policy: serde_json::Value::Null,
+            actor: "author".into(),
+            reason: "synthetic".into(),
+        };
+        let valid = || StoredReview {
+            draft_revision: 1,
+            revision: 1,
+            decision: "approved".into(),
+            evidence_ref: "synthetic".into(),
+            qualification_ref: "synthetic".into(),
+            actor: "reviewer".into(),
+            reason: "synthetic".into(),
+        };
+        assert!(valid().valid(&draft));
+        for case in 0..3 {
+            let mut row = valid();
+            match case {
+                0 => row.draft_revision = 0,
+                1 => row.revision = 0,
+                _ => row.decision = "unknown".into(),
+            }
+            assert!(!row.valid(&draft));
+        }
+    }
 }

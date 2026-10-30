@@ -378,6 +378,12 @@ async fn effect_keys_bind_full_draft_review_intent_and_session_actor(pool: PgPoo
         );
     }
     decide(&pool, "review", 1, 0, true).await.expect("review");
+    let mut other = policy();
+    other.id = "OTHER".into();
+    other.destination.postcode = "9999 ZZ".into();
+    draft(&pool, &other, "other-destination")
+        .await
+        .expect("independent existing destination");
     let mut p = policy();
     p.revision = 2;
     draft(&pool, &p, "new").await.expect("second");
