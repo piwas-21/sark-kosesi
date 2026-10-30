@@ -206,3 +206,9 @@ macOS WebKit screenshot repaint defect after changing colour scheme in place;
 computed text styles were correct while the captured inherited text was stale.
 No unreadable candidate is acceptable evidence and normal comparisons still
 require newly approved image/source hashes.
+
+Merchant SKU cursor comparison and ordering use explicit PostgreSQL C collation,
+matching the ASCII identifier contract checked by JavaScript. A real isolated
+shifted-ICU regression puts active identifiers on either side of a page boundary;
+withdrawing the comparison or ordering collation must fail that oracle. Deployment
+locale must not make valid catalogue pages unavailable or lose a continuation.

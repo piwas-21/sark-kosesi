@@ -666,3 +666,80 @@ async fn corrupt_route_claim_source_and_rendition_cannot_escape_customer_boundar
         Err(PublishedError::InvalidStoredData)
     ));
 }
+include!("support/published_candidate.rs");
+#[sqlx::test(migrator = "MIGRATOR")]
+async fn cursor_comparison_and_order_match_ascii_under_conflicting_database_collation(
+    pool: PgPool,
+) {
+    let _case = media_seed(&pool).await;
+    pool.execute("CREATE COLLATION cursor_locale(provider=icu,locale='en-US-u-ka-shifted'); ALTER TABLE catalogue_publication_revisions ALTER COLUMN sku TYPE text COLLATE cursor_locale").await.expect("isolated conflicting collation");
+    candidate(&pool, "Z-2").await;
+    candidate(&pool, "Z1").await;
+    for sku in (0..24).map(|n| format!("B-{n:02}")).chain(["Z3".into()]) {
+        definition(
+            &pool,
+            &CatalogueCommand::Variant {
+                sku: sku.clone(),
+                family_code: "ROOM".into(),
+                size_code: "isolated".into(),
+                textile_code: "isolated".into(),
+                fill: Fill::WithFoam,
+                lines: lines(2),
+            },
+            &format!("variant-{sku}"),
+        )
+        .await;
+        record_publication(
+            &pool,
+            &author(),
+            &FixedClock(1100),
+            PublicationRequest {
+                sku: &sku,
+                locale: Locale::Nl,
+                expected_revision: 0,
+                effect_key: &format!("withdraw-{sku}"),
+                choice: &PublicationChoice::Withdraw {},
+                evidence_ref: "synthetic",
+                reason: "synthetic",
+                confirmed: true,
+            },
+        )
+        .await
+        .expect("withdrawn candidate");
+    }
+    let native: Vec<String> = sqlx::query_scalar(
+        "SELECT DISTINCT sku FROM catalogue_publication_revisions WHERE sku LIKE 'Z%' ORDER BY sku",
+    )
+    .fetch_all(&pool)
+    .await
+    .expect("independent database locale oracle");
+    assert_eq!(native, vec!["Z1", "Z-2", "Z3"]);
+    let first = published_page(&pool, &FixedClock(1100), Locale::Nl, None)
+        .await
+        .expect("first");
+    assert_eq!(first.next_after.as_deref(), Some("Z-2"));
+    assert_eq!(
+        first
+            .items
+            .iter()
+            .map(|p| p.sku.as_str())
+            .collect::<Vec<_>>(),
+        vec!["Z-2"]
+    );
+    let next = published_page(
+        &pool,
+        &FixedClock(1100),
+        Locale::Nl,
+        first.next_after.as_deref(),
+    )
+    .await
+    .expect("next");
+    assert!(next.next_after.is_none());
+    assert_eq!(
+        next.items
+            .iter()
+            .map(|p| p.sku.as_str())
+            .collect::<Vec<_>>(),
+        vec!["Z1"]
+    );
+}

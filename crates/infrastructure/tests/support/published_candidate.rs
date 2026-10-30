@@ -1,0 +1,12 @@
+// Complete synthetic candidates used to exercise the actual public cursor boundary.
+async fn candidate(pool:&PgPool,sku:&str){
+    definition(pool,&CatalogueCommand::Variant {sku:sku.into(),family_code:"ROOM".into(),size_code:"isolated size".into(),textile_code:"isolated textile".into(),fill:Fill::WithFoam,lines:lines(2)},&format!("variant-{sku}")).await;
+    let mut spec=draft(true);spec.components[0].component_code="SEAT-COVER".into();spec.components[1].component_code="SEAT-FOAM".into();
+    record_specification(pool,&author(),&FixedClock(1100),SpecificationRequest {sku,bom_revision:1,expected_revision:0,effect_key:&format!("spec-{sku}"),draft:&spec,reason:"synthetic",confirmed:true}).await.expect("spec");
+    record_price_revision(pool,&author(),&FixedClock(1100),PriceRevisionRequest {sku,expected_revision:0,effect_key:&format!("price-{sku}"),price:commerce_domain::Money::eur(12345).expect("synthetic money"),evidence_ref:"synthetic",reason:"synthetic",confirmed:true}).await.expect("price");
+    record_factual_review(pool,&reviewer(),&FixedClock(1100),FactReviewRequest {sku,target:selected().facts,expected_review_revision:0,effect_key:&format!("facts-{sku}"),decision:FactDecision::Approved,evidence_ref:"synthetic",qualification_ref:"synthetic",reason:"synthetic",confirmed:true}).await.expect("facts");
+    record_image_review(pool,&reviewer(),&FixedClock(1100),ImageReviewRequest {sku,target:&selected().image,expected_revision:0,effect_key:&format!("image-{sku}"),decision:ImageDecision::Approved,evidence_ref:"synthetic",qualification_ref:"synthetic",reason:"synthetic",confirmed:true}).await.expect("image");
+    record_translation(pool,&author(),&FixedClock(1100),TranslationRequest {sku,locale:Locale::Nl,specification_revision:1,source_revision:None,expected_revision:0,effect_key:&format!("copy-{sku}"),draft:&copy(),reason:"synthetic",confirmed:true}).await.expect("copy");
+    record_review(pool,&reviewer(),&FixedClock(1100),TranslationReviewRequest {sku,locale:Locale::Nl,translation_revision:1,expected_review_revision:0,effect_key:&format!("copy-review-{sku}"),decision:TranslationDecision::Approved,evidence_ref:"synthetic",qualification_ref:"synthetic",reason:"synthetic",confirmed:true}).await.expect("copy review");
+    record_publication(pool,&author(),&FixedClock(1100),PublicationRequest {sku,locale:Locale::Nl,expected_revision:0,effect_key:&format!("publish-{sku}"),choice:&choice(),evidence_ref:"synthetic",reason:"synthetic",confirmed:true}).await.expect("publication");
+}

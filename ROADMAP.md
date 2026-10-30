@@ -28,8 +28,8 @@ remains read-only. No production scheduler or payment recovery is enabled.
 Catalogue staff can now record immutable draft price revisions with explicit
 confirmation, an evidence reference, a reason and session-derived audit actor.
 Optimistic revision checks and effect-key replay prevent lost edits and duplicate
-history. These draft records do not change preview prices or establish approved
-merchant facts. Publication and public price activation remain unimplemented.
+history. Draft records do not establish approved merchant facts. Public preview
+prices change only through the explicit reviewed publication flow described below.
 
 Immutable specification drafts now record BOM-linked component measurements,
 cover fibre fractions, foam evidence, assembly footprint, measured parcels and
@@ -39,14 +39,14 @@ measurement/evidence entry grants factual approval or publication.
 Media metadata now has an immutable content identity and audited rights grant/
 revoke history. Known fixture/generated digests cannot be relabelled under a new asset ID
 or receive product-photo rights. Rights consumers check explicit scope, terms,
-revocation and fresh server time; positive rights do not verify image bytes or
-product suitability. No public image delivery or publication is enabled.
+revocation and fresh server time; positive rights alone do not verify image bytes
+or product suitability. The approved publication path adds those checks below.
 
 Actual original bytes can now be verified against registered digest/codec/raw
 pixel dimensions. Bounded decoding normalizes orientation and produces private
 privacy-metadata-free derivatives without upscaling. Fresh authority protects an
-atomic, immutable PostgreSQL original/rendition set; no public delivery or
-product/permission/SKU approval follows from decoding.
+atomic, immutable PostgreSQL original/rendition set. Decoding alone grants no
+public delivery or product/permission/SKU approval.
 
 Catalogue copy now has immutable drafts tied to specification revisions and, for
 non-Dutch locales, an exact Dutch source revision. A separate catalogue-review
