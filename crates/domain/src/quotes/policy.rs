@@ -3,7 +3,8 @@ use crate::specifications::bounded_text;
 
 /// Trusted server input. No installed policy, request decoder or ready-country default.
 /// Exact postcodes and publication revisions prevent broad territorial/product fallback.
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct MarketPolicy {
     pub id: String,
     pub revision: i32,
@@ -14,15 +15,18 @@ pub struct MarketPolicy {
     pub shipping: ShippingRule,
     pub evidence_ref: String,
 }
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct ProductRule {
     pub sku: String,
     pub publication_revision: i32,
     pub max_quantity: u32,
     pub vat_basis_points: u16,
 }
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct ShippingRule {
+    #[serde(deserialize_with = "decode_money")]
     pub gross: Money,
     pub vat_basis_points: u16,
     pub max_parcels: u32,
@@ -82,4 +86,16 @@ impl MarketPolicy {
             })
             .ok_or(QuoteError::ProductUnavailable)
     }
+}
+
+fn decode_money<'de, D: serde::Deserializer<'de>>(decoder: D) -> Result<Money, D::Error> {
+    #[derive(Deserialize)]
+    #[serde(deny_unknown_fields)]
+    struct StoredMoney {
+        minor_units: i64,
+        #[serde(rename = "currency")]
+        _currency: crate::Currency,
+    }
+    let value = StoredMoney::deserialize(decoder)?;
+    Money::eur(value.minor_units).map_err(|_| serde::de::Error::custom("Invalid stored money"))
 }

@@ -33,6 +33,7 @@ def validate(document, root, branches=True):
         for pattern in (
             "crates/*/src/inventory.rs",
             "crates/*/src/quotes/*.rs",
+            "crates/*/src/market_policies/*.rs",
             "crates/*/src/stock.rs",
             "crates/*/src/holds.rs",
             "crates/*/src/holds/*.rs",

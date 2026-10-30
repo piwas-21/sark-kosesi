@@ -98,7 +98,12 @@ remains loopback-only and authenticated, with a separate database and disabled p
 recorded independently from source/CI. Server quote source now reads approved publications and aggregated shared-component
 stock with explicit exact-destination policies and bounded integer tax/shipping
 allocations. No policies are seeded or accepted from clients. Quotes are indicative:
-no stock is reserved and no payment is authorized. Durable reviewed readiness,
+no stock is reserved and no payment is authorized. Private market policy drafts and independent approvals now persist exact country/
+postcode, publication, VAT, parcel limits and validity windows with immutable audit
+history. Separate market author/reviewer grants and recent MFA protect changes.
+The latest draft and its latest review govern indicative quotes under one database
+transaction; a newer draft or withdrawal blocks old approvals. No policies or
+grants are seeded. Complete country/territory readiness evidence and coverage,
 promotions, guest checkout/orders, Mollie sandbox attempts/reconciliation, invoices
 and refunds remain P3 work under the [implementation plan](docs/IMPLEMENTATION.md). P3 owns
 late-payment reallocation. Supervision of expiry remains a deployment gate.

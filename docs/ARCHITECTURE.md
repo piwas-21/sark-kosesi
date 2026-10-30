@@ -339,8 +339,28 @@ postcode to eligible publication revisions, quantity ceilings, item VAT rates
 and one basket shipping price/rate with parcel count, total weight and edge
 limits. Exact matching has no country-wide, territory, sibling or draft fallback.
 Policies are trusted server configuration values with identity, revision, evidence
-reference and validity window, not proof of carrier/accountant approval. Durable
-policy administration and the full readiness matrix remain required before sales.
+reference and validity window, not proof of carrier/accountant approval. The full country/territory readiness matrix and verified inputs remain required
+before sales.
+
+Private durable policy administration uses unseeded `market.manage` and
+`market.review` capabilities. One immutable anchor binds a policy ID to one exact
+EU country/postcode, with a unique destination. Confirmed, optimistic drafts retain
+closed validated policy JSON and session-derived actor/reason/effect history.
+Independent reviews bind an exact draft and evidence/qualification references.
+New approvals require the latest draft; historical rejections and exact receipt
+replays preserve later decisions. References are attestations, never automated
+verification of tax, carrier, territory or return obligations.
+
+The reviewed quote consumer holds the policy anchor through the same transaction
+as catalogue and physical stock claims. Only the newest draft with its newest
+approval is usable; there is no fallback after edits/rejection or ambiguous
+country-wide inference. Read boundaries revalidate stored policies and reviews.
+No-op anchor writes serialize history and reject stale repeatable-read imports;
+database triggers also reject immutable-history edits, gaps, self-review and stale
+approval. Staff clocks are checked after writes/reads and effect waits. No policy,
+grant, country-wide readiness, HTTP checkout or payment is installed by migration.
+The existing trusted in-memory quote primitive remains available for isolated
+adapter tests; customer-facing checkout must use reviewed persisted policy state.
 
 A single read-committed transaction reuses publication validation and claims all
 variants before assets. It sums demand across SKUs for shared physical components,

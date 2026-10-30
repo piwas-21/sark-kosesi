@@ -55,6 +55,18 @@ pub async fn server_quote(
     request: &QuoteRequest,
     policies: &[MarketPolicy],
 ) -> Result<ServerQuote, QuoteFailure> {
+    let mut tx = published_catalogue::begin(pool).await?;
+    let quote = in_transaction(&mut tx, clock, locale, request, policies).await?;
+    tx.rollback().await?;
+    Ok(quote)
+}
+pub(crate) async fn in_transaction(
+    tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
+    clock: &dyn Clock,
+    locale: Locale,
+    request: &QuoteRequest,
+    policies: &[MarketPolicy],
+) -> Result<ServerQuote, QuoteFailure> {
     request.validate()?;
     if policies.len() > 64 {
         return Err(QuoteError::InvalidPolicy.into());
@@ -70,8 +82,7 @@ pub async fn server_quote(
     policy.permits(&request.destination, started)?;
     let mut skus: Vec<_> = request.lines.iter().map(|l| l.sku.clone()).collect();
     skus.sort();
-    let mut tx = published_catalogue::begin(pool).await?;
-    let products = published_catalogue::load_eligible(&mut tx, clock, locale, &skus).await?;
+    let products = published_catalogue::load_eligible(tx, clock, locale, &skus).await?;
     if products.len() != skus.len() {
         return Err(QuoteError::ProductUnavailable.into());
     }
@@ -96,7 +107,7 @@ pub async fn server_quote(
             vat_basis_points: rule.vat_basis_points,
         });
     }
-    stock::check(&mut tx, &products, &request.lines).await?;
+    stock::check(tx, &products, &request.lines).await?;
     let totals = calculate(
         &priced,
         policy.shipping.gross,
@@ -115,7 +126,6 @@ pub async fn server_quote(
     {
         return Err(QuoteError::ProductUnavailable.into());
     }
-    tx.rollback().await?;
     Ok(ServerQuote {
         policy_id: policy.id.clone(),
         policy_revision: policy.revision,

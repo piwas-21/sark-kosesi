@@ -221,9 +221,13 @@ supervision or live provider activation follows from deploying the empty preview
    VAT-inclusive arithmetic rounds VAT half up per extended SKU line and shipping,
    then sums allocations, with an exact JavaScript integer ceiling. Actual tax,
    carrier, territory and rounding acceptance remain P0/P6 requirements.
-2. Persist reviewed market/tax/shipping policies with independently authorized
-   versioned changes and a complete explicit country/postcode/territory readiness
-   matrix. Add promotions with eligibility, time windows, stacking, atomic budget/
+2. Private market policy drafts and independent exact-revision reviews now persist
+   with separate market capabilities, immutable history and intent-bound retries.
+   Reviewed quotes claim the current policy through catalogue/stock evaluation;
+   newer drafts, withdrawal and expiry block old approvals. No policies/grants are
+   installed. Complete the explicit country/postcode/territory readiness matrix
+   from actual reviewed tax/carrier/returns inputs before enabling destinations.
+   Add promotions with eligibility, time windows, stacking, atomic budget/
    redemption limits and exact discount/refund allocations. No coupon is currently
    accepted and no policy supplied by a customer may grant readiness.
 3. Add durable guest baskets, ownership/CSRF/abuse controls, immutable quote/order/
@@ -245,4 +249,4 @@ all nine CI gates and the approved courtyard visual source/baselines.
 
 ## Next session prompt
 
-> Read AGENTS.md and ROADMAP.md, then docs/IMPLEMENTATION.md and its linked requirements. Continue P3 in small independently reviewed PRs to develop. Start with persisted reviewed market/tax/shipping readiness and promotions, then durable guest checkout, atomic basket holds and immutable orders. Keep missing P0 facts and unready destinations blocked. Mollie work is sandbox-only; preserve stable payment attempts, reconcile unknown outcomes, fetch/verify notifications and recover late paid stock explicitly. Retain exact money/refund allocations, all real CI/review/merge gates, the approved courtyard design and disabled production. Report source/CI, provider, deployment and fulfilment evidence separately.
+> Read AGENTS.md and ROADMAP.md, then docs/IMPLEMENTATION.md and its linked requirements. Continue P3 in small independently reviewed PRs to develop. Complete the country/territory readiness matrix and promotions, then durable guest checkout, atomic basket holds and immutable orders. Keep missing P0 facts and unready destinations blocked. Mollie work is sandbox-only; preserve stable payment attempts, reconcile unknown outcomes, fetch/verify notifications and recover late paid stock explicitly. Retain exact money/refund allocations, all real CI/review/merge gates, the approved courtyard design and disabled production. Report source/CI, provider, deployment and fulfilment evidence separately.
