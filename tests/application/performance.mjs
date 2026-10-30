@@ -6,6 +6,7 @@ import { chromium } from "@playwright/test";
 import lighthouse from "lighthouse";
 import { gzipSync } from "node:zlib";
 import { spawnSync } from "node:child_process";
+import { lighthouseEvidenceName } from "./evidence-name.mjs";
 import { availablePort } from "./ports.mjs";
 const debuggingPort = await availablePort();
 const budgets = JSON.parse(
@@ -59,7 +60,7 @@ try {
         warnings: report.lhr.runWarnings,
       };
       await writeFile(
-        `.local/evidence/lighthouse-${path.replaceAll("/", "_")}-${run}.json`,
+        `.local/evidence/${lighthouseEvidenceName(path, run)}`,
         JSON.stringify(diagnostics, null, 2),
       );
     }
@@ -183,7 +184,7 @@ await writeFile(
   ".local/evidence/performance.json",
   JSON.stringify(
     {
-      scope: "P1 preview production build",
+      scope: "P1/P2 private preview production build",
       database,
       revision: process.env.ANALYSIS_REVISION ?? "uncommitted-local-run",
       hardware: {
