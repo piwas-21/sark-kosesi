@@ -148,13 +148,19 @@ and rejects text outside XML's character envelope rather than silently editing i
 The image proxy permits only exact revision-bound raster routes, forbids redirects,
 and cancels upstream reads above the byte bound. It does not forward credentials,
 private headers, arbitrary URLs or originals. Fixture merchant feeds and selling
-schema are not advertised; preview authentication/noindex/no-store remain required.
+schema are not advertised; noindex/no-store remain required. Browser authentication
+remains the default, with the explicit public-staging read exception below.
 
 Staging is an explicit non-selling preview mode. HTTPS canonical origins are
 operator configuration, never derived from Host or forwarded headers. The API
 remains loopback-only and token protected; PostgreSQL is on an isolated private
-network with independent credentials. Anonymous and wrong-token requests fail,
-including after TLS routing. Exact revision headers bind served responses to the
+network with independent credentials. Browser access is private by default. An
+explicit staging-only `STAGING_PUBLIC_STOREFRONT=true` permits only known storefront
+GET/HEAD routes anonymously. Admin, unknown routes and mutations remain gated by
+a separate `test-admin` credential; the internal API token cannot authorize that
+browser gate. This shell gate grants no persisted staff account/capability and
+does not replace future staff sessions/MFA. Exact revision headers bind responses to the
 reviewed image. Live commerce configuration remains rejected. A deployment smoke
-checks actual TLS, authentication, private-cache/indexing headers, locale redirect,
+checks actual TLS, the chosen storefront access mode, protected admin access,
+private-cache/indexing headers, locale redirect,
 RTL and the disabled-production catalogue; it performs no financial mutation.

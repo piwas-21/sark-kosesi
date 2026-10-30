@@ -1,4 +1,4 @@
-# Private staging preview
+# Non-selling staging preview
 
 This deploys the non-selling preview for P3 integration work. It does not release
 `main`, configure a live payment key or establish provider/product acceptance.
@@ -18,7 +18,10 @@ run as UID 1000 with dropped capabilities, read-only roots, bounded temporary
 storage, process limits and memory/CPU caps. PostgreSQL has its own internal
 network and persistent volume and no published port. The API shares the web
 network namespace and listens only on 127.0.0.1:45671. The web's debug port is
-published only on host loopback. Only its authenticated ingress can be routed.
+published only on host loopback. Only the web ingress can be routed. The default remains a private preview. Set
+`STAGING_PUBLIC_STOREFRONT=true` to open the existing storefront GET/HEAD routes
+without a browser login. Keep noindex/no-store, disabled production and internal
+API authentication. Unknown routes and mutations remain gated.
 No expiry worker, admin authority, merchant data or test fixtures are seeded.
 
 ## Build and start
@@ -42,18 +45,27 @@ docker compose --env-file PRIVATE_ENV --file deploy/staging/compose.yml up --det
 
 4. With ingress disabled, verify both images/processes and the dedicated database.
    The API applies the committed forward migrations. The web health check requires
-   a genuine 401 challenge plus API readiness, without disclosing the preview token.
+   the configured storefront access mode, an anonymous admin 401 challenge and API
+   readiness, without disclosing credentials.
 5. After the exact-source checks and private startup pass, enable only this
    project's ingress flag and recreate its web/API services. The host rule must be
    the chosen staging hostname and the TLS resolver must be `letsencrypt`. Verify a
    valid certificate without disabling TLS verification. No public database/API port
    or existing router may be added/changed.
-6. Store the preview token by itself in a private local file and run the read-only
-   acceptance check. It rejects wrong/missing credentials, incorrect served source,
-   unsafe redirect origins, missing privacy headers, wrong RTL and enabled commerce.
+6. Store the applicable credential by itself in a private local file and run the
+   read-only acceptance check. It verifies the chosen storefront access mode,
+   protected admin shell, exact served source, redirect origin, noindex/no-store,
+   RTL and disabled commerce. For public storefront mode generate a separate
+   random `STAGING_ADMIN_TOKEN` (32–128 URL-safe characters, distinct from the
+   internal preview token). Browser username is `test-admin`. This is a Basic-auth
+   gate to the unavailable operations shell, not a staff session or permission
+   grant. Real login/MFA/session issuance and HTTP admin operations remain P4.
+   Never seed a privileged database account just to make this shell accessible.
 
 ```sh
 node tests/application/staging-smoke.mjs --origin https://STAGING_HOST --revision REVISION --token-file PRIVATE_TOKEN_FILE
+# Public storefront mode; use a private file containing only the admin token:
+node tests/application/staging-smoke.mjs --origin https://STAGING_HOST --revision REVISION --public-storefront --admin-token-file PRIVATE_ADMIN_TOKEN_FILE
 ```
 
 This is preview acceptance, not actual order/payment/load/fulfilment or production

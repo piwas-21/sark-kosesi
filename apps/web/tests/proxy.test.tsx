@@ -1,6 +1,8 @@
-import { it, expect, vi } from "vitest";
+import { afterEach, it, expect, vi } from "vitest";
 import { NextRequest } from "next/server";
 import { proxy } from "../src/proxy";
+import { publicStagingRead } from "../src/lib/staging-access";
+afterEach(() => vi.unstubAllEnvs());
 function request(path: string, headers: Record<string, string> = {}) {
   return new NextRequest(`http://127.0.0.1:3000${path}`, { headers });
 }
@@ -84,4 +86,83 @@ it("protects all staging response paths and redirects only to the configured ori
       );
   }
   vi.unstubAllEnvs();
+});
+
+it("opens only storefront reads on opted-in staging and isolates admin credentials", () => {
+  vi.stubEnv("APP_ENV", "staging");
+  vi.stubEnv("PREVIEW_TOKEN", "s".repeat(32));
+  vi.stubEnv("PREVIEW_REVISION", "b".repeat(40));
+  vi.stubEnv("API_URL", "http://127.0.0.1:45671");
+  vi.stubEnv("CANONICAL_ORIGIN", "https://sark-kosesi-test.piwas.nl");
+  vi.stubEnv("STAGING_PUBLIC_STOREFRONT", "true");
+  vi.stubEnv("STAGING_ADMIN_TOKEN", "p".repeat(32));
+  for (const path of [
+    "/nl",
+    "/ar/gallery",
+    "/nl/collection",
+    "/nl/collection/merchant-family",
+    "/ar/products/demo-seating",
+    "/de/catalogue.xml",
+    "/api/catalogue/nl",
+    "/catalogue-images/nl/SARK-COVERS/1/640",
+    "/robots.txt",
+    "/sitemap.xml",
+  ]) {
+    for (const method of ["GET", "HEAD"]) {
+      const response = proxy(
+        new NextRequest(`https://sark-kosesi-test.piwas.nl${path}`, { method }),
+      );
+      expect(response.status).toBe(200);
+      expect(response.headers.get("www-authenticate")).toBeNull();
+      expect(response.headers.get("x-robots-tag")).toBe("noindex, nofollow");
+      expect(response.headers.get("cache-control")).toBe("private, no-store");
+      expect(response.headers.get("content-security-policy")).toContain(
+        "frame-ancestors 'none'",
+      );
+    }
+  }
+  const redirect = proxy(
+    request("/?variant=covers", {
+      host: "evil.invalid",
+      "accept-language": "ar",
+    }),
+  );
+  expect(redirect.status).toBe(307);
+  expect(redirect.headers.get("location")).toBe(
+    "https://sark-kosesi-test.piwas.nl/ar?variant=covers",
+  );
+  const authorization = `Basic ${Buffer.from(`test-admin:${"p".repeat(32)}`).toString("base64")}`;
+  for (const path of [
+    "/nl/admin",
+    "/ar/admin/orders",
+    "/admin",
+    "/api/admin",
+    "/api/published/nl",
+    "/nl/private",
+    "/nl/%61dmin",
+    "/nl/collection/private/orders",
+  ]) {
+    for (const supplied of [
+      "",
+      "Basic invalid",
+      `Basic ${Buffer.from(`preview:${"s".repeat(32)}`).toString("base64")}`,
+      authorization.replace("cHBw", "cXFw"),
+    ]) {
+      const response = proxy(request(path, { authorization: supplied }));
+      expect(response.status).toBe(401);
+      expect(response.headers.get("www-authenticate")).toContain(
+        "Piwas staging admin",
+      );
+    }
+  }
+  expect(proxy(request("/nl/admin", { authorization })).status).toBe(200);
+  expect(
+    proxy(
+      new NextRequest("https://sark-kosesi-test.piwas.nl/api/catalogue/nl", {
+        method: "POST",
+      }),
+    ).status,
+  ).toBe(401);
+  expect(publicStagingRead("/nl", "DELETE")).toBe(false);
+  expect(publicStagingRead("/zz", "GET")).toBe(false);
 });

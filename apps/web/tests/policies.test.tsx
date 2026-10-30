@@ -144,6 +144,9 @@ it("allows a private HTTPS staging origin with a loopback-only API", () => {
     revision: "a".repeat(40),
     api: "http://127.0.0.1:45671",
     canonical: "https://sark-kosesi-test.piwas.nl",
+    publicStorefront: false,
+    browserUsername: "preview",
+    browserToken: "s".repeat(32),
   });
   for (const patch of [
     { APP_ENV: "production" },
@@ -170,4 +173,30 @@ it("allows a private HTTPS staging origin with a loopback-only API", () => {
     expect(() => configuration({ ...staging, ...patch })).toThrow();
   expect(() => configuration({ ...staging, APP_ENV: "local" })).toThrow();
   expect(() => configuration({ ...staging, APP_ENV: "test" })).toThrow();
+  const publicStaging = {
+    ...staging,
+    STAGING_PUBLIC_STOREFRONT: "true",
+    STAGING_ADMIN_TOKEN: "p".repeat(32),
+  };
+  expect(configuration(publicStaging)).toMatchObject({
+    publicStorefront: true,
+    browserUsername: "test-admin",
+    browserToken: "p".repeat(32),
+    token: "s".repeat(32),
+  });
+  expect(
+    configuration({ ...staging, STAGING_PUBLIC_STOREFRONT: "false" })
+      .publicStorefront,
+  ).toBe(false);
+  for (const patch of [
+    { STAGING_PUBLIC_STOREFRONT: "yes" },
+    { STAGING_PUBLIC_STOREFRONT: "TRUE" },
+    { STAGING_PUBLIC_STOREFRONT: "" },
+    { APP_ENV: "test" },
+    { APP_ENV: "local" },
+    { STAGING_ADMIN_TOKEN: undefined },
+    { STAGING_ADMIN_TOKEN: "short" },
+    { STAGING_ADMIN_TOKEN: "s".repeat(32) },
+  ])
+    expect(() => configuration({ ...publicStaging, ...patch })).toThrow();
 });
