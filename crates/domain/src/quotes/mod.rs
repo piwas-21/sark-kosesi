@@ -5,6 +5,7 @@ use std::collections::BTreeSet;
 mod policy;
 mod totals;
 pub use policy::{MarketPolicy, ProductRule, ShippingRule};
+pub(crate) use totals::split;
 pub use totals::{AmountBreakdown, PricedItem, QuoteLine, QuoteTotals, calculate};
 
 pub const MAX_LINES: usize = 20;
@@ -57,7 +58,7 @@ impl QuoteRequest {
         Ok(())
     }
 }
-fn valid_country(country: &str) -> bool {
+pub(crate) fn valid_country(country: &str) -> bool {
     [
         "AT", "BE", "BG", "HR", "CY", "CZ", "DK", "EE", "FI", "FR", "DE", "GR", "HU", "IE", "IT",
         "LV", "LT", "LU", "MT", "NL", "PL", "PT", "RO", "SK", "SI", "ES", "SE",

@@ -9,6 +9,7 @@ pub mod holds;
 pub mod image_review;
 pub mod inventory;
 pub mod media;
+pub mod promotions;
 pub mod publication;
 pub mod quotes;
 pub mod specifications;
