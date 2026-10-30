@@ -1,5 +1,6 @@
 import { spawn } from "node:child_process";
 import { randomBytes } from "node:crypto";
+import { resolve } from "node:path";
 import { availablePort } from "./ports.mjs";
 const apiPort = await availablePort();
 const webPort = await availablePort();
@@ -50,10 +51,14 @@ try {
     "--exact",
     "seed_owned_browser_database",
   ]);
-  const api = spawn("target/release/commerce-api", [], {
-    env: environment,
-    stdio: "inherit",
-  });
+  const api = spawn(
+    resolve(process.env.CARGO_TARGET_DIR ?? "target", "release/commerce-api"),
+    [],
+    {
+      env: environment,
+      stdio: "inherit",
+    },
+  );
   children.push(api);
   api.on("error", (error) => {
     throw error;

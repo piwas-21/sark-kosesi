@@ -62,3 +62,21 @@ Crawler purposes remain separate: OAI-SearchBot is search discovery, ChatGPT-Use
 Initial query intents: “şark köşesi with foam delivered to Germany”, “covers-only floor sofa dimensions”, “sedir stock Netherlands”, care, contents and return costs. Translate/review the questions, keep the exact set reproducible and do not interpret noisy changes as causal proof.
 
 Primary references: [Google merchant listings](https://developers.google.com/search/docs/appearance/structured-data/merchant-listing), [product variants](https://developers.google.com/search/docs/appearance/structured-data/product-variants), [multilingual annotations](https://developers.google.com/search/docs/specialty/international/localized-versions), [sitemaps](https://developers.google.com/search/docs/crawling-indexing/sitemaps/build-sitemap), [Bing webmaster tools](https://www.bing.com/webmasters/). Source inspiration: Sofra’s shared public-search-discovery runbook, retained in its own repository; this document owns the retail policy.
+
+P2 has a private, non-selling collection/family preview and XML projection feed at
+`/{locale}/catalogue.xml`. Its explicit `preview-only`/`production-enabled=false`
+root prevents confusing acceptance data with a released merchant feed. Complete
+customer facts, exact EUR decimals, physical availability, SKU links and sanitized
+image revisions agree with served HTML. Unknown/withdrawn explicit SKUs return
+404; variants never fall back to a sibling. A locale change retains the selected
+SKU and resolves that locale's family path. Missing copy remains empty/unavailable.
+Source/draft/review/rights checks run on each no-store projection request.
+
+The isolated served acceptance driver checks current stock/quarantine, draft-price
+invalidation, explicit re-publication, withdrawal and restoration, including old
+image URLs. Its effect tool exists only as a Cargo example over a guarded browser
+fixture database; it is absent from API/worker binaries. Hostile price/stock/HTML
+controls must fail the independent consumer oracles. This proves private preview
+agreement, not authentic supplier facts, qualified copy, indexability, merchant
+listing readiness or search-engine consumption. Selling feeds, Product/Offer
+schema and indexable equivalents still need P0/P6 acceptance.

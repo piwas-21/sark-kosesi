@@ -190,9 +190,15 @@ stable path, and historical retries return only their original receipt. Authenti
 revision-bound sanitized derivatives from these records. Availability comes from
 the sealed BOM and physical balances. Current-source, review and rights checks
 run on each no-store request; image eligibility is checked again after decoding.
-HTTP mutations and production remain disabled. Storefront HTML/feed agreement
-and human visual acceptance remain P2 work; actual product and qualified-review
-evidence stays P0.
+HTTP mutations and production remain disabled. Private collection/family HTML
+and an explicitly labelled XML preview feed now consume the same validated
+projection. Selected SKUs never fall back to another configuration; unavailable
+products return genuine 404s before page streaming. Locale switching resolves the
+selected SKU to its locale family path. Bounded no-store reads and revision-bound
+images reflect stock, draft and explicit publication changes on subsequent
+requests. Human visual approval of the expanded gallery remains required; actual
+product and qualified-review evidence stays P0, and released merchant feeds/Offer
+schema/indexability stay P6 acceptance work.
 
 ## Next session prompt
 

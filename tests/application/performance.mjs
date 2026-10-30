@@ -6,6 +6,7 @@ import { chromium } from "@playwright/test";
 import lighthouse from "lighthouse";
 import { gzipSync } from "node:zlib";
 import { spawnSync } from "node:child_process";
+import { lighthouseEvidenceName } from "./evidence-name.mjs";
 import { availablePort } from "./ports.mjs";
 const debuggingPort = await availablePort();
 const budgets = JSON.parse(
@@ -18,7 +19,7 @@ const authorization = `Basic ${Buffer.from(`preview:${process.env.PREVIEW_TOKEN}
 const database = JSON.parse(
   await readFile(".local/evidence/postgres-fixture.json", "utf8"),
 );
-assert.equal(database.catalogueItems, 1);
+assert.equal(database.catalogueItems, 5);
 assert.equal(database.translations, 7);
 assert.ok(database.databaseBytes > 0);
 const evidence = [];
@@ -28,7 +29,13 @@ const browser = await chromium.launch({
   args: [`--remote-debugging-port=${debuggingPort}`],
 });
 try {
-  for (const path of ["/nl", "/nl/products/courtyard-demo", "/nl/gallery"]) {
+  for (const path of [
+    "/nl",
+    "/nl/products/courtyard-demo",
+    "/nl/gallery",
+    "/nl/collection",
+    "/nl/collection/isolated-room?variant=SET-COVERS",
+  ]) {
     const reports = [];
     for (let run = 0; run < budgets.lab.runs; run++) {
       const report = await lighthouse(base + path, {
@@ -53,7 +60,7 @@ try {
         warnings: report.lhr.runWarnings,
       };
       await writeFile(
-        `.local/evidence/lighthouse-${path.replaceAll("/", "_")}-${run}.json`,
+        `.local/evidence/${lighthouseEvidenceName(path, run)}`,
         JSON.stringify(diagnostics, null, 2),
       );
     }
@@ -177,7 +184,7 @@ await writeFile(
   ".local/evidence/performance.json",
   JSON.stringify(
     {
-      scope: "P1 preview production build",
+      scope: "P1/P2 private preview production build",
       database,
       revision: process.env.ANALYSIS_REVISION ?? "uncommitted-local-run",
       hardware: {

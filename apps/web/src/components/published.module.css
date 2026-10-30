@@ -1,0 +1,135 @@
+.intro {
+  padding-block: 3rem;
+  max-inline-size: 70rem;
+}
+.intro h1 {
+  max-inline-size: 14ch;
+  font-size: clamp(3rem, 7vw, 6rem);
+}
+.list {
+  display: grid;
+  gap: 2rem;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+.entry {
+  border-block-start: 1px solid var(--line);
+  padding-block: 1.5rem;
+}
+.entry h2 {
+  font-size: clamp(2rem, 4vw, 3rem);
+}
+.entry img {
+  inline-size: 100%;
+  block-size: 18rem;
+  object-fit: contain;
+  background: var(--soft);
+}
+.family {
+  display: grid;
+  grid-template-columns: minmax(0, 1.2fr) minmax(0, 1fr);
+  gap: 3rem;
+  padding-block: 2rem;
+  align-items: start;
+}
+.family figure {
+  margin: 0;
+  background: var(--soft);
+  border-radius: 45% 45% 0 0;
+  padding: 3rem 1.5rem 1.5rem;
+}
+.family img {
+  display: block;
+  inline-size: 100%;
+  block-size: min(50vw, 32rem);
+  object-fit: contain;
+}
+.family figcaption {
+  padding-block-start: 1rem;
+  color: var(--muted);
+  font-size: 0.9rem;
+}
+.family h1 {
+  font-size: clamp(2.75rem, 5vw, 5rem);
+  max-inline-size: 14ch;
+}
+.price {
+  font-size: 1.75rem;
+  font-weight: 700;
+  color: var(--accent);
+}
+.variants {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+  padding: 0;
+  list-style: none;
+}
+.variants a {
+  display: block;
+  min-block-size: 44px;
+  border: 1px solid var(--line);
+  border-radius: 2rem;
+  padding: 0.6rem 1rem;
+  text-decoration: none;
+}
+.variants a[aria-current="true"] {
+  background: var(--button);
+  color: var(--button-ink);
+  border-color: var(--button);
+}
+.facts {
+  border-block-start: 1px solid var(--line);
+  padding-block: 2rem;
+}
+.facts h2 {
+  font-size: 2.25rem;
+}
+.facts h3 {
+  font-size: 1.5rem;
+}
+.facts dl {
+  display: grid;
+  grid-template-columns: minmax(6rem, 1fr) minmax(0, 2fr);
+  gap: 0.5rem 1.5rem;
+}
+.facts dd {
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+.facts p {
+  white-space: pre-line;
+}
+.facts section {
+  padding-block: 1rem;
+}
+.next {
+  display: inline-block;
+  padding-block: 2rem;
+}
+@media (width < 700px) {
+  .family,
+  .list {
+    grid-template-columns: 1fr;
+  }
+  .family {
+    gap: 1rem;
+  }
+  .family figure {
+    padding-block-start: 2rem;
+  }
+  .family img {
+    block-size: 18rem;
+  }
+  .facts dl {
+    grid-template-columns: 1fr;
+    gap: 0.25rem;
+  }
+  .facts dd {
+    margin-block-end: 1rem;
+  }
+}
+.family,
+.entry,
+.facts {
+  overflow-wrap: anywhere;
+}

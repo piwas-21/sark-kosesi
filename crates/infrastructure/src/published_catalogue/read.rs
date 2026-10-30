@@ -10,7 +10,8 @@ pub async fn published_page(
         return Err(PublishedError::InvalidRequest);
     }
     let mut tx = begin(pool).await?;
-    let mut candidates:Vec<String>=sqlx::query_scalar("SELECT DISTINCT sku FROM catalogue_publication_revisions WHERE locale=$1 AND sku>$2 ORDER BY sku LIMIT 26")
+    // Public merchant identifiers use ASCII order, independent of database locale.
+    let mut candidates:Vec<String>=sqlx::query_scalar(r#"SELECT DISTINCT sku COLLATE "C" AS sku FROM catalogue_publication_revisions WHERE locale=$1 AND sku COLLATE "C">$2 ORDER BY sku LIMIT 26"#)
         .bind(locale.internal()).bind(after.unwrap_or("")).fetch_all(&mut *tx).await?;
     let more = candidates.len() > PAGE_SIZE;
     candidates.truncate(PAGE_SIZE);

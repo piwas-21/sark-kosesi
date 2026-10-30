@@ -17,6 +17,10 @@ class VisualApproval(unittest.TestCase):
             "tests/application/browser.spec.mjs",
             "tests/application/capture.mjs",
             "tests/application/visual-context.mjs",
+            "tests/application/serve.mjs",
+            "crates/infrastructure/tests/seed_preview.rs",
+            "crates/infrastructure/tests/support/browser_catalogue.rs",
+            "tests/fixtures/approved_catalogue.rs",
             "playwright.application.config.mjs",
             "apps/web/src/page.tsx",
         ):
@@ -69,6 +73,10 @@ class VisualApproval(unittest.TestCase):
             "tests/application/browser.spec.mjs",
             "tests/application/capture.mjs",
             "tests/application/visual-context.mjs",
+            "tests/application/serve.mjs",
+            "crates/infrastructure/tests/seed_preview.rs",
+            "crates/infrastructure/tests/support/browser_catalogue.rs",
+            "tests/fixtures/approved_catalogue.rs",
             "playwright.application.config.mjs",
         ):
             path = self.root / name
@@ -77,3 +85,16 @@ class VisualApproval(unittest.TestCase):
             with self.subTest(name=name), self.assertRaisesRegex(ValueError, "source changed"):
                 validate(self.approval, self.root)
             path.write_text(original)
+
+    def test_expanded_journey_inventory_cannot_drop_configuration_empty_or_missing_states(self):
+        names = expected_images()
+        self.assertEqual(len(names), 228)
+        for browser in ("chromium", "firefox", "webkit"):
+            for state in (
+                "covers-ar-dark-390",
+                "filled-nl-light-1280",
+                "empty-ku-dark-390",
+                "missing-ar-light-1280",
+                "collection-nl-dark-390",
+            ):
+                self.assertIn(f"tests/application/baselines/{browser}/{state}.png", names)

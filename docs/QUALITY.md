@@ -182,3 +182,33 @@ shared covers-only stock, pagination through withdrawals, source/review/rights
 invalidation, final/post-decode clocks, withdrawal ordering, cancellation, corrupt
 storage, redacted failures and authenticated no-store sanitized image responses.
 These synthetic cases do not establish merchant truth or human visual acceptance.
+
+P2 collection acceptance adds exact variant and locale navigation, served HTML/XML/
+image agreement, genuine unavailable-SKU 404s and actual read-through stock,
+draft-price, explicit publication and withdrawal effects. The test-only effect
+example requires the per-run guard of the disposable browser database; its
+credentials never enter evidence. TypeScript boundaries reject private/unknown
+fields, malformed cursor/product identities and unbounded image streams. Money
+formatting checks the maximum exact public integer without dividing a float.
+
+Visual inventory now includes collection, covers/filled details, empty EN/Kurmanji
+collections and missing products, in addition to the existing home/gallery set:
+228 images across three browsers, two themes and phone/desktop widths. UI changes
+still require actual human approval bound to all image/source hashes. A failed
+browser job captures a separate candidate gallery for review while the normal
+required gate remains failed; captures never update baselines or grant approval.
+
+Visual cases start with their declared native device theme before navigation,
+then verify the explicit theme and inherited text colour after fonts and paint
+frames settle. Capture and comparison use the same setup. Theme changes and
+stored overrides remain separate interaction cases. This avoids a reproduced
+macOS WebKit screenshot repaint defect after changing colour scheme in place;
+computed text styles were correct while the captured inherited text was stale.
+No unreadable candidate is acceptable evidence and normal comparisons still
+require newly approved image/source hashes.
+
+Merchant SKU cursor comparison and ordering use explicit PostgreSQL C collation,
+matching the ASCII identifier contract checked by JavaScript. A real isolated
+shifted-ICU regression puts active identifiers on either side of a page boundary;
+withdrawing the comparison or ordering collation must fail that oracle. Deployment
+locale must not make valid catalogue pages unavailable or lose a continuation.

@@ -1,6 +1,6 @@
 # Implementation status
 
-**Current stage: P2 catalogue/BOM started; production disabled.**
+**Current stage: P2 catalogue/BOM source implemented; production disabled.**
 
 The read-only Rust/SQLx catalogue, migrations, typed contracts, API/worker readiness
 and courtyard Next.js shells are implemented. Explicit clock/identifier ports
@@ -28,8 +28,8 @@ remains read-only. No production scheduler or payment recovery is enabled.
 Catalogue staff can now record immutable draft price revisions with explicit
 confirmation, an evidence reference, a reason and session-derived audit actor.
 Optimistic revision checks and effect-key replay prevent lost edits and duplicate
-history. These draft records do not change preview prices or establish approved
-merchant facts. Publication and public price activation remain unimplemented.
+history. Draft records do not establish approved merchant facts. Public preview
+prices change only through the explicit reviewed publication flow described below.
 
 Immutable specification drafts now record BOM-linked component measurements,
 cover fibre fractions, foam evidence, assembly footprint, measured parcels and
@@ -39,14 +39,14 @@ measurement/evidence entry grants factual approval or publication.
 Media metadata now has an immutable content identity and audited rights grant/
 revoke history. Known fixture/generated digests cannot be relabelled under a new asset ID
 or receive product-photo rights. Rights consumers check explicit scope, terms,
-revocation and fresh server time; positive rights do not verify image bytes or
-product suitability. No public image delivery or publication is enabled.
+revocation and fresh server time; positive rights alone do not verify image bytes
+or product suitability. The approved publication path adds those checks below.
 
 Actual original bytes can now be verified against registered digest/codec/raw
 pixel dimensions. Bounded decoding normalizes orientation and produces private
 privacy-metadata-free derivatives without upscaling. Fresh authority protects an
-atomic, immutable PostgreSQL original/rendition set; no public delivery or
-product/permission/SKU approval follows from decoding.
+atomic, immutable PostgreSQL original/rendition set. Decoding alone grants no
+public delivery or product/permission/SKU approval.
 
 Catalogue copy now has immutable drafts tied to specification revisions and, for
 non-Dutch locales, an exact Dutch source revision. A separate catalogue-review
@@ -86,9 +86,13 @@ reactivating them. Historical receipts never change the latest publication.
 Authenticated non-production HTTP reads now expose a current approved customer
 projection and exact revision-bound sanitized images. Physical BOM availability
 is read through with no shared cache. No actual merchant facts or publication
-records are seeded; storefront HTML/feed agreement remains to be connected.
+records are seeded. Private collection/family HTML and a labelled XML preview
+feed now consume the same projection, with exact SKU links, complete customer
+facts and read-through stock/publication invalidation. The owner approved all
+228 Linux screenshot baselines for the expanded preview; the approval record
+binds the exact UI/fixture source digest and every image hash.
 
-Next work: approved catalogue HTML/feed agreement and visual acceptance under the [implementation plan](docs/IMPLEMENTATION.md). P3 owns
+Next work: P3 checkout/payment work under the [implementation plan](docs/IMPLEMENTATION.md). P3 owns
 late-payment reallocation. Supervision of expiry remains a deployment gate.
 P0 inputs remain pending. All seven languages are draft previews,
 fixtures are explicitly not for sale, and admin operations remain unavailable.
@@ -97,8 +101,8 @@ commands using persisted staff sessions, recent MFA attestations and grants.
 Warehouse changes require explicit confirmation. Revocation locks span the stock
 commit; audit actors come from the session.
 Installation seeds no staff authority. Login/MFA verification, session issuance
-and HTTP admin writes remain unimplemented; publication mutations must adopt the
-same guard.
+and HTTP admin writes remain unimplemented. Catalogue publication already uses
+the same persisted authority guard.
 Do not restart stack comparisons or redesign the accepted courtyard direction.
 
 Remaining delivery sequence: P0 business inputs in parallel → P2 inventory/catalogue → P3 checkout/payments → P4 customer/admin operations → P5 room planning and content → P6 acceptance → P7 controlled launch. Each phase has explicit exit evidence in the plan.

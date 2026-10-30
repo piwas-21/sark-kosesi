@@ -19,3 +19,8 @@ sha2.workspace = true
 image.workspace = true
 
 serde_json.workspace = true
+
+# Test-only browser fixture driver; never part of API or worker binaries.
+[[example]]
+name = "browser-fixture-effect"
+path = "tests/support/browser_fixture_effect.rs"

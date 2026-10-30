@@ -1,3 +1,4 @@
+import { merchantCode } from "./published-validation";
 export const locales = ["nl", "de", "fr", "en", "ar", "tr", "ku"] as const;
 export type Locale = (typeof locales)[number];
 export function isLocale(value: string): value is Locale {
@@ -55,8 +56,20 @@ export function switchLocale(
   path: string,
   search: string,
   locale: Locale,
+  selectedSku?: string,
 ): string {
   const segments = path.split("/");
+  if (
+    segments.length === 4 &&
+    segments[2] === "collection" &&
+    merchantCode(selectedSku)
+  ) {
+    const parameters = new URLSearchParams(search);
+    if (!parameters.has("variant")) {
+      parameters.set("variant", selectedSku);
+      search = `?${parameters.toString()}`;
+    }
+  }
   if (isLocale(segments[1] ?? "")) segments[1] = locale;
   else segments.splice(1, 0, locale);
   return segments.join("/") + search;
