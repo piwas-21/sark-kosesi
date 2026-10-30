@@ -44,6 +44,18 @@ async fn load(
     locale: Locale,
     skus: &[String],
 ) -> Result<Vec<PublishedProduct>, PublishedError> {
+    Ok(load_eligible(tx, clock, locale, skus)
+        .await?
+        .into_iter()
+        .map(|eligible| eligible.product)
+        .collect())
+}
+pub(crate) async fn load_eligible(
+    tx: &mut Transaction<'_, Postgres>,
+    clock: &dyn Clock,
+    locale: Locale,
+    skus: &[String],
+) -> Result<Vec<EligibleProduct>, PublishedError> {
     // Claim every variant before any shared asset, avoiding a cross-SKU/asset cycle
     // with a publisher which owns one variant and is waiting on a shared photograph.
     sqlx::query("SELECT sku FROM catalogue_variants WHERE sku=ANY($1) ORDER BY sku FOR SHARE")
@@ -116,7 +128,13 @@ async fn load(
                 .product_rights_active(&s.image.asset, evaluated)
         })
         .map(|(sku, revision, selection, sources, in_stock)| {
-            product::assemble(sku, locale, revision, selection, sources, in_stock)
+            let rights = sources.image.rights.clone();
+            let asset = sources.image.asset.clone();
+            Ok(EligibleProduct {
+                product: product::assemble(sku, locale, revision, selection, sources, in_stock)?,
+                rights,
+                asset,
+            })
         })
         .collect()
 }

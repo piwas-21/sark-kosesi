@@ -32,6 +32,7 @@ def validate(document, root, branches=True):
         path
         for pattern in (
             "crates/*/src/inventory.rs",
+            "crates/*/src/quotes/*.rs",
             "crates/*/src/stock.rs",
             "crates/*/src/holds.rs",
             "crates/*/src/holds/*.rs",

@@ -212,3 +212,14 @@ matching the ASCII identifier contract checked by JavaScript. A real isolated
 shifted-ICU regression puts active identifiers on either side of a page boundary;
 withdrawing the comparison or ordering collation must fail that oracle. Deployment
 locale must not make valid catalogue pages unavailable or lose a continuation.
+
+Initial P3 quote cases use isolated synthetic policies, never actual carrier or
+tax evidence. Independent cent oracles cover extended-line/half-cent/mixed-rate
+VAT and shipping, integer ceilings and canonical SKU order. PostgreSQL cases
+cover absent/ambiguous policy, exact postcode/publication matching, source/rights/
+locale withdrawal, basket-wide component scarcity, quarantine/reservations,
+measured parcel limits, dependency failure, actual stock lock waits and task
+cancellation. Final clock controls reject policy/licence expiry during waits.
+Quote domain and adapter modules require 95% critical line/branch coverage.
+A compiled rounding mutant must fail the half-cent oracle. No browser checkout,
+provider sandbox, order, discount, refund or operational acceptance is implied.

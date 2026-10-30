@@ -330,6 +330,36 @@ outbox processing for external effects; hold expiry performs only database work.
 
 The Rust quote service computes item/discount/tax/shipping allocations in integer minor units and a single currency (EUR at launch). Persist immutable order line, bundle, price, VAT, discount, address and policy snapshots. A later catalogue edit cannot rewrite order history. Discounts have explicit eligibility, budget, per-customer limits, stacking and time-zone rules; concurrent redemption cannot exceed a limit.
 
+### Indicative server quotes
+
+The trusted quote consumer accepts a closed destination/SKU/quantity request;
+prices, VAT, shipping and readiness are server inputs. No HTTP quote route or
+market policy is installed. A policy explicitly binds one EU country and exact
+postcode to eligible publication revisions, quantity ceilings, item VAT rates
+and one basket shipping price/rate with parcel count, total weight and edge
+limits. Exact matching has no country-wide, territory, sibling or draft fallback.
+Policies are trusted server configuration values with identity, revision, evidence
+reference and validity window, not proof of carrier/accountant approval. Durable
+policy administration and the full readiness matrix remain required before sales.
+
+A single read-committed transaction reuses publication validation and claims all
+variants before assets. It sums demand across SKUs for shared physical components,
+then claims balances in component-code order, accounting for quarantine and prior
+reservations. Missing balances fail closed. Quote reads never write stock or
+financial records. After all database waits, one fresh clock rechecks policy and
+all captured product-photo rights; backward/unavailable clocks fail closed. Source
+and review changes remain excluded by the held publication claims.
+
+Amounts are VAT-inclusive EUR integer minor units, checked against the exact
+JavaScript integer ceiling. VAT rounds half up once per extended SKU line and
+shipping; net is gross minus that allocation. Totals sum line/shipping allocations,
+including mixed explicit rates. Canonical SKU order makes equivalent baskets
+stable. This is the initial deterministic arithmetic policy, subject to actual
+accountant/market acceptance; discounts and partial refund allocation are pending.
+A quote has no durable token, guaranteed price window or reservation authority.
+Future checkout must revalidate and capture immutable sources, address and policy,
+then reserve the entire basket atomically before creating a payment attempt.
+
 ## Payments and durable work
 
 Use a dedicated approved Piwas retail website profile and keys in the existing Mollie organization only if Mollie confirms eligibility. Do not copy Sofra's subscription keys or payment logic. Start with implemented payment methods only; hosted provider checkout reduces card-data scope. Customer redirects never establish payment success.
