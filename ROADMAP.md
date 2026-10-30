@@ -1,6 +1,6 @@
 # Implementation status
 
-**Current stage: P2 catalogue/BOM started; production disabled.**
+**Current stage: P2 catalogue/BOM source implemented; production disabled.**
 
 The read-only Rust/SQLx catalogue, migrations, typed contracts, API/worker readiness
 and courtyard Next.js shells are implemented. Explicit clock/identifier ports
@@ -88,10 +88,11 @@ projection and exact revision-bound sanitized images. Physical BOM availability
 is read through with no shared cache. No actual merchant facts or publication
 records are seeded. Private collection/family HTML and a labelled XML preview
 feed now consume the same projection, with exact SKU links, complete customer
-facts and read-through stock/publication invalidation. Human visual approval
-of the expanded candidate gallery remains required before accepting this UI.
+facts and read-through stock/publication invalidation. The owner approved all
+228 Linux screenshot baselines for the expanded preview; the approval record
+binds the exact UI/fixture source digest and every image hash.
 
-Next work: finish human visual acceptance, then P3 checkout/payment work under the [implementation plan](docs/IMPLEMENTATION.md). P3 owns
+Next work: P3 checkout/payment work under the [implementation plan](docs/IMPLEMENTATION.md). P3 owns
 late-payment reallocation. Supervision of expiry remains a deployment gate.
 P0 inputs remain pending. All seven languages are draft previews,
 fixtures are explicitly not for sale, and admin operations remain unavailable.
@@ -100,8 +101,8 @@ commands using persisted staff sessions, recent MFA attestations and grants.
 Warehouse changes require explicit confirmation. Revocation locks span the stock
 commit; audit actors come from the session.
 Installation seeds no staff authority. Login/MFA verification, session issuance
-and HTTP admin writes remain unimplemented; publication mutations must adopt the
-same guard.
+and HTTP admin writes remain unimplemented. Catalogue publication already uses
+the same persisted authority guard.
 Do not restart stack comparisons or redesign the accepted courtyard direction.
 
 Remaining delivery sequence: P0 business inputs in parallel → P2 inventory/catalogue → P3 checkout/payments → P4 customer/admin operations → P5 room planning and content → P6 acceptance → P7 controlled launch. Each phase has explicit exit evidence in the plan.
