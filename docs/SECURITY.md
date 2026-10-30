@@ -164,3 +164,13 @@ reviewed image. Live commerce configuration remains rejected. A deployment smoke
 checks actual TLS, the chosen storefront access mode, protected admin access,
 private-cache/indexing headers, locale redirect,
 RTL and the disabled-production catalogue; it performs no financial mutation.
+
+Market policies use separate unseeded author/reviewer capabilities and the existing
+recent-MFA transaction guard. Policy input and stored JSON are closed and bounded;
+no customer request can supply readiness, tax or shipping amounts. Independent
+exact-revision approval and latest-draft selection prevent old-policy fallback.
+An anchor claim spans reviewed quote catalogue/stock reads, serializing policy
+withdrawal; final clocks reject expiry after waits. Immutable SQL history also
+rejects raw-import gaps, self-review and stale approvals. These private consumers
+add no HTTP write/session issuance or payment permission, and evidence references
+still require actual qualified tax/carrier/territory review before destination use.

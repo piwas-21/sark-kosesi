@@ -8,6 +8,7 @@ pub mod factual_review;
 pub mod holds;
 pub mod image_ingestion;
 pub mod image_review;
+pub mod market_policies;
 pub mod media;
 pub mod publication;
 pub mod published_catalogue;

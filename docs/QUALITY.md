@@ -223,3 +223,12 @@ cancellation. Final clock controls reject policy/licence expiry during waits.
 Quote domain and adapter modules require 95% critical line/branch coverage.
 A compiled rounding mutant must fail the half-cent oracle. No browser checkout,
 provider sandbox, order, discount, refund or operational acceptance is implied.
+
+Private market policy adapters require 95% critical native line/branch coverage.
+Isolated PostgreSQL cases cover capability separation and self-review, exact
+source/review history, stale approvals and full-intent retries, withdrawal without
+reactivation, competing writers, real lock-wait expiry/cancellation and immutable
+raw-import constraints. Reviewed quote cases check exact destination, no older
+draft fallback, independent cent totals, final expiry after physical stock waits
+and quote/withdrawal serialization. Upgrade seeds no policies or market grants.
+Synthetic evidence references do not establish actual destination readiness.

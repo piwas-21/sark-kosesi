@@ -5,6 +5,8 @@ pub enum Capability {
     CatalogueManage,
     CatalogueReview,
     WarehouseManage,
+    MarketManage,
+    MarketReview,
 }
 impl Capability {
     pub fn code(self) -> &'static str {
@@ -12,6 +14,8 @@ impl Capability {
             Self::CatalogueManage => "catalogue.manage",
             Self::CatalogueReview => "catalogue.review",
             Self::WarehouseManage => "warehouse.manage",
+            Self::MarketManage => "market.manage",
+            Self::MarketReview => "market.review",
         }
     }
 }
