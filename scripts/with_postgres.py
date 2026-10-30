@@ -103,8 +103,12 @@ def docker_cluster(name):
     )
     port = run("docker", "port", name, "5432/tcp").stdout.strip().rsplit(":", 1)[1]
     for _ in range(60):
+        # The image's temporary initialization server accepts Unix sockets only.
+        # Wait for the final TCP server used by the host's database connection.
         result = subprocess.run(
-            ["docker", "exec", name, "pg_isready", "-U", "p1_test"], capture_output=True, timeout=5
+            ["docker", "exec", name, "pg_isready", "--host", "127.0.0.1", "-U", "p1_test"],
+            capture_output=True,
+            timeout=5,
         )
         if result.returncode == 0:
             return f"postgresql://p1_test:{password}@127.0.0.1:{port}/postgres"
