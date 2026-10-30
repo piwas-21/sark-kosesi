@@ -52,6 +52,11 @@ fn config_is_validated_and_never_enables_production() {
         ("API_BIND".into(), "127.0.0.1:4567".into()),
     ]);
     assert!(Config::parse(&valid).is_ok());
+    let mut staging = valid.clone();
+    staging.insert("APP_ENV".into(), "staging".into());
+    assert!(Config::parse(&staging).is_ok());
+    staging.insert("API_BIND".into(), "0.0.0.0:4567".into());
+    assert!(Config::parse(&staging).is_err());
     for (key, value) in [
         ("APP_ENV", "production"),
         ("APP_ENV", ""),

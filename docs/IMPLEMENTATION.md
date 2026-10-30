@@ -202,6 +202,13 @@ schema/indexability stay P6 acceptance work.
 
 ## P3 work packages
 
+Private staging for provider development uses a dedicated HTTPS origin, separate
+containers/database/credentials and the existing authenticated noindex preview.
+The API remains loopback-only inside the web network namespace; production mode
+and live commerce remain rejected. The staging runbook owns resource caps, exact
+source labels, read-only smoke checks and rollback. No fixture seeding, worker
+supervision or live provider activation follows from deploying the empty preview.
+
 1. Server quotes now read exact currently eligible catalogue publications under
    variant/asset claims and check aggregated basket demand against physical
    component balances. The closed request contains only destination and SKU/unit

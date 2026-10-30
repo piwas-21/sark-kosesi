@@ -92,7 +92,9 @@ facts and read-through stock/publication invalidation. The owner approved all
 228 Linux screenshot baselines for the expanded preview; the approval record
 binds the exact UI/fixture source digest and every image hash.
 
-Server quote source now reads approved publications and aggregated shared-component
+Private HTTPS staging support retains preview authentication, loopback-only API,
+separate database and disabled production. Deployment/provider acceptance is
+recorded independently from source/CI. Server quote source now reads approved publications and aggregated shared-component
 stock with explicit exact-destination policies and bounded integer tax/shipping
 allocations. No policies are seeded or accepted from clients. Quotes are indicative:
 no stock is reserved and no payment is authorized. Durable reviewed readiness,

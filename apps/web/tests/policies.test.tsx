@@ -130,3 +130,44 @@ it("resolves theme with explicit preference and safe first-paint bootstrap", () 
   window.eval(themeBootstrap);
   expect(document.documentElement.dataset.theme).toBe("dark");
 });
+
+it("allows a private HTTPS staging origin with a loopback-only API", () => {
+  const staging = {
+    APP_ENV: "staging",
+    PREVIEW_REVISION: "a".repeat(40),
+    PREVIEW_TOKEN: "s".repeat(32),
+    API_URL: "http://127.0.0.1:45671",
+    CANONICAL_ORIGIN: "https://sark-kosesi-test.piwas.nl",
+  };
+  expect(configuration(staging)).toEqual({
+    token: "s".repeat(32),
+    revision: "a".repeat(40),
+    api: "http://127.0.0.1:45671",
+    canonical: "https://sark-kosesi-test.piwas.nl",
+  });
+  for (const patch of [
+    { APP_ENV: "production" },
+    { PREVIEW_REVISION: "" },
+    { PREVIEW_REVISION: "a".repeat(39) },
+    { PREVIEW_REVISION: "Z".repeat(40) },
+    { APP_ENV: "preview" },
+    { PREVIEW_TOKEN: "" },
+    { API_URL: "http://api:45671" },
+    { API_URL: "https://127.0.0.1:45671" },
+    { API_URL: "http://127.0.0.1:45671/path" },
+    { CANONICAL_ORIGIN: "http://sark-kosesi-test.piwas.nl" },
+    { CANONICAL_ORIGIN: "https://sark-kosesi-test.piwas.nl:444" },
+    { CANONICAL_ORIGIN: "https://user:pass@sark-kosesi-test.piwas.nl" },
+    { CANONICAL_ORIGIN: "https://sark-kosesi-test.piwas.nl/path" },
+    { CANONICAL_ORIGIN: "https://sark-kosesi-test.piwas.nl?query" },
+    { CANONICAL_ORIGIN: "https://sark-kosesi-test.piwas.nl#fragment" },
+    { CANONICAL_ORIGIN: "https://127.0.0.1" },
+    { CANONICAL_ORIGIN: "https://localhost" },
+    { CANONICAL_ORIGIN: "https://[::1]" },
+    { CANONICAL_ORIGIN: "https://bad_host.piwas.nl" },
+    { CANONICAL_ORIGIN: "https://-bad.piwas.nl" },
+  ])
+    expect(() => configuration({ ...staging, ...patch })).toThrow();
+  expect(() => configuration({ ...staging, APP_ENV: "local" })).toThrow();
+  expect(() => configuration({ ...staging, APP_ENV: "test" })).toThrow();
+});
