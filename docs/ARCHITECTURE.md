@@ -360,24 +360,32 @@ A quote has no durable token, guaranteed price window or reservation authority.
 Future checkout must revalidate and capture immutable sources, address and policy,
 then reserve the entire basket atomically before creating a payment attempt.
 
-### Private HTTPS staging
+### Non-selling HTTPS staging
 
 `APP_ENV=staging` is a preview environment, separate from production. The Next
 renderer accepts an explicitly configured HTTPS DNS canonical origin and an exact
 40-character revision; local/test origins retain their loopback requirement. The
 Rust API still binds loopback and keeps its existing bearer, payload, timeout and
-capacity controls. Private responses, including challenges and redirects, carry
+capacity controls. Preview responses, including challenges and redirects, carry
 no-store/noindex/no-referrer/nosniff and the staging revision. Request Host and
 forwarded headers never select the canonical redirect origin.
 
 The pinned multi-stage images run as an unprivileged user. The API shares the web
 container's network namespace, permitting a loopback-only API without publishing
 its port. PostgreSQL uses a separate internal Docker network and private volume;
-there is no public database port. Only the authenticated web port joins the
+there is no public database port. Only the web port joins the
 existing TLS proxy network. Ingress starts disabled until review/CI and isolated
 startup pass. Separate credentials, bounded resources, read-only application
 filesystems, image tags and runtime revision bind the preview to accepted source.
 No production data, staff authority or merchant/fixture records are installed.
+
+Staging can explicitly opt in to public storefront reads with
+`STAGING_PUBLIC_STOREFRONT=true`. An allowlist covers existing GET/HEAD storefront,
+customer catalogue/image and discovery routes; unknown paths and mutations keep
+the browser gate. The `test-admin` browser credential is a distinct random
+`STAGING_ADMIN_TOKEN`, never the internal API token. It only gates the unavailable
+admin shell and grants no staff capability. Local/test previews retain their
+original authentication. Full staff login/MFA/session issuance remains P4 work.
 
 ## Payments and durable work
 

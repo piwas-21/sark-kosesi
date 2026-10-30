@@ -202,8 +202,10 @@ schema/indexability stay P6 acceptance work.
 
 ## P3 work packages
 
-Private staging for provider development uses a dedicated HTTPS origin, separate
-containers/database/credentials and the existing authenticated noindex preview.
+Staging for provider development uses a dedicated HTTPS origin and separate
+containers/database/credentials. The noindex preview is private by default, with
+an explicit staging-only public storefront read mode. A distinct `test-admin`
+browser credential gates the unavailable admin shell; it grants no staff authority.
 The API remains loopback-only inside the web network namespace; production mode
 and live commerce remain rejected. The staging runbook owns resource caps, exact
 source labels, read-only smoke checks and rollback. No fixture seeding, worker

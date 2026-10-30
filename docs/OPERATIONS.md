@@ -47,7 +47,9 @@ Final operational acceptance checks real emails, sandbox methods plus separately
 See [the staging runbook](../deploy/staging/README.md) for the dedicated HTTPS
 preview on Piwas infrastructure. It is independent of the existing applications
 and uses a separate database/volume, service names and generated credentials.
-Production remains disabled. The empty migrated preview is useful for integration
+The storefront can be made publicly viewable with the explicit staging setting;
+admin remains behind separate test-admin credentials and has no operational
+capabilities. Production remains disabled. The empty migrated preview is useful for integration
 wiring; no real merchant facts, tax/carrier readiness, staff authority, order flow
 or provider acceptance is established by its deployment. Record accepted source,
 image identity, TLS/auth/noindex/RTL smoke and rollback separately from CI.

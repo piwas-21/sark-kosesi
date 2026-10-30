@@ -7,11 +7,17 @@ const { values } = parseArgs({
     origin: { type: "string" },
     revision: { type: "string" },
     "token-file": { type: "string" },
+    "public-storefront": { type: "boolean", default: false },
+    "admin-token-file": { type: "string" },
   },
 });
 assert(
-  values.origin && values.revision && values["token-file"],
-  "Supply origin, revision and private token-file",
+  values.origin &&
+    values.revision &&
+    (values["public-storefront"]
+      ? values["admin-token-file"]
+      : values["token-file"]),
+  "Supply origin, revision and the applicable private credential file",
 );
 const origin = new URL(values.origin);
 assert(
@@ -25,17 +31,22 @@ assert(
   /^[a-f0-9]{40}$/.test(values.revision),
   "Supply the exact reviewed revision",
 );
-const metadata = await stat(values["token-file"]);
+const credentialFile = values["public-storefront"]
+  ? values["admin-token-file"]
+  : values["token-file"];
+const metadata = await stat(credentialFile);
 assert(
   metadata.isFile() && metadata.size <= 129 && (metadata.mode & 0o077) === 0,
   "Token file must be private and bounded",
 );
-const token = (await readFile(values["token-file"], "utf8")).trim();
+const token = (await readFile(credentialFile, "utf8")).trim();
 assert(
   /^[A-Za-z0-9_-]{32,128}$/.test(token),
   "Invalid preview credential format",
 );
-const authorization = `Basic ${Buffer.from(`preview:${token}`).toString("base64")}`;
+const username = values["public-storefront"] ? "test-admin" : "preview";
+const authorization = `Basic ${Buffer.from(`${username}:${token}`).toString("base64")}`;
+const storefrontHeaders = values["public-storefront"] ? {} : { authorization };
 async function get(path, headers = {}) {
   return fetch(new URL(path, origin), {
     headers,
@@ -58,18 +69,21 @@ function privateHeaders(response) {
   assert.equal(response.headers.get("x-content-type-options"), "nosniff");
 }
 for (const headers of [{}, { authorization: "Basic invalid" }]) {
-  const response = await get("/nl", headers);
+  const response = await get(
+    values["public-storefront"] ? "/nl/admin" : "/nl",
+    headers,
+  );
   assert.equal(
     response.status,
     401,
-    "Preview must reject anonymous/wrong credentials",
+    "Protected routes must reject anonymous/wrong credentials",
   );
   assert.match(response.headers.get("www-authenticate") ?? "", /Basic/);
   privateHeaders(response);
   await response.body?.cancel();
 }
 const redirected = await get("/?variant=preserved", {
-  authorization,
+  ...storefrontHeaders,
   "accept-language": "ar",
 });
 assert.equal(redirected.status, 307);
@@ -83,7 +97,7 @@ for (const [locale, direction] of [
   ["nl", "ltr"],
   ["ar", "rtl"],
 ]) {
-  const response = await get(`/${locale}`, { authorization });
+  const response = await get(`/${locale}`, storefrontHeaders);
   assert.equal(response.status, 200);
   privateHeaders(response);
   assert.match(
@@ -94,7 +108,30 @@ for (const [locale, direction] of [
   assert.match(html, new RegExp(`<html[^>]*lang="${locale}"`));
   assert.match(html, new RegExp(`<html[^>]*dir="${direction}"`));
 }
-const catalogue = await get("/api/catalogue/nl", { authorization });
+if (values["public-storefront"]) {
+  for (const locale of ["nl", "de", "fr", "en", "ar", "tr", "ku"]) {
+    const response = await get(`/${locale}/admin`);
+    assert.equal(response.status, 401);
+    privateHeaders(response);
+    await response.body?.cancel();
+  }
+  const admin = await get("/nl/admin", { authorization });
+  assert.equal(
+    admin.status,
+    200,
+    "test-admin must reach the unavailable operations shell",
+  );
+  privateHeaders(admin);
+  assert.match(await admin.text(), /Privileged operations are unavailable/);
+  const unknown = await get("/api/admin");
+  assert.equal(
+    unknown.status,
+    401,
+    "Unknown privileged routes must remain gated",
+  );
+  await unknown.body?.cancel();
+}
+const catalogue = await get("/api/catalogue/nl", storefrontHeaders);
 assert.equal(catalogue.status, 200);
 privateHeaders(catalogue);
 const body = await catalogue.json();
@@ -111,8 +148,11 @@ console.log(
   JSON.stringify({
     origin: origin.origin,
     revision: values.revision,
-    anonymous: "blocked",
-    wrongCredential: "blocked",
+    anonymousStorefront: values["public-storefront"] ? "accessible" : "blocked",
+    admin: "anonymous/wrong credential blocked",
+    authenticatedAdmin: values["public-storefront"]
+      ? "unavailable operations shell only"
+      : "not probed",
     localeRedirect: "same HTTPS origin",
     locales: ["nl", "ar"],
     productionEnabled: false,

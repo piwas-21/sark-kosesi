@@ -2,6 +2,7 @@ import { NextResponse, type NextRequest } from "next/server";
 import { randomBytes, timingSafeEqual } from "node:crypto";
 import { configuration } from "./lib/config";
 import { resolveLocale } from "./lib/locale";
+import { publicStagingRead } from "./lib/staging-access";
 function privateResponse(response: NextResponse, revision: string | undefined) {
   response.headers.set("Cache-Control", "private, no-store");
   response.headers.set("X-Robots-Tag", "noindex, nofollow");
@@ -11,20 +12,30 @@ function privateResponse(response: NextResponse, revision: string | undefined) {
   return response;
 }
 export function proxy(request: NextRequest) {
-  const { token, canonical, revision } = configuration();
+  const {
+    browserToken,
+    browserUsername,
+    publicStorefront,
+    canonical,
+    revision,
+  } = configuration();
   const expected = Buffer.from(
-    `Basic ${Buffer.from(`preview:${token}`).toString("base64")}`,
+    `Basic ${Buffer.from(`${browserUsername}:${browserToken}`).toString("base64")}`,
   );
   const supplied = Buffer.from(request.headers.get("authorization") ?? "");
   if (
-    supplied.length !== expected.length ||
-    !timingSafeEqual(supplied, expected)
+    !(
+      publicStorefront &&
+      publicStagingRead(request.nextUrl.pathname, request.method)
+    ) &&
+    (supplied.length !== expected.length ||
+      !timingSafeEqual(supplied, expected))
   ) {
     return privateResponse(
-      new NextResponse("Private preview", {
+      new NextResponse("Preview authentication required", {
         status: 401,
         headers: {
-          "WWW-Authenticate": 'Basic realm="Piwas preview", charset="UTF-8"',
+          "WWW-Authenticate": `Basic realm="Piwas ${publicStorefront ? "staging admin" : "preview"}", charset="UTF-8"`,
         },
       }),
       revision,
