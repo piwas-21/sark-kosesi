@@ -9,8 +9,8 @@ pub struct Config {
 impl Config {
     pub fn parse(values: &HashMap<String, String>) -> Result<Self, &'static str> {
         let environment = values.get("APP_ENV").map(String::as_str);
-        if !matches!(environment, Some("local" | "test")) {
-            return Err("APP_ENV must be local or test; production is disabled");
+        if !matches!(environment, Some("local" | "test" | "staging")) {
+            return Err("APP_ENV must be local, test or staging; production is disabled");
         }
         let database_url = values
             .get("DATABASE_URL")
@@ -40,7 +40,7 @@ impl Config {
             .parse()
             .map_err(|_| "Invalid API_BIND")?;
         if !bind.ip().is_loopback() {
-            return Err("P1 preview must bind loopback");
+            return Err("Preview API must bind loopback");
         }
         Ok(Self {
             database_url,

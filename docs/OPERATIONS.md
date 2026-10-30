@@ -41,3 +41,13 @@ Proposed service targets: database RPO <=15 minutes and RTO <=4 hours, subject t
 Incident runbook: contain credentials/access, preserve redacted evidence, stop unsafe fulfilment/payment retries, establish last known good state, reconcile outstanding attempts, restore/roll forward, verify and communicate through approved channels. Rotate exposed keys with provider-specific steps; test revocation and rollback. Retention/deletion apply to logs and backups under the approved privacy policy.
 
 Final operational acceptance checks real emails, sandbox methods plus separately authorized live payment/refund, warehouse pick/pack/carrier/return rehearsal, correct VAT/invoice/credit documents, all intended markets, public crawl/index policies and device accessibility. Report what was actually measured; passing source tests does not prove delivery, payout, parcel fit or indexing.
+
+## Non-selling staging preview
+
+See [the staging runbook](../deploy/staging/README.md) for the dedicated HTTPS
+preview on Piwas infrastructure. It is independent of the existing applications
+and uses a separate database/volume, service names and generated credentials.
+Production remains disabled. The empty migrated preview is useful for integration
+wiring; no real merchant facts, tax/carrier readiness, staff authority, order flow
+or provider acceptance is established by its deployment. Record accepted source,
+image identity, TLS/auth/noindex/RTL smoke and rollback separately from CI.

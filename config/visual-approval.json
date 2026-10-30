@@ -1,10 +1,10 @@
 {
   "schemaVersion": 1,
   "humanApproved": true,
-  "reviewer": "User in Codex chat 01a18941-2e46-70c2-bd75-522f59d9e37a",
-  "reviewedAt": "2026-10-30T04:21:41.861000+00:00",
-  "evidence": "The user explicitly answered \"Approve final screenshot baselines\" to question call_b4a725e4001f40e1833cc4fb22de8490 approving the final 228 Linux screenshots for PR #24. This is the final gallery from CI run 40983824408, artifact 12946907622, captured at revision df729d0140670d5747e566ef319428de556e0d2f, saved as outputs/p2-visual-review-current. This supersedes the earlier 560a capture and review request. Approval covers visual regression baselines for the private preview, not actual supplier/photo/native-language/legal acceptance or production readiness. Production remains disabled.",
-  "sourceSha256": "46bb4d9a95be3f92251c15d9766e102b28cd83db9dfc3290d9e39df80c62d175",
+  "reviewer": "Mahmut Kaya",
+  "reviewedAt": "2026-10-30T11:34:38.380872+00:00",
+  "evidence": "Owner explicitly approved retaining the 228 unchanged courtyard baselines for UI source SHA-256 0d7ca04dbbba939d7bfd86e4fd7c3806511476417aa8f7183580f7832b5b79a4 after the staging review gallery was provided in this chat. Exact reply: \"Approve the unchanged baselines for this staging change\". All baseline image hashes remain unchanged; normal CI comparison remains required.",
+  "sourceSha256": "0d7ca04dbbba939d7bfd86e4fd7c3806511476417aa8f7183580f7832b5b79a4",
   "capture": {
     "revision": "df729d0140670d5747e566ef319428de556e0d2f",
     "ciRun": 40983824408,
@@ -249,5 +249,11 @@
     "tests/application/baselines/webkit/missing-nl-dark-390.png": "2b01929108b2f91ed16343c4fd72ce937e612fe8b1b955470f47044fc581e6fa",
     "tests/application/baselines/webkit/missing-nl-light-1280.png": "95f0619054dd4bed751ad9b504e052d223e4f91a97d41627d8861687cbf33470",
     "tests/application/baselines/webkit/missing-nl-light-390.png": "3b956bcea5bf4c7d42b8bdcae1840dca4e24ff0b8412332fd885a9517e9c07dc"
+  },
+  "previousApproval": {
+    "sourceSha256": "46bb4d9a95be3f92251c15d9766e102b28cd83db9dfc3290d9e39df80c62d175",
+    "reviewedAt": "2026-10-30T04:21:41.861000+00:00",
+    "reviewer": "User in Codex chat 01a18941-2e46-70c2-bd75-522f59d9e37a",
+    "evidence": "The user explicitly answered \"Approve final screenshot baselines\" to question call_b4a725e4001f40e1833cc4fb22de8490 approving the final 228 Linux screenshots for PR #24. This is the final gallery from CI run 40983824408, artifact 12946907622, captured at revision df729d0140670d5747e566ef319428de556e0d2f, saved as outputs/p2-visual-review-current. This supersedes the earlier 560a capture and review request. Approval covers visual regression baselines for the private preview, not actual supplier/photo/native-language/legal acceptance or production readiness. Production remains disabled."
   }
 }

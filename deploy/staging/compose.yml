@@ -1,0 +1,101 @@
+name: sark-kosesi-preview
+services:
+  db:
+    image: postgres:18@sha256:edb0c08dc33befd0262ab3b5cf1c4f3f8cfd8b09e88c05b45adee29d6761ddb6
+    environment:
+      POSTGRES_USER: sark_preview
+      POSTGRES_DB: sark_preview
+      POSTGRES_PASSWORD: ${STAGING_DATABASE_PASSWORD:?private staging database password required}
+    volumes:
+      - staging_data:/var/lib/postgresql
+    networks:
+      backend:
+        aliases: [sark-kosesi-preview-db]
+    healthcheck:
+      test:
+        [CMD-SHELL, "pg_isready -h 127.0.0.1 -U sark_preview -d sark_preview"]
+      interval: 5s
+      timeout: 3s
+      retries: 12
+    restart: unless-stopped
+    mem_limit: 512m
+    cpus: 1.0
+    pids_limit: 128
+    security_opt: [no-new-privileges:true]
+  web:
+    image: sark-kosesi-web:${STAGING_REVISION:?reviewed source revision required}
+    environment:
+      APP_ENV: staging
+      HOSTNAME: 0.0.0.0
+      API_URL: http://127.0.0.1:45671
+      CANONICAL_ORIGIN: https://${STAGING_HOST:?staging hostname required}
+      PREVIEW_REVISION: ${STAGING_REVISION}
+      PREVIEW_TOKEN: ${STAGING_PREVIEW_TOKEN:?private preview token required}
+    ports:
+      - 127.0.0.1:45972:3000
+    networks: [backend, ingress]
+    healthcheck:
+      test:
+        [
+          CMD,
+          node,
+          -e,
+          "Promise.all([fetch('http://127.0.0.1:3000/nl'),fetch('http://127.0.0.1:45671/health/ready')]).then(([w,a])=>{if(w.status!==401||!a.ok)process.exit(1)}).catch(()=>process.exit(1))",
+        ]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 30s
+    labels:
+      traefik.enable: ${STAGING_INGRESS_ENABLED:-false}
+      traefik.docker.network: coolify
+      traefik.http.routers.sark-preview-http.entrypoints: http
+      traefik.http.routers.sark-preview-http.rule: Host(`${STAGING_HOST}`)
+      traefik.http.routers.sark-preview-http.middlewares: sark-preview-https
+      traefik.http.middlewares.sark-preview-https.redirectscheme.scheme: https
+      traefik.http.middlewares.sark-preview-https.redirectscheme.permanent: "false"
+      traefik.http.routers.sark-preview.entrypoints: https
+      traefik.http.routers.sark-preview.rule: Host(`${STAGING_HOST}`)
+      traefik.http.routers.sark-preview.tls: "true"
+      traefik.http.routers.sark-preview.tls.certresolver: letsencrypt
+      traefik.http.services.sark-preview.loadbalancer.server.port: "3000"
+    restart: unless-stopped
+    read_only: true
+    tmpfs:
+      - /tmp:size=64m,uid=1000,gid=1000
+      - /app/apps/web/.next/cache:size=64m,uid=1000,gid=1000
+    mem_limit: 768m
+    cpus: 1.0
+    pids_limit: 128
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+  api:
+    image: sark-kosesi-api:${STAGING_REVISION:?reviewed source revision required}
+    environment:
+      APP_ENV: staging
+      API_BIND: 127.0.0.1:45671
+      DATABASE_URL: postgresql://sark_preview:${STAGING_DATABASE_PASSWORD}@sark-kosesi-preview-db:5432/sark_preview
+      PREVIEW_TOKEN: ${STAGING_PREVIEW_TOKEN}
+    network_mode: service:web
+    depends_on:
+      db:
+        condition: service_healthy
+      web:
+        condition: service_started
+    restart: unless-stopped
+    read_only: true
+    tmpfs:
+      - /tmp:size=32m,uid=1000,gid=1000
+    mem_limit: 512m
+    cpus: 1.0
+    pids_limit: 128
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+networks:
+  backend:
+    internal: true
+  ingress:
+    external: true
+    name: coolify
+volumes:
+  staging_data:
