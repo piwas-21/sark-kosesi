@@ -117,7 +117,7 @@ fn failed(value: QuoteStoreError) -> Response {
     }
     response
 }
-#[utoipa::path(post,path="/api/guest/{locale}/quotes",params(("locale"=String,Path),("Origin"=String,Header),("x-csrf-token"=String,Header)),request_body=QuoteRequestBody,responses((status=200,body=QuoteResponse),(status=400,body=ApiError),(status=401,body=ApiError),(status=403,body=ApiError),(status=409,body=ApiError),(status=410,body=ApiError),(status=413,body=ApiError),(status=415,body=ApiError),(status=429,body=ApiError),(status=503,body=ApiError)),security(("preview"=[],"guest"=[])))]
+#[utoipa::path(post,operation_id="issue_guest_quote",path="/api/guest/{locale}/quotes",params(("locale"=String,Path),("Origin"=String,Header),("x-csrf-token"=String,Header)),request_body=QuoteRequestBody,responses((status=200,body=QuoteResponse),(status=400,body=ApiError),(status=401,body=ApiError),(status=403,body=ApiError),(status=409,body=ApiError),(status=410,body=ApiError),(status=413,body=ApiError),(status=415,body=ApiError),(status=429,body=ApiError),(status=503,body=ApiError)),security(("preview"=[],"guest"=[])))]
 pub(crate) async fn issue(
     Extension(state): Extension<GuestState>,
     Path(language): Path<String>,
@@ -159,7 +159,7 @@ pub(crate) async fn issue(
         Err(value) => failed(value),
     }
 }
-#[utoipa::path(get,path="/api/guest/quotes/{id}",params(("id"=String,Path)),responses((status=200,body=QuoteView),(status=400,body=ApiError),(status=401,body=ApiError),(status=404,body=ApiError),(status=410,body=ApiError),(status=503,body=ApiError)),security(("preview"=[],"guest"=[])))]
+#[utoipa::path(get,operation_id="read_guest_quote",path="/api/guest/quotes/{id}",params(("id"=String,Path)),responses((status=200,body=QuoteView),(status=400,body=ApiError),(status=401,body=ApiError),(status=404,body=ApiError),(status=410,body=ApiError),(status=503,body=ApiError)),security(("preview"=[],"guest"=[])))]
 pub(crate) async fn read(
     Extension(state): Extension<GuestState>,
     Path(id): Path<String>,

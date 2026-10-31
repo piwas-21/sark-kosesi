@@ -99,6 +99,34 @@ fn generated_contract_has_real_response_and_security() {
         value["components"]["securitySchemes"]["preview"]["scheme"],
         "bearer"
     );
+    let ids: Vec<&str> = value["paths"]
+        .as_object()
+        .expect("paths")
+        .values()
+        .flat_map(|path| path.as_object().expect("path").values())
+        .map(|operation| operation["operationId"].as_str().expect("operation ID"))
+        .collect();
+    assert!(ids.len() >= 10, "populated operation inventory");
+    let unique = |values: &[&str]| {
+        values.iter().all(|v| !v.is_empty())
+            && values
+                .iter()
+                .collect::<std::collections::HashSet<_>>()
+                .len()
+                == values.len()
+    };
+    assert!(unique(&ids), "operation IDs must be globally unique");
+    let mut duplicated = ids.clone();
+    duplicated.push(ids[0]);
+    assert!(!unique(&duplicated), "duplicate detection positive control");
+    assert_eq!(
+        value["paths"]["/api/guest/{locale}/quotes"]["post"]["operationId"],
+        "issue_guest_quote"
+    );
+    assert_eq!(
+        value["paths"]["/api/guest/quotes/{id}"]["get"]["operationId"],
+        "read_guest_quote"
+    );
 }
 #[sqlx::test(migrator = "MIGRATOR")]
 async fn authenticated_read_has_real_data_and_no_cache_leak(pool: PgPool) {

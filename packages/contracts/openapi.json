@@ -251,7 +251,7 @@
         "tags": [
           "crate::guest::quotes"
         ],
-        "operationId": "read",
+        "operationId": "read_guest_quote",
         "parameters": [
           {
             "name": "id",
@@ -498,7 +498,7 @@
         "tags": [
           "crate::guest::quotes"
         ],
-        "operationId": "issue",
+        "operationId": "issue_guest_quote",
         "parameters": [
           {
             "name": "locale",

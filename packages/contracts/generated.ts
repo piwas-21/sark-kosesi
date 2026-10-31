@@ -43,7 +43,7 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        get: operations["read"];
+        get: operations["read_guest_quote"];
         put?: never;
         post?: never;
         delete?: never;
@@ -77,7 +77,7 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        post: operations["issue"];
+        post: operations["issue_guest_quote"];
         delete?: never;
         options?: never;
         head?: never;
@@ -495,7 +495,7 @@ export interface operations {
             };
         };
     };
-    read: {
+    read_guest_quote: {
         parameters: {
             query?: never;
             header?: never;
@@ -681,7 +681,7 @@ export interface operations {
             };
         };
     };
-    issue: {
+    issue_guest_quote: {
         parameters: {
             query?: never;
             header: {
