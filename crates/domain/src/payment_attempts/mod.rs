@@ -4,6 +4,7 @@ use serde::{Deserialize, Serialize};
 mod dispatch;
 pub mod observations;
 mod provider;
+pub mod searches;
 pub use dispatch::{DispatchPlan, DispatchState, bind_provider, plan_dispatch};
 pub use provider::{PaymentStatus, ProviderPayment, match_provider};
 pub const ATTEMPT_SCHEMA_VERSION: u16 = 1;

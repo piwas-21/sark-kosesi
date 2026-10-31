@@ -968,3 +968,6 @@ mod search_cases;
 
 #[path = "mollie_observations.rs"]
 mod observation_cases;
+
+#[path = "mollie_search_custody.rs"]
+mod search_custody;

@@ -167,7 +167,11 @@ another charge. Private verified-fetch observations now preserve minimal origina
 attempt facts and actual credential fingerprints with immutable revisions and a
 processing event in the same transaction. Exact operation receipts replay history;
 reordered statuses and different IDs remain evidence without choosing current
-payment state. No key or runtime worker is installed. Add durable search custody,
-identity resolution, workers/callbacks, late-paid stock recovery
+payment state. Private authenticated search-page receipts now persist requested/next cursors,
+actual credential fingerprints and all candidate identities with atomic outbox
+events. Exact continuation, fork/cycle protection and a 100-page bound support
+crash-resumable discovery without treating empty/end pages as absence. No key or
+runtime worker is installed. Add explicit identity resolution, supervised durable
+search scheduling, workers/callbacks, late-paid stock recovery
 and separate order/payment/fulfilment/refund/invoice transitions. A pure domain
 plan or matched synthetic response is not dispatch or payment authority.

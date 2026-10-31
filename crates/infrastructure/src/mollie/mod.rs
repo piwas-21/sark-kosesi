@@ -2,7 +2,7 @@
 use crate::payment_attempts::{DispatchPermit, PaymentStoreError};
 use commerce_application::{payment_requests::Configuration, request_context::Clock};
 use commerce_domain::payment_attempts::{
-    AttemptSnapshot, ProfileBinding, ProviderPayment, match_provider,
+    AttemptSnapshot, ProfileBinding, ProviderPayment, match_provider, searches::SearchIntent,
 };
 mod client;
 mod credential;
@@ -51,6 +51,51 @@ impl VerifiedPayment {
         &self.credential_fingerprint
     }
 }
+/// Opaque authenticated list evidence; candidate IDs still require separate GETs.
+pub struct VerifiedSearchPage {
+    page: SearchPage,
+    attempt: AttemptSnapshot,
+    from: Option<String>,
+    credential_fingerprint: String,
+}
+impl VerifiedSearchPage {
+    fn capture(
+        page: SearchPage,
+        attempt: &AttemptSnapshot,
+        from: Option<&SearchCursor>,
+        fingerprint: &str,
+    ) -> Self {
+        Self {
+            page,
+            attempt: attempt.clone(),
+            from: from.map(|v| v.provider_id().into()),
+            credential_fingerprint: fingerprint.into(),
+        }
+    }
+    pub fn candidates(&self) -> &[CreationHint] {
+        self.page.candidates()
+    }
+    pub fn next_cursor(&self) -> Option<&SearchCursor> {
+        self.page.next_cursor()
+    }
+    pub(crate) fn attempt(&self) -> &AttemptSnapshot {
+        &self.attempt
+    }
+    pub(crate) fn intent(&self, previous_page_id: Option<&str>) -> SearchIntent {
+        SearchIntent {
+            previous_page_id: previous_page_id.map(str::to_owned),
+            from: self.from.clone(),
+            next: self.next_cursor().map(|v| v.provider_id().into()),
+            candidates: self
+                .candidates()
+                .iter()
+                .map(|v| v.provider_id().into())
+                .collect(),
+            credential_fingerprint: self.credential_fingerprint.clone(),
+        }
+    }
+}
+
 fn provider_id(value: &str) -> bool {
     value.starts_with("tr_")
         && value.len() > 3

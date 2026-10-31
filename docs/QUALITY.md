@@ -414,3 +414,18 @@ controls. Financial/dispatch binding, connection isolation, event presence, oper
 and the post-write clock check require compiled fault controls with healthy
 baselines, intended assertion failure and exact restoration. These tests provide
 source custody evidence, not current payment state, provider acceptance or release.
+
+Private discovery custody tests use authenticated loopback list results and real
+isolated PostgreSQL. Literal multi-candidate/empty/end pages, actual hold expiry,
+rotated credentials, receipt replay with unavailable ports, conflicting intent,
+original-attempt drift, forks/cycles, the 100-page bound and concurrent same/distinct
+operations exercise durable recovery without another POST or financial transition.
+Overlapping claims under repeatable-read connection defaults must retain both
+committed pages. Actual outbox-write waits test clock rewind and cancellation.
+Native negative/positive controls exercise minimal snapshots, immutable history,
+contiguous revisions/time, exact predecessor and deferred event completeness.
+Closed decoder/header controls and damaged/oversized/missing-event imports reject
+receipts and ancestor reads without fallback. Compiled controls remove exact cursor
+binding, bypass complete original-attempt matching and retain a stale claim snapshot;
+each must compile and fail its named assertion, with healthy baseline and exact
+restored-source reruns. These instruments establish source custody behavior; supervised jobs and actual provider acceptance remain pending.

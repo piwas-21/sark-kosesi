@@ -609,7 +609,7 @@ profile was independently verified against the SAME captured profile. Its actual
 credential fingerprint remains available for observation audit. Rotation never
 authorizes another POST under the old attempt: initial permits still require the
 original complete configuration identity. This client persists no provider ID or
-payment state. Durable search custody/jobs, identity resolution, callbacks, late-paid
+payment state. Supervised search jobs, identity resolution, callbacks, late-paid
 stock recovery and separate finance/fulfilment transitions remain required.
 Loopback instruments are not provider sandbox acceptance or configured credentials.
 
@@ -632,8 +632,8 @@ canonical HTTPS under api.mollie.com/v2/payments, at most 2048 bytes, with one
 bounded from identifier, limit=10 and optional sort=desc. Other/duplicate query
 parameters, user info, fragments, ports and a repeated current offset fail closed.
 Only the decoded cursor survives; the next request is constructed against the
-fixed provider endpoint instead of following the supplied URL. There is no
-automatic pagination, durable scan/job or persisted result in this library.
+fixed provider endpoint instead of following the supplied URL. There is no automatic pagination or job runner in this transport. The private
+store below now retains authenticated page evidence.
 
 ### Private fetched-observation custody
 
@@ -672,6 +672,39 @@ customer read, queue consumer or runtime credential is installed. Future identit
 resolution and idempotent transitions must preserve paid evidence and surface
 ambiguity; callbacks, supervised jobs, late-paid allocation and provider acceptance
 remain required.
+
+### Private discovery-page custody
+
+Authenticated list calls now return an opaque page bound to the entire original
+frozen attempt, requested cursor and actual verified credential fingerprint. The
+private store compares that complete binding with the restored original accepted
+order/attempt and requires a committed dispatch. Listing and database work remain
+separate: no transaction crosses provider I/O. Page candidates remain hints for
+separate authenticated GETs, including when more than one identity matches.
+
+Each operation has a full-intent immutable receipt and a minimal processing event
+in the same transaction. Receipt lookup precedes a retried list operation; exact
+replay needs neither a clock nor entropy, while a changed page needs a new effect.
+Read-committed attempt claims serialize global contiguous revisions even under a
+repeatable-read connection default. New writes enforce nondecreasing operation
+time and sample the observed clock after the actual outbox insert. Current guest,
+source, hold or key expiry does not discard historical discovery evidence.
+
+A continuation binds one exact preceding page and its returned offset. One
+predecessor has at most one continuation; mismatched, terminal, cyclic and forked
+paths fail closed. A scan contains at most 100 pages; its last cursor remains
+visible when that bound is reached. Independent later scans can start at the first
+page with a new operation identity. Neither an empty page, end link nor bounded
+scan establishes provider absence, permits another create or resolves uncertainty.
+Workers still need durable scheduling/leases and explicit operational escalation.
+
+Native constraints preserve minimal closed snapshots, ten unique bounded candidate
+identities, actual key fingerprints, immutable history, contiguous revision/time,
+exact predecessor custody and deferred outbox completeness. Bounded private
+readers restore the original attempt and validate every ancestor and its exact
+event, rejecting damaged, oversized, missing or cyclic history. These are private
+trusted-worker primitives; no callback, customer route, queue consumer, credential
+provisioning, payment-state transition or runtime provider call is installed.
 
 ## Sessions, uploads and rendering
 

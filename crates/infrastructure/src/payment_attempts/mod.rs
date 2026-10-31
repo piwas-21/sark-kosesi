@@ -16,9 +16,11 @@ use commerce_domain::{
 use sqlx::{Postgres, Transaction};
 mod dispatch;
 mod eligibility;
+pub(crate) mod evidence;
 pub mod observations;
 mod prepare;
 mod read;
+pub mod searches;
 mod stored;
 pub use dispatch::{DispatchOutcome, DispatchPermit, start_dispatch};
 pub use prepare::{PreparationReceipt, prepare_attempt};
