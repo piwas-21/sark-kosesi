@@ -228,7 +228,7 @@ supervision or live provider activation follows from deploying the empty preview
    installed. Complete the explicit country/postcode/territory readiness matrix
    from actual reviewed tax/carrier/returns inputs before enabling destinations.
    Promotion configuration now has immutable canonical drafts, independent
-   exact-revision reviews, separate unseeded capabilities and explicit lifetime
+   exact-revision reviews, explicit EUR currency, separate unseeded capabilities and lifetime
    discount/redemption ceilings. Latest approved state only; configuration creates
    no coupon route or spending claim. Integrate atomic lifetime budget/redemption
    accounting with order transactions and verified customer limits. A guest cookie

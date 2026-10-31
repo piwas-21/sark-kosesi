@@ -1,6 +1,7 @@
 use commerce_domain::{promotion_policies::*, promotions::*};
 fn policy() -> PromotionPolicy {
     PromotionPolicy {
+        currency: commerce_domain::Currency::EUR,
         promotion: Promotion {
             id: "COURTYARD".into(),
             revision: 1,

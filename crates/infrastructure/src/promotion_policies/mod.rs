@@ -135,3 +135,7 @@ async fn claim(tx: &mut Transaction<'_, Postgres>, id: &str) -> Result<i32, Poli
     .fetch_one(&mut **tx)
     .await?)
 }
+
+#[cfg(test)]
+#[path = "../../tests/support/promotion_policy_rows.rs"]
+mod tests;

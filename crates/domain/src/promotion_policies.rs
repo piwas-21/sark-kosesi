@@ -1,5 +1,8 @@
 //! Independently reviewed promotion terms; limits are not a redemption or payment grant.
-use crate::promotions::{Promotion, PromotionError};
+use crate::{
+    Currency,
+    promotions::{Promotion, PromotionError},
+};
 use serde::{Deserialize, Serialize};
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -13,6 +16,7 @@ pub struct RedemptionLimits {
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct PromotionPolicy {
+    pub currency: Currency,
     pub promotion: Promotion,
     pub limits: RedemptionLimits,
 }

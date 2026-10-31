@@ -555,3 +555,130 @@ async fn staff_grant_revocation_waits_for_atomic_draft_and_then_denies_historica
     ));
     assert_eq!(inspect(&pool, 2).await.expect("retained history").policy, p);
 }
+#[sqlx::test(migrator = "MIGRATOR")]
+async fn all_historical_receipt_headers_bind_original_identity_revision_and_audit(pool: PgPool) {
+    ready(&pool).await;
+    let mut other = policy();
+    other.promotion.id = "OTHER".into();
+    assert!(matches!(
+        draft(&pool, &other, "initial").await,
+        Err(PolicyError::Conflict)
+    ));
+    let mut next = policy();
+    next.promotion.revision = 2;
+    assert!(matches!(
+        draft(&pool, &next, "initial").await,
+        Err(PolicyError::Conflict)
+    ));
+    pool.execute("INSERT INTO staff_capabilities VALUES('other','promotion.manage')")
+        .await
+        .expect("second author fixture");
+    assert!(matches!(
+        record_draft(
+            &pool,
+            &token(3),
+            &clock(),
+            DraftRequest {
+                policy: &policy(),
+                audit: audit("initial", 0)
+            }
+        )
+        .await,
+        Err(PolicyError::Conflict)
+    ));
+    let mut changed = audit("initial", 0);
+    changed.reason = "changed";
+    assert!(matches!(
+        record_draft(
+            &pool,
+            &token(1),
+            &clock(),
+            DraftRequest {
+                policy: &policy(),
+                audit: changed
+            }
+        )
+        .await,
+        Err(PolicyError::Conflict)
+    ));
+    let mismatch = audit("bad-revision", 1);
+    assert!(matches!(
+        record_draft(
+            &pool,
+            &token(1),
+            &clock(),
+            DraftRequest {
+                policy: &policy(),
+                audit: mismatch
+            }
+        )
+        .await,
+        Err(PolicyError::InvalidRequest)
+    ));
+    let too_long = "x".repeat(501);
+    let mut invalid = audit("long-reason", 0);
+    invalid.reason = &too_long;
+    assert!(matches!(
+        record_draft(
+            &pool,
+            &token(1),
+            &clock(),
+            DraftRequest {
+                policy: &policy(),
+                audit: invalid
+            }
+        )
+        .await,
+        Err(PolicyError::InvalidRequest)
+    ));
+    draft(&pool, &other, "other-source")
+        .await
+        .expect("other definition");
+    let mut r = review("approve", 1, 0, true);
+    r.id = "OTHER";
+    assert!(matches!(
+        record_review(&pool, &token(2), &clock(), r).await,
+        Err(PolicyError::Conflict)
+    ));
+    draft(&pool, &next, "next-source").await.expect("new draft");
+    assert!(matches!(
+        record_review(&pool, &token(2), &clock(), review("approve", 2, 0, true)).await,
+        Err(PolicyError::Conflict)
+    ));
+    assert!(matches!(
+        record_review(&pool, &token(2), &clock(), review("approve", 1, 1, true)).await,
+        Err(PolicyError::Conflict)
+    ));
+    let mut r = review("approve", 1, 0, true);
+    r.qualification_ref = "changed";
+    assert!(matches!(
+        record_review(&pool, &token(2), &clock(), r).await,
+        Err(PolicyError::Conflict)
+    ));
+    let mut r = review("approve", 1, 0, true);
+    r.audit.reason = "changed";
+    assert!(matches!(
+        record_review(&pool, &token(2), &clock(), r).await,
+        Err(PolicyError::Conflict)
+    ));
+    assert!(matches!(
+        approved_policy(&pool, &clock(), "DEMO", "NL").await,
+        Err(PolicyError::InvalidRequest)
+    ));
+    assert!(
+        decide(&pool, "approve", 1, 0, true)
+            .await
+            .expect("unchanged historical receipt")
+            .replayed
+    );
+    assert!(matches!(approved(&pool).await, Err(PolicyError::NotFound)));
+    assert!(
+        inspect(&pool, 2)
+            .await
+            .expect("new pending")
+            .review
+            .is_none()
+    );
+    let counts:(i64,i64)=sqlx::query_as("SELECT (SELECT count(*) FROM promotion_policy_drafts),(SELECT count(*) FROM promotion_policy_reviews)").fetch_one(&pool).await.expect("no new effects");
+    assert_eq!(counts, (3, 1));
+}

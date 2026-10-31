@@ -46,7 +46,8 @@ BEGIN
     -- A real write rejects a stale repeatable-read import after a competing revision.
     UPDATE promotion_policy_anchors SET id=id WHERE id=NEW.id;
     IF TG_TABLE_NAME='promotion_policy_drafts' THEN
-        IF NEW.policy->'promotion'->>'id' IS DISTINCT FROM NEW.id
+        IF NEW.policy->'currency' IS DISTINCT FROM '"EUR"'::jsonb
+            OR NEW.policy->'promotion'->>'id' IS DISTINCT FROM NEW.id
             OR NEW.policy->'promotion'->>'revision' IS DISTINCT FROM NEW.revision::text THEN
             RAISE EXCEPTION 'Promotion terms require exact identity' USING ERRCODE='23514';
         END IF;

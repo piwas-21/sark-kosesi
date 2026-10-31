@@ -24,6 +24,7 @@ pub async fn seed(pool: &PgPool) {
 }
 pub fn policy() -> PromotionPolicy {
     PromotionPolicy {
+        currency: commerce_domain::Currency::EUR,
         promotion: Promotion {
             id: "COURTYARD".into(),
             revision: 1,

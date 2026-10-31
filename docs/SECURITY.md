@@ -181,8 +181,8 @@ quotes reuse reviewed market/publication/stock claims and final source clocks;
 promotion expiry cannot extend country or photography eligibility. Stored quote
 arithmetic is revalidated before discounting, and every amount remains bounded EUR
 minor units. Refund arithmetic preserves immutable captured tax but grants no
-finance capability, ownership, provider attempt or restocking effect. Durable
-administration, redemption limits and authenticated checkout remain prerequisites.
+finance capability, ownership, provider attempt or restocking effect. Atomic
+redemption limits and authenticated checkout remain prerequisites.
 
 Guest basket credentials use a maintained stateful transport and a private SQLx
 store. The opt-in internal routes retain preview authentication and a validated

@@ -416,9 +416,9 @@ its existing policy, publication, image and physical-stock claims. Promotion ter
 are closed, bounded server values; no customer request can supply them, and no
 promotion or coupon route is installed. Exact publication/SKU and country scopes,
 a minimum eligible item subtotal, explicit maximum discount and UTC instants apply.
-A quote supports one promotion, without stacking or shipping discounts. Durable
-promotion administration and atomic budget/redemption claims remain required
-inside order creation before any payment can use a promotion.
+A quote supports one promotion, without stacking or shipping discounts. Reviewed
+promotion configuration is described below; atomic budget/redemption claims remain
+required inside order creation before any payment can use a promotion.
 
 Allocation version 1 rounds a percentage once, half up, on eligible extended-line
 gross. Fixed or percentage discounts are capped by their explicit maximum and the
@@ -444,7 +444,7 @@ stable provider attempt. Accountant/market acceptance remains a separate gate.
 Private promotion policy storage uses separate unseeded `promotion.manage` and
 `promotion.review` capabilities with the existing persisted-session/recent-MFA
 guard. A different account reviews an exact draft. Confirmed mutations preserve
-canonical country/product selection, fixed/percentage terms, UTC validity,
+explicit EUR currency, canonical country/product selection, fixed/percentage terms, UTC validity,
 explicit total discount/redemption ceilings and an optional per-customer limit.
 Limits are lifetime terms for the promotion identity, never a new budget for each
 revision. They are configuration, not an installed coupon or redemption ledger.

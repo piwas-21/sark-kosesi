@@ -20,8 +20,9 @@ pub(super) struct StoredReview {
     pub reason: String,
 }
 impl StoredReview {
-    pub fn valid(&self, draft: &StoredDraft) -> bool {
+    pub fn valid(&self, draft: &StoredDraft, expected_draft_revision: i32) -> bool {
         self.draft_revision > 0
+            && self.draft_revision == expected_draft_revision
             && self.revision > 0
             && ["approved", "rejected"].contains(&self.decision.as_str())
             && text(&self.actor)

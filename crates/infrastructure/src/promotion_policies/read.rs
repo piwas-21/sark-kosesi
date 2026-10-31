@@ -31,7 +31,7 @@ async fn inspection(
     let policy = draft.decode(id, revision)?;
     let review:Option<StoredReview>=sqlx::query_as("SELECT draft_revision,revision,left(decision,9) AS decision,left(evidence_ref,501) AS evidence_ref,left(qualification_ref,501) AS qualification_ref,left(actor,501) AS actor,left(reason,501) AS reason FROM promotion_policy_reviews WHERE id=$1 AND draft_revision=$2 ORDER BY revision DESC LIMIT 1").bind(id).bind(revision).fetch_optional(&mut **tx).await?;
     let review = if let Some(r) = review {
-        if r.draft_revision != revision || !r.valid(&draft) {
+        if !r.valid(&draft, revision) {
             return Err(PolicyError::InvalidStoredData);
         }
         Some(ReviewInspection {
