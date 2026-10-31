@@ -7,6 +7,7 @@ struct Row {
     updated_at: i64,
     due_at: i64,
     generation: i64,
+    resume_revision: i32,
     lease_until: Option<i64>,
     phase: String,
     page_id: Option<String>,
@@ -22,7 +23,7 @@ pub(crate) async fn load(
     id: &str,
 ) -> Result<Option<Job>, RecoveryError> {
     let row=sqlx::query_as::<_,Row>(r#"SELECT left(j.attempt_id,33) AS attempt_id,left(source_event_id,33) AS source_event_id,
- j.created_at,j.updated_at,due_at,generation,lease_until,left(phase,32) AS phase,left(page_id,33) AS page_id,
+ j.created_at,j.updated_at,due_at,generation,resume_revision,lease_until,left(phase,32) AS phase,left(page_id,33) AS page_id,
  candidate_index,operation,polls,failures,left(review_reason,32) AS review_reason,
  EXISTS(SELECT 1 FROM commerce_outbox e JOIN payment_dispatch_starts s ON s.attempt_id=j.attempt_id JOIN payment_attempts a ON a.id=s.attempt_id
  WHERE e.id=j.source_event_id AND e.kind='payment.reconciliation_required.v1' AND e.aggregate_id=a.order_id AND e.created_at=s.started_at AND j.created_at=s.started_at
@@ -50,6 +51,7 @@ impl Row {
             updated_at: self.updated_at,
             due_at: self.due_at,
             generation: self.generation,
+            resume_revision: self.resume_revision,
             lease_until: self.lease_until,
             phase,
             page_id: self.page_id,
@@ -70,6 +72,7 @@ pub(super) fn validate(job: &Job) -> Result<(), RecoveryError> {
         || !(job.created_at..=9_007_199_254_740_991).contains(&job.updated_at)
         || !(job.created_at..=9_007_199_254_740_991).contains(&job.due_at)
         || !(0..=1500).contains(&job.generation)
+        || !(0..=3).contains(&job.resume_revision)
         || job.lease_until.is_some_and(|v| {
             job.generation == 0
                 || v <= job.updated_at

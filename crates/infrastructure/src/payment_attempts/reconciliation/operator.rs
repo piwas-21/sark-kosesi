@@ -7,6 +7,7 @@ pub struct ResumeRequest<'a> {
     pub attempt_id: &'a str,
     pub profile_id: &'a str,
     pub expected_generation: i64,
+    pub expected_resume_revision: i32,
     pub effect_key: &'a str,
     pub reason: &'a str,
     pub confirmed: bool,
@@ -59,6 +60,7 @@ fn resumed(before: &Job, at: i64) -> Result<Job, OperatorError> {
         || before.failures != 5
         || before.polls >= 10
         || before.generation >= 1500
+        || before.resume_revision >= 3
         || at < before.updated_at
         || at > 9_007_199_254_740_991
     {
@@ -70,6 +72,7 @@ fn resumed(before: &Job, at: i64) -> Result<Job, OperatorError> {
     } else {
         Phase::Candidates
     };
+    after.resume_revision += 1;
     after.failures = 0;
     after.review_reason = None;
     after.updated_at = at;
@@ -98,6 +101,7 @@ impl Stored {
         let expected = resumed(&before, after.updated_at).map_err(|_| invalid())?;
         if !(1..=3).contains(&self.revision)
             || before.attempt_id != self.attempt_id
+            || after.resume_revision != self.revision
             || serde_json::to_value(expected).map_err(|_| invalid())?
                 != serde_json::to_value(&after).map_err(|_| invalid())?
         {
@@ -125,6 +129,7 @@ pub async fn resume_transient(
     if !identifier(request.attempt_id)
         || !valid_command_id(request.effect_key)
         || !(0..1500).contains(&request.expected_generation)
+        || !(0..=3).contains(&request.expected_resume_revision)
         || !text(request.reason)
         || !text(request.profile_id)
         || !request.confirmed
@@ -164,19 +169,24 @@ pub async fn resume_transient(
         let receipt = prior.decode()?;
         if receipt.before.source_event_id != current.source_event_id
             || receipt.before.created_at != current.created_at
+            || receipt.after.resume_revision > current.resume_revision
             || receipt.after.generation > current.generation
             || receipt.after.updated_at > current.updated_at
         {
             return Err(OperatorError::InvalidStoredData);
         }
-        if receipt.before.generation != request.expected_generation {
+        if receipt.before.generation != request.expected_generation
+            || receipt.before.resume_revision != request.expected_resume_revision
+        {
             return Err(OperatorError::Conflict);
         }
         access.check_time(clock)?;
         access.tx.rollback().await?;
         return Ok(receipt);
     }
-    if current.generation != request.expected_generation {
+    if current.generation != request.expected_generation
+        || current.resume_revision != request.expected_resume_revision
+    {
         return Err(OperatorError::Conflict);
     }
     let revision: i32 = sqlx::query_scalar(
@@ -185,7 +195,7 @@ pub async fn resume_transient(
     .bind(request.attempt_id)
     .fetch_one(&mut *access.tx)
     .await?;
-    if revision > 3 {
+    if revision > 3 || revision != current.resume_revision + 1 {
         return Err(OperatorError::Conflict);
     }
     let at = access.authorized_at(clock)?;
@@ -197,7 +207,7 @@ pub async fn resume_transient(
         .bind(request.attempt_id).bind(revision).bind(request.effect_key).bind(&access.actor)
         .bind(request.reason).bind(request.profile_id).bind(before_state).bind(after_state)
         .execute(&mut *access.tx).await?;
-    sqlx::query("UPDATE payment_reconciliation_jobs SET phase=$1,failures=0,review_reason=NULL,updated_at=$2,due_at=$2 WHERE attempt_id=$3")
+    sqlx::query("UPDATE payment_reconciliation_jobs SET phase=$1,failures=0,review_reason=NULL,updated_at=$2,due_at=$2,resume_revision=resume_revision+1 WHERE attempt_id=$3")
         .bind(if after.phase==Phase::Search { "search" } else { "candidates" })
         .bind(at).bind(request.attempt_id).execute(&mut *access.tx).await?;
     access.check_time(clock)?;

@@ -8,6 +8,7 @@ fn before() -> Job {
         updated_at: 1500,
         due_at: 1500,
         generation: 12,
+        resume_revision: 0,
         lease_until: None,
         phase: Phase::NeedsReview,
         page_id: None,
@@ -45,6 +46,7 @@ fn persisted_resume_decoder_rejects_missing_open_or_incoherent_snapshots() {
         "bad-job-after",
         "not-retry",
         "revision",
+        "revision-mismatch",
         "identity",
         "changed-progress",
     ] {
@@ -66,6 +68,7 @@ fn persisted_resume_decoder_rejects_missing_open_or_incoherent_snapshots() {
                 row.before_state.as_mut().expect("object")["review_reason"] = "paid_observed".into()
             }
             "revision" => row.revision = 4,
+            "revision-mismatch" => row.revision = 2,
             "identity" => row.attempt_id = "c".repeat(32),
             "changed-progress" => row.after_state.as_mut().expect("object")["operation"] = 9.into(),
             _ => unreachable!(),
@@ -86,6 +89,7 @@ fn transient_resume_preserves_hard_limits_and_cannot_rewind_time() {
         "failures",
         "polls",
         "generation",
+        "resume-revision",
         "rewind",
         "overflow",
     ] {
@@ -97,6 +101,7 @@ fn transient_resume_preserves_hard_limits_and_cannot_rewind_time() {
             "failures" => job.failures = 4,
             "polls" => job.polls = 10,
             "generation" => job.generation = 1500,
+            "resume-revision" => job.resume_revision = 3,
             "rewind" => at = 1499,
             "overflow" => at = 9_007_199_254_740_992,
             _ => unreachable!(),

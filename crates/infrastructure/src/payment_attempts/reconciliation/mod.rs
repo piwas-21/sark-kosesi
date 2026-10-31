@@ -37,6 +37,7 @@ pub struct Job {
     pub updated_at: i64,
     pub due_at: i64,
     pub generation: i64,
+    pub resume_revision: i32,
     pub lease_until: Option<i64>,
     pub phase: Phase,
     pub page_id: Option<String>,

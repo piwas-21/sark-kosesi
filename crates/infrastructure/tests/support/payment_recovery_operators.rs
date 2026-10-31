@@ -33,6 +33,7 @@ fn request<'a>(f: &'a FrozenAttempt, effect: &'a str, generation: i64) -> Resume
         attempt_id: &f.snapshot().binding.id,
         profile_id: &f.snapshot().binding.profile.id,
         expected_generation: generation,
+        expected_resume_revision: 0,
         effect_key: effect,
         reason: "Synthetic transport incident checked",
         confirmed: true,
@@ -124,8 +125,9 @@ async fn three_lifetime_resumes_never_reset_generation_operations_or_authorize_a
     for generation in 1..=4 {
         stop(&pool, time.as_ref(), &f).await;
         let key = format!("resume-{generation}");
-        let result =
-            resume_transient(&pool, &token, time.as_ref(), request(&f, &key, generation)).await;
+        let mut r = request(&f, &key, generation);
+        r.expected_resume_revision = i32::try_from(generation - 1).expect("bounded counter");
+        let result = resume_transient(&pool, &token, time.as_ref(), r).await;
         if generation <= 3 {
             let receipt = result.expect("bounded resume");
             assert_eq!(i64::from(receipt.revision), generation);
@@ -135,6 +137,17 @@ async fn three_lifetime_resumes_never_reset_generation_operations_or_authorize_a
             assert_eq!(result.err(), Some(OperatorError::Conflict));
         }
     }
+    assert_eq!(receipts(&pool).await, 3);
+    let before: Value = sqlx::query_scalar("SELECT to_jsonb(j) FROM payment_reconciliation_jobs j")
+        .fetch_one(&pool)
+        .await
+        .expect("third consumed stop");
+    let mut after = before.clone();
+    after["phase"] = "search".into();
+    after["failures"] = 0.into();
+    after["review_reason"] = Value::Null;
+    after["resume_revision"] = 4.into();
+    assert!(sqlx::query("INSERT INTO payment_recovery_resumes VALUES($1,4,'native-fourth','finance','fourth native decision',$2,$3,$4)").bind(&f.snapshot().binding.id).bind(&f.snapshot().binding.profile.id).bind(before).bind(after).execute(&pool).await.is_err(), "a fourth native decision cannot commit");
     assert_eq!(receipts(&pool).await, 3);
     assert!(
         read_job(&pool, &f.snapshot().binding.id)
@@ -210,6 +223,7 @@ async fn confirmation_full_intent_profile_generation_and_terminal_stops_fail_clo
     for (field, expected) in [
         ("confirmation", OperatorError::InvalidRequest),
         ("negative-generation", OperatorError::InvalidRequest),
+        ("negative-resume", OperatorError::InvalidRequest),
         ("empty-profile", OperatorError::InvalidRequest),
         ("effect", OperatorError::InvalidRequest),
         ("reason", OperatorError::InvalidRequest),
@@ -222,6 +236,7 @@ async fn confirmation_full_intent_profile_generation_and_terminal_stops_fail_clo
         match field {
             "confirmation" => r.confirmed = false,
             "negative-generation" => r.expected_generation = -1,
+            "negative-resume" => r.expected_resume_revision = -1,
             "empty-profile" => r.profile_id = "",
             "effect" => r.effect_key = "bad!",
             "reason" => r.reason = "\n",
@@ -241,11 +256,12 @@ async fn confirmation_full_intent_profile_generation_and_terminal_stops_fail_clo
     resume_transient(&pool, &token, time.as_ref(), request(&f, "resume", 1))
         .await
         .expect("healthy decision");
-    for field in ["reason", "generation", "profile"] {
+    for field in ["reason", "generation", "profile", "resume"] {
         let mut r = request(&f, "resume", 1);
         match field {
             "reason" => r.reason = "changed",
             "generation" => r.expected_generation = 0,
+            "resume" => r.expected_resume_revision = 1,
             _ => r.profile_id = "pfl_OTHER",
         }
         assert_eq!(
@@ -355,19 +371,18 @@ async fn upgrade_retains_original_review_stop_and_installs_no_finance_authority(
     MIGRATOR.run_to(27, &pool).await.expect("prior schema");
     let (time, f) = prepared(&pool, true).await;
     stop(&pool, time.as_ref(), &f).await;
-    let old = read_job(&pool, &f.snapshot().binding.id)
-        .await
-        .expect("prior reader")
-        .expect("job");
+    let mut old: Value =
+        sqlx::query_scalar("SELECT to_jsonb(j) FROM payment_reconciliation_jobs j")
+            .fetch_one(&pool)
+            .await
+            .expect("prior schema snapshot");
+    old["resume_revision"] = 0.into();
     MIGRATOR.run(&pool).await.expect("forward upgrade");
     let new = read_job(&pool, &f.snapshot().binding.id)
         .await
         .expect("current reader")
         .expect("job");
-    assert_eq!(
-        serde_json::to_value(old).expect("before"),
-        serde_json::to_value(new).expect("after")
-    );
+    assert_eq!(old, serde_json::to_value(new).expect("after"));
     assert_eq!(receipts(&pool).await, 0);
     let grants: i64 = sqlx::query_scalar(
         "SELECT count(*) FROM staff_capabilities WHERE capability='payment.reconcile'",
@@ -472,6 +487,7 @@ async fn native_orphan_decision_and_changed_checkpoint_cannot_commit(pool: PgPoo
     let mut after = before.clone();
     after["phase"] = "search".into();
     after["failures"] = 0.into();
+    after["resume_revision"] = 1.into();
     after["review_reason"] = Value::Null;
     let mut tx = pool.begin().await.expect("orphan fixture");
     sqlx::query("INSERT INTO payment_recovery_resumes VALUES($1,1,'orphan','finance','test incident',$2,$3,$4)").bind(&f.snapshot().binding.id).bind(&f.snapshot().binding.profile.id).bind(&before).bind(&after).execute(&mut *tx).await.expect("valid decision before deferred atomicity check");
@@ -521,9 +537,11 @@ async fn damaged_audit_cannot_rebind_actor_profile_source_or_future_history(pool
         "created_at",
         "generation",
         "updated_at",
+        "resume_revision",
     ] {
         let (mut b, mut a) = (before.clone(), after.clone());
         let (mut actor, mut profile) = ("finance", "pfl_SYNTHETIC_NotARealProfile");
+        let mut revision = 1;
         match field {
             "actor" => actor = "other-finance",
             "profile" => profile = "pfl_OTHER",
@@ -539,6 +557,11 @@ async fn damaged_audit_cannot_rebind_actor_profile_source_or_future_history(pool
                 b[field] = 2.into();
                 a[field] = 2.into();
             }
+            "resume_revision" => {
+                b[field] = 1.into();
+                a[field] = 2.into();
+                revision = 2;
+            }
             "updated_at" => {
                 a[field] = 1600.into();
                 a["due_at"] = 1600.into();
@@ -549,7 +572,7 @@ async fn damaged_audit_cannot_rebind_actor_profile_source_or_future_history(pool
         tx.execute("ALTER TABLE payment_recovery_resumes DISABLE TRIGGER USER")
             .await
             .expect("test damage");
-        sqlx::query("UPDATE payment_recovery_resumes SET actor=$1,profile_id=$2,before_state=$3,after_state=$4").bind(actor).bind(profile).bind(b).bind(a).execute(&mut *tx).await.expect("damaged import");
+        sqlx::query("UPDATE payment_recovery_resumes SET actor=$1,profile_id=$2,before_state=$3,after_state=$4,revision=$5").bind(actor).bind(profile).bind(b).bind(a).bind(revision).execute(&mut *tx).await.expect("damaged import");
         tx.execute("ALTER TABLE payment_recovery_resumes ENABLE TRIGGER USER")
             .await
             .expect("restore guard");
@@ -571,7 +594,7 @@ async fn damaged_audit_cannot_rebind_actor_profile_source_or_future_history(pool
     tx.execute("ALTER TABLE payment_recovery_resumes DISABLE TRIGGER USER")
         .await
         .expect("fixture restore");
-    sqlx::query("UPDATE payment_recovery_resumes SET actor='finance',profile_id=$1,before_state=$2,after_state=$3").bind(&f.snapshot().binding.profile.id).bind(before).bind(after).execute(&mut *tx).await.expect("exact original restore");
+    sqlx::query("UPDATE payment_recovery_resumes SET actor='finance',profile_id=$1,before_state=$2,after_state=$3,revision=1").bind(&f.snapshot().binding.profile.id).bind(before).bind(after).execute(&mut *tx).await.expect("exact original restore");
     tx.execute("ALTER TABLE payment_recovery_resumes ENABLE TRIGGER USER")
         .await
         .expect("guard restored");
@@ -582,4 +605,69 @@ async fn damaged_audit_cannot_rebind_actor_profile_source_or_future_history(pool
             .expect("restored positive replay")
             .replayed
     );
+}
+
+#[sqlx::test(migrator = "MIGRATOR")]
+async fn native_consumed_resume_revision_cannot_rewind_or_reuse_a_historical_decision(
+    pool: PgPool,
+) {
+    let (time, f) = prepared(&pool, true).await;
+    let token = finance(&pool).await;
+    stop(&pool, time.as_ref(), &f).await;
+    resume_transient(&pool, &token, time.as_ref(), request(&f, "first", 1))
+        .await
+        .expect("first consumed decision");
+    assert!(
+        pool.execute("UPDATE payment_reconciliation_jobs SET resume_revision=0")
+            .await
+            .is_err(),
+        "working jobs cannot rewind consumption"
+    );
+    pool.execute("UPDATE payment_reconciliation_jobs SET phase='needs_review',review_reason='retry_exhausted',failures=5").await.expect("same generation transient stop from a direct import");
+    for sql in [
+        "UPDATE payment_reconciliation_jobs SET phase='search',failures=0,review_reason=NULL",
+        "UPDATE payment_reconciliation_jobs SET phase='search',failures=0,review_reason=NULL,resume_revision=0",
+        "UPDATE payment_reconciliation_jobs SET phase='search',failures=0,review_reason=NULL,resume_revision=2",
+    ] {
+        assert!(
+            pool.execute(sql).await.is_err(),
+            "old receipt must not grant another resume: {sql}"
+        );
+    }
+    assert_eq!(receipts(&pool).await, 1);
+    let stopped = read_job(&pool, &f.snapshot().binding.id)
+        .await
+        .expect("read")
+        .expect("job");
+    assert_eq!(stopped.resume_revision, 1);
+    assert!(stopped.phase == Phase::NeedsReview);
+    assert!(
+        resume_transient(&pool, &token, time.as_ref(), request(&f, "first", 1))
+            .await
+            .expect("history only")
+            .replayed
+    );
+    assert!(
+        read_job(&pool, &f.snapshot().binding.id)
+            .await
+            .expect("read")
+            .expect("job")
+            .phase
+            == Phase::NeedsReview
+    );
+    assert_eq!(
+        resume_transient(&pool, &token, time.as_ref(), request(&f, "second", 1))
+            .await
+            .err(),
+        Some(OperatorError::Conflict),
+        "stale stop consumption cannot authorize another decision"
+    );
+    let mut second = request(&f, "second", 1);
+    second.expected_resume_revision = 1;
+    let next = resume_transient(&pool, &token, time.as_ref(), second)
+        .await
+        .expect("a new audited decision is required even at the same generation");
+    assert_eq!(next.revision, 2);
+    assert_eq!(next.after.resume_revision, 2);
+    assert_eq!(receipts(&pool).await, 2);
 }

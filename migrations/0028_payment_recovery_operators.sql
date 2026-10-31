@@ -2,6 +2,7 @@
 ALTER TABLE staff_capabilities DROP CONSTRAINT staff_capabilities_capability_check;
 ALTER TABLE staff_capabilities ADD CHECK(capability IN
  ('catalogue.manage','catalogue.review','warehouse.manage','market.manage','market.review','promotion.manage','promotion.review','payment.reconcile'));
+ALTER TABLE payment_reconciliation_jobs ADD COLUMN resume_revision integer NOT NULL DEFAULT 0 CHECK(resume_revision BETWEEN 0 AND 3);
 CREATE TABLE payment_recovery_resumes (
  attempt_id text NOT NULL REFERENCES payment_reconciliation_jobs(attempt_id),
  revision integer NOT NULL CHECK(revision BETWEEN 1 AND 3),
@@ -19,11 +20,12 @@ BEGIN
  IF TG_OP<>'INSERT' THEN RAISE EXCEPTION 'Recovery decisions are immutable' USING ERRCODE='23514'; END IF;
  SELECT * INTO j FROM payment_reconciliation_jobs WHERE attempt_id=NEW.attempt_id FOR UPDATE;
  expected := to_jsonb(j) || jsonb_build_object('phase',CASE WHEN j.page_id IS NULL THEN 'search' ELSE 'candidates' END,
-  'failures',0,'review_reason',NULL,'updated_at',NEW.after_state->'updated_at','due_at',NEW.after_state->'updated_at');
+  'failures',0,'review_reason',NULL,'resume_revision',NEW.revision,'updated_at',NEW.after_state->'updated_at','due_at',NEW.after_state->'updated_at');
  IF j.phase<>'needs_review' OR j.review_reason<>'retry_exhausted' OR j.failures<>5 OR j.polls>=10 OR j.generation>=1500
   OR NEW.before_state IS DISTINCT FROM to_jsonb(j) OR NEW.after_state IS DISTINCT FROM expected
   OR (NEW.after_state->>'updated_at')::bigint<j.updated_at
   OR (NEW.after_state->>'updated_at')::bigint>9007199254740991
+  OR NEW.revision<>j.resume_revision+1
   OR NEW.revision<>(SELECT coalesce(max(revision),0)+1 FROM payment_recovery_resumes WHERE attempt_id=NEW.attempt_id)
   OR NOT EXISTS(SELECT 1 FROM payment_attempts a WHERE a.id=j.attempt_id AND a.snapshot->'binding'->'profile'->>'id'=NEW.profile_id) THEN
   RAISE EXCEPTION 'Recovery requires an exact bounded transient-failure decision' USING ERRCODE='23514';
@@ -53,7 +55,7 @@ BEGIN
   RAISE EXCEPTION 'Recovery requires original atomic dispatch event' USING ERRCODE='23514';
  END IF;
  IF TG_OP='INSERT' AND (NEW.phase<>'search' OR NEW.generation<>0 OR NEW.lease_until IS NOT NULL OR NEW.page_id IS NOT NULL
-   OR NEW.candidate_index<>0 OR NEW.operation<>0 OR NEW.polls<>0 OR NEW.failures<>0 OR NEW.review_reason IS NOT NULL OR NEW.due_at<>NEW.updated_at) THEN
+   OR NEW.resume_revision<>0 OR NEW.candidate_index<>0 OR NEW.operation<>0 OR NEW.polls<>0 OR NEW.failures<>0 OR NEW.review_reason IS NOT NULL OR NEW.due_at<>NEW.updated_at) THEN
   RAISE EXCEPTION 'Recovery starts as explicit pending discovery' USING ERRCODE='23514';
  END IF;
  IF NEW.page_id IS NOT NULL AND NOT EXISTS(SELECT 1 FROM payment_search_pages p WHERE p.id=NEW.page_id AND p.attempt_id=NEW.attempt_id) THEN
@@ -61,8 +63,11 @@ BEGIN
  END IF;
  IF TG_OP='UPDATE' AND (NEW.attempt_id<>OLD.attempt_id OR NEW.source_event_id<>OLD.source_event_id OR NEW.created_at<>OLD.created_at
    OR NEW.updated_at<OLD.updated_at OR NEW.generation<OLD.generation OR NEW.generation>OLD.generation+1
-   OR NEW.operation<OLD.operation OR NEW.polls<OLD.polls OR (OLD.phase='needs_review' AND NOT EXISTS(
-    SELECT 1 FROM payment_recovery_resumes r WHERE r.attempt_id=OLD.attempt_id AND r.before_state=to_jsonb(OLD) AND r.after_state=to_jsonb(NEW)))) THEN
+   OR NEW.operation<OLD.operation OR NEW.polls<OLD.polls
+   OR NEW.resume_revision<OLD.resume_revision OR NEW.resume_revision>OLD.resume_revision+1
+   OR (NEW.resume_revision<>OLD.resume_revision AND OLD.phase<>'needs_review')
+   OR (OLD.phase='needs_review' AND NOT EXISTS(
+    SELECT 1 FROM payment_recovery_resumes r WHERE r.attempt_id=OLD.attempt_id AND r.revision=NEW.resume_revision AND NEW.resume_revision=OLD.resume_revision+1 AND r.before_state=to_jsonb(OLD) AND r.after_state=to_jsonb(NEW)))) THEN
   RAISE EXCEPTION 'Recovery history cannot be rebound, rewound or silently restarted' USING ERRCODE='23514';
  END IF;
  RETURN NEW;
