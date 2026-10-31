@@ -439,6 +439,39 @@ executes refunds. The later finance use case must serialize and persist already
 refunded gross, enforce captured/refunded bounds, issue credit documents and use a
 stable provider attempt. Accountant/market acceptance remains a separate gate.
 
+### Reviewed promotion configuration
+
+Private promotion policy storage uses separate unseeded `promotion.manage` and
+`promotion.review` capabilities with the existing persisted-session/recent-MFA
+guard. A different account reviews an exact draft. Confirmed mutations preserve
+canonical country/product selection, fixed/percentage terms, UTC validity,
+explicit total discount/redemption ceilings and an optional per-customer limit.
+Limits are lifetime terms for the promotion identity, never a new budget for each
+revision. They are configuration, not an installed coupon or redemption ledger.
+
+Immutable anchors and real no-op writes serialize draft/review history, including
+stale repeatable-read imports. Effect retries bind full canonical terms, actor,
+reason, revision and decision without restoring old approval. The current consumer
+selects the latest draft and its latest independent approval under an anchor SHARE
+claim; missing, withdrawn, expired or ineligible state has no older fallback.
+Bounded stored JSON requires closed object shapes, exact identity, valid limits
+and canonical selections. Review-only inspection can retain historical sources.
+The trusted configuration reader is not an HTTP route or fresh quote authority.
+
+The shared observed clock supports both owned and borrowed clock sources. One
+operation tracks every sample through staff authorization, source waits and final
+checks, without extending a lifetime or clamping a backward observation. Authority
+claims survive all writes; cancellation and final clock failures roll back history.
+No source review, provider request or network side effect is implied by a receipt.
+
+Order composition must retain current promotion, market and catalogue claims while
+computing final allocations and claiming lifetime budget/redemption counters in
+the same order/stock/outbox transaction. Policy revision cannot reset prior usage
+or rewrite captured order discounts. Per-customer limits require verified server
+identity; a guest cookie is neither a verified account nor a per-person proof.
+Guest eligibility and verified-customer limits must be explicit before a customer
+coupon bridge is implemented. No redemption, refund or payment effect is enabled.
+
 ### Non-selling HTTPS staging
 
 `APP_ENV=staging` is a preview environment, separate from production. The Next

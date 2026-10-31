@@ -203,6 +203,17 @@ checkout authority. Logs expose static failure codes and correlation IDs, with
 positive/negative capture controls for cookies, CSRF and body values. No public
 customer bridge or order/payment effect is enabled by these routes.
 
+Promotion policy writes require their own unseeded manage/review capabilities,
+recent MFA and confirmation. Market/catalogue authority does not imply promotion
+authority. A different actor reviews exact immutable source terms; effect replay
+cannot reverse a newer withdrawal or draft. Bounded closed stored objects and
+canonical identity/limits are revalidated. A shared borrowed observation clock
+covers staff checks, waits and final writes; revocation retains its exclusive
+ordering. No customer can submit discount amounts, policy, limits or role claims.
+Configuration has no budget-spending or payment authority. Verified customer
+limits cannot be satisfied by treating a guest cookie as a person. Current
+promotion readers remain trusted private primitives without HTTP exposure.
+
 Whole-basket manifests are trusted stock primitives, with no customer mutation
 route. Opaque group/child identifiers and server order ownership cannot select
 customer roles or publish products. Immutable insert-time child/group bindings
