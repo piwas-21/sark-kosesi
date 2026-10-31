@@ -74,8 +74,8 @@ impl From<sqlx::Error> for RecoveryError {
 #[derive(Default)]
 pub struct Batch {
     pub processed: u16,
-    pub needs_review: u16,
-    pub retried: u16,
+    pub needs_review: u64,
+    pub retry_pending: u64,
 }
 /// Explicit trusted supervisor entry. At most 25 leased steps, one GET per step.
 /// Profile verification precedes this call; every provider call is outside DB TXs.
@@ -95,10 +95,8 @@ pub async fn run_batch(
     let clock = ObservedClock::new(clock, initial);
     let clock: &dyn Clock = &clock;
     jobs::enqueue(pool, clock, client.profile_id()).await?;
-    let mut batch = Batch {
-        needs_review: jobs::sweep(pool, clock, client.profile_id()).await?,
-        ..Batch::default()
-    };
+    jobs::sweep(pool, clock, client.profile_id()).await?;
+    let mut batch = Batch::default();
     for _ in 0..limit {
         let Some(claim) = jobs::claim(pool, clock, client.profile_id()).await? else {
             break;
@@ -110,19 +108,17 @@ pub async fn run_batch(
                 next.failures += 1;
                 if next.failures >= 5 {
                     steps::review(&mut next, ReviewReason::RetryExhausted);
-                } else {
-                    batch.retried += 1;
                 }
             }
             Err(_) => steps::review(&mut next, ReviewReason::CustodyInvalid),
         }
         jobs::finish(pool, clock, &claim, &next).await?;
         batch.processed += 1;
-        if next.phase == Phase::NeedsReview {
-            batch.needs_review += 1;
-        }
     }
-    batch.needs_review += jobs::sweep(pool, clock, client.profile_id()).await?;
+    jobs::sweep(pool, clock, client.profile_id()).await?;
+    (batch.needs_review, batch.retry_pending) =
+        jobs::outstanding(pool, client.profile_id()).await?;
+    now(clock)?;
     Ok(batch)
 }
 /// Private operational inspection, never customer data or payment authority.

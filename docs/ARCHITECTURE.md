@@ -765,7 +765,9 @@ up to ten times. Scans stop at 100 pages and jobs at 1,500 claims. Paid evidence
 ambiguity, unresolved/capped scans, exhausted budgets or invalid custody create
 an explicit needs-review reason; they are never silently restarted. Paid evidence
 still requires the separate financial/late-stock recovery slice. The command emits
-counts/static diagnostics only and returns failure when review/retry is needed.
+counts/static diagnostics only. Final profile-scoped outstanding review/backoff
+counts include unchanged earlier jobs, so later passes keep returning failure
+until those conditions are resolved through authorized recovery.
 No service scheduler, runtime key, callback route, current payment/fulfilment/refund
 transition or production supervision is installed by this implementation.
 

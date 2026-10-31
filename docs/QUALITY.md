@@ -448,7 +448,9 @@ Supervised test-recovery checks use authenticated loopback GETs and real isolate
 PostgreSQL. They assert complete candidate fetches, exact continuation checkpoints,
 crash/page replay, stale-lease fencing, concurrent supervisors, no transaction over
 provider I/O, sticky paid facts after a lost fetch checkpoint, bounded backoff,
-poll/scan/step escalation and no automatic review restart. Native source/page and
+poll/scan/step escalation and no automatic review restart. Unchanged later passes
+must retain outstanding review/backoff counts and a nonzero command outcome;
+separate-profile exceptions must remain isolated. Native source/page and
 counter guards reject orphan/rebound jobs. Actual checkpoint-write waits exercise
 expiry and cancellation; sampled-clock controls prove rollback after scheduling,
 claims and progress writes. Literal malformed headers have paired healthy states.

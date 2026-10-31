@@ -27,14 +27,14 @@ fn report(batch: &Batch) -> Result<()> {
         code = "payment_reconciliation_batch",
         processed = batch.processed,
         needs_review = batch.needs_review,
-        retried = batch.retried
+        retry_pending = batch.retry_pending
     );
     if batch.needs_review > 0 {
         return Err(Error::other(
             "payment reconciliation requires operator review",
         ));
     }
-    if batch.retried > 0 {
+    if batch.retry_pending > 0 {
         return Err(Error::other("payment reconciliation requires retry"));
     }
     Ok(())
@@ -89,7 +89,7 @@ mod tests {
             report(&Batch {
                 processed: 1,
                 needs_review: 1,
-                retried: 0
+                retry_pending: 0
             })
             .expect_err("operator")
             .to_string(),
@@ -99,7 +99,7 @@ mod tests {
             report(&Batch {
                 processed: 1,
                 needs_review: 0,
-                retried: 1
+                retry_pending: 1
             })
             .expect_err("retry")
             .to_string(),

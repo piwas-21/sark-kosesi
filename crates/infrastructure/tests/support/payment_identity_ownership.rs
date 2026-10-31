@@ -5,7 +5,7 @@ use crate::payment_attempts::{identities::resolve, observations::record_verified
 use crate::{MIGRATOR, guest_baskets::GuestSessionStore};
 use sqlx::{Executor, PgPool};
 use std::sync::{Arc, atomic::AtomicU64};
-async fn additional(
+pub(super) async fn additional(
     pool: &PgPool,
     time: Arc<crate::payment_test_fixture::quote::Time>,
     profile_id: &str,

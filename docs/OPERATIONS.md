@@ -65,6 +65,10 @@ installed or provider call performed by adding this source. Keep secrets outside
 shell history, source, logs and handoffs. `PAYMENT_RECONCILIATION_BATCH` defaults
 to 10 and accepts 1–25 leased steps; one step makes at most one GET.
 
+Each pass reports all outstanding review stops and failure/backoff jobs for the
+verified profile, including unchanged earlier exceptions. Later idle passes remain
+nonzero while that condition persists; ordinary pending-status polls are separate.
+
 An operator must inspect the private `read_job` result and the linked immutable
 search/observation/resolution receipts when the command reports review or retries.
 Review stops retain unresolved, ambiguity, paid-observed, scan/poll/step-limit,

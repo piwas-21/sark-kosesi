@@ -85,6 +85,25 @@ impl Row {
         })
     }
 }
+/// Persistent profile-scoped supervision status, including unchanged later passes.
+pub(crate) async fn outstanding(pool: &PgPool, profile: &str) -> Result<(u64, u64), RecoveryError> {
+    let mut tx = pool.begin().await?;
+    limits(&mut tx).await?;
+    let (review, retry): (i64, i64) = sqlx::query_as(
+        r#"SELECT count(*) FILTER(WHERE j.phase='needs_review'),
+ count(*) FILTER(WHERE j.phase<>'needs_review' AND j.failures>0)
+ FROM payment_reconciliation_jobs j JOIN payment_attempts a ON a.id=j.attempt_id
+ WHERE a.snapshot->'binding'->'profile'->>'id'=$1"#,
+    )
+    .bind(profile)
+    .fetch_one(&mut *tx)
+    .await?;
+    tx.rollback().await?;
+    Ok((
+        u64::try_from(review).map_err(|_| RecoveryError::InvalidStoredData)?,
+        u64::try_from(retry).map_err(|_| RecoveryError::InvalidStoredData)?,
+    ))
+}
 pub(crate) async fn enqueue(
     pool: &PgPool,
     clock: &dyn Clock,

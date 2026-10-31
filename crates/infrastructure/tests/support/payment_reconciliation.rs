@@ -78,7 +78,7 @@ async fn full_scan_fetches_every_candidate_retains_ambiguity_and_stops_without_p
         .expect("bounded supervised pass");
     assert_eq!(batch.processed, 4);
     assert_eq!(batch.needs_review, 1);
-    assert_eq!(batch.retried, 0);
+    assert_eq!(batch.retry_pending, 0);
     let job = read_job(&pool, a).await.expect("inspect").expect("job");
     assert!(matches!(job.review_reason, Some(ReviewReason::Ambiguous)));
     let resolution = crate::payment_attempts::identities::latest(&pool, a)
@@ -594,4 +594,53 @@ async fn upgrade_preserves_paid_identity_and_claims_without_starting_a_recovery_
             .generation,
         0
     );
+}
+
+#[sqlx::test(migrator = "MIGRATOR")]
+async fn unchanged_review_and_backoff_status_remain_visible_without_crossing_profiles(
+    pool: PgPool,
+) {
+    let (time, f) = prepared(&pool, true).await;
+    let other =
+        super::identity_ownership::additional(&pool, time.clone(), "pfl_OTHER_SYNTHETIC").await;
+    jobs::enqueue(&pool, time.as_ref(), &other.snapshot().binding.profile.id)
+        .await
+        .expect("other profile recovery");
+    pool.execute(
+        "UPDATE payment_reconciliation_jobs SET phase='needs_review',review_reason='unresolved'",
+    )
+    .await
+    .expect("other profile stop");
+    let server = Server::start(vec![profile(), Reply::Json(503, json!({}))]);
+    let client = read_client(&server).await;
+    let i = ids();
+    let first = run_batch(&pool, time.as_ref(), &i, &client, 25)
+        .await
+        .expect("schedule backoff");
+    assert_eq!(first.processed, 1);
+    assert_eq!(first.retry_pending, 1);
+    assert_eq!(first.needs_review, 0);
+    let idle = run_batch(&pool, time.as_ref(), &i, &client, 25)
+        .await
+        .expect("unchanged backoff");
+    assert_eq!(idle.processed, 0);
+    assert_eq!(idle.retry_pending, 1);
+    assert_eq!(idle.needs_review, 0);
+    sqlx::query("UPDATE payment_reconciliation_jobs SET phase='needs_review',review_reason='custody_invalid' WHERE attempt_id=$1").bind(&f.snapshot().binding.id).execute(&pool).await.expect("explicit operator-visible stop");
+    for _ in 0..2 {
+        let stopped = run_batch(&pool, time.as_ref(), &i, &client, 25)
+            .await
+            .expect("unchanged review remains visible");
+        assert_eq!(stopped.processed, 0);
+        assert_eq!(stopped.needs_review, 1);
+        assert_eq!(stopped.retry_pending, 0);
+    }
+    assert_eq!(
+        jobs::outstanding(&pool, &other.snapshot().binding.profile.id)
+            .await
+            .expect("separate scope"),
+        (1, 0)
+    );
+    assert_eq!(server.count(), 2);
+    get_only(&server);
 }
