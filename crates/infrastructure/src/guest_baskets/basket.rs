@@ -159,6 +159,15 @@ pub async fn write_basket(
         replayed: false,
     })
 }
+pub(super) async fn locked_intent(
+    tx: &mut Transaction<'_, Postgres>,
+    id: &str,
+    write: bool,
+) -> Result<(i32, Vec<BasketLine>, i64), GuestError> {
+    let row = load(tx, id, write).await?;
+    Ok((row.revision, row.validated()?, row.rate_window))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

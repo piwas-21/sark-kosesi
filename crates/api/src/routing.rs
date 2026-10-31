@@ -28,6 +28,8 @@ pub fn router_with_guest(state: AppState, origin: GuestOrigin) -> Result<Router,
             post(guest::issue).delete(guest::revoke),
         )
         .route("/api/guest/basket", get(guest::read).put(guest::write))
+        .route("/api/guest/{locale}/quotes", post(guest::quotes::issue))
+        .route("/api/guest/quotes/{id}", get(guest::quotes::read))
         .layer(Extension(GuestState {
             store: store.clone(),
             origin,

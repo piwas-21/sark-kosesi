@@ -95,10 +95,20 @@ pub async fn reviewed_quote(
     Ok(quote)
 }
 
+pub(crate) struct ReviewedPolicy {
+    pub(crate) policy: MarketPolicy,
+    pub(crate) review_revision: i32,
+}
 async fn reviewed_policy(
     tx: &mut Transaction<'_, Postgres>,
     request: &QuoteRequest,
 ) -> Result<MarketPolicy, MarketError> {
+    Ok(reviewed_policy_in_transaction(tx, request).await?.policy)
+}
+pub(crate) async fn reviewed_policy_in_transaction(
+    tx: &mut Transaction<'_, Postgres>,
+    request: &QuoteRequest,
+) -> Result<ReviewedPolicy, MarketError> {
     let id: Option<String> = sqlx::query_scalar(
         "SELECT id FROM market_policy_anchors WHERE country=$1 AND postcode=$2 FOR SHARE",
     )
@@ -113,10 +123,14 @@ async fn reviewed_policy(
             .fetch_one(&mut **tx)
             .await?;
     let policy = inspection(tx, &id, revision.ok_or(MarketError::NotFound)?).await?;
-    if !policy.review.is_some_and(|r| r.approved) {
-        return Err(MarketError::NotFound);
-    }
-    Ok(policy.policy)
+    let review = policy
+        .review
+        .filter(|review| review.approved)
+        .ok_or(MarketError::NotFound)?;
+    Ok(ReviewedPolicy {
+        policy: policy.policy,
+        review_revision: review.revision,
+    })
 }
 /// Indicative trusted server terms only; no coupon HTTP route or budget claim.
 pub async fn reviewed_promotion_quote(

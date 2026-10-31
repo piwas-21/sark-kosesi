@@ -5,7 +5,9 @@ use commerce_domain::quotes::{
     MarketPolicy, PricedItem, QuoteError, QuoteRequest, QuoteTotals, calculate,
 };
 use sqlx::PgPool;
+mod proof;
 mod stock;
+pub(crate) use proof::QuoteProof;
 
 #[derive(Debug)]
 pub enum QuoteFailure {
@@ -68,10 +70,6 @@ pub struct PromotedServerQuote {
     pub evaluated_at: i64,
     pub totals: commerce_domain::promotions::PromotionQuote,
 }
-struct Evaluation {
-    original: ServerQuote,
-    promoted: Option<commerce_domain::promotions::PromotionQuote>,
-}
 pub(crate) async fn in_transaction(
     tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
     clock: &dyn Clock,
@@ -107,7 +105,7 @@ async fn evaluate(
     request: &QuoteRequest,
     policies: &[MarketPolicy],
     promotion: Option<&commerce_domain::promotions::Promotion>,
-) -> Result<Evaluation, QuoteFailure> {
+) -> Result<QuoteProof, QuoteFailure> {
     request.validate()?;
     if policies.len() > 64 {
         return Err(QuoteError::InvalidPolicy.into());
@@ -160,34 +158,34 @@ async fn evaluate(
         })
         .transpose()
         .map_err(QuoteFailure::Promotion)?;
-    // Variant and asset claims still span all reads. Evaluate every source's timed
-    // eligibility after stock waits, using one final clock for the whole basket.
-    let evaluated_at = now(clock)?;
-    if evaluated_at < started {
-        return Err(QuoteFailure::ClockUnavailable);
-    }
-    policy.permits(&request.destination, evaluated_at)?;
-    if let Some(promotion) = promotion {
-        promotion
-            .permits(&request.destination.country, evaluated_at)
-            .map_err(QuoteFailure::Promotion)?;
-    }
-    if products
-        .iter()
-        .any(|eligible| !eligible.rights_active(evaluated_at))
-    {
-        return Err(QuoteError::ProductUnavailable.into());
-    }
-    Ok(Evaluation {
+    let mut proof = QuoteProof {
         original: ServerQuote {
             policy_id: policy.id.clone(),
             policy_revision: policy.revision,
-            evaluated_at,
+            evaluated_at: started,
             totals,
         },
         promoted,
-    })
+        policy: policy.clone(),
+        promotion: promotion.cloned(),
+        products,
+        checked_at: started,
+    };
+    let evaluated_at = now(clock)?;
+    proof.check_at(evaluated_at)?;
+    proof.original.evaluated_at = evaluated_at;
+    Ok(proof)
 }
+pub(crate) async fn prepare_in_transaction(
+    tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
+    clock: &dyn Clock,
+    locale: Locale,
+    request: &QuoteRequest,
+    policies: &[MarketPolicy],
+) -> Result<QuoteProof, QuoteFailure> {
+    evaluate(tx, clock, locale, request, policies, None).await
+}
+
 fn shipping(
     product: &PublishedProduct,
     quantity: u32,
