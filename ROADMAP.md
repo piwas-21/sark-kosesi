@@ -20,7 +20,11 @@ retries; no warehouse HTTP operation is exposed.
 Atomic holds now reserve a sealed BOM snapshot in physical-component order.
 Release, consumption and expiry are distinct, owned, idempotent transitions;
 covers-only never consumes foam. Clock inputs are explicit, with a maximum
-30-minute window. The worker now has an explicit non-production expiry command:
+30-minute window. Whole-basket trusted reservations now bind a complete immutable
+manifest to fresh child holds, claim all shared components before effects and
+commit every line atomically. The caller-owned transaction entry is ready for
+future order/outbox integration; no customer hold/checkout route is exposed.
+The worker now has an explicit non-production expiry command:
 one pass claims at most 1–100 due holds with `SKIP LOCKED`. Failed effects roll
 back, retain redacted retry state and retry after 60 seconds. The default probe
 remains read-only. No production scheduler or payment recovery is enabled.

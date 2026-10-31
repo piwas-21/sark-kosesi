@@ -43,6 +43,7 @@ def validate(document, root, branches=True):
             "crates/*/src/stock.rs",
             "crates/*/src/holds.rs",
             "crates/*/src/holds/*.rs",
+            "crates/*/src/holds/basket/*.rs",
             "crates/*/src/staff_access.rs",
             "crates/*/src/staff_operations.rs",
             "crates/*/src/catalogue_prices.rs",
