@@ -156,8 +156,7 @@ Complete trusted-edge abuse controls before exposing customer routes.
 Private durable owned-order test attempts and one serialized dispatch-start fact
 now compose the frozen request policy, existing physically backed reservation and
 minimal transactional recovery events. Fresh commercial and clock checks protect
-new work; original receipts remain historical. No provider I/O or dispatcher is
-installed. Started/unknown attempts must reconcile without automatic replacement.
+new work; original receipts remain historical. Runtime dispatch remains uninstalled. Started/unknown attempts must reconcile without automatic replacement.
 The private test-key HTTP client now verifies its authenticated profile and
 separately fetches checked minimal payment evidence, with bounded one-use permit
 transport. Bounded private payment-list pages now return exact metadata-associated
@@ -170,9 +169,11 @@ reordered statuses and different IDs remain evidence without choosing current
 payment state. Private authenticated search-page receipts now persist requested/next cursors,
 actual credential fingerprints and all candidate identities with atomic outbox
 events. Exact continuation, fork/cycle protection and a 100-page bound support
-crash-resumable discovery without treating empty/end pages as absence. No key or
-runtime worker is installed. Immutable exact-prefix identity resolution now retains all matched identities and
+crash-resumable discovery without treating empty/end pages as absence. No credential or running worker is installed. Immutable exact-prefix identity resolution now retains all matched identities and
 sticky paid facts, with visible ambiguity, operation receipts and atomic events.
-Add supervised durable search scheduling, workers/callbacks, late-paid stock recovery
+Profile-scoped supervised GET-only recovery now persists leases, search/fetch/poll
+checkpoints, bounded retries and explicit review reasons through a local/test
+worker command. No runtime key or scheduler is installed. Add callbacks, authorized
+operator recovery, late-paid stock recovery
 and separate order/payment/fulfilment/refund/invoice transitions. A pure domain
 plan or matched synthetic response is not dispatch or payment authority.

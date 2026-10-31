@@ -7,7 +7,9 @@ use commerce_domain::payment_attempts::{
 mod client;
 mod credential;
 mod http;
+mod reconciliation;
 mod search;
+pub use reconciliation::{ReconciliationClient, VerifiedReconciliationClient};
 mod wire;
 pub use client::{TestClient, VerifiedTestClient};
 pub use credential::TestCredential;

@@ -53,3 +53,37 @@ capabilities. Production remains disabled. The empty migrated preview is useful 
 wiring; no real merchant facts, tax/carrier readiness, staff authority, order flow
 or provider acceptance is established by its deployment. Record accepted source,
 image identity, TLS/auth/noindex/RTL smoke and rollback separately from CI.
+
+## Supervised test-payment reconciliation
+
+`cargo run --locked -p commerce-worker -- --reconcile-payments` is an explicit
+one-pass local/test command. The default worker remains a read-only probe and every
+command rejects production. Provide the dedicated `MOLLIE_TEST_PROFILE_ID` and
+`MOLLIE_TEST_API_KEY` through the private environment; never reuse Sofra credentials.
+Only `test_` keys and an authenticated matching profile are accepted. No key is
+installed or provider call performed by adding this source. Keep secrets outside
+shell history, source, logs and handoffs. `PAYMENT_RECONCILIATION_BATCH` defaults
+to 10 and accepts 1–25 leased steps; one step makes at most one GET.
+
+Each pass reports all outstanding review stops and failure/backoff jobs for the
+verified profile, including unchanged earlier exceptions. Later idle passes remain
+nonzero while that condition persists; ordinary pending-status polls are separate.
+
+An operator must inspect the private `read_job` result and the linked immutable
+search/observation/resolution receipts when the command reports review or retries.
+Review stops retain unresolved, ambiguity, paid-observed, scan/poll/step-limit,
+custody-invalid or exhausted-retry reasons. Paid-observed is not permission to
+fulfil, consume/reallocate stock or refund; those transitions remain unimplemented.
+An empty search is not absence, and no recovery result permits another create.
+There is deliberately no automatic restart/requeue of a review stop. Add bounded,
+authorized and audited operator recovery before introducing that ability.
+
+For a process crash, wait for the 60-second lease to expire and run a later bounded
+pass; existing page receipts resume without replaying a list operation. Repeated
+fetches use new immutable facts and cannot clear paid evidence. Profile-scoped
+jobs back off transient provider failures and stop visibly after five failures;
+polls stop after ten attempts, searches after 100 pages, and jobs after 1,500 claims.
+Do not install a scheduler or production supervision until launch ownership,
+callbacks, financial transitions, late-paid stock recovery and provider acceptance
+have separate evidence. Unit/loopback PostgreSQL tests are source evidence, not an
+actual Mollie sandbox payment or deployed/physical acceptance.

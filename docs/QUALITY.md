@@ -443,3 +443,19 @@ repeatable-read unique-claim waits, deferred claim completeness/immutability and
 separate-profile positive controls.
 These checks establish source evidence;
 no current financial state, provider or fulfilment acceptance follows.
+
+Supervised test-recovery checks use authenticated loopback GETs and real isolated
+PostgreSQL. They assert complete candidate fetches, exact continuation checkpoints,
+crash/page replay, stale-lease fencing, concurrent supervisors, no transaction over
+provider I/O, sticky paid facts after a lost fetch checkpoint, bounded backoff,
+poll/scan/step escalation and no automatic review restart. Unchanged later passes
+must retain outstanding review/backoff counts and a nonzero command outcome;
+separate-profile exceptions must remain isolated. Native source/page and
+counter guards reject orphan/rebound jobs. Actual checkpoint-write waits exercise
+expiry and cancellation; sampled-clock controls prove rollback after scheduling,
+claims and progress writes. Literal malformed headers have paired healthy states.
+Worker command controls reject production, live/missing/malformed credentials,
+invalid/non-Unicode limits and diagnostic leaks before any provider operation.
+Compiled fault controls must detect removal of lease fencing, receipt reuse and
+final clock checks, then pass exact restoration. Source coverage and synthetic
+GET responses do not establish actual provider, deployed or fulfilment acceptance.

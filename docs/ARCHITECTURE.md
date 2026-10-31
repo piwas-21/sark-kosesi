@@ -733,6 +733,44 @@ than truncating evidence; further recovery requires an explicit operator decisio
 Supervised processing, callbacks, separate financial transitions, late-paid stock
 recovery and provider acceptance remain required before operational use.
 
+### Supervised test-payment recovery
+
+The explicit local/test recovery command uses a separate authenticated GET-only
+client: its verified type exposes no create operation. A fixed Mollie API origin,
+test-key capture and expected-profile fetch protect every bounded list/payment GET.
+A dedicated test-profile key must be supplied explicitly; installation and normal
+worker probes create no credential or provider activity. Rotated same-profile test
+keys remain recorded in immutable observation/search receipts.
+
+One durable job per original dispatch consumes the exact immutable recovery outbox
+binding, scoped to the verified profile. Search and candidate checkpoints survive
+process loss. A stable page-operation receipt is read before a list retry; fetched
+facts use a fresh operation per lease so a delayed worker cannot replace a newer
+status or erase paid evidence. Every candidate requires its own authenticated GET.
+The full page chain is inspected before polling a single identity; ambiguity always
+stops for review. Empty/end/capped scans remain unresolved and never grant a POST.
+
+Read-committed SKIP LOCKED claims carry a 60-second lease and increasing generation.
+No database transaction crosses provider I/O. Progress updates require the exact
+unexpired generation/lease and final nondecreasing server time after the write.
+A stale worker may preserve authenticated evidence but cannot advance the queue.
+Cancellation or checkpoint failure leaves immutable receipts available to recovery.
+The invocation performs at most 1–25 steps (default 10); jobs retain exact page,
+candidate, operation, poll and failure positions. Native guards preserve source
+custody, bounded counters, page ownership and irreversible review stops.
+
+Transient provider failures back off for 60/120/240/480 seconds, then stop after
+five failures. A single unresolved-status identity polls at 60-second intervals,
+up to ten times. Scans stop at 100 pages and jobs at 1,500 claims. Paid evidence,
+ambiguity, unresolved/capped scans, exhausted budgets or invalid custody create
+an explicit needs-review reason; they are never silently restarted. Paid evidence
+still requires the separate financial/late-stock recovery slice. The command emits
+counts/static diagnostics only. Final profile-scoped outstanding review/backoff
+counts include unchanged earlier jobs, so later passes keep returning failure
+until those conditions are resolved through authorized recovery.
+No service scheduler, runtime key, callback route, current payment/fulfilment/refund
+transition or production supervision is installed by this implementation.
+
 ## Sessions, uploads and rendering
 
 Rust owns secure sessions and server-side authorization. Use a maintained password/session implementation with Argon2id where passwords are stored; verified email, rotating sessions, hashed reset tokens, admin MFA and separate guest-order access tokens. Browser credentials are HttpOnly/Secure/SameSite cookies; never store bearer tokens in browser local storage. CSRF and origin checks protect cookie-authenticated mutations. No duplicate identity system in Next.js.
