@@ -160,7 +160,10 @@ new work; original receipts remain historical. No provider I/O or dispatcher is
 installed. Started/unknown attempts must reconcile without automatic replacement.
 The private test-key HTTP client now verifies its authenticated profile and
 separately fetches checked minimal payment evidence, with bounded one-use permit
-transport. No key or runtime worker is installed. Add unknown-ID search, durable
+transport. Bounded private payment-list pages now return exact metadata-associated
+identity hints and validated continuation cursors; every candidate still needs a
+separate verified fetch. Empty or incomplete searches never prove absence or allow
+another charge. No key or runtime worker is installed. Add durable search custody,
 observations, workers/callbacks, late-paid stock recovery
 and separate order/payment/fulfilment/refund/invoice transitions. A pure domain
 plan or matched synthetic response is not dispatch or payment authority.

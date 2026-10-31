@@ -61,9 +61,22 @@ impl Http {
         Ok(url)
     }
     pub(super) async fn get(&self, segments: &[&str]) -> Result<Vec<u8>, MollieError> {
+        self.get_url(self.path(segments)?).await
+    }
+    pub(super) async fn payment_page(&self, from: Option<&str>) -> Result<Vec<u8>, MollieError> {
+        let mut url = self.path(&["payments"])?;
+        url.query_pairs_mut()
+            .append_pair("limit", "10")
+            .append_pair("sort", "desc");
+        if let Some(from) = from {
+            url.query_pairs_mut().append_pair("from", from);
+        }
+        self.get_url(url).await
+    }
+    async fn get_url(&self, url: Url) -> Result<Vec<u8>, MollieError> {
         let response = self
             .client
-            .get(self.path(segments)?)
+            .get(url)
             .send()
             .await
             .map_err(|_| MollieError::Unavailable)?;

@@ -609,9 +609,31 @@ profile was independently verified against the SAME captured profile. Its actual
 credential fingerprint remains available for observation audit. Rotation never
 authorizes another POST under the old attempt: initial permits still require the
 original complete configuration identity. This client persists no provider ID or
-payment state. Unknown-ID search, durable observations/jobs, callbacks, late-paid
+payment state. Durable search custody, observations/jobs, callbacks, late-paid
 stock recovery and separate finance/fulfilment transitions remain required.
 Loopback instruments are not provider sandbox acceptance or configured credentials.
+
+Private unknown-ID discovery performs one authenticated list request per explicit
+call, with a fixed ten-payment limit, descending order and the existing byte/time
+bounds. It sends neither profileId nor testmode with the profile-bound test key.
+List results return only possible identities: each must undergo the separate
+authenticated GET before financial observation. Two matching identities remain
+visible; the client never silently selects a winner. Empty results or a missing
+next link never prove absence, end uncertainty or authorize another create.
+
+Explicit guards require embedded/link containers, each payment entry and non-null
+next links to be JSON objects; positional arrays cannot substitute for structs.
+Typed raw JSON entries preserve duplicate critical fields through metadata
+selection and full payment validation. Unrelated profile payments may carry
+arbitrary metadata; either matching order or attempt identifier requires the full
+exact binding, so partial matches fail closed. Page counts, a maximum of ten
+entries and duplicate provider identities are checked. Continuation links must be
+canonical HTTPS under api.mollie.com/v2/payments, at most 2048 bytes, with one
+bounded from identifier, limit=10 and optional sort=desc. Other/duplicate query
+parameters, user info, fragments, ports and a repeated current offset fail closed.
+Only the decoded cursor survives; the next request is constructed against the
+fixed provider endpoint instead of following the supplied URL. There is no
+automatic pagination, durable scan/job or persisted result in this library.
 
 ## Sessions, uploads and rendering
 

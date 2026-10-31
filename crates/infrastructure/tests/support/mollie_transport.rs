@@ -962,3 +962,6 @@ async fn streaming_limit_rejects_before_an_unfinished_provider_body_can_timeout_
     assert!(started.elapsed() < Duration::from_secs(1));
     assert_eq!(server.count(), 1);
 }
+
+#[path = "mollie_search.rs"]
+mod search_cases;

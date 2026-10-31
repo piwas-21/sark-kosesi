@@ -266,8 +266,11 @@ supervision or live provider activation follows from deploying the empty preview
    reconcile even after key/hold/source expiry. The private test-key HTTP client now
    verifies the authenticated expected profile, sends exact permit bytes once and
    separately fetches a bounded checked payment projection. It installs no runtime
-   key, worker or payment transition. Add bounded unknown-ID search, durable
-   observations and worker processing before operational provider I/O;
+   key, worker or payment transition. Bounded private unknown-ID list pages now
+   return metadata-associated identity hints, preserving duplicate critical fields
+   and validated fixed-origin cursors. Every candidate needs a separate checked
+   GET; no/partial results cannot authorize another POST. Add durable search
+   custody, observations and worker processing before operational provider I/O;
    uncertain outcomes
    reconcile under the original identity and never mint a replacement charge.
    Fetch and verify webhook identifiers against order/amount/currency/profile/mode.

@@ -265,3 +265,14 @@ Rotated verified same-profile keys may read historical payments but cannot creat
 under the old configuration. The library installs no callback, runtime key,
 worker, payment transition or production activation. Loopback test configuration
 is compiled only for unit tests and rejects every non-loopback origin.
+
+Private list discovery retains the verified-profile capability and read-only
+rotation policy. Each call is bounded to ten results and existing HTTP budgets;
+continuation data cannot choose a request origin/path or add profile/mode inputs.
+Explicit object-shape checks reject nested positional-array substitutions;
+original JSON entries preserve duplicate critical-field rejection. Either matching
+order/attempt metadata identifier requires complete financial matching; unrelated
+metadata and provider PII never become stored observations. Multiple identities
+remain explicit candidates for separate GETs. Empty/unfinished discovery cannot
+end uncertainty or grant a replacement create. Durable cursor/observation custody,
+job budgets and authenticated callback processing remain unimplemented.
