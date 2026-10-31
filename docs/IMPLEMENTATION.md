@@ -288,9 +288,15 @@ supervision or live provider activation follows from deploying the empty preview
    before/after checkpoints, fresh session/MFA and full-intent receipt retries keep
    the original attempt, page, claim/poll/scan budgets and paid facts intact. Paid,
    ambiguous, capped and invalid-custody stops cannot use this action. Complete
-   callbacks, remaining operator dispositions and separate financial/late-stock transitions
-   before operational payment acceptance;
-   uncertain outcomes
+   durable bounded callback ingress/queue processing, remaining operator dispositions
+   and separate financial/late-stock transitions
+   before operational payment acceptance.
+   Private callback-ID GETs now capture only authenticated exact-profile Test/EUR
+   evidence; metadata locates the original attempt but cannot establish its matching
+   order/amount/dispatch. The complete original custody is revalidated before the
+   existing atomic observation/event append. Preserve each future inbox operation
+   before I/O and read its receipt before retrying a fetch. No callback route or
+   runtime supervisor is installed by this primitive. Uncertain outcomes
    reconcile under the original identity and never mint a replacement charge.
    Fetch and verify webhook identifiers against order/amount/currency/profile/mode.
    Add durable outbox/reconciler, duplicate/reordered notifications and atomic late

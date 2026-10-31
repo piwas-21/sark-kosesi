@@ -983,3 +983,6 @@ mod reconciliation_cases;
 
 #[path = "payment_recovery_operators.rs"]
 mod operator_cases;
+
+#[path = "mollie_callbacks.rs"]
+mod callback_cases;

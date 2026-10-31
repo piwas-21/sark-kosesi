@@ -50,6 +50,15 @@ pub(super) fn payment(
     attempt: &AttemptSnapshot,
     expected_id: Option<&str>,
 ) -> Result<(ProviderPayment, Option<String>), MollieError> {
+    let (payment, checkout) = unbound_payment(body, expected_id)?;
+    match_provider(attempt, &payment).map_err(|_| MollieError::PaymentMismatch)?;
+    Ok((payment, checkout))
+}
+/// Syntactic provider projection only; never original-attempt matching authority.
+pub(super) fn unbound_payment(
+    body: &[u8],
+    expected_id: Option<&str>,
+) -> Result<(ProviderPayment, Option<String>), MollieError> {
     let value = json(body)?;
     if !["amount", "metadata"]
         .iter()
@@ -74,7 +83,6 @@ pub(super) fn payment(
         attempt_id: wire.metadata.attempt_id,
         status: wire.status,
     };
-    match_provider(attempt, &payment).map_err(|_| MollieError::PaymentMismatch)?;
     Ok((payment, checkout))
 }
 pub(super) fn json(body: &[u8]) -> Result<Value, MollieError> {

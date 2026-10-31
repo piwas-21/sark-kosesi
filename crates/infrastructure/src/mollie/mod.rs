@@ -4,6 +4,8 @@ use commerce_application::{payment_requests::Configuration, request_context::Clo
 use commerce_domain::payment_attempts::{
     AttemptSnapshot, ProfileBinding, ProviderPayment, match_provider, searches::SearchIntent,
 };
+mod callback;
+pub use callback::CallbackPayment;
 mod client;
 mod credential;
 mod http;
