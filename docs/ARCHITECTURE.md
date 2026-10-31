@@ -446,7 +446,9 @@ Private promotion policy storage uses separate unseeded `promotion.manage` and
 guard. A different account reviews an exact draft. Confirmed mutations preserve
 explicit EUR currency, canonical country/product selection, fixed/percentage terms, UTC validity,
 explicit total discount/redemption ceilings and an optional per-customer limit.
-Limits are lifetime terms for the promotion identity, never a new budget for each
+Stored JSON must include the nullable customer-limit field; an explicit null
+records the absence of that limit. A missing field fails validation. Limits are
+lifetime terms for the promotion identity, never a new budget for each
 revision. They are configuration, not an installed coupon or redemption ledger.
 
 Immutable anchors and real no-op writes serialize draft/review history, including

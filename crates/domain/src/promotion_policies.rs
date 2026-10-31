@@ -11,6 +11,7 @@ pub struct RedemptionLimits {
     pub total_discount_minor: i64,
     pub total_redemptions: u32,
     /// Requires a separately verified customer identity; a guest cookie is insufficient.
+    #[serde(deserialize_with = "required_customer_limit")]
     pub per_customer_redemptions: Option<u32>,
 }
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -43,4 +44,11 @@ impl PromotionPolicy {
         self.promotion.countries.sort();
         self.promotion.products.sort_by(|a, b| a.sku.cmp(&b.sku));
     }
+}
+
+// A missing limit must not silently acquire the semantics of an explicit null.
+fn required_customer_limit<'de, D: serde::Deserializer<'de>>(
+    deserializer: D,
+) -> Result<Option<u32>, D::Error> {
+    Option::<u32>::deserialize(deserializer)
 }

@@ -83,3 +83,23 @@ fn malformed_or_unbounded_limits_never_become_a_reviewable_policy() {
     p.limits.per_customer_redemptions = Some(1_000_000);
     assert!(p.validate().is_ok());
 }
+#[test]
+fn nullable_customer_limit_is_an_explicit_required_choice_in_persisted_terms() {
+    let mut p = policy();
+    p.limits.per_customer_redemptions = None;
+    let mut value = serde_json::to_value(&p).expect("policy");
+    assert_eq!(value["currency"], "EUR");
+    assert!(value["limits"]["per_customer_redemptions"].is_null());
+    assert_eq!(
+        serde_json::from_value::<PromotionPolicy>(value.clone()).expect("explicit null"),
+        p
+    );
+    value["limits"]
+        .as_object_mut()
+        .expect("limits")
+        .remove("per_customer_redemptions");
+    assert!(serde_json::from_value::<PromotionPolicy>(value).is_err());
+    let mut value = serde_json::to_value(&p).expect("policy");
+    value["currency"] = "USD".into();
+    assert!(serde_json::from_value::<PromotionPolicy>(value).is_err());
+}

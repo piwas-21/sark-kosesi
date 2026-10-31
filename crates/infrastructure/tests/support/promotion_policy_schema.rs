@@ -14,6 +14,7 @@ async fn database_history_is_immutable_independent_and_contiguous_with_positive_
         "INSERT INTO promotion_policy_drafts SELECT id,3,jsonb_set(policy,'{promotion,revision}','3'),'gap',actor,reason,recorded_at FROM promotion_policy_drafts",
         "INSERT INTO promotion_policy_drafts SELECT id,2,policy,'identity',actor,reason,recorded_at FROM promotion_policy_drafts",
         "INSERT INTO promotion_policy_drafts SELECT id,2,jsonb_set(jsonb_set(policy,'{promotion,revision}','2'),'{currency}','\"USD\"'),'currency',actor,reason,recorded_at FROM promotion_policy_drafts",
+        "INSERT INTO promotion_policy_drafts SELECT id,2,jsonb_set(policy,'{promotion,revision}','2') #- '{limits,per_customer_redemptions}','missing-limit',actor,reason,recorded_at FROM promotion_policy_drafts",
         "INSERT INTO promotion_policy_reviews SELECT id,draft_revision,3,decision,evidence_ref,qualification_ref,'review-gap',actor,reason,recorded_at FROM promotion_policy_reviews",
         "INSERT INTO promotion_policy_reviews SELECT id,draft_revision,2,decision,evidence_ref,qualification_ref,'self','author',reason,recorded_at FROM promotion_policy_reviews",
         "INSERT INTO promotion_policy_reviews SELECT id,99,1,decision,evidence_ref,qualification_ref,'missing',actor,reason,recorded_at FROM promotion_policy_reviews",
@@ -51,7 +52,7 @@ async fn corrupt_restored_policy_shapes_limits_and_source_headers_fail_normal_re
     ready(&pool).await;
     pool.execute("ALTER TABLE promotion_policy_drafts DISABLE TRIGGER guard_promotion_draft; ALTER TABLE promotion_policy_drafts DROP CONSTRAINT promotion_policy_drafts_policy_check").await.expect("isolated damaged restore fixture");
     let original = serde_json::to_value(policy()).expect("policy");
-    for n in 0..17 {
+    for n in 0..18 {
         let mut v = original.clone();
         match n {
             0 => v = serde_json::json!([]),
@@ -73,8 +74,14 @@ async fn corrupt_restored_policy_shapes_limits_and_source_headers_fail_normal_re
             }
             14 => v["limits"]["per_customer_redemptions"] = 0.into(),
             15 => v["currency"] = "USD".into(),
-            _ => {
+            16 => {
                 v.as_object_mut().expect("object").remove("currency");
+            }
+            _ => {
+                v["limits"]
+                    .as_object_mut()
+                    .expect("limits")
+                    .remove("per_customer_redemptions");
             }
         }
         sqlx::query("UPDATE promotion_policy_drafts SET policy=$1")
