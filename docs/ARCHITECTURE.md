@@ -361,8 +361,9 @@ routes, order creation and payment recovery remain separate P3 integration work.
 ### Indicative server quotes
 
 The trusted quote consumer accepts a closed destination/SKU/quantity request;
-prices, VAT, shipping and readiness are server inputs. No HTTP quote route or
-market policy is installed. A policy explicitly binds one EU country and exact
+prices, VAT, shipping and readiness are server inputs. No market policy is
+installed. The opt-in private guest quote routes below use persisted reviewed
+policies; the trusted primitive grants no customer policy authority. A policy explicitly binds one EU country and exact
 postcode to eligible publication revisions, quantity ceilings, item VAT rates
 and one basket shipping price/rate with parcel count, total weight and edge
 limits. Exact matching has no country-wide, territory, sibling or draft fallback.
@@ -403,8 +404,8 @@ JavaScript integer ceiling. VAT rounds half up once per extended SKU line and
 shipping; net is gross minus that allocation. Totals sum line/shipping allocations,
 including mixed explicit rates. Canonical SKU order makes equivalent baskets
 stable. This is the initial deterministic arithmetic policy, subject to actual
-accountant/market acceptance; discounts and partial refund allocation are pending.
-A quote has no durable token, guaranteed price window or reservation authority.
+accountant/market acceptance; promotion/refund arithmetic is described below.
+A quote grants no guaranteed price window or reservation authority.
 Future checkout must revalidate and capture immutable sources, address and policy,
 then reserve the entire basket atomically before creating a payment attempt.
 
@@ -563,3 +564,39 @@ Guest identity grants no staff, catalogue, stock, price or order authority. Bask
 checkout must freshly validate publications, market policies and aggregate stock,
 then create immutable order snapshots and whole-basket holds. Account linking
 and privilege changes require separately proven credential rotation in P4.
+
+### Owned indicative quote snapshots
+
+The optional private guest API persists immutable version-1 EUR quote receipts.
+A mutation claims the active credential and basket before current revision and
+closed destination validation. Client input contains only expected basket revision,
+effect key, country and postcode. Existing exact effects return their original
+unexpired receipt without rewriting the current cart, charging issuance quota or
+extending expiry. Changed revision, locale or destination conflicts. New issuance
+requires the current nonempty cart and latest independently approved exact market
+policy, eligible publications/BOMs and sufficient aggregate physical stock.
+
+The read-committed transaction retains policy, publication, asset and stock claims
+through snapshot insertion. A shared observed clock rejects any backward sample
+across nested readers. One final sample after writes checks identity, policy,
+photo permissions and the captured deadline before commit. Cancellation or failure
+rolls back both the quote and its per-basket ten-successful-issuances/minute quota.
+These counters supplement existing resource bounds; public edge abuse controls
+remain required. A fixed lifetime is at most 300 seconds and never a price promise.
+
+Snapshot rows bind the immutable basket receipt, internal locale, destination,
+policy draft/review, publication/BOM references and checked price/net/VAT/shipping
+allocations. SQL guards enforce immutable history and exact relational bindings;
+read adapters bound stored JSON, require closed object shapes and reconstruct all
+money allocations. Server ownership claims protect issue, replay and read paths.
+HTTP projections omit owner, destination and internal policy/evidence references,
+map internal `kmr` to public `ku`, and remain private/no-store behind preview auth.
+Installation seeds no quote, readiness, guest identity or commercial authority.
+
+An unexpired historical snapshot can remain readable after source withdrawal; this
+is owned history, not fresh readiness. Order creation must independently compare
+current basket and commercial terms, claim current reviewed sources, reserve the
+whole basket and persist order/address/policy/promotion/outbox effects atomically.
+It must acquire stock UPDATE claims directly in the established global order;
+calling the indicative SHARE-stock evaluator first would risk lock upgrades.
+No browser checkout, order, payment or deployment is enabled by these receipts.

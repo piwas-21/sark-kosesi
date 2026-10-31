@@ -268,3 +268,18 @@ scripted clocks also test admission-to-completion rewind and clock failures.
 A caller-owned transaction test proves reservations remain invisible until the
 outer commit and disappear after a later caller rollback. These primitives do
 not prove customer checkout, provider sandbox or operational stock acceptance.
+
+Owned quote snapshots and the shared observation clock retain the 95% critical
+native line/branch gates. Independent integer oracles and corrupt stored objects
+check exact source/header bindings, bounded timestamps, canonical lines and full
+net/VAT/gross reconstruction. Isolated PostgreSQL tests cover exact concurrent
+retries, old receipt/new cart separation, two owners, revoked credentials,
+failed/successful issuance quotas and immutable imports. Actual post-insert waits
+isolate policy expiry before quote expiry, photo-rights expiry before quote expiry,
+quote deadline, backward clocks and cancellation rollback. Positive wait controls
+establish the instrument admits a valid quote. HTTP tests assert private field
+projection, closed authority input, exact CSRF/Origin, public locale mapping,
+unready destinations and finite resource limits. Compiled omissions of the final retained-source check and owner SQL filter
+must fail their intended policy-expiry and cross-owner assertions; source hashes
+are restored afterward. Synthetic clocks and manually replayed cookies are
+transport evidence, not native browser/device acceptance.

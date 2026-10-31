@@ -415,3 +415,201 @@ async fn concurrent_exact_effects_have_one_snapshot_and_unready_sources_never_fa
         2
     );
 }
+#[sqlx::test(migrator = "MIGRATOR")]
+async fn raw_imports_require_exact_basket_review_publication_and_bom_bindings(pool: PgPool) {
+    seed(&pool).await;
+    let (store, _) = store(&pool, 1100);
+    let (session, csrf) = guest(&store).await;
+    let key = GuestCredential::from_session(&session).expect("key");
+    let original = issue_quote(&store, &key, &csrf, Locale::Nl, &request("source"))
+        .await
+        .expect("quote")
+        .snapshot;
+    for case in 0..13 {
+        let mut s = original.clone();
+        s.binding.quote_id = format!("{:032x}", 1000 + case);
+        let mut value = serde_json::to_value(&s).expect("snapshot");
+        match case {
+            0 => value["binding"]["quote_id"] = "wrong".into(),
+            1 => value["schema_version"] = 2.into(),
+            2 => value["currency"] = "USD".into(),
+            3 => value["lines"] = serde_json::json!({}),
+            4 => value["lines"] = serde_json::json!([]),
+            5 => {
+                s.binding.policy_review_revision = 99;
+                value["binding"]["policy_review_revision"] = 99.into();
+            }
+            6 => {
+                s.binding.postcode = "9999 XX".into();
+                value["binding"]["postcode"] = "9999 XX".into();
+            }
+            7 => value["lines"][0]["quantity"] = 1.into(),
+            8 => value["lines"][0]["publication_revision"] = 99.into(),
+            9 => value["lines"][0]["bom_revision"] = 99.into(),
+            10 => {
+                s.binding.basket_revision = 99;
+                value["binding"]["basket_revision"] = 99.into();
+            }
+            12 => {
+                s.binding.created_at = 1200;
+                s.binding.expires_at = 1500;
+                value["binding"]["created_at"] = 1200.into();
+                value["binding"]["expires_at"] = 1500.into();
+            }
+            _ => {}
+        }
+        let b = &s.binding;
+        let result=sqlx::query("INSERT INTO guest_quote_snapshots(id,basket_id,basket_revision,effect_key,locale,country,postcode,policy_id,policy_revision,policy_review_revision,created_at,expires_at,snapshot) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)")
+            .bind(&b.quote_id).bind(&b.basket_id).bind(b.basket_revision).bind(format!("import-{case}"))
+            .bind(&b.locale).bind(&b.country).bind(&b.postcode).bind(&b.policy_id).bind(b.policy_revision)
+            .bind(b.policy_review_revision).bind(b.created_at).bind(b.expires_at).bind(value).execute(&pool).await;
+        if case >= 11 {
+            result.expect("positive exact immutable import control");
+            let read = owned_quote(&store, &key, &b.quote_id).await;
+            if case == 11 {
+                assert!(read.expect("revalidated import") == s);
+            } else {
+                assert!(matches!(read, Err(QuoteStoreError::ClockUnavailable)));
+            }
+        } else {
+            let error = result.expect_err("malformed import denied");
+            assert!(
+                error
+                    .as_database_error()
+                    .and_then(|e| e.code())
+                    .is_some_and(|code| code.starts_with("23")),
+                "case {case}: {error}"
+            );
+        }
+    }
+    assert_eq!(counts(&pool).await, (3, 0, 0));
+}
+#[sqlx::test(migrator = "MIGRATOR")]
+async fn invalid_intent_empty_cart_and_failed_entropy_never_issue_snapshots(pool: PgPool) {
+    use commerce_application::{
+        guest_access::GuestLimits,
+        request_context::{ContextError, Identifiers},
+    };
+    use std::sync::Arc;
+    struct Failed;
+    impl Identifiers for Failed {
+        fn next(&self) -> Result<[u8; 16], ContextError> {
+            Err(ContextError::EntropyUnavailable)
+        }
+    }
+    seed(&pool).await;
+    let (store, time) = store(&pool, 1100);
+    let (session, csrf) = guest(&store).await;
+    let key = GuestCredential::from_session(&session).expect("key");
+    for n in 0..4 {
+        let mut input = request("bad");
+        match n {
+            0 => input.expected_basket_revision = 0,
+            1 => input.effect_key = " ".into(),
+            2 => input.destination.country = "XX".into(),
+            _ => input.destination.postcode = "".into(),
+        };
+        assert!(matches!(
+            issue_quote(&store, &key, &csrf, Locale::Nl, &input).await,
+            Err(QuoteStoreError::InvalidRequest)
+        ));
+    }
+    for id in ["bad", "G0000000000000000000000000000000"] {
+        assert!(matches!(
+            owned_quote(&store, &key, id).await,
+            Err(QuoteStoreError::InvalidRequest)
+        ));
+    }
+    assert!(matches!(
+        owned_quote(&store, &key, &"9".repeat(32)).await,
+        Err(QuoteStoreError::NotFound)
+    ));
+    let no_entropy = GuestSessionStore::new(
+        pool.clone(),
+        time.clone(),
+        Arc::new(Failed),
+        GuestLimits::default(),
+    )
+    .expect("store");
+    assert!(matches!(
+        issue_quote(&no_entropy, &key, &csrf, Locale::Nl, &request("no-entropy")).await,
+        Err(QuoteStoreError::Guest(GuestError::EntropyUnavailable))
+    ));
+    let quota: i64 = sqlx::query_scalar("SELECT count(*) FROM guest_quote_quota")
+        .fetch_one(&pool)
+        .await
+        .expect("quota rollback");
+    assert_eq!(quota, 0);
+    write_basket(
+        &store,
+        &key,
+        &csrf,
+        &BasketUpdate {
+            expected_revision: 1,
+            effect_key: "empty".into(),
+            lines: vec![],
+        },
+    )
+    .await
+    .expect("empty intent");
+    let mut input = request("empty");
+    input.expected_basket_revision = 2;
+    assert!(matches!(
+        issue_quote(&store, &key, &csrf, Locale::Nl, &input).await,
+        Err(QuoteStoreError::InvalidRequest)
+    ));
+    time.0.store(1200, Ordering::SeqCst);
+    write_basket(
+        &store,
+        &key,
+        &csrf,
+        &BasketUpdate {
+            expected_revision: 2,
+            effect_key: "later".into(),
+            lines: vec![],
+        },
+    )
+    .await
+    .expect("later mutation window");
+    time.0.store(1100, Ordering::SeqCst);
+    assert!(matches!(
+        owned_quote(&store, &key, &"9".repeat(32)).await,
+        Err(QuoteStoreError::Guest(GuestError::ClockUnavailable))
+    ));
+    assert_eq!(counts(&pool).await, (0, 0, 0));
+}
+#[sqlx::test(migrator = "MIGRATOR")]
+async fn damaged_quota_storage_and_dependency_outage_never_grant_a_quote(pool: PgPool) {
+    seed(&pool).await;
+    let (store, _) = store(&pool, 1100);
+    let (session, csrf) = guest(&store).await;
+    let key = GuestCredential::from_session(&session).expect("key");
+    issue_quote(&store, &key, &csrf, Locale::Nl, &request("positive"))
+        .await
+        .expect("positive");
+    pool.execute("ALTER TABLE guest_quote_quota DROP CONSTRAINT guest_quote_quota_rate_window_check, DROP CONSTRAINT guest_quote_quota_issued_check").await.expect("damaged restore fixture");
+    for (window, issued) in [(-1, 1), (18, -1), (18, 11)] {
+        sqlx::query("UPDATE guest_quote_quota SET rate_window=$1,issued=$2")
+            .bind(window as i64)
+            .bind(issued)
+            .execute(&pool)
+            .await
+            .expect("damage");
+        assert!(matches!(
+            issue_quote(&store, &key, &csrf, Locale::Nl, &request("damaged")).await,
+            Err(QuoteStoreError::InvalidStoredData)
+        ));
+    }
+    assert_eq!(counts(&pool).await, (1, 0, 0));
+    pool.execute("DROP TABLE guest_quote_snapshots CASCADE")
+        .await
+        .expect("missing dependency");
+    assert!(matches!(
+        owned_quote(&store, &key, &"9".repeat(32)).await,
+        Err(QuoteStoreError::Database(_))
+    ));
+    assert!(matches!(
+        issue_quote(&store, &key, &csrf, Locale::Nl, &request("outage")).await,
+        Err(QuoteStoreError::Database(_))
+    ));
+}

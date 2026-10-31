@@ -58,3 +58,7 @@ The HTTP adapter also normalizes removal-cookie attributes and clears failed
 creation state so middleware cannot retry an issuance rejected by the quota.
 This is guest identity only; verified accounts, privilege rotation and guest-order
 access remain separate work. No password or MFA verification is introduced.
+
+Owned quote snapshot tests add a domain dev-dependency edge to the already pinned
+`serde_json` 1.0.154 for closed round-trip/corruption checks. No locked package
+version changes; its existing MIT/Apache-2.0 review applies.

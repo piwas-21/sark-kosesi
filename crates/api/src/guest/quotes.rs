@@ -177,3 +177,7 @@ pub(crate) async fn read(
         Err(value) => failed(value),
     }
 }
+
+#[cfg(test)]
+#[path = "../../tests/support/quote_view.rs"]
+mod tests;

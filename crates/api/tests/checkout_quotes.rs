@@ -197,3 +197,116 @@ async fn quote_http_rejects_forged_authority_unready_market_and_internal_locale(
     }
     assert_eq!(fixture::counts(&pool).await, (10, 0, 0));
 }
+#[sqlx::test(migrator = "MIGRATOR")]
+async fn quote_http_service_faults_and_invalid_identifiers_use_static_private_errors(pool: PgPool) {
+    use sqlx::Executor;
+    let (app, _, cookie, csrf) = ready(&pool).await;
+    let response = app
+        .clone()
+        .oneshot(request(
+            "GET",
+            "/api/guest/quotes/bad",
+            Some(&cookie),
+            None,
+            "",
+        ))
+        .await
+        .expect("invalid");
+    assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+    let response = app
+        .clone()
+        .oneshot(request(
+            "POST",
+            "/api/guest/nl/quotes",
+            None,
+            Some(&csrf),
+            INPUT,
+        ))
+        .await
+        .expect("unauthorized");
+    assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
+    let response = app
+        .clone()
+        .oneshot(request(
+            "POST",
+            "/api/guest/nl/quotes",
+            Some(&cookie),
+            Some(&"0".repeat(64)),
+            INPUT,
+        ))
+        .await
+        .expect("CSRF");
+    assert_eq!(response.status(), StatusCode::FORBIDDEN);
+    let mut plain = request(
+        "POST",
+        "/api/guest/nl/quotes",
+        Some(&cookie),
+        Some(&csrf),
+        INPUT,
+    );
+    plain
+        .headers_mut()
+        .insert("content-type", "text/plain".parse().expect("type"));
+    let response = app.clone().oneshot(plain).await.expect("type");
+    assert_eq!(response.status(), StatusCode::UNSUPPORTED_MEDIA_TYPE);
+    let response = app
+        .clone()
+        .oneshot(request(
+            "POST",
+            "/api/guest/nl/quotes",
+            Some(&cookie),
+            Some(&csrf),
+            &INPUT.replace("revision\":1", "revision\":0"),
+        ))
+        .await
+        .expect("revision");
+    assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+    let response = app
+        .clone()
+        .oneshot(request(
+            "POST",
+            "/api/guest/nl/quotes",
+            Some(&cookie),
+            Some(&csrf),
+            INPUT,
+        ))
+        .await
+        .expect("positive");
+    assert_eq!(response.status(), StatusCode::OK);
+    let response = app
+        .clone()
+        .oneshot(request(
+            "POST",
+            "/api/guest/de/quotes",
+            Some(&cookie),
+            Some(&csrf),
+            INPUT,
+        ))
+        .await
+        .expect("intent conflict");
+    assert_eq!(response.status(), StatusCode::CONFLICT);
+    assert_eq!(json(response).await["code"], "quote_intent_conflict");
+    pool.execute("DROP TABLE guest_quote_snapshots CASCADE")
+        .await
+        .expect("outage fixture");
+    for (method, path, body) in [
+        ("POST", "/api/guest/nl/quotes", INPUT),
+        (
+            "GET",
+            "/api/guest/quotes/11111111111111111111111111111111",
+            "",
+        ),
+    ] {
+        let response = app
+            .clone()
+            .oneshot(request(method, path, Some(&cookie), Some(&csrf), body))
+            .await
+            .expect("dependency failure");
+        assert_eq!(response.status(), StatusCode::SERVICE_UNAVAILABLE);
+        assert_eq!(response.headers()["cache-control"], "private, no-store");
+        let body = json(response).await.to_string();
+        assert!(body.contains("quote_service_unavailable"));
+        assert!(!body.contains("guest_quote_snapshots"));
+        assert!(!body.contains("1234 AB"));
+    }
+}
