@@ -616,3 +616,113 @@ async fn damaged_quota_storage_and_dependency_outage_never_grant_a_quote(pool: P
         Err(QuoteStoreError::Database(_))
     ));
 }
+#[sqlx::test(migrator = "MIGRATOR")]
+async fn real_quote_readers_reject_positional_struct_shapes_even_when_serde_accepts_them(
+    pool: PgPool,
+) {
+    seed(&pool).await;
+    let (store, _) = store(&pool, 1100);
+    let (session, csrf) = guest(&store).await;
+    let key = GuestCredential::from_session(&session).expect("owner");
+    let original = issue_quote(&store, &key, &csrf, Locale::Nl, &request("closed-shapes"))
+        .await
+        .expect("positive quote")
+        .snapshot;
+    let base = serde_json::to_value(&original).expect("stored wire");
+    pool.execute("ALTER TABLE guest_quote_snapshots DISABLE TRIGGER guard_guest_quote; ALTER TABLE guest_quote_snapshots DROP CONSTRAINT guest_quote_snapshots_snapshot_check").await.expect("isolated damaged restore");
+    let seq = |value: &serde_json::Value, keys: &[&str]| {
+        serde_json::Value::Array(keys.iter().map(|k| value[*k].clone()).collect())
+    };
+    for n in 0..7 {
+        let mut v = base.clone();
+        match n {
+            0 => {
+                v = seq(
+                    &v,
+                    &[
+                        "schema_version",
+                        "binding",
+                        "currency",
+                        "lines",
+                        "shipping",
+                        "shipping_vat_basis_points",
+                        "total",
+                    ],
+                )
+            }
+            1 => {
+                v["binding"] = seq(
+                    &v["binding"],
+                    &[
+                        "quote_id",
+                        "basket_id",
+                        "basket_revision",
+                        "locale",
+                        "created_at",
+                        "expires_at",
+                        "country",
+                        "postcode",
+                        "policy_id",
+                        "policy_revision",
+                        "policy_review_revision",
+                    ],
+                )
+            }
+            2 => v["shipping"] = seq(&v["shipping"], &["gross_minor", "net_minor", "vat_minor"]),
+            3 => v["total"] = seq(&v["total"], &["gross_minor", "net_minor", "vat_minor"]),
+            4 => {
+                v["lines"][0] = seq(
+                    &v["lines"][0],
+                    &[
+                        "sku",
+                        "publication_revision",
+                        "bom_revision",
+                        "quantity",
+                        "unit_gross_minor",
+                        "vat_basis_points",
+                        "amounts",
+                    ],
+                )
+            }
+            5 => {
+                v["lines"][0]["amounts"] = seq(
+                    &v["lines"][0]["amounts"],
+                    &["gross_minor", "net_minor", "vat_minor"],
+                )
+            }
+            _ => v["lines"] = serde_json::json!(vec![v["lines"][0].clone(); 21]),
+        }
+        if n < 6 {
+            let positional: commerce_domain::checkout_quotes::QuoteSnapshot =
+                serde_json::from_value(v.clone())
+                    .expect("underlying serde accepts positional structs");
+            assert!(
+                positional.totals().is_ok(),
+                "same valid money, wrong promised wire shape"
+            );
+        }
+        sqlx::query("UPDATE guest_quote_snapshots SET snapshot=$1")
+            .bind(v)
+            .execute(&pool)
+            .await
+            .expect("restore damage");
+        assert!(
+            matches!(
+                owned_quote(&store, &key, &original.binding.quote_id).await,
+                Err(QuoteStoreError::InvalidStoredData)
+            ),
+            "shape {n}"
+        );
+    }
+    sqlx::query("UPDATE guest_quote_snapshots SET snapshot=$1")
+        .bind(base)
+        .execute(&pool)
+        .await
+        .expect("restored exact object");
+    assert!(
+        owned_quote(&store, &key, &original.binding.quote_id)
+            .await
+            .expect("positive read")
+            == original
+    );
+}

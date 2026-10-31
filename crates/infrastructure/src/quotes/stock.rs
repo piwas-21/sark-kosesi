@@ -14,6 +14,7 @@ pub(super) async fn check(
     tx: &mut Transaction<'_, Postgres>,
     products: &[crate::published_catalogue::EligibleProduct],
     lines: &[BasketLine],
+    claim: StockClaim,
 ) -> Result<(), QuoteFailure> {
     let mut demand = BTreeMap::<&str, i64>::new();
     for eligible in products {
@@ -35,8 +36,15 @@ pub(super) async fn check(
     }
     let codes: Vec<_> = demand.keys().copied().collect();
     // Same global component order as reservations; no fictitious per-SKU pools.
-    let rows = sqlx::query_as::<_,Balance>("SELECT component_code,on_hand,quarantine,reserved FROM stock_balances WHERE component_code=ANY($1) ORDER BY component_code FOR SHARE")
-        .bind(&codes).fetch_all(&mut **tx).await?;
+    let query = match claim {
+        StockClaim::Indicative => sqlx::query_as::<_, Balance>(
+            "SELECT component_code,on_hand,quarantine,reserved FROM stock_balances WHERE component_code=ANY($1) ORDER BY component_code FOR SHARE",
+        ),
+        StockClaim::Reservation => sqlx::query_as::<_, Balance>(
+            "SELECT component_code,on_hand,quarantine,reserved FROM stock_balances WHERE component_code=ANY($1) ORDER BY component_code FOR UPDATE",
+        ),
+    };
+    let rows = query.bind(&codes).fetch_all(&mut **tx).await?;
     if rows.len() != codes.len() {
         return Err(QuoteError::InsufficientStock.into());
     }

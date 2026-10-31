@@ -18,29 +18,7 @@ pub(super) struct Row {
 impl Row {
     pub(super) fn decode(self) -> Result<(QuoteSnapshot, String), QuoteStoreError> {
         let value = self.snapshot.ok_or(QuoteStoreError::InvalidStoredData)?;
-        let object = value
-            .as_object()
-            .ok_or(QuoteStoreError::InvalidStoredData)?;
-        if !["binding", "shipping", "total"]
-            .iter()
-            .all(|key| object.get(*key).is_some_and(serde_json::Value::is_object))
-            || !object
-                .get("lines")
-                .and_then(serde_json::Value::as_array)
-                .is_some_and(|lines| {
-                    lines.len() <= 20
-                        && lines.iter().all(|line| {
-                            line.is_object()
-                                && line
-                                    .get("amounts")
-                                    .is_some_and(serde_json::Value::is_object)
-                        })
-                })
-        {
-            return Err(QuoteStoreError::InvalidStoredData);
-        }
-        let snapshot: QuoteSnapshot =
-            serde_json::from_value(value).map_err(|_| QuoteStoreError::InvalidStoredData)?;
+        let snapshot = super::decode_snapshot(value)?;
         let expected = QuoteBinding {
             quote_id: self.id,
             basket_id: self.basket_id,
@@ -57,7 +35,6 @@ impl Row {
         if snapshot.binding != expected || !valid_command_id(&self.effect_key) {
             return Err(QuoteStoreError::InvalidStoredData);
         }
-        snapshot.totals()?;
         Ok((snapshot, self.effect_key))
     }
 }
@@ -74,7 +51,7 @@ pub(super) async fn by_effect(
         .map(Row::decode)
         .transpose()
 }
-pub(super) async fn by_id(
+pub(crate) async fn by_id(
     tx: &mut Transaction<'_, Postgres>,
     owner: &str,
     id: &str,

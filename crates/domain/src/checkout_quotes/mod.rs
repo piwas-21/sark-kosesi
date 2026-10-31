@@ -6,6 +6,7 @@ use crate::{
 use serde::{Deserialize, Serialize};
 mod validate;
 pub const SNAPSHOT_VERSION: u16 = 1;
+pub const INTERNAL_LOCALES: [&str; 7] = ["nl", "de", "fr", "en", "ar", "tr", "kmr"];
 pub const MAX_QUOTE_LIFETIME_SECONDS: i64 = 300;
 // Timestamp fields cross JSON as exact JavaScript integers.
 pub const MAX_QUOTE_UNIX_SECONDS: i64 = 9_007_199_254_740_991;
