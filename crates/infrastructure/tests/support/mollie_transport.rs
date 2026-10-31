@@ -977,3 +977,6 @@ mod identity_cases;
 
 #[path = "payment_identity_ownership.rs"]
 mod identity_ownership;
+
+#[path = "payment_reconciliation.rs"]
+mod reconciliation_cases;

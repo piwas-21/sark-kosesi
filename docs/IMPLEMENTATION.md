@@ -280,8 +280,12 @@ supervision or live provider activation follows from deploying the empty preview
    Bounded readers revalidate every ancestor and event. Immutable identity-resolution
    receipts now bind complete fetched-observation prefixes, preserve distinct IDs
    as ambiguity and keep every paid fact under reordered statuses. No current
-   payment or fulfilment state follows. Add supervised durable scheduling and
-   worker processing before operational provider I/O;
+   payment or fulfilment state follows. Profile-scoped durable recovery jobs now
+   provide bounded GET-only search/fetch/poll steps, receipt checkpoints, expiring
+   fenced leases, backoff and irreversible operator-review stops through an explicit
+   local/test worker command. No key or scheduler is installed. Complete callbacks,
+   authorized/audited operator recovery and separate financial/late-stock transitions
+   before operational payment acceptance;
    uncertain outcomes
    reconcile under the original identity and never mint a replacement charge.
    Fetch and verify webhook identifiers against order/amount/currency/profile/mode.

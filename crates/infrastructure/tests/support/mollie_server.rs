@@ -27,6 +27,7 @@ pub enum Reply {
     Redirect(String),
     Delay(Duration),
     Gate(Arc<AtomicBool>),
+    GateJson(Arc<AtomicBool>, Value),
     Close,
     OversizedPrefixThenStall,
 }
@@ -165,6 +166,15 @@ async fn respond(
                 tokio::time::sleep(Duration::from_millis(2)).await;
             }
             (200, "{}".into(), "application/json", false, None)
+        }
+        Reply::GateJson(gate, value) => {
+            while !gate.load(Ordering::SeqCst) {
+                if state.stop.load(Ordering::SeqCst) {
+                    return Err(std::io::ErrorKind::Interrupted.into());
+                }
+                tokio::time::sleep(Duration::from_millis(2)).await;
+            }
+            (200, value.to_string(), "application/hal+json", false, None)
         }
         Reply::OversizedPrefixThenStall => {
             return Response::builder()

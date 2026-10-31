@@ -72,33 +72,22 @@ impl VerifiedTestClient {
         attempt: &AttemptSnapshot,
         from: Option<&SearchCursor>,
     ) -> Result<VerifiedSearchPage, MollieError> {
-        self.check_profile(attempt)?;
-        let body = self
-            .inner
-            .http
-            .payment_page(from.map(SearchCursor::provider_id))
-            .await?;
-        let page = search::decode(&body, attempt, from)?;
-        Ok(VerifiedSearchPage::capture(
-            page,
+        reconciliation::search_page(
+            &self.inner.http,
+            &self.inner.configuration.snapshot().profile,
             attempt,
             from,
-            &self
-                .inner
-                .configuration
-                .snapshot()
-                .profile
-                .credential_fingerprint,
-        ))
+        )
+        .await
     }
-    fn check_profile(&self, attempt: &AttemptSnapshot) -> Result<(), MollieError> {
-        attempt
-            .validate()
-            .map_err(|_| MollieError::PaymentMismatch)?;
-        if attempt.binding.profile.id != self.inner.configuration.snapshot().profile.id {
-            return Err(MollieError::PaymentMismatch);
+    /// Deliberately removes create capability from a verified test transport.
+    pub fn into_reconciliation(self) -> VerifiedReconciliationClient {
+        VerifiedReconciliationClient {
+            inner: ReconciliationClient {
+                http: self.inner.http,
+                profile: self.inner.configuration.snapshot().profile.clone(),
+            },
         }
-        Ok(())
     }
     /// Consumes the sole durable permit before one non-retrying POST, outside every DB TX.
     /// Any unusable create reply remains uncertain; it never grants another initial POST.
@@ -129,22 +118,12 @@ impl VerifiedTestClient {
         attempt: &AttemptSnapshot,
         id: &str,
     ) -> Result<VerifiedPayment, MollieError> {
-        self.check_profile(attempt)?;
-        if !provider_id(id) {
-            return Err(MollieError::PaymentMismatch);
-        }
-        let body = self.inner.http.get(&["payments", id]).await?;
-        let (payment, checkout_url) = wire::payment(&body, attempt, Some(id))?;
-        Ok(VerifiedPayment {
-            payment,
-            checkout_url,
-            credential_fingerprint: self
-                .inner
-                .configuration
-                .snapshot()
-                .profile
-                .credential_fingerprint
-                .clone(),
-        })
+        reconciliation::fetch(
+            &self.inner.http,
+            &self.inner.configuration.snapshot().profile,
+            attempt,
+            id,
+        )
+        .await
     }
 }
