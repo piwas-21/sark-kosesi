@@ -316,3 +316,11 @@ sequence cannot reuse an acknowledged key for another order. Diagnostic controls
 prove nested dependency errors lose private detail, with an unredacted positive
 control. These source tests establish no actual seller, provider or fulfilment
 acceptance.
+
+The executable money mutation harness copies the actual Rust workspace manifests,
+lockfile, crate sources and shared test fixtures into its disposable workspace.
+It first compiles/runs the unmodified money/quote/promotion oracles offline with
+locked dependencies, then requires each intended executable mutant to fail its
+named assertion. A stale miniature dependency manifest, baseline compilation
+failure or unrelated mutant compilation error fails the instrument; none counts
+as a killed arithmetic defect.
