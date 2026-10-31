@@ -2,6 +2,7 @@
 use crate::Currency;
 use serde::{Deserialize, Serialize};
 mod dispatch;
+pub mod identities;
 pub mod observations;
 mod provider;
 pub mod searches;

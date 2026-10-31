@@ -7,7 +7,7 @@ use commerce_domain::payment_attempts::observations::{
     MAX_OBSERVATION_REVISION, ObservationIntent, ObservationSnapshot,
 };
 use sqlx::PgPool;
-mod rows;
+pub(crate) mod rows;
 /// A durable fetched fact, never payment/stock/fulfilment authority.
 pub struct ObservationReceipt {
     pub snapshot: ObservationSnapshot,

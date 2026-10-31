@@ -971,3 +971,9 @@ mod observation_cases;
 
 #[path = "mollie_search_custody.rs"]
 mod search_custody;
+
+#[path = "payment_identities.rs"]
+mod identity_cases;
+
+#[path = "payment_identity_ownership.rs"]
+mod identity_ownership;

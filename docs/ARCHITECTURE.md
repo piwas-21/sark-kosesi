@@ -706,6 +706,33 @@ event, rejecting damaged, oversized, missing or cyclic history. These are privat
 trusted-worker primitives; no callback, customer route, queue consumer, credential
 provisioning, payment-state transition or runtime provider call is installed.
 
+### Durable payment identity resolution
+
+Private resolution claims the original dispatched attempt and revalidates the
+complete contiguous authenticated-observation prefix. Its immutable receipt binds
+an explicit watermark, sorted distinct matched provider identities, and the set
+of identities with any paid evidence. Zero identities remains unresolved; multiple
+identities is visible ambiguity, never a selected winner. Paid evidence survives
+later open/pending/failed observations and remains attached to every identity.
+These are historical facts, not a current payment status or fulfilment authority.
+
+Each test-profile/provider-ID pair can belong to only one original attempt.
+A unique immutable database claim binds its initial resolution, original attempt
+and exact profile. Native uniqueness forces stale repeatable-read writers to abort
+as well as serializing ordinary application claims. A conflicting attempt retains its fetched evidence
+and fails resolution for explicit recovery; different profiles remain isolated.
+
+Resolution and its minimal outbox event commit together. Native guards independently
+derive the exact summary and current watermark, preserve immutable contiguous
+resolution history and reject missing events. Bounded readers recalculate the
+captured prefix and validate exact event custody, without falling back after
+corruption. Receipt replay retains its original prefix, even after later evidence,
+clock failure or credential/stock expiry. New decisions require nondecreasing time
+and a final clock check after writes. A 1,000-observation bound fails visibly rather
+than truncating evidence; further recovery requires an explicit operator decision.
+Supervised processing, callbacks, separate financial transitions, late-paid stock
+recovery and provider acceptance remain required before operational use.
+
 ## Sessions, uploads and rendering
 
 Rust owns secure sessions and server-side authorization. Use a maintained password/session implementation with Argon2id where passwords are stored; verified email, rotating sessions, hashed reset tokens, admin MFA and separate guest-order access tokens. Browser credentials are HttpOnly/Secure/SameSite cookies; never store bearer tokens in browser local storage. CSRF and origin checks protect cookie-authenticated mutations. No duplicate identity system in Next.js.

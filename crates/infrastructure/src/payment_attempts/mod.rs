@@ -17,6 +17,7 @@ use sqlx::{Postgres, Transaction};
 mod dispatch;
 mod eligibility;
 pub(crate) mod evidence;
+pub mod identities;
 pub mod observations;
 mod prepare;
 mod read;
