@@ -35,19 +35,7 @@ pub(crate) async fn load(
     let Some(r) = row else {
         return Ok(None);
     };
-    if !r.event_present
-        || !identifier(&r.id)
-        || r.attempt_id != frozen.snapshot().binding.id
-        || !valid_command_id(&r.effect_key)
-        || !(1..=9_007_199_254_740_991).contains(&r.revision)
-        || !(0..=1000).contains(&r.through_observation)
-        || !(started_at..=9_007_199_254_740_991).contains(&r.recorded_at)
-    {
-        return Err(PaymentStoreError::InvalidStoredData);
-    }
-    let summary: IdentitySummary =
-        serde_json::from_value(r.summary.ok_or(PaymentStoreError::InvalidStoredData)?)
-            .map_err(|_| PaymentStoreError::InvalidStoredData)?;
+    let r = r.decode_header(&frozen.snapshot().binding.id, started_at)?;
     let observations =
         super::super::observations::rows::prefix(tx, frozen, started_at, r.through_observation)
             .await?;
@@ -57,20 +45,43 @@ pub(crate) async fn load(
         || observations
             .last()
             .is_some_and(|v| v.recorded_at > r.recorded_at)
-        || summary != expected
+        || r.summary != expected
     {
         return Err(PaymentStoreError::InvalidStoredData);
     }
-    Ok(Some(Resolution {
-        id: r.id,
-        attempt_id: r.attempt_id,
-        effect_key: r.effect_key,
-        revision: r.revision,
-        through_observation: r.through_observation,
-        recorded_at: r.recorded_at,
-        summary,
-    }))
+    Ok(Some(r))
 }
+impl Row {
+    fn decode_header(
+        self,
+        attempt_id: &str,
+        started_at: i64,
+    ) -> Result<Resolution, PaymentStoreError> {
+        if !self.event_present
+            || !identifier(&self.id)
+            || self.attempt_id != attempt_id
+            || !valid_command_id(&self.effect_key)
+            || !(1..=9_007_199_254_740_991).contains(&self.revision)
+            || !(0..=1000).contains(&self.through_observation)
+            || !(started_at..=9_007_199_254_740_991).contains(&self.recorded_at)
+        {
+            return Err(PaymentStoreError::InvalidStoredData);
+        }
+        let summary: IdentitySummary =
+            serde_json::from_value(self.summary.ok_or(PaymentStoreError::InvalidStoredData)?)
+                .map_err(|_| PaymentStoreError::InvalidStoredData)?;
+        Ok(Resolution {
+            id: self.id,
+            attempt_id: self.attempt_id,
+            effect_key: self.effect_key,
+            revision: self.revision,
+            through_observation: self.through_observation,
+            recorded_at: self.recorded_at,
+            summary,
+        })
+    }
+}
+
 pub(super) async fn insert(
     tx: &mut Transaction<'_, Postgres>,
     r: &Resolution,
@@ -85,3 +96,7 @@ pub(super) async fn insert(
         .bind(event).bind(order).bind(serde_json::json!({"schema_version":1,"order_id":order,"attempt_id":r.attempt_id,"resolution_id":r.id})).bind(r.recorded_at).execute(&mut **tx).await?;
     Ok(())
 }
+
+#[cfg(test)]
+#[path = "../../../tests/support/payment_identity_rows.rs"]
+mod tests;

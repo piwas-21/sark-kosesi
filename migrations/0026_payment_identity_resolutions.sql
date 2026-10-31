@@ -9,13 +9,14 @@ CREATE TABLE payment_identity_resolutions (
  summary jsonb NOT NULL CHECK(jsonb_typeof(summary)='object' AND octet_length(summary::text)<=524288),
  UNIQUE(attempt_id,effect_key), UNIQUE(attempt_id,revision)
 );
+CREATE INDEX payment_identity_resolutions_ids ON payment_identity_resolutions USING gin ((summary->'provider_ids'));
 CREATE FUNCTION payment_identity_summary(attempt text, through_revision bigint) RETURNS jsonb LANGUAGE sql STABLE AS $$
  SELECT jsonb_build_object('provider_ids',coalesce(jsonb_agg(DISTINCT provider_id COLLATE "C" ORDER BY provider_id COLLATE "C"),'[]'::jsonb),
  'paid_provider_ids',coalesce(jsonb_agg(DISTINCT provider_id COLLATE "C" ORDER BY provider_id COLLATE "C") FILTER(WHERE status='paid'),'[]'::jsonb))
  FROM payment_observations WHERE attempt_id=attempt AND revision<=through_revision
 $$;
 CREATE FUNCTION guard_payment_identity_resolution() RETURNS trigger LANGUAGE plpgsql AS $$
-DECLARE started bigint; last_revision bigint; last_at bigint; observed bigint; observed_at bigint;
+DECLARE started bigint; last_revision bigint; last_at bigint; observed bigint; observed_at bigint; profile text; identity text;
 BEGIN
  IF TG_OP<>'INSERT' THEN RAISE EXCEPTION 'Identity resolutions are immutable' USING ERRCODE='23514'; END IF;
  PERFORM 1 FROM payment_attempts WHERE id=NEW.attempt_id FOR UPDATE;
@@ -27,6 +28,17 @@ BEGIN
   OR NEW.through_observation<>observed OR NEW.summary IS DISTINCT FROM payment_identity_summary(NEW.attempt_id,observed) THEN
   RAISE EXCEPTION 'Resolution requires complete original observation evidence' USING ERRCODE='23514';
  END IF;
+ -- Claim sorted provider identities globally without locking another attempt row.
+ -- This prevents a mutable provider metadata field from funding two original orders.
+ SELECT snapshot->'binding'->'profile'->>'id' INTO profile FROM payment_attempts WHERE id=NEW.attempt_id;
+ FOR identity IN SELECT value FROM jsonb_array_elements_text(NEW.summary->'provider_ids') ORDER BY value COLLATE "C" LOOP
+  PERFORM pg_advisory_xact_lock(hashtextextended('payment-identity-test:'||profile||':'||identity,0));
+  IF EXISTS(SELECT 1 FROM payment_identity_resolutions r JOIN payment_attempts a ON a.id=r.attempt_id
+    WHERE r.attempt_id<>NEW.attempt_id AND a.snapshot->'binding'->'profile'->>'id'=profile
+      AND (r.summary->'provider_ids') ? identity) THEN
+   RAISE EXCEPTION 'Provider identity belongs to a different original attempt' USING ERRCODE='23514';
+  END IF;
+ END LOOP;
  RETURN NEW;
 END;
 $$;

@@ -716,6 +716,11 @@ identities is visible ambiguity, never a selected winner. Paid evidence survives
 later open/pending/failed observations and remains attached to every identity.
 These are historical facts, not a current payment status or fulfilment authority.
 
+Each test-profile/provider-ID pair can belong to only one original attempt.
+Sorted transaction advisory claims serialize cross-attempt ownership against
+immutable resolution history. A conflicting attempt retains its fetched evidence
+and fails resolution for explicit recovery; different profiles remain isolated.
+
 Resolution and its minimal outbox event commit together. Native guards independently
 derive the exact summary and current watermark, preserve immutable contiguous
 resolution history and reject missing events. Bounded readers recalculate the

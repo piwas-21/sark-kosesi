@@ -437,5 +437,7 @@ or entropy, native false-summary/orphan/mutation controls and damaged source/eve
 reads. Independent source and SQL summaries must agree; zero observations never
 proves absence and multiple identities never selects a winner. Bounded-prefix,
 clock-after-write and paid-retention fault controls must detect the intended defect
-and pass again with exactly restored source. These checks establish source evidence;
+and pass again with exactly restored source. Competing actual original orders
+exercise same-profile ownership conflicts and separate-profile positive controls.
+These checks establish source evidence;
 no current financial state, provider or fulfilment acceptance follows.

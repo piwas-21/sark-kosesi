@@ -343,3 +343,49 @@ async fn resolution_final_clock_after_event_wait_rolls_back_and_healthy_retry_su
         .replayed
     );
 }
+#[sqlx::test(migrator = "MIGRATOR")]
+async fn observation_time_and_coherently_damaged_summaries_cannot_be_ignored(pool: PgPool) {
+    let (time, f) = prepared(&pool, true).await;
+    let a = &f.snapshot().binding.id;
+    let i = ids();
+    time.0.store(1600, Ordering::SeqCst);
+    record_verified(
+        &pool,
+        time.as_ref(),
+        &i,
+        a,
+        "paid",
+        &fetched(f.snapshot(), "tr_B", "paid", false).await,
+    )
+    .await
+    .expect("evidence");
+    time.0.store(1599, Ordering::SeqCst);
+    assert_eq!(
+        resolve(&pool, time.as_ref(), &i, a, "before-fact")
+            .await
+            .err(),
+        Some(PaymentStoreError::ClockUnavailable)
+    );
+    time.0.store(1600, Ordering::SeqCst);
+    resolve(&pool, time.as_ref(), &i, a, "valid")
+        .await
+        .expect("healthy");
+    for sql in [
+        r#"UPDATE payment_identity_resolutions SET summary='{"provider_ids":[],"paid_provider_ids":[]}'"#,
+        "UPDATE payment_identity_resolutions SET recorded_at=1599; UPDATE commerce_outbox SET created_at=1599 WHERE kind='payment.identity_resolved.v1'",
+    ] {
+        let mut tx = pool.begin().await.expect("damage");
+        tx.execute("ALTER TABLE payment_identity_resolutions DISABLE TRIGGER USER; ALTER TABLE commerce_outbox DISABLE TRIGGER USER").await.expect("fixture only");
+        tx.execute(sql).await.expect("coherent damage");
+        let (frozen, started) = crate::payment_attempts::evidence::context(&mut tx, a, false)
+            .await
+            .expect("context");
+        assert_eq!(
+            crate::payment_attempts::identities::rows::load(&mut tx, &frozen, started, None)
+                .await
+                .err(),
+            Some(PaymentStoreError::InvalidStoredData)
+        );
+        tx.rollback().await.expect("restore");
+    }
+}
