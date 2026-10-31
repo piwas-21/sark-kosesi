@@ -771,6 +771,28 @@ until those conditions are resolved through authorized recovery.
 No service scheduler, runtime key, callback route, current payment/fulfilment/refund
 transition or production supervision is installed by this implementation.
 
+### Authorized transient recovery
+
+The private `resume_transient` entry requires the unseeded `payment.reconcile`
+finance capability, an enabled persisted session, recent MFA, confirmation,
+expected stopped generation/consumed-resume revision, exact original profile and an incident reason.
+Only exhausted transient GET failures may resume, at most three times over the
+attempt's lifetime. Claim/operation counters, page/candidate checkpoints and
+poll/scan limits remain intact. A retained page resumes candidate processing;
+no page resumes discovery. Every provider operation remains GET-only. Other
+review reasons require separate dispositions and stay stopped.
+
+The staff authority lock spans commit. Immutable per-attempt sequential decisions
+retain actor, reason, full before/after checkpoints and a global intent-bound
+effect key. Native guards permit only the exact audited transition and require
+its checkpoint update in the same transaction through a deferred constraint. A
+monotonic consumed-resume revision advances once per decision; native guards forbid
+rewinding it or reusing a historical receipt after reconstructing a stopped state.
+Final nondecreasing time and session/MFA checks follow the actual writes. Historical
+retries return the original decision without restarting later progress, while
+still requiring fresh authority. No public route, staff grant, provider key,
+financial disposition or operational activation is installed.
+
 ## Sessions, uploads and rendering
 
 Rust owns secure sessions and server-side authorization. Use a maintained password/session implementation with Argon2id where passwords are stored; verified email, rotating sessions, hashed reset tokens, admin MFA and separate guest-order access tokens. Browser credentials are HttpOnly/Secure/SameSite cookies; never store bearer tokens in browser local storage. CSRF and origin checks protect cookie-authenticated mutations. No duplicate identity system in Next.js.

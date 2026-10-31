@@ -7,6 +7,7 @@ struct Row {
     updated_at: i64,
     due_at: i64,
     generation: i64,
+    resume_revision: i32,
     lease_until: Option<i64>,
     phase: String,
     page_id: Option<String>,
@@ -22,7 +23,7 @@ pub(crate) async fn load(
     id: &str,
 ) -> Result<Option<Job>, RecoveryError> {
     let row=sqlx::query_as::<_,Row>(r#"SELECT left(j.attempt_id,33) AS attempt_id,left(source_event_id,33) AS source_event_id,
- j.created_at,j.updated_at,due_at,generation,lease_until,left(phase,32) AS phase,left(page_id,33) AS page_id,
+ j.created_at,j.updated_at,due_at,generation,resume_revision,lease_until,left(phase,32) AS phase,left(page_id,33) AS page_id,
  candidate_index,operation,polls,failures,left(review_reason,32) AS review_reason,
  EXISTS(SELECT 1 FROM commerce_outbox e JOIN payment_dispatch_starts s ON s.attempt_id=j.attempt_id JOIN payment_attempts a ON a.id=s.attempt_id
  WHERE e.id=j.source_event_id AND e.kind='payment.reconciliation_required.v1' AND e.aggregate_id=a.order_id AND e.created_at=s.started_at AND j.created_at=s.started_at
@@ -40,40 +41,17 @@ impl Row {
             .map(|v| serde_json::from_value(serde_json::Value::String(v)))
             .transpose()
             .map_err(|_| invalid())?;
-        if !self.source_present
-            || !identifier(&self.attempt_id)
-            || !identifier(&self.source_event_id)
-            || !(0..=9_007_199_254_740_991).contains(&self.created_at)
-            || !(self.created_at..=9_007_199_254_740_991).contains(&self.updated_at)
-            || !(self.created_at..=9_007_199_254_740_991).contains(&self.due_at)
-            || !(0..=1500).contains(&self.generation)
-            || self.lease_until.is_some_and(|v| {
-                self.generation == 0
-                    || v <= self.updated_at
-                    || v > self.updated_at + 60
-                    || v > 9_007_199_254_740_991
-            })
-            || self.page_id.as_ref().is_some_and(|v| !identifier(v))
-            || !(0..=10).contains(&self.candidate_index)
-            || !(0..=1500).contains(&self.operation)
-            || self.operation > self.generation
-            || !(0..=10).contains(&self.polls)
-            || (self.polls == 10 && phase != Phase::NeedsReview)
-            || !(0..=5).contains(&self.failures)
-            || (self.failures == 5 && phase != Phase::NeedsReview)
-            || (phase == Phase::NeedsReview) != review_reason.is_some()
-            || (matches!(phase, Phase::Candidates | Phase::Poll) && self.page_id.is_none())
-            || (phase == Phase::NeedsReview && self.lease_until.is_some())
-        {
+        if !self.source_present {
             return Err(invalid());
         }
-        Ok(Job {
+        let job = Job {
             attempt_id: self.attempt_id,
             source_event_id: self.source_event_id,
             created_at: self.created_at,
             updated_at: self.updated_at,
             due_at: self.due_at,
             generation: self.generation,
+            resume_revision: self.resume_revision,
             lease_until: self.lease_until,
             phase,
             page_id: self.page_id,
@@ -82,8 +60,40 @@ impl Row {
             polls: self.polls,
             failures: self.failures,
             review_reason,
-        })
+        };
+        validate(&job)?;
+        Ok(job)
     }
+}
+pub(super) fn validate(job: &Job) -> Result<(), RecoveryError> {
+    if !identifier(&job.attempt_id)
+        || !identifier(&job.source_event_id)
+        || !(0..=9_007_199_254_740_991).contains(&job.created_at)
+        || !(job.created_at..=9_007_199_254_740_991).contains(&job.updated_at)
+        || !(job.created_at..=9_007_199_254_740_991).contains(&job.due_at)
+        || !(0..=1500).contains(&job.generation)
+        || !(0..=3).contains(&job.resume_revision)
+        || job.lease_until.is_some_and(|v| {
+            job.generation == 0
+                || v <= job.updated_at
+                || v > job.updated_at + 60
+                || v > 9_007_199_254_740_991
+        })
+        || job.page_id.as_ref().is_some_and(|v| !identifier(v))
+        || !(0..=10).contains(&job.candidate_index)
+        || !(0..=1500).contains(&job.operation)
+        || job.operation > job.generation
+        || !(0..=10).contains(&job.polls)
+        || (job.polls == 10 && job.phase != Phase::NeedsReview)
+        || !(0..=5).contains(&job.failures)
+        || (job.failures == 5 && job.phase != Phase::NeedsReview)
+        || (job.phase == Phase::NeedsReview) != job.review_reason.is_some()
+        || (matches!(job.phase, Phase::Candidates | Phase::Poll) && job.page_id.is_none())
+        || (job.phase == Phase::NeedsReview && job.lease_until.is_some())
+    {
+        return Err(RecoveryError::InvalidStoredData);
+    }
+    Ok(())
 }
 /// Persistent profile-scoped supervision status, including unchanged later passes.
 pub(crate) async fn outstanding(pool: &PgPool, profile: &str) -> Result<(u64, u64), RecoveryError> {

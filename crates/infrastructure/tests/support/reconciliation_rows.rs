@@ -8,6 +8,7 @@ fn row() -> Row {
         updated_at: 1500,
         due_at: 1500,
         generation: 0,
+        resume_revision: 0,
         lease_until: None,
         phase: "search".into(),
         page_id: None,
@@ -22,7 +23,9 @@ fn row() -> Row {
 #[test]
 fn operational_headers_require_source_identity_bounded_progress_and_consistent_review_state() {
     assert!(row().decode().is_ok());
-    let changes: [fn(&mut Row); 25] = [
+    let changes: [fn(&mut Row); 27] = [
+        |r| r.resume_revision = -1,
+        |r| r.resume_revision = 4,
         |r| r.source_present = false,
         |r| r.attempt_id = "bad".into(),
         |r| r.source_event_id = "bad".into(),

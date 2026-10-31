@@ -298,3 +298,12 @@ custody, rejects forks/cycles and caps each scan at 100 pages. An end/empty/capp
 scan cannot prove absence, authorize a replacement create or change payment/stock
 state. Receipt retries and processing events are atomic; runtime workers,
 callbacks, supervised escalation and identity resolution remain required.
+
+Private transient payment-recovery decisions require the separate unseeded
+`payment.reconcile` finance capability and fresh persisted session/MFA authority,
+held against revocation through commit. Confirmation, exact stopped generation,
+original profile and a bounded incident reason bind the action. Immutable receipts
+and the exact job change commit together; replay requires current authority and
+cannot restart subsequent progress. Three lifetime resumes retain all hard work
+budgets. Paid/ambiguous/capped/invalid-custody stops remain blocked. Errors discard
+raw storage detail. This adds no public endpoint or charge/refund/stock authority.
