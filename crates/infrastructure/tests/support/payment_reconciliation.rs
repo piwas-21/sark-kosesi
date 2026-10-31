@@ -543,3 +543,55 @@ mod clock_cases;
 mod drift_cases;
 #[path = "payment_reconciliation_limits.rs"]
 mod limit_cases;
+
+#[sqlx::test(migrations = false)]
+async fn upgrade_preserves_paid_identity_and_claims_without_starting_a_recovery_job(pool: PgPool) {
+    MIGRATOR
+        .run_to(26, &pool)
+        .await
+        .expect("actual prior schema");
+    let (time, f) = prepared(&pool, true).await;
+    let a = &f.snapshot().binding.id;
+    let i = ids();
+    crate::payment_attempts::observations::record_verified(
+        &pool,
+        time.as_ref(),
+        &i,
+        a,
+        "paid",
+        &super::observation_cases::fetched(f.snapshot(), "tr_A", "paid", false).await,
+    )
+    .await
+    .expect("prior authenticated paid fact");
+    let resolution = crate::payment_attempts::identities::resolve(
+        &pool,
+        time.as_ref(),
+        &i,
+        a,
+        "prior-resolution",
+    )
+    .await
+    .expect("prior ownership")
+    .resolution;
+    let before = crate::payment_test_fixture::counts(&pool).await;
+    MIGRATOR.run(&pool).await.expect("forward upgrade");
+    assert_eq!(crate::payment_test_fixture::counts(&pool).await, before);
+    let old = crate::payment_attempts::identities::read_recorded(&pool, a, "prior-resolution")
+        .await
+        .expect("old reader")
+        .expect("receipt");
+    assert!(old == resolution);
+    assert!(read_job(&pool, a).await.expect("unstarted").is_none());
+    jobs::enqueue(&pool, time.as_ref(), &f.snapshot().binding.profile.id)
+        .await
+        .expect("explicit scheduling");
+    MIGRATOR.run(&pool).await.expect("idempotent migration");
+    assert_eq!(
+        read_job(&pool, a)
+            .await
+            .expect("durable job")
+            .expect("found")
+            .generation,
+        0
+    );
+}
