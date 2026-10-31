@@ -978,3 +978,88 @@ async fn connection_default_repeatable_read_cannot_hide_facts_committed_during_a
         (1, 5, 1, 1, 2)
     );
 }
+
+#[sqlx::test(migrator = "MIGRATOR")]
+async fn damaged_original_dispatch_identity_or_time_cannot_validate_a_historical_observation(
+    pool: PgPool,
+) {
+    let (time, f) = prepared(&pool, true).await;
+    let paid = fetched(f.snapshot(), "tr_DISPATCH_PROOF", "paid", false).await;
+    let ids = ids();
+    let a = &f.snapshot().binding.id;
+    let first = record_verified(&pool, time.as_ref(), &ids, a, "first", &paid)
+        .await
+        .expect("healthy source receipt")
+        .snapshot;
+    let (id, at): (String, i64) =
+        sqlx::query_as("SELECT id,started_at FROM payment_dispatch_starts WHERE attempt_id=$1")
+            .bind(a)
+            .fetch_one(&pool)
+            .await
+            .expect("original dispatch");
+    for bad_id in [true, false] {
+        let mut tx = pool
+            .begin()
+            .await
+            .expect("isolated imported dispatch damage");
+        tx.execute("ALTER TABLE payment_dispatch_starts DISABLE TRIGGER USER")
+            .await
+            .expect("test-only damage");
+        if bad_id {
+            tx.execute("ALTER TABLE payment_dispatch_starts DROP CONSTRAINT payment_dispatch_starts_id_check").await.expect("test-only id damage");
+            tx.execute("UPDATE payment_dispatch_starts SET id='invalid-start'")
+                .await
+                .expect("invalid imported identity");
+        } else {
+            tx.execute("UPDATE payment_dispatch_starts SET started_at=5000")
+                .await
+                .expect("invalid imported original window");
+        }
+        tx.execute("ALTER TABLE payment_dispatch_starts ENABLE TRIGGER USER")
+            .await
+            .expect("restore guard");
+        tx.commit().await.expect("damaged isolated import");
+        assert_eq!(
+            read_recorded(&pool, a, "first").await.err(),
+            Some(PaymentStoreError::InvalidStoredData)
+        );
+        assert_eq!(
+            read_observation(&pool, a, &first.id).await.err(),
+            Some(PaymentStoreError::InvalidStoredData)
+        );
+        assert_eq!(
+            record_verified(&pool, time.as_ref(), &ids, a, "first", &paid)
+                .await
+                .err(),
+            Some(PaymentStoreError::InvalidStoredData)
+        );
+        let mut tx = pool.begin().await.expect("restore exact isolated original");
+        tx.execute("ALTER TABLE payment_dispatch_starts DISABLE TRIGGER USER")
+            .await
+            .expect("test-only restore");
+        sqlx::query("UPDATE payment_dispatch_starts SET id=$1,started_at=$2 WHERE attempt_id=$3")
+            .bind(&id)
+            .bind(at)
+            .bind(a)
+            .execute(&mut *tx)
+            .await
+            .expect("exact original restore");
+        if bad_id {
+            tx.execute("ALTER TABLE payment_dispatch_starts ADD CONSTRAINT payment_dispatch_starts_id_check CHECK(id ~ '^[a-f0-9]{32}$')").await.expect("restore exact id constraint");
+        }
+        tx.execute("ALTER TABLE payment_dispatch_starts ENABLE TRIGGER USER")
+            .await
+            .expect("restore guard");
+        tx.commit().await.expect("healthy isolated original");
+        assert!(
+            read_observation(&pool, a, &first.id)
+                .await
+                .expect("positive restored receipt")
+                == first
+        );
+    }
+    assert_eq!(
+        crate::payment_test_fixture::counts(&pool).await,
+        (1, 4, 1, 1, 2)
+    );
+}

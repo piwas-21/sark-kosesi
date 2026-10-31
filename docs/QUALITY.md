@@ -407,8 +407,8 @@ without stock or payment-state effects. Final clock rewind is tested after an
 observed event INSERT wait; the blocker permits reads so the test reaches that
 write. Native negative and healthy paired controls check deferred event
 completeness, original outbox uniqueness, minimal snapshot binding, immutable
-history, sequence/time bounds and exact event metadata. Damaged/oversized/orphaned
-imports fail readers and retries; exact fixture repair restores a healthy read.
+history, sequence/time bounds and exact event metadata. Damaged original dispatch identities/windows and damaged/oversized/orphaned
+observations fail readers and retries; exact fixture repair restores a healthy read.
 Populated positional arrays and every header have separate stored-decoder
 controls. Financial/dispatch binding, connection isolation, event presence, operation-effect matching
 and the post-write clock check require compiled fault controls with healthy
