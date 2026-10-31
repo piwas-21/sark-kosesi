@@ -399,7 +399,8 @@ prove a complete durable scan, provider sandbox behavior or payment acceptance.
 
 Verified-observation custody uses isolated PostgreSQL with real authenticated
 loopback fetch results, immutable original orders and committed dispatches.
-Exact/concurrent retries and distinct appends, actual hold expiry, late paid,
+Exact/concurrent retries and distinct appends, overlapping claims under a
+repeatable-read connection default, actual hold expiry, late paid,
 reordered statuses/different provider IDs, key rotation, false original bindings,
 clock/entropy/database failures and cancellation exercise fact/event atomicity
 without stock or payment-state effects. Final clock rewind is tested after an
@@ -409,7 +410,7 @@ completeness, original outbox uniqueness, minimal snapshot binding, immutable
 history, sequence/time bounds and exact event metadata. Damaged/oversized/orphaned
 imports fail readers and retries; exact fixture repair restores a healthy read.
 Populated positional arrays and every header have separate stored-decoder
-controls. Financial/dispatch binding, event presence, operation-effect matching
+controls. Financial/dispatch binding, connection isolation, event presence, operation-effect matching
 and the post-write clock check require compiled fault controls with healthy
 baselines, intended assertion failure and exact restoration. These tests provide
 source custody evidence, not current payment state, provider acceptance or release.

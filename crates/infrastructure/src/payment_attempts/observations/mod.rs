@@ -123,6 +123,10 @@ fn input(attempt_id: &str, effect: &str) -> Result<(), PaymentStoreError> {
     Ok(())
 }
 async fn limits(tx: &mut Transaction<'_, Postgres>) -> Result<(), PaymentStoreError> {
+    // A claim wait must not retain a connection-default repeatable-read snapshot.
+    sqlx::query("SET TRANSACTION ISOLATION LEVEL READ COMMITTED")
+        .execute(&mut **tx)
+        .await?;
     sqlx::query("SET LOCAL lock_timeout='1s';")
         .execute(&mut **tx)
         .await?;

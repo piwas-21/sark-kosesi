@@ -909,3 +909,72 @@ async fn a_damaged_missing_processing_event_cannot_be_treated_as_a_complete_rece
         (1, 4, 1, 1, 2)
     );
 }
+
+#[sqlx::test(migrator = "MIGRATOR")]
+async fn connection_default_repeatable_read_cannot_hide_facts_committed_during_an_append_claim(
+    pool: PgPool,
+) {
+    let (time, f) = prepared(&pool, true).await;
+    let verified = Arc::new(fetched(f.snapshot(), "tr_ISOLATION", "paid", false).await);
+    let ids = Arc::new(ids());
+    let rr = sqlx::postgres::PgPoolOptions::new()
+        .max_connections(2)
+        .min_connections(2)
+        .after_connect(|connection, _| {
+            Box::pin(async move {
+                sqlx::query("SET default_transaction_isolation='repeatable read'")
+                    .execute(connection)
+                    .await?;
+                Ok(())
+            })
+        })
+        .connect_with((*pool.connect_options()).clone())
+        .await
+        .expect("owned nondefault pool");
+    let configured: String = sqlx::query_scalar("SHOW default_transaction_isolation")
+        .fetch_one(&rr)
+        .await
+        .expect("actual nondefault session policy");
+    assert_eq!(configured, "repeatable read");
+    let mut blocker = pool.begin().await.expect("parent claim blocker");
+    sqlx::query("SELECT id FROM payment_attempts WHERE id=$1 FOR UPDATE")
+        .bind(&f.snapshot().binding.id)
+        .fetch_one(&mut *blocker)
+        .await
+        .expect("owned attempt claim");
+    let mut tasks = Vec::new();
+    for effect in ["rr-first", "rr-second"] {
+        let p = rr.clone();
+        let t = time.clone();
+        let v = verified.clone();
+        let i = ids.clone();
+        let a = f.snapshot().binding.id.clone();
+        tasks.push(tokio::spawn(async move {
+            record_verified(&p, t.as_ref(), i.as_ref(), &a, effect, v.as_ref()).await
+        }));
+    }
+    tokio::time::timeout(Duration::from_millis(800),async {
+        loop {
+            let count:i64=sqlx::query_scalar("SELECT count(*) FROM pg_stat_activity WHERE datname=current_database() AND wait_event_type='Lock' AND query LIKE 'SELECT left(basket_id,33) FROM payment_attempts WHERE id=%FOR UPDATE'").fetch_one(&pool).await.expect("both real claims waiting");
+            if count==2 {break;}tokio::time::sleep(Duration::from_millis(5)).await;
+        }
+    }).await.expect("both claim snapshots overlap");
+    blocker.commit().await.expect("release both contenders");
+    let mut revisions = Vec::new();
+    for task in tasks {
+        let result = task.await.expect("task");
+        assert!(
+            result.is_ok(),
+            "every distinct fetch fact must survive the claim wait"
+        );
+        let receipt = result.expect("asserted healthy append");
+        revisions.push(receipt.snapshot.revision);
+    }
+    rr.close().await;
+    revisions.sort_unstable();
+    assert_eq!(revisions, vec![1, 2]);
+    assert_eq!(
+        crate::payment_test_fixture::counts(&pool).await,
+        (1, 5, 1, 1, 2)
+    );
+}

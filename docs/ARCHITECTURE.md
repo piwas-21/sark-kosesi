@@ -644,7 +644,9 @@ provider binding, and captures the actual fetched credential fingerprint, includ
 a separately verified rotated same-profile key. No raw key, response details,
 address or checkout link enters this minimal financial evidence record.
 
-One attempt-row UPDATE claim serializes append and full-intent effect replay.
+An explicit read-committed transaction and attempt-row UPDATE claim serialize
+append and full-intent effect replay, including when the connection default is
+repeatable read. Reads after a claim wait must see facts committed during it.
 Exact receipts retain their original revision/time even when clock or entropy
 ports are now unavailable; changed status, identity or credential evidence under
 that same effect conflicts. Workers must look up that operation's receipt before
