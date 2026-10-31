@@ -91,6 +91,28 @@ async fn closed_bounded_history_rejects_damaged_imports_and_restores_exact_recei
         *v.pointer_mut(pointer).expect("field") = value;
         changes.push(v);
     }
+    for pointer in ["/market/products", "/products"] {
+        let mut v = original.clone();
+        let row = v.pointer(pointer).expect("array")[0].clone();
+        *v.pointer_mut(pointer).expect("array") = serde_json::Value::Array(vec![row; 21]);
+        changes.push(v);
+    }
+    for target in ["basket", "quote", "revision", "quote-body"] {
+        let mut v = original.clone();
+        match target {
+            "basket" => {
+                v["identity"]["basket_id"] = serde_json::json!("9".repeat(32));
+                v["quote"]["binding"]["basket_id"] = serde_json::json!("9".repeat(32));
+            }
+            "quote" => {
+                v["identity"]["quote_id"] = serde_json::json!("9".repeat(32));
+                v["quote"]["binding"]["quote_id"] = serde_json::json!("9".repeat(32));
+            }
+            "revision" => v["quote"]["binding"]["basket_revision"] = serde_json::json!(2),
+            _ => v["quote"]["binding"]["policy_review_revision"] = serde_json::json!(2),
+        };
+        changes.push(v);
+    }
     let mut unknown = original.clone();
     unknown["role"] = "admin".into();
     changes.push(unknown);
@@ -134,6 +156,9 @@ async fn closed_bounded_history_rejects_damaged_imports_and_restores_exact_recei
         *v.pointer_mut(pointer).expect("field") = value;
         changes.push(v);
     }
+    let mut unknown = serde_json::to_value(&intent).expect("intent");
+    unknown["role"] = "admin".into();
+    changes.push(unknown);
     for value in changes {
         sqlx::query("UPDATE checkout_orders SET intent=$1")
             .bind(value)
@@ -156,6 +181,20 @@ async fn closed_bounded_history_rejects_damaged_imports_and_restores_exact_recei
             .expect("positive restored source")
             == snapshot
     );
+    pool.execute("ALTER TABLE checkout_orders DROP CONSTRAINT checkout_orders_effect_key_check")
+        .await
+        .expect("damaged command header");
+    sqlx::query("UPDATE checkout_orders SET effect_key='bad key'")
+        .execute(&pool)
+        .await
+        .expect("damage");
+    assert!(matches!(
+        owned_order(&store, &key, &snapshot.identity.id).await,
+        Err(OrderStoreError::InvalidStoredData)
+    ));
+    pool.execute("UPDATE checkout_orders SET effect_key='place'")
+        .await
+        .expect("restore");
     // Serde alone permits positional structs; the storage contract requires objects.
     let mut positional = original.clone();
     positional["buyer"] = serde_json::json!(["Synthetic Buyer", "buyer@example.test"]);

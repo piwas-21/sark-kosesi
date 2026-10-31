@@ -55,8 +55,11 @@ pub async fn create_order(
     if let Some(prior) = stored::by_effect(scope.transaction(), &owner, effect).await? {
         return replay(scope, prior, intent).await;
     }
-    if let Some(prior) = stored::by_quote(scope.transaction(), &owner, &intent.quote_id).await? {
-        return replay(scope, prior, intent).await;
+    if stored::by_quote(scope.transaction(), &owner, &intent.quote_id)
+        .await?
+        .is_some()
+    {
+        return Err(OrderStoreError::Conflict);
     }
     if intent.expected_basket_revision != scope.revision() {
         return Err(OrderStoreError::Conflict);

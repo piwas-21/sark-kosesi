@@ -67,3 +67,7 @@ pub(super) async fn insert(
  .bind(event).bind(&id.id).bind(serde_json::json!({"schema_version":1,"order_id":id.id})).bind(id.created_at).execute(&mut **tx).await?;
     Ok(())
 }
+
+#[cfg(test)]
+#[path = "../../tests/support/order_stored.rs"]
+mod tests;

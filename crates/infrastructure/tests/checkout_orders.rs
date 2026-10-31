@@ -90,17 +90,18 @@ async fn accepted_quote_atomically_freezes_order_whole_basket_hold_and_minimal_e
     .await
     .expect("exact historical retry");
     assert!(retry.replayed && retry.snapshot == snapshot);
-    let retry = create_order(
-        &store,
-        &key,
-        &csrf,
-        "alternate-key",
-        &intent,
-        &fixture::seller(),
-    )
-    .await
-    .expect("one quote one order");
-    assert!(retry.replayed && retry.snapshot == snapshot);
+    assert!(matches!(
+        create_order(
+            &store,
+            &key,
+            &csrf,
+            "alternate-key",
+            &intent,
+            &fixture::seller()
+        )
+        .await,
+        Err(OrderStoreError::Conflict)
+    ));
     assert_eq!(counts(&pool).await, (1, 1, 1, 1, 2));
     for operation in [
         "UPDATE checkout_orders SET id=id",
@@ -410,4 +411,259 @@ async fn final_quote_seller_clock_and_cancellation_checks_follow_actual_outbox_i
             .expect("atomic reservation");
         assert_eq!(reserved, 12 * n);
     }
+}
+
+#[sqlx::test(migrator = "MIGRATOR")]
+async fn rejected_alternate_effect_cannot_acknowledge_a_second_intent(pool: PgPool) {
+    seed(&pool).await;
+    let (store, _) = store(&pool, 1100);
+    let (s, c) = guest(&store).await;
+    let k = GuestCredential::from_session(&s).expect("owner");
+    let q1 = issue_quote(&store, &k, &c, Locale::Nl, &request("q1"))
+        .await
+        .expect("q1")
+        .snapshot;
+    let i1 = fixture::intent(&q1.binding.quote_id);
+    let seller = fixture::seller();
+    let original = create_order(&store, &k, &c, "e1", &i1, &seller)
+        .await
+        .expect("first")
+        .snapshot;
+    assert!(matches!(
+        create_order(&store, &k, &c, "e2", &i1, &seller).await,
+        Err(OrderStoreError::Conflict)
+    ));
+    assert_eq!(counts(&pool).await, (1, 1, 1, 1, 2));
+    let q2 = issue_quote(&store, &k, &c, Locale::Nl, &request("q2"))
+        .await
+        .expect("fresh quote")
+        .snapshot;
+    let i2 = fixture::intent(&q2.binding.quote_id);
+    let second = create_order(&store, &k, &c, "e2", &i2, &seller)
+        .await
+        .expect("unacknowledged key may identify one new intent")
+        .snapshot;
+    assert!(original.identity.id != second.identity.id);
+    assert!(matches!(
+        create_order(&store, &k, &c, "e2", &i1, &seller).await,
+        Err(OrderStoreError::Conflict)
+    ));
+    assert!(
+        create_order(&store, &k, &c, "e1", &i1, &seller)
+            .await
+            .expect("original receipt")
+            .snapshot
+            == original
+    );
+    assert_eq!(counts(&pool).await, (2, 2, 2, 2, 4));
+}
+#[sqlx::test(migrator = "MIGRATOR")]
+async fn malformed_or_unaccepted_order_intent_never_uses_quote_or_component_authority(
+    pool: PgPool,
+) {
+    seed(&pool).await;
+    let (store, time) = store(&pool, 1100);
+    let (s, c) = guest(&store).await;
+    let k = GuestCredential::from_session(&s).expect("owner");
+    let q = issue_quote(&store, &k, &c, Locale::Nl, &request("q"))
+        .await
+        .expect("quote")
+        .snapshot;
+    let i = fixture::intent(&q.binding.quote_id);
+    let seller = fixture::seller();
+    for effect in ["", "bad key"] {
+        assert!(matches!(
+            create_order(&store, &k, &c, effect, &i, &seller).await,
+            Err(OrderStoreError::InvalidRequest)
+        ));
+    }
+    let mut changed = i.clone();
+    changed.confirmed = false;
+    assert!(matches!(
+        create_order(&store, &k, &c, "place", &changed, &seller).await,
+        Err(OrderStoreError::InvalidRequest)
+    ));
+    for change in 0..3 {
+        let mut changed = i.clone();
+        match change {
+            0 => changed.expected_basket_revision = 2,
+            1 => changed.shipping_address.country = "DE".into(),
+            _ => changed.shipping_address.postcode = "1234 AC".into(),
+        };
+        let result = create_order(&store, &k, &c, "place", &changed, &seller).await;
+        if change == 0 {
+            assert!(matches!(result, Err(OrderStoreError::Conflict)));
+        } else {
+            assert!(matches!(result, Err(OrderStoreError::QuoteChanged)));
+        }
+    }
+    for id in ["bad", "g0000000000000000000000000000000"] {
+        assert!(matches!(
+            owned_order(&store, &k, id).await,
+            Err(OrderStoreError::InvalidRequest)
+        ));
+    }
+    struct NoEntropy;
+    impl commerce_application::request_context::Identifiers for NoEntropy {
+        fn next(&self) -> Result<[u8; 16], commerce_application::request_context::ContextError> {
+            Err(commerce_application::request_context::ContextError::EntropyUnavailable)
+        }
+    }
+    let unavailable = GuestSessionStore::new(
+        pool.clone(),
+        time,
+        std::sync::Arc::new(NoEntropy),
+        commerce_application::guest_access::GuestLimits::default(),
+    )
+    .expect("injected dependency");
+    assert!(matches!(
+        create_order(&unavailable, &k, &c, "place", &i, &seller).await,
+        Err(OrderStoreError::EntropyUnavailable)
+    ));
+    assert_eq!(counts(&pool).await, (0, 0, 0, 0, 0));
+}
+#[sqlx::test(migrator = "MIGRATOR")]
+async fn fresh_checkout_cannot_adopt_even_an_exact_preexisting_reservation_group(pool: PgPool) {
+    use commerce_application::{
+        guest_access::GuestLimits,
+        request_context::{ContextError, Identifiers},
+    };
+    use commerce_infrastructure::holds::{BasketHoldLine, BasketHoldRequest, reserve_basket};
+    use std::sync::{Arc, atomic::AtomicU64};
+    struct ChosenIds(AtomicU64);
+    impl Identifiers for ChosenIds {
+        fn next(&self) -> Result<[u8; 16], ContextError> {
+            Ok(u128::from(self.0.fetch_add(1, Ordering::SeqCst) + 1).to_be_bytes())
+        }
+    }
+    seed(&pool).await;
+    let (store, time) = store(&pool, 1100);
+    let (s, c) = guest(&store).await;
+    let k = GuestCredential::from_session(&s).expect("owner");
+    let q = issue_quote(&store, &k, &c, Locale::Nl, &request("q"))
+        .await
+        .expect("quote")
+        .snapshot;
+    let owner = format!("{:032x}", 701);
+    let group = format!("{:032x}", 702);
+    let lines = vec![BasketHoldLine {
+        id: format!("{:032x}", 704),
+        sku: "SET-FILLED".into(),
+        revision: 1,
+        units: 3,
+    }];
+    reserve_basket(
+        &pool,
+        time.as_ref(),
+        BasketHoldRequest {
+            id: &group,
+            owner_id: &owner,
+            created_at: 1100,
+            expires_at: 2000,
+            lines: &lines,
+        },
+    )
+    .await
+    .expect("standalone orphan reservation");
+    let collide = GuestSessionStore::new(
+        pool.clone(),
+        time,
+        Arc::new(ChosenIds(AtomicU64::new(700))),
+        GuestLimits::default(),
+    )
+    .expect("store");
+    assert!(matches!(
+        create_order(
+            &collide,
+            &k,
+            &c,
+            "place",
+            &fixture::intent(&q.binding.quote_id),
+            &fixture::seller()
+        )
+        .await,
+        Err(OrderStoreError::Conflict)
+    ));
+    assert_eq!(counts(&pool).await, (0, 0, 1, 1, 2));
+}
+
+async fn final_source_wait(pool: PgPool, mode: &str) {
+    seed(&pool).await;
+    if mode == "market" {
+        let mut p = quote_fixture::policy();
+        p.revision = 2;
+        p.expires_at = 1950;
+        quote_fixture::draft(&pool, &p).await;
+        quote_fixture::decide(&pool, 2, 0, true, "short-current").await;
+    }
+    pool.execute("CREATE FUNCTION pause_final_source() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN PERFORM pg_advisory_xact_lock(851239);RETURN NEW;END;$$;CREATE TRIGGER pause_final_source AFTER INSERT ON commerce_outbox FOR EACH ROW EXECUTE FUNCTION pause_final_source()").await.expect("final write instrument");
+    let (store, time) = store(&pool, 1900);
+    let (s, c) = guest(&store).await;
+    let k = GuestCredential::from_session(&s).expect("owner");
+    let q = issue_quote(&store, &k, &c, Locale::Nl, &request("q"))
+        .await
+        .expect("quote before rights/policy deadline")
+        .snapshot;
+    let intent = fixture::intent(&q.binding.quote_id);
+    let mut seller = fixture::seller();
+    seller.expires_at = 3000;
+    let mut blocker = pool.begin().await.expect("gate");
+    sqlx::query("SELECT pg_advisory_xact_lock(851239)")
+        .execute(&mut *blocker)
+        .await
+        .expect("gate held");
+    let (ws, k, token, i, seller) = (
+        store.clone(),
+        GuestCredential::from_session(&s).expect("owner"),
+        c.clone(),
+        intent.clone(),
+        seller.clone(),
+    );
+    let work =
+        tokio::spawn(async move { create_order(&ws, &k, &token, "place", &i, &seller).await });
+    waiting(&pool, "INSERT INTO commerce_outbox%").await;
+    time.0.store(
+        match mode {
+            "market" => 1950,
+            "photo" => 2000,
+            _ => 606700,
+        },
+        Ordering::SeqCst,
+    );
+    blocker.rollback().await.expect("resume");
+    let result = work.await.expect("task");
+    if mode == "identity" {
+        assert!(matches!(result, Err(OrderStoreError::Denied)));
+    } else {
+        assert!(matches!(result, Err(OrderStoreError::Unavailable)));
+    }
+    assert_eq!(counts(&pool).await, (0, 0, 0, 0, 0));
+    time.0.store(1900, Ordering::SeqCst);
+    let mut seller = fixture::seller();
+    seller.expires_at = 3000;
+    assert!(
+        create_order(
+            &store,
+            &GuestCredential::from_session(&s).expect("owner"),
+            &c,
+            "place",
+            &intent,
+            &seller
+        )
+        .await
+        .is_ok()
+    );
+    assert_eq!(counts(&pool).await, (1, 1, 1, 1, 2));
+}
+#[sqlx::test(migrator = "MIGRATOR")]
+async fn current_market_is_checked_after_all_order_and_event_writes(pool: PgPool) {
+    final_source_wait(pool, "market").await;
+}
+#[sqlx::test(migrator = "MIGRATOR")]
+async fn photo_rights_are_checked_after_all_order_and_event_writes(pool: PgPool) {
+    final_source_wait(pool, "photo").await;
+}
+#[sqlx::test(migrator = "MIGRATOR")]
+async fn guest_identity_is_checked_after_all_order_and_event_writes(pool: PgPool) {
+    final_source_wait(pool, "identity").await;
 }

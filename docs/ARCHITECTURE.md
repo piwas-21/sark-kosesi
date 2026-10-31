@@ -645,7 +645,8 @@ UPDATE claims directly, compares exact quote money/source revisions and requires
 new acceptance after changes. The original quote is retained rather than silently
 repriced. One quote creates one order; full-intent retries return the original
 receipt before current cart/quote checks, without extending holds or altering a
-newer basket. Ownership and fresh session validity still protect every replay/read.
+newer basket. A different effect for an already-ordered quote conflicts; no
+successful alternate key is acknowledged without a durable full-intent binding. Ownership and fresh session validity still protect every replay/read.
 
 One database transaction creates immutable buyer/shipping/billing and explicit
 seller/legal/tax document snapshots, full market policy, merchandise selection,

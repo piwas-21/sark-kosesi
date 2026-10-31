@@ -303,9 +303,16 @@ shared-component balances and row counts verify one atomic order/hold/outbox eff
 Two shoppers contest the last components; concurrent receipt retries create one
 order without extending stock. Current-source changes require new acceptance;
 ownership, CSRF, revocation and changed intent reject access/effects. Real waits
-after outbox insertion exercise final deadlines, seller expiry, clock rewind and
+after outbox insertion exercise final identity/market/photo/quote deadlines, seller
+expiry, clock rewind and
 cancellation rollback. Event-write failure rolls back all movements without private
 database detail. Damaged-import controls exercise bounded object shapes, captured
 money, header/intent/source mismatches and exact positive restoration. Domain
 oracles cover explicit seller/tax/document/locale policy and bounded contact syntax.
-These source tests establish no actual seller, provider or fulfilment acceptance.
+Migration controls preserve prior quotes, stock and grants. Relational fault
+instruments reject forged quote/intent/product/manifest bindings, and a missing
+event fails the deferred completeness constraint. An alternate-effect cross-quote
+sequence cannot reuse an acknowledged key for another order. Diagnostic controls
+prove nested dependency errors lose private detail, with an unredacted positive
+control. These source tests establish no actual seller, provider or fulfilment
+acceptance.
