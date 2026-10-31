@@ -334,3 +334,10 @@ exact amount/profile/metadata matching and preserved late-paid evidence. Closed
 serialization rejects live mode, non-EUR currency, missing custody fields and
 unknown statuses. Matching every supported status changes no order/stock state.
 These pure tests establish no durable dispatch, provider or sandbox acceptance.
+
+Frozen request tests assert a literal canonical JSON body and independently
+computed SHA-256, exact decimal amounts through the integer ceiling, supported
+method syntax, no recurring/profile/mode parameter injection, server-added return
+identifiers, canonical HTTPS routes and configuration drift. Corrupt/oversized/
+noncanonical stored bytes fail, with exact positive restoration. No such test
+establishes method eligibility, actual callbacks or provider acceptance.

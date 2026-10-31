@@ -515,11 +515,14 @@ Write domain changes and outbox events in one transaction. Workers claim leases 
 
 The private version-1 payment domain captures immutable server/order/basket/stock
 identities, positive bounded EUR minor units, explicit test mode, profile and
-credential fingerprint, a frozen-request digest and an active dispatch deadline.
+credential fingerprint, a configuration digest, a frozen-request digest and an
+active dispatch deadline. Validated request-independent bindings are separate
+from the final frozen snapshot, so construction needs no placeholder hashes.
 Its idempotency key derives from the immutable attempt identity. No key, request,
 profile, amount or readiness is accepted from a customer by this model.
 
 The pure dispatch policy requests a single Prepared-to-Started transition.
+Prepared plans reject changed profile, credential or configuration identity.
 Infrastructure must durably serialize that transition before any provider I/O;
 a pure plan supplies no dispatch authority. Started means the request may have
 reached the provider. Every subsequent plan reconciles, including after credential
@@ -534,8 +537,17 @@ without consuming stock or changing order/payment/fulfilment state. Provider IDs
 are bounded opaque prefixed values, accommodating longer upstream identifiers.
 Identifiers and credential custody data have no Debug implementation.
 
-This model adds no attempt persistence, provider adapter, worker or callback.
-Complete frozen request/URL configuration, owned-order transactional composition,
+The application freezer now captures canonical request bytes, exact decimal EUR,
+configured supported-method syntax, oneoff sequence and order/attempt metadata.
+Return/callback URLs must be distinct canonical HTTPS routes under one explicitly
+configured DNS origin, without user info, query or fragments. Return identifiers
+are added by the server. No profileId/testmode parameter, raw key or contact/address
+data enters the provider request. Stable configuration and request digests bind
+these bytes; restore requires exact canonical reproduction under the captured
+policy. No active policy, method eligibility or deployment is installed.
+
+These primitives add no attempt persistence, provider adapter, worker or callback.
+Complete owned-order transactional composition,
 durable dispatch custody, authenticated fetch/reconciliation, late-paid stock
 recovery and separate finance/fulfilment transitions before using it for payments.
 Actual profile/method/key and sandbox acceptance remain independent requirements.

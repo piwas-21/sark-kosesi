@@ -35,11 +35,11 @@ pub fn match_provider(
     // Version 1 uses closed Test/EUR types; other modes/currencies cannot decode.
     if payment.resource != "payment"
         || !opaque(&payment.id, "tr_")
-        || payment.profile_id != attempt.profile_id
-        || payment.amount_minor != attempt.amount_minor
+        || payment.profile_id != attempt.binding.profile.id
+        || payment.amount_minor != attempt.binding.amount_minor
         || payment.metadata_schema_version != ATTEMPT_SCHEMA_VERSION
-        || payment.order_id != attempt.order_id
-        || payment.attempt_id != attempt.id
+        || payment.order_id != attempt.binding.order_id
+        || payment.attempt_id != attempt.binding.id
     {
         return Err(PaymentError::ProviderMismatch);
     }

@@ -256,8 +256,10 @@ supervision or live provider activation follows from deploying the empty preview
 4. The private test-payment domain now models immutable attempt identity, exact
    EUR/profile/credential/request binding, one durable dispatch-start plan and
    strict server-fetched matching. It performs no persistence, network or payment
-   transition. Add frozen request/URL configuration, owned-order transactional
-   attempts and Mollie sandbox adapter before provider I/O; uncertain outcomes
+   transition. The application now freezes exact request bytes under validated
+   explicit HTTPS return/callback configuration and matching configuration identity.
+   Add owned-order transactional attempts and Mollie sandbox adapter before
+   provider I/O; uncertain outcomes
    reconcile under the original identity and never mint a replacement charge.
    Fetch and verify webhook identifiers against order/amount/currency/profile/mode.
    Add durable outbox/reconciler, duplicate/reordered notifications and atomic late

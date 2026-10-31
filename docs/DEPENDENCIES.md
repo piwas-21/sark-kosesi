@@ -90,3 +90,9 @@ production dependency changes receive no exception. Before expiry, adopt and
 validate compatible upstream fixes or replace the affected development tools;
 otherwise this exception ceases to permit the affected work. Production release
 requires a fresh dependency/image review and an unexpired disposition of findings.
+
+The payment-request application now directly uses the already locked `serde`,
+`serde_json` 1.0.154, `sha2` 0.10.9 and `url` 2.5.8 packages. Their existing
+MIT/Apache-2.0 reviews apply; no package version or dependency closure changes.
+Maintained URL parsing validates explicit merchant endpoints, and SHA-256 binds
+canonical configuration/request bytes. A digest alone grants no provider authority.

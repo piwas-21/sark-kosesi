@@ -21,38 +21,53 @@ pub enum PaymentError {
 pub enum PaymentMode {
     Test,
 }
+#[derive(Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct ProfileBinding {
+    pub id: String,
+    pub credential_fingerprint: String,
+    pub mode: PaymentMode,
+}
+impl ProfileBinding {
+    pub fn validate(&self) -> Result<(), PaymentError> {
+        if !opaque(&self.id, "pfl_") || !hex(&self.credential_fingerprint, 64) {
+            return Err(PaymentError::InvalidSnapshot);
+        }
+        Ok(())
+    }
+}
+/// Fresh validated server configuration, supplied by the application at dispatch.
+pub struct CurrentConfiguration {
+    pub profile: ProfileBinding,
+    pub sha256: String,
+}
 // No Debug: identifiers correlate private orders and credential custody.
 #[derive(Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
-pub struct AttemptSnapshot {
-    pub schema_version: u16,
+pub struct AttemptBinding {
     pub id: String,
     pub order_id: String,
     pub basket_id: String,
     pub stock_group_id: String,
-    pub profile_id: String,
-    pub credential_fingerprint: String,
-    pub mode: PaymentMode,
+    pub profile: ProfileBinding,
+    pub configuration_sha256: String,
     pub currency: Currency,
     pub amount_minor: i64,
-    pub request_sha256: String,
     pub created_at: i64,
     pub dispatch_before: i64,
 }
-impl AttemptSnapshot {
+impl AttemptBinding {
     pub fn validate(&self) -> Result<(), PaymentError> {
-        if self.schema_version != ATTEMPT_SCHEMA_VERSION
-            || ![
-                &self.id,
-                &self.order_id,
-                &self.basket_id,
-                &self.stock_group_id,
-            ]
-            .iter()
-            .all(|v| hex(v, 32))
-            || !opaque(&self.profile_id, "pfl_")
-            || !hex(&self.credential_fingerprint, 64)
-            || !hex(&self.request_sha256, 64)
+        if ![
+            &self.id,
+            &self.order_id,
+            &self.basket_id,
+            &self.stock_group_id,
+        ]
+        .iter()
+        .all(|v| hex(v, 32))
+            || self.profile.validate().is_err()
+            || !hex(&self.configuration_sha256, 64)
             || !(1..=crate::quotes::MAX_MINOR_UNITS).contains(&self.amount_minor)
             || self.created_at < 0
             || self.dispatch_before <= self.created_at
@@ -63,9 +78,24 @@ impl AttemptSnapshot {
         }
         Ok(())
     }
-    /// Stable within the stored profile/credential/request identity, never a new key on timeout.
+}
+#[derive(Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct AttemptSnapshot {
+    pub schema_version: u16,
+    pub binding: AttemptBinding,
+    pub request_sha256: String,
+}
+impl AttemptSnapshot {
+    pub fn validate(&self) -> Result<(), PaymentError> {
+        if self.schema_version != ATTEMPT_SCHEMA_VERSION || !hex(&self.request_sha256, 64) {
+            return Err(PaymentError::InvalidSnapshot);
+        }
+        self.binding.validate()
+    }
+    /// Stable for the validated frozen attempt; never replace this key on timeout.
     pub fn idempotency_key(&self) -> String {
-        format!("piwas-test-payment-{}", self.id)
+        format!("piwas-test-payment-{}", self.binding.id)
     }
 }
 fn hex(value: &str, length: usize) -> bool {

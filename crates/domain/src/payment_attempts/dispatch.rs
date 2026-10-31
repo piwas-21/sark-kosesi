@@ -27,7 +27,9 @@ impl DispatchState {
         match self {
             Self::Prepared => Ok(()),
             Self::Started { started_at } | Self::Known { started_at, .. } => {
-                if *started_at < attempt.created_at || *started_at >= attempt.dispatch_before {
+                if *started_at < attempt.binding.created_at
+                    || *started_at >= attempt.binding.dispatch_before
+                {
                     return Err(PaymentError::InvalidSnapshot);
                 }
                 if let Self::Known { provider_id, .. } = self
@@ -46,18 +48,20 @@ pub fn plan_dispatch(
     attempt: &AttemptSnapshot,
     state: &DispatchState,
     at: i64,
-    credential_fingerprint: &str,
+    configuration: &CurrentConfiguration,
 ) -> Result<DispatchPlan, PaymentError> {
     state.validate(attempt)?;
-    if at < attempt.created_at || at > crate::checkout_quotes::MAX_QUOTE_UNIX_SECONDS {
+    if at < attempt.binding.created_at || at > crate::checkout_quotes::MAX_QUOTE_UNIX_SECONDS {
         return Err(PaymentError::InvalidClock);
     }
     match state {
         DispatchState::Prepared => {
-            if at >= attempt.dispatch_before {
+            if at >= attempt.binding.dispatch_before {
                 return Err(PaymentError::Expired);
             }
-            if credential_fingerprint != attempt.credential_fingerprint {
+            if configuration.profile != attempt.binding.profile
+                || configuration.sha256 != attempt.binding.configuration_sha256
+            {
                 return Err(PaymentError::ConfigurationChanged);
             }
             Ok(DispatchPlan::Start {

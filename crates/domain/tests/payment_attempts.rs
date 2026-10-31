@@ -3,18 +3,33 @@ use commerce_domain::{Currency, payment_attempts::*};
 fn attempt() -> AttemptSnapshot {
     AttemptSnapshot {
         schema_version: 1,
-        id: "1".repeat(32),
-        order_id: "2".repeat(32),
-        basket_id: "3".repeat(32),
-        stock_group_id: "4".repeat(32),
-        profile_id: "pfl_SYNTHETIC_NotARealProfile".into(),
-        credential_fingerprint: "a".repeat(64),
-        mode: PaymentMode::Test,
-        currency: Currency::EUR,
-        amount_minor: 38245,
         request_sha256: "b".repeat(64),
-        created_at: 1100,
-        dispatch_before: 2000,
+        binding: AttemptBinding {
+            id: "1".repeat(32),
+            order_id: "2".repeat(32),
+            basket_id: "3".repeat(32),
+            stock_group_id: "4".repeat(32),
+            profile: ProfileBinding {
+                id: "pfl_SYNTHETIC_NotARealProfile".into(),
+                credential_fingerprint: "a".repeat(64),
+                mode: PaymentMode::Test,
+            },
+            configuration_sha256: "d".repeat(64),
+            currency: Currency::EUR,
+            amount_minor: 38245,
+            created_at: 1100,
+            dispatch_before: 2000,
+        },
+    }
+}
+fn configuration(fingerprint: &str) -> CurrentConfiguration {
+    CurrentConfiguration {
+        profile: ProfileBinding {
+            id: "pfl_SYNTHETIC_NotARealProfile".into(),
+            credential_fingerprint: fingerprint.into(),
+            mode: PaymentMode::Test,
+        },
+        sha256: "d".repeat(64),
     }
 }
 fn provider() -> ProviderPayment {
@@ -36,7 +51,8 @@ fn new_attempt_can_plan_one_durable_start_with_a_literal_stable_key() {
     let a = attempt();
     assert_eq!(a.validate(), Ok(()));
     let state = DispatchState::Prepared;
-    let plan = plan_dispatch(&a, &state, 1200, &"a".repeat(64)).expect("valid unsent attempt");
+    let plan = plan_dispatch(&a, &state, 1200, &configuration(&"a".repeat(64)))
+        .expect("valid unsent attempt");
     let DispatchPlan::Start {
         next,
         idempotency_key,
@@ -52,7 +68,7 @@ fn new_attempt_can_plan_one_durable_start_with_a_literal_stable_key() {
     for at in [1200, 1999, 2000, 4800, 10000] {
         for credential in ["a".repeat(64), "c".repeat(64)] {
             assert!(matches!(
-                plan_dispatch(&a, &next, at, &credential),
+                plan_dispatch(&a, &next, at, &configuration(&credential)),
                 Ok(DispatchPlan::Reconcile { provider_id: None })
             ));
         }
@@ -65,7 +81,12 @@ fn dispatch_deadlines_clock_and_configuration_never_authorize_a_late_or_changed_
     let a = attempt();
     for at in [1100, 1999] {
         assert!(matches!(
-            plan_dispatch(&a, &DispatchState::Prepared, at, &"a".repeat(64)),
+            plan_dispatch(
+                &a,
+                &DispatchState::Prepared,
+                at,
+                &configuration(&"a".repeat(64))
+            ),
             Ok(DispatchPlan::Start { .. })
         ));
     }
@@ -75,11 +96,31 @@ fn dispatch_deadlines_clock_and_configuration_never_authorize_a_late_or_changed_
         (9_007_199_254_740_992, PaymentError::InvalidClock),
     ] {
         assert!(
-            matches!(plan_dispatch(&a,&DispatchState::Prepared,at,&"a".repeat(64)),Err(got) if got==want)
+            matches!(plan_dispatch(&a,&DispatchState::Prepared,at,&configuration(&"a".repeat(64))),Err(got) if got==want)
         );
     }
+    let mut changed = configuration(&"a".repeat(64));
+    changed.sha256 = "e".repeat(64);
     assert!(matches!(
-        plan_dispatch(&a, &DispatchState::Prepared, 1200, &"c".repeat(64)),
+        plan_dispatch(&a, &DispatchState::Prepared, 1200, &changed),
+        Err(PaymentError::ConfigurationChanged)
+    ));
+    assert!(matches!(
+        plan_dispatch(
+            &a,
+            &DispatchState::Started { started_at: 1200 },
+            4800,
+            &changed
+        ),
+        Ok(DispatchPlan::Reconcile { .. })
+    ));
+    assert!(matches!(
+        plan_dispatch(
+            &a,
+            &DispatchState::Prepared,
+            1200,
+            &configuration(&"c".repeat(64))
+        ),
         Err(PaymentError::ConfigurationChanged)
     ));
     assert!(matches!(
@@ -87,7 +128,7 @@ fn dispatch_deadlines_clock_and_configuration_never_authorize_a_late_or_changed_
             &a,
             &DispatchState::Started { started_at: 1200 },
             1199,
-            &"a".repeat(64)
+            &configuration(&"a".repeat(64))
         ),
         Err(PaymentError::InvalidClock)
     ));
@@ -98,9 +139,14 @@ fn dispatch_deadlines_clock_and_configuration_never_authorize_a_late_or_changed_
         );
     }
     let mut a = attempt();
-    a.amount_minor = 0;
+    a.binding.amount_minor = 0;
     assert!(matches!(
-        plan_dispatch(&a, &DispatchState::Prepared, 1200, &"a".repeat(64)),
+        plan_dispatch(
+            &a,
+            &DispatchState::Prepared,
+            1200,
+            &configuration(&"a".repeat(64))
+        ),
         Err(PaymentError::InvalidSnapshot)
     ));
 }
@@ -131,10 +177,10 @@ fn known_provider_identity_is_immutable_and_never_authorizes_another_post() {
         Err(PaymentError::ProviderMismatch)
     ));
     assert!(
-        matches!(plan_dispatch(&a,&known,10000,&"c".repeat(64)),Ok(DispatchPlan::Reconcile{provider_id:Some(value)}) if value==id)
+        matches!(plan_dispatch(&a,&known,10000,&configuration(&"c".repeat(64))),Ok(DispatchPlan::Reconcile{provider_id:Some(value)}) if value==id)
     );
     assert!(matches!(
-        plan_dispatch(&a, &known, 1199, &"a".repeat(64)),
+        plan_dispatch(&a, &known, 1199, &configuration(&"a".repeat(64))),
         Err(PaymentError::InvalidClock)
     ));
     assert_eq!(
@@ -148,23 +194,25 @@ fn known_provider_identity_is_immutable_and_never_authorizes_another_post() {
 }
 #[test]
 fn stable_snapshot_requires_exact_bounded_identity_positive_eur_and_source_digest() {
-    let changes: [fn(&mut AttemptSnapshot); 16] = [
+    let changes: [fn(&mut AttemptSnapshot); 18] = [
         |a| a.schema_version = 2,
-        |a| a.id = "bad".into(),
-        |a| a.order_id = "g".repeat(32),
-        |a| a.basket_id = "".into(),
-        |a| a.stock_group_id = "5".repeat(33),
-        |a| a.profile_id = "pfl_".into(),
-        |a| a.profile_id = " pfl_x".into(),
-        |a| a.profile_id = "pfl_bad\nvalue".into(),
-        |a| a.profile_id = format!("pfl_{}", "x".repeat(253)),
-        |a| a.credential_fingerprint = "G".repeat(64),
+        |a| a.binding.id = "bad".into(),
+        |a| a.binding.order_id = "g".repeat(32),
+        |a| a.binding.basket_id = "".into(),
+        |a| a.binding.stock_group_id = "5".repeat(33),
+        |a| a.binding.profile.id = "pfl_".into(),
+        |a| a.binding.profile.id = " pfl_x".into(),
+        |a| a.binding.profile.id = "pfl_bad\nvalue".into(),
+        |a| a.binding.profile.id = format!("pfl_{}", "x".repeat(253)),
+        |a| a.binding.configuration_sha256 = "invalid".into(),
+        |a| a.binding.profile.id = "pfl_SYNTHETIC ".into(),
+        |a| a.binding.profile.credential_fingerprint = "G".repeat(64),
         |a| a.request_sha256 = "".into(),
-        |a| a.amount_minor = 0,
-        |a| a.amount_minor = 9_007_199_254_740_992,
-        |a| a.created_at = -1,
-        |a| a.dispatch_before = 1100,
-        |a| a.dispatch_before = 2901,
+        |a| a.binding.amount_minor = 0,
+        |a| a.binding.amount_minor = 9_007_199_254_740_992,
+        |a| a.binding.created_at = -1,
+        |a| a.binding.dispatch_before = 1100,
+        |a| a.binding.dispatch_before = 2901,
     ];
     for change in changes {
         let mut a = attempt();
@@ -172,12 +220,12 @@ fn stable_snapshot_requires_exact_bounded_identity_positive_eur_and_source_diges
         assert_eq!(a.validate(), Err(PaymentError::InvalidSnapshot));
     }
     let mut a = attempt();
-    a.created_at = 9_007_199_254_740_990;
-    a.dispatch_before = 9_007_199_254_740_992;
+    a.binding.created_at = 9_007_199_254_740_990;
+    a.binding.dispatch_before = 9_007_199_254_740_992;
     assert_eq!(a.validate(), Err(PaymentError::InvalidSnapshot));
     let mut a = attempt();
-    a.amount_minor = 9_007_199_254_740_991;
-    a.profile_id = format!("pfl_{}", "x".repeat(252));
+    a.binding.amount_minor = 9_007_199_254_740_991;
+    a.binding.profile.id = format!("pfl_{}", "x".repeat(252));
     assert_eq!(a.validate(), Ok(()));
 }
 #[test]
@@ -230,19 +278,33 @@ fn stored_contract_has_no_missing_mode_currency_or_unknown_status_fallback() {
     let a = attempt();
     let raw = serde_json::to_value(&a).expect("snapshot");
     assert!(serde_json::from_value::<AttemptSnapshot>(raw.clone()).expect("round trip") == a);
-    for (field, value) in [("mode", "live"), ("currency", "USD"), ("role", "owner")] {
-        let mut raw = raw.clone();
-        raw[field] = value.into();
-        assert!(serde_json::from_value::<AttemptSnapshot>(raw).is_err());
-    }
-    for field in [
-        "mode",
-        "currency",
-        "credential_fingerprint",
-        "request_sha256",
+    for (pointer, value) in [
+        ("/binding/profile/mode", "live"),
+        ("/binding/currency", "USD"),
     ] {
         let mut raw = raw.clone();
-        raw.as_object_mut().expect("object").remove(field);
+        *raw.pointer_mut(pointer).expect("required contract field") = value.into();
+        assert!(serde_json::from_value::<AttemptSnapshot>(raw).is_err());
+    }
+    let mut unknown = raw.clone();
+    unknown["role"] = "owner".into();
+    assert!(serde_json::from_value::<AttemptSnapshot>(unknown).is_err());
+    for (parent, field) in [
+        ("/binding/profile", "mode"),
+        ("/binding/profile", "credential_fingerprint"),
+        ("/binding", "currency"),
+        ("/binding", "configuration_sha256"),
+        ("", "request_sha256"),
+    ] {
+        let mut raw = raw.clone();
+        assert!(
+            raw.pointer_mut(parent)
+                .expect("parent")
+                .as_object_mut()
+                .expect("object")
+                .remove(field)
+                .is_some()
+        );
         assert!(serde_json::from_value::<AttemptSnapshot>(raw).is_err());
     }
     let raw = serde_json::to_value(provider()).expect("provider");
