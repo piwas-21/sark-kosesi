@@ -26,6 +26,9 @@ tracing-subscriber = { version = "=0.3.23", features = ["env-filter", "json"] }
 utoipa = "=6.0.0"
 subtle = "=2.6.1"
 tower = { version = "=0.5.3", features = ["util"] }
+tower-sessions = { version = "=0.15.0", default-features = false, features = ["axum-core"] }
+async-trait = "=0.1.92"
+url = "=2.5.8"
 
 [workspace.lints.rust]
 unsafe_code = "forbid"

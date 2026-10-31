@@ -4,6 +4,7 @@ pub struct Config {
     pub database_url: String,
     pub preview_token: String,
     pub bind: SocketAddr,
+    pub guest_origin: Option<crate::guest::GuestOrigin>,
 }
 
 impl Config {
@@ -42,10 +43,15 @@ impl Config {
         if !bind.ip().is_loopback() {
             return Err("Preview API must bind loopback");
         }
+        let guest_origin = values
+            .get("GUEST_ORIGIN")
+            .map(|value| crate::guest::GuestOrigin::parse(value))
+            .transpose()?;
         Ok(Self {
             database_url,
             preview_token,
             bind,
+            guest_origin,
         })
     }
 }

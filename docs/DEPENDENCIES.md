@@ -47,3 +47,14 @@ versions are preserved. Decoding uses the upstream [limit API](https://docs.rs/i
 with additional owned resource checks; the library documents allocation limits as
 best-effort. This adds no hosted image service. New release-image SBOM/notices and
 actual photographic acceptance remain release requirements.
+
+`tower-sessions` 0.15.0 (MIT) supplies maintained Axum cookie/session transport with
+its memory store disabled. The owned SQLx store binds immutable guest identity to
+a SHA-256 verifier of the library's 128-bit identifier; no raw credential is stored.
+`async-trait` 0.1.92 (MIT/Apache-2.0) implements its store interface, and `url` 2.5.8
+(MIT/Apache-2.0, already locked transitively) validates an explicit HTTPS origin.
+Exact direct versions and the added dependency closure pass cargo-audit/cargo-deny.
+The HTTP adapter also normalizes removal-cookie attributes and clears failed
+creation state so middleware cannot retry an issuance rejected by the quota.
+This is guest identity only; verified accounts, privilege rotation and guest-order
+access remain separate work. No password or MFA verification is introduced.

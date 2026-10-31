@@ -1,6 +1,7 @@
 //! Application policies shared by the API and database projection.
 #![forbid(unsafe_code)]
 
+pub mod guest_access;
 pub mod request_context;
 pub mod staff_access;
 

@@ -502,3 +502,36 @@ loading boundary is scoped to specimen products/gallery so an unavailable SKU ca
 return a genuine 404. Every Next/API/image request remains private/no-store. Image
 proxy paths accept only locale/SKU/revision/edge and bound response bytes while
 reading; private credentials and original/asset paths never reach browser props.
+
+### Guest basket sessions
+
+The optional internal guest routes remain behind the preview bearer and loopback
+binding. `GUEST_ORIGIN` must be a canonical HTTPS origin. Rust's maintained
+`tower-sessions` transport issues `__Host-piwas-guest` cookies with Secure,
+HttpOnly, SameSite=Lax, path `/` and no Domain, including removal cookies. Lax
+permits a later provider GET return; a return grants no payment authority. There
+is no Next.js identity copy or browser storage bearer. Installation creates no
+credentials or baskets. Staging configuration does not enable these routes yet.
+
+Each opaque 128-bit framework identifier is stored only as a domain-separated
+SHA-256 verifier. Its immutable owner and random 256-bit synchronizer CSRF value
+remain server-side with a fixed maximum seven-day lifetime. The owner-only,
+no-store response supplies CSRF; mutations require one exact configured Origin
+and one matching CSRF header. Issuance requires that Origin and closed empty JSON.
+The API bounds bodies at 4096 bytes, rejects positional JSON shapes and accepts
+only SKU/unit intent. Host/forwarded headers cannot select the trusted origin.
+Cookies and CSRF/body values are excluded from logs. Raw framework errors are
+mapped to static codes; a failed create clears its pending middleware state.
+
+The PostgreSQL store never upserts a credential, changes its binding, extends its
+lifetime or resurrects revocation. Fresh principal/identifier collisions fail the
+whole transaction. Operations hold credential SHARE claims; revocation takes an
+exclusive claim, and fresh clocks reject expiry or rewind during waits. Basket
+versions and immutable full-intent receipts serialize updates; historical retries
+return their old revision without reverting newer selections. Atomic issuance
+and per-basket mutation minute ceilings are resource bounds, not per-IP bot
+protection. Public rollout still needs an explicit trusted-edge abuse policy.
+Guest identity grants no staff, catalogue, stock, price or order authority. Basket
+checkout must freshly validate publications, market policies and aggregate stock,
+then create immutable order snapshots and whole-basket holds. Account linking
+and privilege changes require separately proven credential rotation in P4.

@@ -19,6 +19,10 @@ sha2.workspace = true
 image.workspace = true
 
 serde_json.workspace = true
+serde.workspace = true
+subtle.workspace = true
+tower-sessions.workspace = true
+async-trait.workspace = true
 
 # Test-only browser fixture driver; never part of API or worker binaries.
 [[example]]

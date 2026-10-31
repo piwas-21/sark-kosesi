@@ -183,3 +183,22 @@ arithmetic is revalidated before discounting, and every amount remains bounded E
 minor units. Refund arithmetic preserves immutable captured tax but grants no
 finance capability, ownership, provider attempt or restocking effect. Durable
 administration, redemption limits and authenticated checkout remain prerequisites.
+
+Guest basket credentials use a maintained stateful transport and a private SQLx
+store. The opt-in internal routes retain preview authentication and a validated
+HTTPS Origin; installation grants no guest/staff/order authority. Mutations reject
+missing, duplicate or foreign Origin and session-scoped CSRF headers, and reject
+nonobject/unknown input and oversized bodies. Secure, HttpOnly host cookies carry
+only an opaque identifier; the database retains a domain-separated SHA-256
+verifier. Cookie removal is normalized to preserve the host prefix attributes.
+
+Fixed lifetime and immutable identity bindings cannot be extended or upserted by
+framework saves. Every operation freshly claims the credential; revocation claims
+it exclusively through commit. Basket receipts bind normalized full intent and
+optimistic revision, so retries do not reverse newer content. Atomic minute
+ceilings bound issuance and mutation; forwarded headers cannot reset the limits
+or choose Origin. This is not per-IP bot protection: public exposure still needs
+an approved trusted-edge policy, retention/deletion operations and complete
+checkout authority. Logs expose static failure codes and correlation IDs, with
+positive/negative capture controls for cookies, CSRF and body values. No public
+customer bridge or order/payment effect is enabled by these routes.
