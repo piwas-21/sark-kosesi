@@ -166,6 +166,7 @@ fn malformed_page_counts_shapes_and_payment_identity_fail_closed() {
         json!(null),
         json!({}),
         json!({"count":0,"_embedded":{"payments":[]}}),
+        json!({"count":0,"_embedded":{"payments":[]},"_links":{}}),
     ] {
         assert!(decode(&v, f.snapshot()).is_err());
     }
@@ -372,5 +373,47 @@ async fn rotated_same_profile_search_is_read_only_and_wrong_attempt_profile_is_r
         server.count(),
         2,
         "search never posts or automatically fetches"
+    );
+}
+
+#[test]
+fn populated_positional_arrays_cannot_substitute_for_critical_page_objects() {
+    let (_, f) = captured(38245);
+    let p = payment(f.snapshot());
+    let cases = [
+        (
+            "minimal",
+            json!({"count":0,"_embedded":[[]],"_links":[null]}),
+        ),
+        (
+            "embedded",
+            json!({"count":1,"_embedded":[[p.clone()]],"_links":{"next":null}}),
+        ),
+        (
+            "links",
+            json!({"count":1,"_embedded":{"payments":[p.clone()]},"_links":[null]}),
+        ),
+        (
+            "next",
+            json!({"count":1,"_embedded":{"payments":[p.clone()]},"_links":{"next":["https://api.mollie.com/v2/payments?from=tr_X&limit=10"]}}),
+        ),
+        (
+            "entry",
+            json!({"count":1,"_embedded":{"payments":[["payment","tr_POSITIONAL",null]]},"_links":{"next":null}}),
+        ),
+    ];
+    for (label, value) in cases {
+        assert!(
+            decode(&value, f.snapshot()).is_err(),
+            "populated positional {label} must be rejected"
+        );
+    }
+    assert!(decode(&page(vec![], Value::Null), f.snapshot()).is_ok());
+    assert_eq!(
+        decode(&page(vec![p], Value::Null), f.snapshot())
+            .expect("healthy object page")
+            .candidates()
+            .len(),
+        1
     );
 }

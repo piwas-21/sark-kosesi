@@ -621,6 +621,8 @@ authenticated GET before financial observation. Two matching identities remain
 visible; the client never silently selects a winner. Empty results or a missing
 next link never prove absence, end uncertainty or authorize another create.
 
+Explicit guards require embedded/link containers, each payment entry and non-null
+next links to be JSON objects; positional arrays cannot substitute for structs.
 Typed raw JSON entries preserve duplicate critical fields through metadata
 selection and full payment validation. Unrelated profile payments may carry
 arbitrary metadata; either matching order or attempt identifier requires the full

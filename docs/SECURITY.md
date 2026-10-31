@@ -269,7 +269,8 @@ is compiled only for unit tests and rejects every non-loopback origin.
 Private list discovery retains the verified-profile capability and read-only
 rotation policy. Each call is bounded to ten results and existing HTTP budgets;
 continuation data cannot choose a request origin/path or add profile/mode inputs.
-Original JSON entries preserve duplicate critical-field rejection. Either matching
+Explicit object-shape checks reject nested positional-array substitutions;
+original JSON entries preserve duplicate critical-field rejection. Either matching
 order/attempt metadata identifier requires complete financial matching; unrelated
 metadata and provider PII never become stored observations. Multiple identities
 remain explicit candidates for separate GETs. Empty/unfinished discovery cannot

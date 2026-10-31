@@ -74,7 +74,8 @@ pub(super) fn decode(
     attempt: &AttemptSnapshot,
     from: Option<&SearchCursor>,
 ) -> Result<SearchPage, MollieError> {
-    wire::json(body)?;
+    let value = wire::json(body)?;
+    validate_page_objects(&value)?;
     let page: Page<'_> = serde_json::from_slice(body).map_err(|_| MollieError::InvalidResponse)?;
     if page.count != page.embedded.payments.len() || page.count > PAGE_LIMIT {
         return Err(MollieError::InvalidResponse);
@@ -101,6 +102,25 @@ pub(super) fn decode(
         }
     }
     Ok(SearchPage { candidates, next })
+}
+fn validate_page_objects(value: &Value) -> Result<(), MollieError> {
+    let embedded = value
+        .get("_embedded")
+        .and_then(Value::as_object)
+        .ok_or(MollieError::InvalidResponse)?;
+    let entries = embedded
+        .get("payments")
+        .and_then(Value::as_array)
+        .ok_or(MollieError::InvalidResponse)?;
+    let links = value
+        .get("_links")
+        .and_then(Value::as_object)
+        .ok_or(MollieError::InvalidResponse)?;
+    let next = links.get("next").ok_or(MollieError::InvalidResponse)?;
+    if !entries.iter().all(Value::is_object) || (!next.is_object() && !next.is_null()) {
+        return Err(MollieError::InvalidResponse);
+    }
+    Ok(())
 }
 fn associated(metadata: Option<&RawValue>, attempt: &AttemptSnapshot) -> Result<bool, MollieError> {
     let Some(raw) = metadata else {
