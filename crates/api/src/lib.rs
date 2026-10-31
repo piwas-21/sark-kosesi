@@ -2,16 +2,18 @@
 #![forbid(unsafe_code)]
 pub mod config;
 pub mod contract;
+pub mod guest;
+mod routing;
+pub use routing::{router, router_with_guest};
 pub mod published;
 pub mod published_types;
 
 use axum::{
-    Json, Router,
+    Json,
     extract::{Path, Request, State},
     http::{HeaderValue, StatusCode},
-    middleware::{self, Next},
+    middleware::Next,
     response::{IntoResponse, Response},
-    routing::get,
 };
 use commerce_application::{
     Locale,
@@ -176,23 +178,4 @@ async fn ready(State(state): State<AppState>) -> Response {
         Ok(()) => StatusCode::NO_CONTENT.into_response(),
         Err(_) => error(StatusCode::SERVICE_UNAVAILABLE, "database_unavailable"),
     }
-}
-
-pub fn router(state: AppState) -> Router {
-    Router::new()
-        .route("/api/catalogue/{locale}", get(get_catalogue))
-        .route("/api/published/{locale}", get(published::page))
-        .route(
-            "/api/published/{locale}/products/{sku}",
-            get(published::product),
-        )
-        .route(
-            "/api/published/{locale}/images/{sku}/{revision}/{edge}",
-            get(published::image),
-        )
-        .route_layer(middleware::from_fn_with_state(state.clone(), protected))
-        .route("/health/live", get(|| async { StatusCode::NO_CONTENT }))
-        .route("/health/ready", get(ready))
-        .layer(middleware::from_fn_with_state(state.clone(), bounded))
-        .with_state(state)
 }

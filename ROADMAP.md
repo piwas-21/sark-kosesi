@@ -132,3 +132,9 @@ remains mandatory, including successful evidence uploads, browser acceptance and
 populated Sonar/CodeQL results; do not merge based on local checks alone.
 
 Before any private-repository switch, run the protection audit and follow [operations](docs/OPERATIONS.md). A GitHub Free private repository does not retain the current public-repository enforcement. Do not declare production readiness while that is unresolved.
+
+Guest-basket intent has an opt-in internal session/CSRF API with durable ownership,
+revocation, bounded counters and immutable version receipts. No public customer
+bridge, order creation, basket stock reservation or payment follows from it.
+Continue immutable checkout/order snapshots and atomic holds, with trusted-edge
+abuse controls before exposing cookie-authenticated customer routes.

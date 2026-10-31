@@ -233,8 +233,13 @@ supervision or live provider activation follows from deploying the empty preview
    One promotion per quote, exact eligibility, UTC windows and immutable cent/tax
    allocations must remain consistent through checkout, payment and credit records.
    No customer coupon is accepted and no customer policy may grant readiness.
-3. Add durable guest baskets, ownership/CSRF/abuse controls, immutable quote/order/
-   address/policy snapshots and atomic whole-basket holds. Revalidate publications,
+3. Durable guest intent now has a PostgreSQL-backed maintained session adapter,
+   fixed Secure/HttpOnly host cookies, exact configured HTTPS Origin and CSRF
+   checks, hashed credential custody, revocation serialization, bounded counters,
+   optimistic versions and full-intent replay receipts. Internal routes are opt-in
+   behind preview authentication; no frontend bridge or public activation exists.
+   Complete trusted-edge abuse controls before a public customer bridge. Add
+   immutable quote/order/address/policy snapshots and atomic whole-basket holds. Revalidate publications,
    policy and amounts during order creation; an earlier quote grants no authority.
    Expose the same-origin API/contracts and checkout UI only with those controls.
 4. Add Mollie sandbox adapter and stable persisted payment attempts/idempotency

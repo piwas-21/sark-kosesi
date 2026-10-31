@@ -5,6 +5,7 @@ pub mod bom;
 pub mod catalogue_authoring;
 pub mod catalogue_prices;
 pub mod factual_review;
+pub mod guest_baskets;
 pub mod holds;
 pub mod image_ingestion;
 pub mod image_review;
