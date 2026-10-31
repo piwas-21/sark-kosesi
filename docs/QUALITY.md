@@ -296,3 +296,33 @@ unready destinations and finite resource limits. Compiled omissions of the final
 must fail their intended policy-expiry and cross-owner assertions; source hashes
 are restored afterward. Synthetic clocks and manually replayed cookies are
 transport evidence, not native browser/device acceptance.
+
+Private accepted-order tests use isolated PostgreSQL and explicitly invented
+seller/contact/catalogue evidence. Literal captured cents, exact event payload,
+shared-component balances and row counts verify one atomic order/hold/outbox effect.
+Two shoppers contest the last components; concurrent receipt retries create one
+order without extending stock. Current-source changes require new acceptance;
+ownership, CSRF, revocation and changed intent reject access/effects. Real waits
+after outbox insertion exercise final identity/market/photo/quote deadlines, seller
+expiry, clock rewind and
+cancellation rollback. Event-write failure rolls back all movements without private
+database detail. Damaged-import controls exercise bounded object shapes, captured
+money, header/intent/source mismatches and exact positive restoration. Domain
+oracles cover explicit seller/tax/document/locale policy and bounded contact syntax.
+Migration controls preserve prior quotes, stock and grants. Relational fault
+instruments reject forged quote/intent/product/manifest bindings, and a missing
+event fails the deferred completeness constraint. An alternate-effect cross-quote
+sequence cannot reuse an acknowledged key for another order. Diagnostic controls
+prove nested dependency errors lose private detail, with an unredacted positive
+control. These source tests establish no actual seller, provider or fulfilment
+acceptance.
+
+The executable money mutation harness copies the actual Rust workspace manifests,
+lockfile, crate sources and shared test fixtures into its disposable workspace.
+Each invocation uses its own temporary build directory; no unmodified baseline
+can inherit compiled mutants from a prior invocation.
+It first compiles/runs the unmodified money/quote/promotion oracles offline with
+locked dependencies, then requires each intended executable mutant to fail its
+named assertion. A stale miniature dependency manifest, baseline compilation
+failure or unrelated mutant compilation error fails the instrument; none counts
+as a killed arithmetic defect.

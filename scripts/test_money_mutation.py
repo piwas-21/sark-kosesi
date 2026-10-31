@@ -13,27 +13,36 @@ ROOT = Path(__file__).resolve().parents[1]
 def main():
     with tempfile.TemporaryDirectory(prefix="money-mutation-", dir=ROOT / ".local") as temporary:
         directory = Path(temporary)
-        shutil.copytree(ROOT / "crates/domain/src", directory / "src")
-        shutil.copytree(ROOT / "crates/domain/tests", directory / "tests")
-        (directory / "Cargo.toml").write_text("""[workspace]
-[package]
-name="commerce-domain"
-version="0.1.0"
-edition="2024"
-[dependencies]
-serde={version="=1.0.229",features=["derive"]}
-""")
-        subprocess.run(
-            [
-                "cargo",
-                "generate-lockfile",
-                "--offline",
-                "--manifest-path",
-                str(directory / "Cargo.toml"),
-            ],
-            check=True,
+        # Keep the actual package/dependency/edition/lint graph and locked closure.
+        # A hand-written miniature manifest drifts when domain dependencies change.
+        for name in ("Cargo.toml", "Cargo.lock"):
+            shutil.copy2(ROOT / name, directory / name)
+        shutil.copytree(ROOT / "crates", directory / "crates")
+        shutil.copytree(ROOT / "tests/fixtures", directory / "tests/fixtures")
+        command = [
+            "cargo",
+            "test",
+            "--locked",
+            "--offline",
+            "--manifest-path",
+            str(directory / "Cargo.toml"),
+            "-p",
+            "commerce-domain",
+        ]
+        # A restored source may have an older timestamp than a previous mutant's
+        # outputs. Never allow another run to inherit those compiled artifacts.
+        environment = {**os.environ, "CARGO_TARGET_DIR": str(directory / "target")}
+        baseline = subprocess.run(
+            [*command, "--test", "money", "--test", "quotes", "--test", "promotions"],
+            env=environment,
+            text=True,
             capture_output=True,
         )
+        if baseline.returncode != 0:
+            (ROOT / ".local/money-mutation-baseline-failure.log").write_text(
+                baseline.stdout + baseline.stderr
+            )
+            raise ValueError("Isolated money/quote/promotion baseline did not compile and pass")
         for relative, original_expression, mutant, test_binary, test_name in (
             (
                 "lib.rs",
@@ -72,27 +81,15 @@ serde={version="=1.0.229",features=["derive"]}
             ),
         ):
             expected = f"test {test_name} ... FAILED"
-            source = directory / "src" / relative
+            source = directory / "crates/domain/src" / relative
             original = source.read_text()
             if original.count(original_expression) != 1:
                 raise ValueError("Mutation target changed; review the intended arithmetic defect")
             source.write_text(original.replace(original_expression, mutant))
             try:
                 result = subprocess.run(
-                    [
-                        "cargo",
-                        "test",
-                        "--locked",
-                        "--offline",
-                        "--manifest-path",
-                        str(directory / "Cargo.toml"),
-                        "--test",
-                        test_binary,
-                        "--",
-                        "--exact",
-                        test_name,
-                    ],
-                    env={**os.environ, "CARGO_TARGET_DIR": str(ROOT / "target/money-mutation")},
+                    [*command, "--test", test_binary, "--", "--exact", test_name],
+                    env=environment,
                     text=True,
                     capture_output=True,
                 )

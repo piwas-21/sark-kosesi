@@ -635,3 +635,37 @@ whole basket and persist order/address/policy/promotion/outbox effects atomicall
 It must acquire stock UPDATE claims directly in the established global order;
 calling the indicative SHARE-stock evaluator first would risk lock upgrades.
 No browser checkout, order, payment or deployment is enabled by these receipts.
+
+### Private accepted orders
+
+The infrastructure-only order primitive composes fresh guest/CSRF authority,
+current basket revision, an owned unexpired quote and the latest independently
+reviewed market/publication sources. It acquires globally ordered component
+UPDATE claims directly, compares exact quote money/source revisions and requires
+new acceptance after changes. The original quote is retained rather than silently
+repriced. One quote creates one order; full-intent retries return the original
+receipt before current cart/quote checks, without extending holds or altering a
+newer basket. A different effect for an already-ordered quote conflicts; no
+successful alternate key is acknowledged without a durable full-intent binding. Ownership and fresh session validity still protect every replay/read.
+
+One database transaction creates immutable buyer/shipping/billing and explicit
+seller/legal/tax document snapshots, full market policy, merchandise selection,
+publication/BOM references, exact EUR allocations, sealed whole-basket holds and a
+minimal `checkout.order_created.v1` outbox event containing only the order ID.
+Final observed-clock checks follow these writes and recheck identity, retained
+source/photo rights, quote, seller policy and hold window. History remains readable
+after indicative deadlines; a history read grants no stock or payment transition.
+SQL guards enforce exact owned quote/manifest bindings, immutable rows and the
+required event. Stored readers bound JSON, require object shapes, validate headers
+and reconstruct captured allocations against immutable source rows. Private
+contact/seller/order types have no Debug implementation; database error details
+are discarded at this boundary.
+
+Seller policy is a required trusted server argument with explicit identity, tax
+registration choice, document versions/digests, locale, evidence and validity.
+Nothing installs or infers real seller/legal facts. Email validation checks bounded
+single-mailbox syntax only, including UTF-8; it proves neither delivery nor identity.
+Initial orders require a positive payable total and accept no coupon. Promotion
+budget accounting, order/payment/fulfilment transitions, retained-data operations,
+public HTTP/UI/edge controls, outbox dispatch and provider attempts remain separate
+work. No transaction performs provider/network I/O or sends a customer message.

@@ -34,6 +34,8 @@ def validate(document, root, branches=True):
             "crates/*/src/inventory.rs",
             "crates/*/src/quotes/*.rs",
             "crates/*/src/checkout_quotes/*.rs",
+            "crates/*/src/checkout_orders/*.rs",
+            "crates/*/src/checkout_orders/*/*.rs",
             "crates/application/src/request_context.rs",
             "crates/*/src/market_policies/*.rs",
             "crates/*/src/promotions/*.rs",

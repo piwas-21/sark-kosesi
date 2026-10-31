@@ -12,6 +12,9 @@ use commerce_domain::{
 };
 use serde::{Deserialize, Serialize};
 use sqlx::{Postgres, Transaction};
+mod decode;
+pub(crate) use decode::decode_snapshot;
+pub(crate) use stored::by_id as snapshot_in_transaction;
 mod issue;
 mod stored;
 pub use issue::{issue_quote, owned_quote};

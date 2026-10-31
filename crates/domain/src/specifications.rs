@@ -65,7 +65,7 @@ pub fn bounded_text(value: &str, maximum: usize) -> bool {
     !value.trim().is_empty() && value.chars().count() <= maximum
 }
 impl DimensionsMm {
-    fn validate(&self) -> Result<(), SpecificationError> {
+    pub(crate) fn validate(&self) -> Result<(), SpecificationError> {
         for value in [self.width_mm, self.depth_mm, self.height_mm] {
             if !(1..=10000).contains(&value) || self.tolerance_mm >= value {
                 return Err(SpecificationError::Measurements);

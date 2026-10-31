@@ -14,7 +14,7 @@ impl QuoteBinding {
         identifier(&self.quote_id)
             && identifier(&self.basket_id)
             && self.basket_revision > 0
-            && ["nl", "de", "fr", "en", "ar", "tr", "kmr"].contains(&self.locale.as_str())
+            && INTERNAL_LOCALES.contains(&self.locale.as_str())
             && self.created_at >= 0
             && self.expires_at <= MAX_QUOTE_UNIX_SECONDS
             && self.expires_at > self.created_at

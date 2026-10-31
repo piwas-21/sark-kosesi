@@ -7,6 +7,11 @@ use commerce_domain::quotes::{
 use sqlx::PgPool;
 mod proof;
 mod stock;
+#[derive(Clone, Copy)]
+enum StockClaim {
+    Indicative,
+    Reservation,
+}
 pub(crate) use proof::QuoteProof;
 
 #[derive(Debug)]
@@ -77,9 +82,17 @@ pub(crate) async fn in_transaction(
     request: &QuoteRequest,
     policies: &[MarketPolicy],
 ) -> Result<ServerQuote, QuoteFailure> {
-    Ok(evaluate(tx, clock, locale, request, policies, None)
-        .await?
-        .original)
+    Ok(evaluate(
+        tx,
+        clock,
+        locale,
+        request,
+        policies,
+        None,
+        StockClaim::Indicative,
+    )
+    .await?
+    .original)
 }
 pub(crate) async fn promoted_in_transaction(
     tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
@@ -89,7 +102,16 @@ pub(crate) async fn promoted_in_transaction(
     policies: &[MarketPolicy],
     promotion: &commerce_domain::promotions::Promotion,
 ) -> Result<PromotedServerQuote, QuoteFailure> {
-    let evaluation = evaluate(tx, clock, locale, request, policies, Some(promotion)).await?;
+    let evaluation = evaluate(
+        tx,
+        clock,
+        locale,
+        request,
+        policies,
+        Some(promotion),
+        StockClaim::Indicative,
+    )
+    .await?;
     let totals = evaluation.promoted.ok_or(QuoteFailure::InvalidStoredData)?;
     Ok(PromotedServerQuote {
         policy_id: evaluation.original.policy_id,
@@ -105,6 +127,7 @@ async fn evaluate(
     request: &QuoteRequest,
     policies: &[MarketPolicy],
     promotion: Option<&commerce_domain::promotions::Promotion>,
+    stock_claim: StockClaim,
 ) -> Result<QuoteProof, QuoteFailure> {
     request.validate()?;
     if policies.len() > 64 {
@@ -146,7 +169,7 @@ async fn evaluate(
             vat_basis_points: rule.vat_basis_points,
         });
     }
-    stock::check(tx, &products, &request.lines).await?;
+    stock::check(tx, &products, &request.lines, stock_claim).await?;
     let totals = calculate(
         &priced,
         policy.shipping.gross,
@@ -183,7 +206,16 @@ pub(crate) async fn prepare_in_transaction(
     request: &QuoteRequest,
     policies: &[MarketPolicy],
 ) -> Result<QuoteProof, QuoteFailure> {
-    evaluate(tx, clock, locale, request, policies, None).await
+    evaluate(
+        tx,
+        clock,
+        locale,
+        request,
+        policies,
+        None,
+        StockClaim::Indicative,
+    )
+    .await
 }
 
 fn shipping(
@@ -214,4 +246,23 @@ fn shipping(
         return Err(QuoteError::ShippingUnavailable.into());
     }
     Ok(())
+}
+
+pub(crate) async fn prepare_order_in_transaction(
+    tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
+    clock: &dyn Clock,
+    locale: Locale,
+    request: &QuoteRequest,
+    policies: &[MarketPolicy],
+) -> Result<QuoteProof, QuoteFailure> {
+    evaluate(
+        tx,
+        clock,
+        locale,
+        request,
+        policies,
+        None,
+        StockClaim::Reservation,
+    )
+    .await
 }

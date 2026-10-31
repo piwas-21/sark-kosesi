@@ -29,6 +29,9 @@ impl QuoteProof {
         self.checked_at = at;
         Ok(())
     }
+    pub(crate) fn selected_products(&self) -> impl Iterator<Item = (&PublishedProduct, i32)> {
+        self.products.iter().map(|p| (&p.product, p.bom_revision))
+    }
     pub(crate) fn bom_revisions(&self) -> Vec<(String, i32)> {
         self.products
             .iter()
