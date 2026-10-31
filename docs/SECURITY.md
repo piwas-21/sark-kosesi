@@ -251,3 +251,17 @@ and source/header bindings are revalidated on reads and retries. Address/email
 syntax is neither ownership nor delivery proof. Seller/legal snapshots require
 trusted configuration; installation supplies none. Public routes, abuse controls,
 retention/erasure operations, coupon accounting and payment authority remain gates.
+
+The private Mollie test client accepts no live key or caller-controlled provider
+origin. Raw authorization is sensitive and excluded from Debug/serialization and
+database snapshots. Profile preflight is required before create/fetch capability.
+No proxy, redirect, automatic replay or decompression is enabled; HTTP deadlines,
+65536-byte responses, closed critical objects, exact decimal EUR and fetched
+profile/metadata/sequence checks protect the provider boundary. Client errors are
+static and discard URLs, keys, request/response detail and provider PII. Optional
+checkout links are HTTPS/host validated independently of financial evidence.
+Create requires the consumed durable permit; errors retain reconciliation.
+Rotated verified same-profile keys may read historical payments but cannot create
+under the old configuration. The library installs no callback, runtime key,
+worker, payment transition or production activation. Loopback test configuration
+is compiled only for unit tests and rejects every non-loopback origin.

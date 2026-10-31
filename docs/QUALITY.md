@@ -361,3 +361,17 @@ owned-history query predicate, replace reconciliation with another initial
 permit and bypass retained source deadlines. Each must compile and fail its specific custody assertion; the unmodified
 baseline and exact restored source must both pass. Compilation errors cannot count
 as killed defects. Source hashes and per-control logs bind the restored evidence.
+
+The private Mollie transport uses a bounded loopback Hyper instrument and isolated
+PostgreSQL, never actual provider resources. Literal decimal/fingerprint oracles,
+critical object/mode/currency/metadata/sequence mismatches, profile preflight,
+wrong credentials, redirect refusal, declared/streamed response limits, timeouts,
+private-data redaction and safe optional links exercise both negative and positive
+controls. Real held orders prove exact request bytes/idempotency key, separate
+fetch verification, lost/malformed/rejected/mismatched create uncertainty without
+another POST, retained source expiry and cancellation during gated provider I/O.
+Independent transactions acquire attempt/stock UPDATE claims during that I/O,
+proving the transport holds no database transaction. GET accepts genuine late-paid
+state under a separately verified same-profile rotated test key; it changes no
+order, stock, payment or fulfilment state. A wire response is not actual provider
+sandbox or customer/payment acceptance.
