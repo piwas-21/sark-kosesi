@@ -5,10 +5,7 @@ impl GuestOrigin {
     /// Only a canonical HTTPS origin: no path, credentials, query or fragment.
     pub fn parse(value: &str) -> Result<Self, &'static str> {
         let url = url::Url::parse(value).map_err(|_| "GUEST_ORIGIN must be an HTTPS origin")?;
-        if url.scheme() != "https"
-            || url.host_str().is_none()
-            || url.origin().ascii_serialization() != value
-        {
+        if url.scheme() != "https" || url.origin().ascii_serialization() != value {
             return Err("GUEST_ORIGIN must be a canonical HTTPS origin");
         }
         Ok(Self(value.into()))

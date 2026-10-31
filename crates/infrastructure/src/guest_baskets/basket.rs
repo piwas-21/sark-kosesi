@@ -90,6 +90,16 @@ struct Effect {
     revision: i32,
     lines: Option<serde_json::Value>,
 }
+impl Effect {
+    fn validated(&self) -> Result<Vec<BasketLine>, GuestError> {
+        if !(0..i32::MAX).contains(&self.expected_revision)
+            || self.expected_revision.checked_add(1) != Some(self.revision)
+        {
+            return Err(GuestError::InvalidStoredData);
+        }
+        lines(&self.lines)
+    }
+}
 pub async fn write_basket(
     store: &GuestSessionStore,
     key: &GuestCredential,
@@ -105,12 +115,7 @@ pub async fn write_basket(
     let prior:Option<Effect>=sqlx::query_as("SELECT expected_revision,revision,CASE WHEN octet_length(lines::text)<=8192 THEN lines END AS lines FROM guest_basket_effects WHERE basket_id=$1 AND effect_key=$2")
         .bind(&access.identity.basket_id).bind(&request.effect_key).fetch_optional(&mut *access.tx).await?;
     if let Some(effect) = prior {
-        if !(0..i32::MAX).contains(&effect.expected_revision)
-            || effect.expected_revision.checked_add(1) != Some(effect.revision)
-        {
-            return Err(GuestError::InvalidStoredData);
-        }
-        let original = lines(&effect.lines)?;
+        let original = effect.validated()?;
         if effect.expected_revision != request.expected_revision || original != selected {
             return Err(GuestError::Conflict);
         }
@@ -153,4 +158,79 @@ pub async fn write_basket(
         revision,
         replayed: false,
     })
+}
+#[cfg(test)]
+mod tests {
+    use super::*;
+    fn row(revision: i32) -> BasketRow {
+        BasketRow {
+            revision,
+            lines: Some(serde_json::json!([])),
+            last_effect_key: (revision > 0).then(|| "one".into()),
+            rate_window: 0,
+            mutation_count: 0,
+            head_revision: (revision > 0).then_some(revision),
+            head_expected: (revision > 0).then_some(0),
+            head_lines: (revision > 0).then(|| serde_json::json!([])),
+        }
+    }
+    #[test]
+    fn damaged_snapshot_headers_and_incomplete_or_changed_receipts_cannot_supply_intent() {
+        assert!(row(0).validated().expect("new basket").is_empty());
+        assert!(
+            row(1)
+                .validated()
+                .expect("receipted empty basket")
+                .is_empty()
+        );
+        let corruptions: [fn(&mut BasketRow); 12] = [
+            |r| r.revision = -1,
+            |r| r.rate_window = -1,
+            |r| r.mutation_count = -1,
+            |r| r.mutation_count = 1001,
+            |r| r.lines = None,
+            |r| r.lines = Some(serde_json::json!({})),
+            |r| r.lines = Some(serde_json::json!([{"sku":"A","quantity":0}])),
+            |r| r.last_effect_key = None,
+            |r| r.last_effect_key = Some("bad/key".into()),
+            |r| r.head_revision = Some(2),
+            |r| r.head_expected = Some(2),
+            |r| r.head_lines = Some(serde_json::json!([{"sku":"A","quantity":1}])),
+        ];
+        for corrupt in corruptions {
+            let mut r = row(1);
+            corrupt(&mut r);
+            assert!(matches!(r.validated(), Err(GuestError::InvalidStoredData)));
+        }
+        let mut r = row(0);
+        r.lines = Some(serde_json::json!([{"sku":"A","quantity":1}]));
+        assert!(r.validated().is_err());
+        let mut r = row(0);
+        r.last_effect_key = Some("unexpected".into());
+        assert!(r.validated().is_err());
+        let mut r = row(0);
+        r.head_revision = Some(1);
+        assert!(r.validated().is_err());
+        for (expected_revision, revision) in [(-1, 0), (i32::MAX, 0), (0, 2)] {
+            assert!(matches!(
+                Effect {
+                    expected_revision,
+                    revision,
+                    lines: Some(serde_json::json!([]))
+                }
+                .validated(),
+                Err(GuestError::InvalidStoredData)
+            ));
+        }
+        assert!(
+            Effect {
+                expected_revision: 0,
+                revision: 1,
+                lines: Some(serde_json::json!([]))
+            }
+            .validated()
+            .expect("valid receipt")
+            .is_empty()
+        );
+    }
 }

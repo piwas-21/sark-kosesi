@@ -52,6 +52,16 @@ fn config_is_validated_and_never_enables_production() {
         ("API_BIND".into(), "127.0.0.1:4567".into()),
     ]);
     assert!(Config::parse(&valid).is_ok());
+    let mut guest = valid.clone();
+    guest.insert("GUEST_ORIGIN".into(), "https://private.example.test".into());
+    assert!(
+        Config::parse(&guest)
+            .expect("configured guest")
+            .guest_origin
+            .is_some()
+    );
+    guest.insert("GUEST_ORIGIN".into(), "http://private.example.test".into());
+    assert!(Config::parse(&guest).is_err());
     let mut staging = valid.clone();
     staging.insert("APP_ENV".into(), "staging".into());
     assert!(Config::parse(&staging).is_ok());

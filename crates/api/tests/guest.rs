@@ -234,6 +234,8 @@ async fn origins_csrf_closed_bodies_and_size_limits_fail_before_changes(pool: Pg
         update("a", 0, 1).replace("SET-A", "DEMO-A"),
         update("a", 0, 1).replace("\"quantity\":1", "\"quantity\":1,\"price\":1"),
         update("a", 0, 1).replacen('{', "{\"owner\":\"x\",", 1),
+        r#"{"effect_key":"a","expected_revision":0,"lines":[["SET-A",1]]}"#.into(),
+        r#"{"effect_key":"a","expected_revision":0,"lines":{}}"#.into(),
     ] {
         assert_eq!(
             app.clone()

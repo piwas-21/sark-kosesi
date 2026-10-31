@@ -4,6 +4,14 @@ struct Quota {
     rate_window: i64,
     issued: i32,
 }
+impl Quota {
+    fn validate(&self) -> Result<(), GuestError> {
+        if self.rate_window < 0 || !(0..=1000).contains(&self.issued) {
+            return Err(GuestError::InvalidStoredData);
+        }
+        Ok(())
+    }
+}
 impl GuestSessionStore {
     pub(super) async fn create_record(&self, record: &mut Record) -> Result<(), GuestError> {
         let identity = GuestIdentity::from_record(record)?;
@@ -23,9 +31,7 @@ impl GuestSessionStore {
             return Err(GuestError::ClockUnavailable);
         }
         identity.check(admitted)?;
-        if quota.rate_window < 0 || !(0..=1000).contains(&quota.issued) {
-            return Err(GuestError::InvalidStoredData);
-        }
+        quota.validate()?;
         let window = admitted / 60;
         if window < quota.rate_window {
             return Err(GuestError::ClockUnavailable);
@@ -58,5 +64,33 @@ impl GuestSessionStore {
         identity.check(finished)?;
         tx.commit().await?;
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    #[test]
+    fn corrupted_resource_counters_never_grant_issuance() {
+        for (rate_window, issued) in [(-1, 0), (0, -1), (0, 1001)] {
+            assert!(matches!(
+                Quota {
+                    rate_window,
+                    issued
+                }
+                .validate(),
+                Err(GuestError::InvalidStoredData)
+            ));
+        }
+        for (rate_window, issued) in [(0, 0), (18, 1000)] {
+            assert!(
+                Quota {
+                    rate_window,
+                    issued
+                }
+                .validate()
+                .is_ok()
+            );
+        }
     }
 }

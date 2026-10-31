@@ -100,6 +100,12 @@ async fn two_guests_cannot_change_each_others_baskets_or_supply_money_roles_and_
     let (a, av) = issued(&store).await;
     let (b, bv) = issued(&store).await;
     let ak = GuestCredential::from_session(&a).expect("A");
+    for bad in ["short", &"X".repeat(64)] {
+        assert!(matches!(
+            write_basket(&store, &ak, bad, &change("bad-csrf", 0, 1)).await,
+            Err(GuestError::Csrf)
+        ));
+    }
     let bk = GuestCredential::from_session(&b).expect("B");
     assert!(matches!(
         write_basket(&store, &ak, bv.csrf_token(), &change("cross", 0, 1)).await,
@@ -174,6 +180,10 @@ async fn full_intent_retries_return_old_receipts_without_reverting_newer_basket(
             replayed: true
         }
     );
+    assert!(matches!(
+        write_basket(&store, &k, v.csrf_token(), &change("one", 1, 1)).await,
+        Err(GuestError::Conflict)
+    ));
     let current = read_basket(&store, &k).await.expect("current");
     assert_eq!((current.revision, current.lines.len()), (2, 0));
     assert!(matches!(
@@ -243,6 +253,10 @@ async fn issuance_and_mutation_ceilings_are_shared_bounded_and_cannot_reset_on_c
         Err(GuestError::ClockUnavailable)
     ));
     assert!(ensure_session(&store, &session(&store)).await.is_err());
+    assert!(matches!(
+        write_basket(&store, &ak, av.csrf_token(), &change("rewind", 3, 1)).await,
+        Err(GuestError::ClockUnavailable)
+    ));
 }
 #[sqlx::test(migrator = "MIGRATOR")]
 async fn revocation_and_expiry_deny_reads_writes_replays_and_cached_framework_saves(pool: PgPool) {
@@ -416,7 +430,7 @@ async fn final_clock_after_actual_effect_wait_and_cancellation_leave_no_partial_
     let (store, clock) = store(&pool, GuestLimits::default());
     let (s, v) = issued(&store).await;
     pool.execute("CREATE FUNCTION pause_guest_effect() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN IF NEW.revision>OLD.revision THEN PERFORM pg_advisory_xact_lock(871233); END IF; RETURN NEW; END; $$; CREATE TRIGGER pause_guest_effect BEFORE UPDATE ON guest_baskets FOR EACH ROW EXECUTE FUNCTION pause_guest_effect()").await.expect("timing instrument");
-    for mode in ["cancel", "expired", "positive"] {
+    for mode in ["cancel", "expired", "rewind", "positive"] {
         clock.0.store(1100, Ordering::SeqCst);
         let mut blocker = pool.begin().await.expect("gate");
         sqlx::query("SELECT pg_advisory_xact_lock(871233)")
@@ -439,10 +453,15 @@ async fn final_clock_after_actual_effect_wait_and_cancellation_leave_no_partial_
             if mode == "expired" {
                 clock.0.store(605900, Ordering::SeqCst);
             }
+            if mode == "rewind" {
+                clock.0.store(1099, Ordering::SeqCst);
+            }
             blocker.rollback().await.expect("unlock");
             let result = work.await.expect("task");
             if mode == "expired" {
                 assert!(matches!(result, Err(GuestError::Denied)));
+            } else if mode == "rewind" {
+                assert!(matches!(result, Err(GuestError::ClockUnavailable)));
             } else {
                 assert_eq!(result.expect("positive control").revision, 1);
             }
@@ -463,6 +482,8 @@ async fn maintained_store_rejects_forged_cached_identity_expiry_and_principal_co
     let id = s.id().expect("id");
     let record = store.load(&id).await.expect("load").expect("record");
     for (field, value) in [
+        ("basket_id", serde_json::json!("bad")),
+        ("csrf_token", serde_json::json!("bad")),
         ("csrf_token", serde_json::json!("f".repeat(64))),
         ("basket_id", serde_json::json!("f".repeat(32))),
         ("created_at", serde_json::json!(-1)),
@@ -586,4 +607,34 @@ async fn entropy_time_and_invalid_configuration_fail_without_minting_credentials
             .expect("no authority"),
         0
     );
+}
+struct ScriptClock(std::sync::Mutex<std::collections::VecDeque<u64>>);
+impl Clock for ScriptClock {
+    fn unix_seconds(&self) -> Result<u64, ContextError> {
+        self.0
+            .lock()
+            .map_err(|_| ContextError::ClockUnavailable)?
+            .pop_front()
+            .ok_or(ContextError::ClockUnavailable)
+    }
+}
+#[sqlx::test(migrator = "MIGRATOR")]
+async fn issuance_rechecks_clock_after_quota_claim_and_after_all_writes(pool: PgPool) {
+    for readings in [
+        vec![1100, 1101, 1100],
+        vec![1100, 1100, 1100, 1099],
+        vec![1100, 1100, 1100, 605900],
+    ] {
+        let clock = Arc::new(ScriptClock(std::sync::Mutex::new(readings.into())));
+        let store = GuestSessionStore::new(
+            pool.clone(),
+            clock,
+            Arc::new(Sequence(AtomicU64::new(0))),
+            GuestLimits::default(),
+        )
+        .expect("fixture");
+        assert!(ensure_session(&store, &session(&store)).await.is_err());
+        let counts:(i64,i64,i64,i32)=sqlx::query_as("SELECT (SELECT count(*) FROM guest_sessions),(SELECT count(*) FROM guest_baskets),(SELECT count(*) FROM guest_session_events),(SELECT issued FROM guest_issue_quota)").fetch_one(&pool).await.expect("atomic rollback");
+        assert_eq!(counts, (0, 0, 0, 0));
+    }
 }

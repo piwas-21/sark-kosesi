@@ -23,6 +23,12 @@ pub(crate) struct GuestState {
     pub store: GuestSessionStore,
     pub origin: GuestOrigin,
 }
+pub(super) struct Rejection(pub StatusCode, pub &'static str);
+impl IntoResponse for Rejection {
+    fn into_response(self) -> Response {
+        error(self.0, self.1)
+    }
+}
 fn failure(value: GuestError) -> Response {
     let (status, code) = match value {
         GuestError::InvalidRequest => (StatusCode::BAD_REQUEST, "invalid_guest_request"),
@@ -44,9 +50,9 @@ fn mutation(
     state: &GuestState,
     request: &Request,
     csrf_required: bool,
-) -> Result<String, Response> {
+) -> Result<String, Rejection> {
     if !state.origin.accepts(request.headers()) {
-        return Err(error(StatusCode::FORBIDDEN, "guest_origin_required"));
+        return Err(Rejection(StatusCode::FORBIDDEN, "guest_origin_required"));
     }
     if !csrf_required {
         return Ok(String::new());
@@ -54,47 +60,33 @@ fn mutation(
     single_header(request.headers(), "x-csrf-token")
         .map(String::from)
         .filter(|value| value.len() == 64)
-        .ok_or_else(|| error(StatusCode::FORBIDDEN, "guest_csrf_required"))
+        .ok_or(Rejection(StatusCode::FORBIDDEN, "guest_csrf_required"))
 }
-async fn body<T: DeserializeOwned>(request: Request) -> Result<T, Response> {
+async fn body<T: DeserializeOwned>(request: Request) -> Result<T, Rejection> {
     if single_header(request.headers(), "content-type").and_then(|value| value.split(';').next())
         != Some("application/json")
     {
-        return Err(error(
+        return Err(Rejection(
             StatusCode::UNSUPPORTED_MEDIA_TYPE,
             "guest_json_required",
         ));
     }
     let bytes = to_bytes(request.into_body(), 4096)
         .await
-        .map_err(|_| error(StatusCode::PAYLOAD_TOO_LARGE, "guest_request_too_large"))?;
-    let value: serde_json::Value = serde_json::from_slice(&bytes)
-        .map_err(|_| error(StatusCode::BAD_REQUEST, "invalid_guest_request"))?;
-    // Serde structs also accept positional sequences. The HTTP contract requires objects.
-    let object = value
-        .as_object()
-        .ok_or_else(|| error(StatusCode::BAD_REQUEST, "invalid_guest_request"))?;
-    if object.get("lines").is_some_and(|lines| {
-        !lines
-            .as_array()
-            .is_some_and(|lines| lines.iter().all(serde_json::Value::is_object))
-    }) {
-        return Err(error(StatusCode::BAD_REQUEST, "invalid_guest_request"));
-    }
-    serde_json::from_value(value)
-        .map_err(|_| error(StatusCode::BAD_REQUEST, "invalid_guest_request"))
+        .map_err(|_| Rejection(StatusCode::PAYLOAD_TOO_LARGE, "guest_request_too_large"))?;
+    types::decode(&bytes).map_err(|_| Rejection(StatusCode::BAD_REQUEST, "invalid_guest_request"))
 }
-#[utoipa::path(post, path="/api/guest/session", request_body=GuestIssueRequest, responses((status=200,body=GuestBasket),(status=400,body=ApiError),(status=403,body=ApiError),(status=429,body=ApiError),(status=503,body=ApiError)), security(("preview"=[])))]
+#[utoipa::path(post, path="/api/guest/session", request_body=GuestIssueRequest, params(("Origin"=String,Header)), responses((status=200,body=GuestBasket),(status=400,body=ApiError),(status=403,body=ApiError),(status=413,body=ApiError),(status=415,body=ApiError),(status=429,body=ApiError),(status=503,body=ApiError)), security(("preview"=[])))]
 pub(crate) async fn issue(
     Extension(state): Extension<GuestState>,
     session: Session,
     request: Request,
 ) -> Response {
     if let Err(response) = mutation(&state, &request, false) {
-        return response;
+        return response.into_response();
     }
     if let Err(response) = body::<GuestIssueRequest>(request).await {
-        return response;
+        return response.into_response();
     }
     match guest_baskets::ensure_session(&state.store, &session).await {
         Ok(view) => Json(GuestBasket::from(view)).into_response(),
@@ -112,7 +104,7 @@ pub(crate) async fn read(Extension(state): Extension<GuestState>, session: Sessi
         Err(value) => failure(value),
     }
 }
-#[utoipa::path(put, path="/api/guest/basket", request_body=GuestBasketUpdate, params(("x-csrf-token"=String,Header)), responses((status=200,body=GuestBasketReceipt),(status=400,body=ApiError),(status=401,body=ApiError),(status=403,body=ApiError),(status=409,body=ApiError),(status=429,body=ApiError),(status=503,body=ApiError)), security(("preview"=[],"guest"=[])))]
+#[utoipa::path(put, path="/api/guest/basket", request_body=GuestBasketUpdate, params(("Origin"=String,Header),("x-csrf-token"=String,Header)), responses((status=200,body=GuestBasketReceipt),(status=400,body=ApiError),(status=401,body=ApiError),(status=403,body=ApiError),(status=409,body=ApiError),(status=413,body=ApiError),(status=415,body=ApiError),(status=429,body=ApiError),(status=503,body=ApiError)), security(("preview"=[],"guest"=[])))]
 pub(crate) async fn write(
     Extension(state): Extension<GuestState>,
     session: Session,
@@ -120,7 +112,7 @@ pub(crate) async fn write(
 ) -> Response {
     let csrf = match mutation(&state, &request, true) {
         Ok(csrf) => csrf,
-        Err(response) => return response,
+        Err(response) => return response.into_response(),
     };
     let key = match GuestCredential::from_session(&session) {
         Ok(key) => key,
@@ -128,14 +120,14 @@ pub(crate) async fn write(
     };
     let update = match body::<GuestBasketUpdate>(request).await {
         Ok(value) => value,
-        Err(response) => return response,
+        Err(response) => return response.into_response(),
     };
     match guest_baskets::write_basket(&state.store, &key, &csrf, &update.into()).await {
         Ok(receipt) => Json(GuestBasketReceipt::from(receipt)).into_response(),
         Err(value) => failure(value),
     }
 }
-#[utoipa::path(delete, path="/api/guest/session", params(("x-csrf-token"=String,Header)), responses((status=204),(status=400,body=ApiError),(status=401,body=ApiError),(status=403,body=ApiError),(status=503,body=ApiError)), security(("preview"=[],"guest"=[])))]
+#[utoipa::path(delete, path="/api/guest/session", params(("Origin"=String,Header),("x-csrf-token"=String,Header)), responses((status=204),(status=400,body=ApiError),(status=401,body=ApiError),(status=403,body=ApiError),(status=503,body=ApiError)), security(("preview"=[],"guest"=[])))]
 pub(crate) async fn revoke(
     Extension(state): Extension<GuestState>,
     session: Session,
@@ -143,7 +135,7 @@ pub(crate) async fn revoke(
 ) -> Response {
     let csrf = match mutation(&state, &request, true) {
         Ok(csrf) => csrf,
-        Err(response) => return response,
+        Err(response) => return response.into_response(),
     };
     match to_bytes(request.into_body(), 0).await {
         Ok(_) => {}

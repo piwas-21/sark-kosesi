@@ -242,3 +242,17 @@ PostgreSQL promoted quotes retain latest reviewed market selection and source/
 component claims; actual waits cover promotion/market/rights expiry and cancellation.
 Closed promotion terms remain trusted server data, never a customer money policy.
 Indicative quotes do not establish atomic redemption limits or executed refunds.
+
+Guest basket ownership, session store, Origin/CSRF, cookie normalization and wire
+shape validation retain the same 95% critical native line/branch gates. Closed
+object decoding lives with the HTTP contract types; no DTO branch exception is
+required. Independent oracles cover two owners, wrong/duplicate/missing headers,
+expired and revoked credentials, forged stored identity/receipts, exact historical
+retries, version contention, quota/clock rewind and closed money/role fields.
+Real isolated PostgreSQL lock waits prove revocation ordering, expiry before and
+after effect writes, cancellation rollback and bounded issuance. Compiled final-
+clock and CSRF mutants must fail their intended assertions with source restoration.
+Trace log checks include a positive capture control and secret/body markers; the
+log test runs in its own binary so concurrent subscriber interest caches cannot
+produce a false zero. These HTTP/store tests do not establish a public browser
+checkout, deployed cookie acceptance, provider payment or physical fulfilment.

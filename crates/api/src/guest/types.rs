@@ -69,3 +69,17 @@ impl From<BasketReceipt> for GuestBasketReceipt {
         }
     }
 }
+
+/// Enforce the object shapes promised by OpenAPI; serde structs also accept sequences.
+pub(super) fn decode<T: serde::de::DeserializeOwned>(bytes: &[u8]) -> Result<T, ()> {
+    let value: serde_json::Value = serde_json::from_slice(bytes).map_err(|_| ())?;
+    let object = value.as_object().ok_or(())?;
+    if object.get("lines").is_some_and(|lines| {
+        !lines
+            .as_array()
+            .is_some_and(|lines| lines.iter().all(serde_json::Value::is_object))
+    }) {
+        return Err(());
+    }
+    serde_json::from_value(value).map_err(|_| ())
+}

@@ -333,6 +333,7 @@ export interface operations {
         parameters: {
             query?: never;
             header: {
+                Origin: string;
                 "x-csrf-token": string;
             };
             path?: never;
@@ -384,6 +385,22 @@ export interface operations {
                     "application/json": components["schemas"]["ApiError"];
                 };
             };
+            413: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            415: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
             429: {
                 headers: {
                     [name: string]: unknown;
@@ -405,7 +422,9 @@ export interface operations {
     issue: {
         parameters: {
             query?: never;
-            header?: never;
+            header: {
+                Origin: string;
+            };
             path?: never;
             cookie?: never;
         };
@@ -439,6 +458,22 @@ export interface operations {
                     "application/json": components["schemas"]["ApiError"];
                 };
             };
+            413: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            415: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
             429: {
                 headers: {
                     [name: string]: unknown;
@@ -461,6 +496,7 @@ export interface operations {
         parameters: {
             query?: never;
             header: {
+                Origin: string;
                 "x-csrf-token": string;
             };
             path?: never;

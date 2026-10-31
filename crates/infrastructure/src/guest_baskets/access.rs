@@ -27,12 +27,11 @@ pub(super) async fn lock_mode(
         .ok_or(GuestError::Denied)?;
     let started = now(store.clock.as_ref())?;
     identity.check(started)?;
-    if let Some(csrf) = csrf {
-        if !valid_hex(csrf, 64)
-            || !bool::from(csrf.as_bytes().ct_eq(identity.csrf_token.as_bytes()))
-        {
-            return Err(GuestError::Csrf);
-        }
+    if let Some(csrf) = csrf
+        && (!valid_hex(csrf, 64)
+            || !bool::from(csrf.as_bytes().ct_eq(identity.csrf_token.as_bytes())))
+    {
+        return Err(GuestError::Csrf);
     }
     Ok(Access {
         tx,
