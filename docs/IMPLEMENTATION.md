@@ -283,8 +283,12 @@ supervision or live provider activation follows from deploying the empty preview
    payment or fulfilment state follows. Profile-scoped durable recovery jobs now
    provide bounded GET-only search/fetch/poll steps, receipt checkpoints, expiring
    fenced leases, backoff and irreversible operator-review stops through an explicit
-   local/test worker command. No key or scheduler is installed. Complete callbacks,
-   authorized/audited operator recovery and separate financial/late-stock transitions
+   local/test worker command. No key or scheduler is installed. Private finance-authorized recovery now permits
+   at most three explicit resumes of exhausted transient GET failures. Immutable
+   before/after checkpoints, fresh session/MFA and full-intent receipt retries keep
+   the original attempt, page, claim/poll/scan budgets and paid facts intact. Paid,
+   ambiguous, capped and invalid-custody stops cannot use this action. Complete
+   callbacks, remaining operator dispositions and separate financial/late-stock transitions
    before operational payment acceptance;
    uncertain outcomes
    reconcile under the original identity and never mint a replacement charge.

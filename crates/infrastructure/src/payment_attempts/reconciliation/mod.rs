@@ -6,6 +6,7 @@ use commerce_application::request_context::{Clock, Identifiers, ObservedClock};
 use serde::{Deserialize, Serialize};
 use sqlx::PgPool;
 pub(crate) mod jobs;
+pub mod operator;
 pub(crate) mod steps;
 #[derive(Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]

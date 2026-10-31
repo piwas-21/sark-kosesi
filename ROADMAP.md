@@ -173,7 +173,11 @@ crash-resumable discovery without treating empty/end pages as absence. No creden
 sticky paid facts, with visible ambiguity, operation receipts and atomic events.
 Profile-scoped supervised GET-only recovery now persists leases, search/fetch/poll
 checkpoints, bounded retries and explicit review reasons through a local/test
-worker command. No runtime key or scheduler is installed. Add callbacks, authorized
-operator recovery, late-paid stock recovery
+worker command. No runtime key or scheduler is installed. Private finance-authorized transient
+recovery now retains immutable full-checkpoint decisions and permits at most three
+lifetime resumes without resetting claim, poll or scan budgets. Fresh session/MFA,
+exact generation and confirmation protect every call, including receipt replay.
+Paid, ambiguous, capped and invalid-custody stops remain unresolved. Add callbacks,
+remaining operator dispositions, late-paid stock recovery
 and separate order/payment/fulfilment/refund/invoice transitions. A pure domain
 plan or matched synthetic response is not dispatch or payment authority.

@@ -980,3 +980,6 @@ mod identity_ownership;
 
 #[path = "payment_reconciliation.rs"]
 mod reconciliation_cases;
+
+#[path = "payment_recovery_operators.rs"]
+mod operator_cases;

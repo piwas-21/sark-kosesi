@@ -40,34 +40,10 @@ impl Row {
             .map(|v| serde_json::from_value(serde_json::Value::String(v)))
             .transpose()
             .map_err(|_| invalid())?;
-        if !self.source_present
-            || !identifier(&self.attempt_id)
-            || !identifier(&self.source_event_id)
-            || !(0..=9_007_199_254_740_991).contains(&self.created_at)
-            || !(self.created_at..=9_007_199_254_740_991).contains(&self.updated_at)
-            || !(self.created_at..=9_007_199_254_740_991).contains(&self.due_at)
-            || !(0..=1500).contains(&self.generation)
-            || self.lease_until.is_some_and(|v| {
-                self.generation == 0
-                    || v <= self.updated_at
-                    || v > self.updated_at + 60
-                    || v > 9_007_199_254_740_991
-            })
-            || self.page_id.as_ref().is_some_and(|v| !identifier(v))
-            || !(0..=10).contains(&self.candidate_index)
-            || !(0..=1500).contains(&self.operation)
-            || self.operation > self.generation
-            || !(0..=10).contains(&self.polls)
-            || (self.polls == 10 && phase != Phase::NeedsReview)
-            || !(0..=5).contains(&self.failures)
-            || (self.failures == 5 && phase != Phase::NeedsReview)
-            || (phase == Phase::NeedsReview) != review_reason.is_some()
-            || (matches!(phase, Phase::Candidates | Phase::Poll) && self.page_id.is_none())
-            || (phase == Phase::NeedsReview && self.lease_until.is_some())
-        {
+        if !self.source_present {
             return Err(invalid());
         }
-        Ok(Job {
+        let job = Job {
             attempt_id: self.attempt_id,
             source_event_id: self.source_event_id,
             created_at: self.created_at,
@@ -82,8 +58,39 @@ impl Row {
             polls: self.polls,
             failures: self.failures,
             review_reason,
-        })
+        };
+        validate(&job)?;
+        Ok(job)
     }
+}
+pub(super) fn validate(job: &Job) -> Result<(), RecoveryError> {
+    if !identifier(&job.attempt_id)
+        || !identifier(&job.source_event_id)
+        || !(0..=9_007_199_254_740_991).contains(&job.created_at)
+        || !(job.created_at..=9_007_199_254_740_991).contains(&job.updated_at)
+        || !(job.created_at..=9_007_199_254_740_991).contains(&job.due_at)
+        || !(0..=1500).contains(&job.generation)
+        || job.lease_until.is_some_and(|v| {
+            job.generation == 0
+                || v <= job.updated_at
+                || v > job.updated_at + 60
+                || v > 9_007_199_254_740_991
+        })
+        || job.page_id.as_ref().is_some_and(|v| !identifier(v))
+        || !(0..=10).contains(&job.candidate_index)
+        || !(0..=1500).contains(&job.operation)
+        || job.operation > job.generation
+        || !(0..=10).contains(&job.polls)
+        || (job.polls == 10 && job.phase != Phase::NeedsReview)
+        || !(0..=5).contains(&job.failures)
+        || (job.failures == 5 && job.phase != Phase::NeedsReview)
+        || (job.phase == Phase::NeedsReview) != job.review_reason.is_some()
+        || (matches!(job.phase, Phase::Candidates | Phase::Poll) && job.page_id.is_none())
+        || (job.phase == Phase::NeedsReview && job.lease_until.is_some())
+    {
+        return Err(RecoveryError::InvalidStoredData);
+    }
+    Ok(())
 }
 /// Persistent profile-scoped supervision status, including unchanged later passes.
 pub(crate) async fn outstanding(pool: &PgPool, profile: &str) -> Result<(u64, u64), RecoveryError> {

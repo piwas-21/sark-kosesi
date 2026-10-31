@@ -459,3 +459,14 @@ invalid/non-Unicode limits and diagnostic leaks before any provider operation.
 Compiled fault controls must detect removal of lease fencing, receipt reuse and
 final clock checks, then pass exact restoration. Source coverage and synthetic
 GET responses do not establish actual provider, deployed or fulfilment acceptance.
+
+Finance recovery checks use isolated PostgreSQL for exact concurrent replay,
+conflicting intent, capability/session/revocation/MFA negatives, three lifetime
+resumes and unchanged global budgets. An actual receipt-insert lock wait expires
+MFA and proves both the audit and job update roll back. Native immutable/deferred
+constraints reject orphan decisions and altered checkpoints; schema 27 upgrades
+preserve review stops and install no authority. A retained candidate checkpoint
+survives exhausted authenticated GETs, resumes without another list/create and
+retains late-paid evidence for separate resolution. Hostile stored-snapshot
+controls reject open, missing and inconsistent objects. Compiled fault controls
+must expose final-authority and lifetime-budget removal before exact restoration.
