@@ -65,6 +65,30 @@ impl VerifiedTestClient {
     pub fn configuration(&self) -> &Configuration {
         &self.inner.configuration
     }
+    /// One bounded list page supplies identity hints only. Every candidate needs GET.
+    /// An empty/end page never proves absence or permits a replacement charge.
+    pub async fn search_page(
+        &self,
+        attempt: &AttemptSnapshot,
+        from: Option<&SearchCursor>,
+    ) -> Result<SearchPage, MollieError> {
+        self.check_profile(attempt)?;
+        let body = self
+            .inner
+            .http
+            .payment_page(from.map(SearchCursor::provider_id))
+            .await?;
+        search::decode(&body, attempt, from)
+    }
+    fn check_profile(&self, attempt: &AttemptSnapshot) -> Result<(), MollieError> {
+        attempt
+            .validate()
+            .map_err(|_| MollieError::PaymentMismatch)?;
+        if attempt.binding.profile.id != self.inner.configuration.snapshot().profile.id {
+            return Err(MollieError::PaymentMismatch);
+        }
+        Ok(())
+    }
     /// Consumes the sole durable permit before one non-retrying POST, outside every DB TX.
     /// Any unusable create reply remains uncertain; it never grants another initial POST.
     pub async fn create(
@@ -94,12 +118,8 @@ impl VerifiedTestClient {
         attempt: &AttemptSnapshot,
         id: &str,
     ) -> Result<VerifiedPayment, MollieError> {
-        attempt
-            .validate()
-            .map_err(|_| MollieError::PaymentMismatch)?;
-        if !provider_id(id)
-            || attempt.binding.profile.id != self.inner.configuration.snapshot().profile.id
-        {
+        self.check_profile(attempt)?;
+        if !provider_id(id) {
             return Err(MollieError::PaymentMismatch);
         }
         let body = self.inner.http.get(&["payments", id]).await?;

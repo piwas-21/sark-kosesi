@@ -108,3 +108,11 @@ features are not selected. No paid SDK or provider engine is introduced.
 Hyper 1.12.0, Hyper-util 0.1.21, HTTP-body-util 0.1.5 and Bytes 1.12.1 become exact test
 edges over already locked packages, providing a protocol-correct bounded loopback
 instrument. They add no provider credential or production service.
+
+Private payment-list decoding enables the `raw_value` feature of the already
+locked serde_json 1.0.154 (MIT/Apache-2.0). Borrowed original entry bytes preserve
+duplicate-field rejection through selection and full validation. This changes no
+package version or dependency closure. Pagination follows the provider's
+[list contract](https://docs.mollie.com/reference/list-payments) and
+[cursor convention](https://docs.mollie.com/reference/pagination), with stricter
+owned request/response budgets and no automatic URL following.

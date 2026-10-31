@@ -383,3 +383,15 @@ healthy baselines and exact restored-source reruns must pass. The streaming
 instrument sends 65537 bytes then stalls, so a second JSON-size check after reading
 the whole body cannot fake an early transport bound. These controls establish
 source behavior, never actual Mollie acceptance.
+
+Private unknown-ID list tests use literal fixed-endpoint/query assertions,
+explicit one-page requests, separate required fetches and encoded opaque cursors.
+Count/shape/ten-entry bounds, repeated identities/current cursors, hostile URLs,
+duplicate/unknown parameters, original duplicate JSON fields, unrelated arbitrary
+metadata and partial order/attempt matches exercise both positive and negative
+controls. Rotated same-profile discovery is read-only; multiple exact identities
+remain visible and empty/end pages grant no absence or create authority. Compiled
+controls weaken the provider-origin check, page limit, near-match rule and raw
+entry preservation. Each must compile and fail its named assertion, with a healthy
+baseline, exact source restoration and healthy rerun. These source tests do not
+prove a complete durable scan, provider sandbox behavior or payment acceptance.

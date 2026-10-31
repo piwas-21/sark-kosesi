@@ -77,7 +77,7 @@ pub(super) fn payment(
     match_provider(attempt, &payment).map_err(|_| MollieError::PaymentMismatch)?;
     Ok((payment, checkout))
 }
-fn json(body: &[u8]) -> Result<Value, MollieError> {
+pub(super) fn json(body: &[u8]) -> Result<Value, MollieError> {
     if body.len() > http::MAX_RESPONSE {
         return Err(MollieError::ResponseTooLarge);
     }

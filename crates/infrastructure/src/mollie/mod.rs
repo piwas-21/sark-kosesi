@@ -7,9 +7,11 @@ use commerce_domain::payment_attempts::{
 mod client;
 mod credential;
 mod http;
+mod search;
 mod wire;
 pub use client::{TestClient, VerifiedTestClient};
 pub use credential::TestCredential;
+pub use search::{SearchCursor, SearchPage};
 #[derive(Debug, PartialEq, Eq)]
 pub enum MollieError {
     InvalidCredential,
