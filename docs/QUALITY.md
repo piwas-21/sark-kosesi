@@ -319,6 +319,8 @@ acceptance.
 
 The executable money mutation harness copies the actual Rust workspace manifests,
 lockfile, crate sources and shared test fixtures into its disposable workspace.
+Each invocation uses its own temporary build directory; no unmodified baseline
+can inherit compiled mutants from a prior invocation.
 It first compiles/runs the unmodified money/quote/promotion oracles offline with
 locked dependencies, then requires each intended executable mutant to fail its
 named assertion. A stale miniature dependency manifest, baseline compilation

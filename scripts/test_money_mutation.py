@@ -29,7 +29,9 @@ def main():
             "-p",
             "commerce-domain",
         ]
-        environment = {**os.environ, "CARGO_TARGET_DIR": str(ROOT / "target/money-mutation")}
+        # A restored source may have an older timestamp than a previous mutant's
+        # outputs. Never allow another run to inherit those compiled artifacts.
+        environment = {**os.environ, "CARGO_TARGET_DIR": str(directory / "target")}
         baseline = subprocess.run(
             [*command, "--test", "money", "--test", "quotes", "--test", "promotions"],
             env=environment,
