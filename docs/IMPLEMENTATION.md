@@ -277,8 +277,11 @@ supervision or live provider activation follows from deploying the empty preview
    retain complete original-attempt/requested-cursor/key bindings, immutable
    operation receipts and atomic processing events. Exact continuations reject
    forks/cycles and stop at 100 pages; empty/end/capped scans remain unresolved.
-   Bounded readers revalidate every ancestor and event. Add identity resolution,
-   supervised durable scheduling and worker processing before operational provider I/O;
+   Bounded readers revalidate every ancestor and event. Immutable identity-resolution
+   receipts now bind complete fetched-observation prefixes, preserve distinct IDs
+   as ambiguity and keep every paid fact under reordered statuses. No current
+   payment or fulfilment state follows. Add supervised durable scheduling and
+   worker processing before operational provider I/O;
    uncertain outcomes
    reconcile under the original identity and never mint a replacement charge.
    Fetch and verify webhook identifiers against order/amount/currency/profile/mode.

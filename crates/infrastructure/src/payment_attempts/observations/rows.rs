@@ -41,7 +41,7 @@ pub(super) async fn by_effect(
     .await?;
     row.map(|r| r.decode(frozen, started_at)).transpose()
 }
-pub(super) async fn by_id(
+pub(crate) async fn by_id(
     tx: &mut Transaction<'_, Postgres>,
     frozen: &FrozenAttempt,
     started_at: i64,
@@ -96,6 +96,37 @@ pub(super) async fn latest(
     .await?;
     row.map(|r| r.decode(frozen, started_at)).transpose()
 }
+pub(crate) async fn prefix(
+    tx: &mut Transaction<'_, Postgres>,
+    frozen: &FrozenAttempt,
+    started_at: i64,
+    through: i64,
+) -> Result<Vec<ObservationSnapshot>, PaymentStoreError> {
+    let rows = sqlx::query_as::<_, Row>(
+        r#"SELECT left(id,33) AS id,left(attempt_id,33) AS attempt_id,
+        left(effect_key,129) AS effect_key,revision,recorded_at,
+        left(provider_id,257) AS provider_id,
+        left(credential_fingerprint,65) AS credential_fingerprint,left(status,16) AS status,
+        CASE WHEN octet_length(snapshot::text)<=8192 THEN snapshot END AS snapshot,
+        EXISTS(SELECT 1 FROM commerce_outbox e
+          JOIN payment_attempts a ON a.id=payment_observations.attempt_id
+          WHERE e.kind='payment.observation_recorded.v1'
+            AND e.payload->>'observation_id'=payment_observations.id
+            AND e.aggregate_id=a.order_id AND e.created_at=payment_observations.recorded_at
+            AND e.payload=jsonb_build_object('schema_version',1,'order_id',a.order_id,
+              'attempt_id',a.id,'observation_id',payment_observations.id)) AS event_present
+        FROM payment_observations
+        WHERE attempt_id=$1 AND revision<=$2 ORDER BY revision LIMIT 1001"#,
+    )
+    .bind(&frozen.snapshot().binding.id)
+    .bind(through)
+    .fetch_all(&mut **tx)
+    .await?;
+    rows.into_iter()
+        .map(|r| r.decode(frozen, started_at))
+        .collect()
+}
+
 pub(super) async fn insert(
     tx: &mut Transaction<'_, Postgres>,
     s: &ObservationSnapshot,

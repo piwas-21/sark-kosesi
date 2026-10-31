@@ -34,7 +34,7 @@ pub(super) async fn prepared(
     }
     (time, f)
 }
-async fn fetched(
+pub(super) async fn fetched(
     attempt: &AttemptSnapshot,
     id: &str,
     status: &str,

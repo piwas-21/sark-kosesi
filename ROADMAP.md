@@ -171,7 +171,8 @@ payment state. Private authenticated search-page receipts now persist requested/
 actual credential fingerprints and all candidate identities with atomic outbox
 events. Exact continuation, fork/cycle protection and a 100-page bound support
 crash-resumable discovery without treating empty/end pages as absence. No key or
-runtime worker is installed. Add explicit identity resolution, supervised durable
-search scheduling, workers/callbacks, late-paid stock recovery
+runtime worker is installed. Immutable exact-prefix identity resolution now retains all matched identities and
+sticky paid facts, with visible ambiguity, operation receipts and atomic events.
+Add supervised durable search scheduling, workers/callbacks, late-paid stock recovery
 and separate order/payment/fulfilment/refund/invoice transitions. A pure domain
 plan or matched synthetic response is not dispatch or payment authority.
