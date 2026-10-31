@@ -174,3 +174,12 @@ withdrawal; final clocks reject expiry after waits. Immutable SQL history also
 rejects raw-import gaps, self-review and stale approvals. These private consumers
 add no HTTP write/session issuance or payment permission, and evidence references
 still require actual qualified tax/carrier/territory review before destination use.
+
+Indicative promotion terms remain trusted, unseeded server input. The closed
+quote request has no coupon, amount, eligibility or budget-approval field. Promoted
+quotes reuse reviewed market/publication/stock claims and final source clocks;
+promotion expiry cannot extend country or photography eligibility. Stored quote
+arithmetic is revalidated before discounting, and every amount remains bounded EUR
+minor units. Refund arithmetic preserves immutable captured tax but grants no
+finance capability, ownership, provider attempt or restocking effect. Durable
+administration, redemption limits and authenticated checkout remain prerequisites.

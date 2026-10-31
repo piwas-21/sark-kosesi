@@ -48,7 +48,7 @@ fn add(left: Money, right: Money) -> Result<Money, QuoteError> {
 }
 /// VAT-inclusive gross. Round VAT half up once per extended SKU line and shipping.
 /// The total sums those allocations; it never recomputes VAT over mixed rates.
-fn split(gross: Money, rate: u16) -> Result<AmountBreakdown, QuoteError> {
+pub(crate) fn split(gross: Money, rate: u16) -> Result<AmountBreakdown, QuoteError> {
     if !valid_rate(rate) {
         return Err(QuoteError::InvalidPolicy);
     }

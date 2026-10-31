@@ -7,7 +7,7 @@ mod draft;
 mod read;
 mod review;
 pub use draft::{DraftRequest, record_draft};
-pub use read::{PolicyInspection, inspect_policy, reviewed_quote};
+pub use read::{PolicyInspection, inspect_policy, reviewed_promotion_quote, reviewed_quote};
 pub use review::{ReviewRequest, record_review};
 
 #[derive(Debug)]

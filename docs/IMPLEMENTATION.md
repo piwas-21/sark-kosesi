@@ -227,9 +227,12 @@ supervision or live provider activation follows from deploying the empty preview
    newer drafts, withdrawal and expiry block old approvals. No policies/grants are
    installed. Complete the explicit country/postcode/territory readiness matrix
    from actual reviewed tax/carrier/returns inputs before enabling destinations.
-   Add promotions with eligibility, time windows, stacking, atomic budget/
-   redemption limits and exact discount/refund allocations. No coupon is currently
-   accepted and no policy supplied by a customer may grant readiness.
+   Finish durable promotion administration and atomic budget/redemption limits
+   in order transactions. Version 1 indicative fixed/percentage quote and captured
+   refund arithmetic is implemented; it installs no promotion or refund authority.
+   One promotion per quote, exact eligibility, UTC windows and immutable cent/tax
+   allocations must remain consistent through checkout, payment and credit records.
+   No customer coupon is accepted and no customer policy may grant readiness.
 3. Add durable guest baskets, ownership/CSRF/abuse controls, immutable quote/order/
    address/policy snapshots and atomic whole-basket holds. Revalidate publications,
    policy and amounts during order creation; an earlier quote grants no authority.

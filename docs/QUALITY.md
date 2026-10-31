@@ -232,3 +232,13 @@ raw-import constraints. Reviewed quote cases check exact destination, no older
 draft fallback, independent cent totals, final expiry after physical stock waits
 and quote/withdrawal serialization. Upgrade seeds no policies or market grants.
 Synthetic evidence references do not establish actual destination readiness.
+
+Promotion domain modules retain 95% critical native line/branch requirements.
+Independent cent oracles cover largest-remainder ties, weighted/mixed-VAT lines,
+percentage half cents, caps, unchanged shipping, exact integer ceilings, corrupt
+snapshots and many conservation/refund partitions. Compiled mutants must expose
+percentage rounding, SKU tie order and cumulative refund VAT defects. Real
+PostgreSQL promoted quotes retain latest reviewed market selection and source/
+component claims; actual waits cover promotion/market/rights expiry and cancellation.
+Closed promotion terms remain trusted server data, never a customer money policy.
+Indicative quotes do not establish atomic redemption limits or executed refunds.

@@ -380,6 +380,36 @@ A quote has no durable token, guaranteed price window or reservation authority.
 Future checkout must revalidate and capture immutable sources, address and policy,
 then reserve the entire basket atomically before creating a payment attempt.
 
+### Indicative promotions and captured refund allocations
+
+A trusted optional promotion can now price the same reviewed market quote under
+its existing policy, publication, image and physical-stock claims. Promotion terms
+are closed, bounded server values; no customer request can supply them, and no
+promotion or coupon route is installed. Exact publication/SKU and country scopes,
+a minimum eligible item subtotal, explicit maximum discount and UTC instants apply.
+A quote supports one promotion, without stacking or shipping discounts. Durable
+promotion administration and atomic budget/redemption claims remain required
+inside order creation before any payment can use a promotion.
+
+Allocation version 1 rounds a percentage once, half up, on eligible extended-line
+gross. Fixed or percentage discounts are capped by their explicit maximum and the
+eligible subtotal; a zero benefit is ineligible. Largest remainder distributes
+whole cents by eligible line gross, with ASCII SKU order for ties. VAT then splits
+each discounted extended line using the existing inclusive rounding rule. Shipping
+keeps its original allocation. Results retain original unit/extended prices,
+per-line discount and final net/VAT/gross, promotion revision and allocation version.
+The final clock runs after all pricing and stock waits and rechecks market,
+promotion and photo-rights eligibility together.
+
+The pure refund allocator uses the immutable captured gross/net/VAT snapshot.
+For a partial gross refund it subtracts the previous cumulative rounded VAT share
+from the new cumulative share. Full repayment therefore returns the exact captured
+VAT and net across any partition of refunds, without repricing current catalogue
+or repeatedly rounding isolated credits. This calculation neither authorizes nor
+executes refunds. The later finance use case must serialize and persist already
+refunded gross, enforce captured/refunded bounds, issue credit documents and use a
+stable provider attempt. Accountant/market acceptance remains a separate gate.
+
 ### Non-selling HTTPS staging
 
 `APP_ENV=staging` is a preview environment, separate from production. The Next

@@ -103,9 +103,14 @@ postcode, publication, VAT, parcel limits and validity windows with immutable au
 history. Separate market author/reviewer grants and recent MFA protect changes.
 The latest draft and its latest review govern indicative quotes under one database
 transaction; a newer draft or withdrawal blocks old approvals. No policies or
-grants are seeded. Complete country/territory readiness evidence and coverage,
-promotions, guest checkout/orders, Mollie sandbox attempts/reconciliation, invoices
-and refunds remain P3 work under the [implementation plan](docs/IMPLEMENTATION.md). P3 owns
+grants are seeded. Trusted indicative promotion quotes now retain original prices,
+allocate capped fixed/percentage discounts by largest remainder, and split VAT on
+discounted extended lines under the same final source/expiry checks. Pure cumulative
+refund allocations preserve captured tax across partial credits. No customer
+coupon route, promotion authority, budget claim or refund effect is installed.
+Complete country/territory readiness evidence and coverage, durable promotion
+administration/atomic limits, guest checkout/orders, Mollie sandbox attempts/
+reconciliation, invoices and executed refunds remain P3 work under the [implementation plan](docs/IMPLEMENTATION.md). P3 owns
 late-payment reallocation. Supervision of expiry remains a deployment gate.
 P0 inputs remain pending. All seven languages are draft previews,
 fixtures are explicitly not for sale, and admin operations remain unavailable.

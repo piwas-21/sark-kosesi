@@ -10,6 +10,7 @@ mod stock;
 #[derive(Debug)]
 pub enum QuoteFailure {
     Policy(QuoteError),
+    Promotion(commerce_domain::promotions::PromotionError),
     Catalogue(PublishedError),
     ClockUnavailable,
     InvalidStoredData,
@@ -60,6 +61,17 @@ pub async fn server_quote(
     tx.rollback().await?;
     Ok(quote)
 }
+#[derive(Debug, PartialEq, Eq)]
+pub struct PromotedServerQuote {
+    pub policy_id: String,
+    pub policy_revision: i32,
+    pub evaluated_at: i64,
+    pub totals: commerce_domain::promotions::PromotionQuote,
+}
+struct Evaluation {
+    original: ServerQuote,
+    promoted: Option<commerce_domain::promotions::PromotionQuote>,
+}
 pub(crate) async fn in_transaction(
     tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
     clock: &dyn Clock,
@@ -67,6 +79,35 @@ pub(crate) async fn in_transaction(
     request: &QuoteRequest,
     policies: &[MarketPolicy],
 ) -> Result<ServerQuote, QuoteFailure> {
+    Ok(evaluate(tx, clock, locale, request, policies, None)
+        .await?
+        .original)
+}
+pub(crate) async fn promoted_in_transaction(
+    tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
+    clock: &dyn Clock,
+    locale: Locale,
+    request: &QuoteRequest,
+    policies: &[MarketPolicy],
+    promotion: &commerce_domain::promotions::Promotion,
+) -> Result<PromotedServerQuote, QuoteFailure> {
+    let evaluation = evaluate(tx, clock, locale, request, policies, Some(promotion)).await?;
+    let totals = evaluation.promoted.ok_or(QuoteFailure::InvalidStoredData)?;
+    Ok(PromotedServerQuote {
+        policy_id: evaluation.original.policy_id,
+        policy_revision: evaluation.original.policy_revision,
+        evaluated_at: evaluation.original.evaluated_at,
+        totals,
+    })
+}
+async fn evaluate(
+    tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
+    clock: &dyn Clock,
+    locale: Locale,
+    request: &QuoteRequest,
+    policies: &[MarketPolicy],
+    promotion: Option<&commerce_domain::promotions::Promotion>,
+) -> Result<Evaluation, QuoteFailure> {
     request.validate()?;
     if policies.len() > 64 {
         return Err(QuoteError::InvalidPolicy.into());
@@ -113,6 +154,12 @@ pub(crate) async fn in_transaction(
         policy.shipping.gross,
         policy.shipping.vat_basis_points,
     )?;
+    let promoted = promotion
+        .map(|p| {
+            commerce_domain::promotions::apply(&totals, p, &request.destination.country, started)
+        })
+        .transpose()
+        .map_err(QuoteFailure::Promotion)?;
     // Variant and asset claims still span all reads. Evaluate every source's timed
     // eligibility after stock waits, using one final clock for the whole basket.
     let evaluated_at = now(clock)?;
@@ -120,17 +167,25 @@ pub(crate) async fn in_transaction(
         return Err(QuoteFailure::ClockUnavailable);
     }
     policy.permits(&request.destination, evaluated_at)?;
+    if let Some(promotion) = promotion {
+        promotion
+            .permits(&request.destination.country, evaluated_at)
+            .map_err(QuoteFailure::Promotion)?;
+    }
     if products
         .iter()
         .any(|eligible| !eligible.rights_active(evaluated_at))
     {
         return Err(QuoteError::ProductUnavailable.into());
     }
-    Ok(ServerQuote {
-        policy_id: policy.id.clone(),
-        policy_revision: policy.revision,
-        evaluated_at,
-        totals,
+    Ok(Evaluation {
+        original: ServerQuote {
+            policy_id: policy.id.clone(),
+            policy_revision: policy.revision,
+            evaluated_at,
+            totals,
+        },
+        promoted,
     })
 }
 fn shipping(
