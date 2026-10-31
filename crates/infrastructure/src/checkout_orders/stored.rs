@@ -49,15 +49,9 @@ pub(super) async fn insert(
 ) -> Result<(), OrderStoreError> {
     let s = serde_json::to_value(snapshot).map_err(|_| OrderStoreError::InvalidStoredData)?;
     let i = serde_json::to_value(intent).map_err(|_| OrderStoreError::InvalidStoredData)?;
-    if serde_json::to_vec(&s)
-        .map_err(|_| OrderStoreError::InvalidStoredData)?
-        .len()
-        > 65536
-        || serde_json::to_vec(&i)
-            .map_err(|_| OrderStoreError::InvalidStoredData)?
-            .len()
-            > 16384
-    {
+    // Values are already valid JSON; Display encodes the same UTF-8 JSON envelope
+    // without introducing impossible JSON-Value serialization error branches.
+    if s.to_string().len() > 65536 || i.to_string().len() > 16384 {
         return Err(OrderStoreError::InvalidRequest);
     }
     let id = &snapshot.identity;

@@ -25,11 +25,20 @@ async fn serialization_envelopes_reject_oversized_trusted_arguments_before_any_s
         Err(OrderStoreError::InvalidRequest)
     ));
     tx.rollback().await.expect("rollback");
+    let valid_intent = intent.clone();
     intent.buyer.name = "x".repeat(16385);
     let mut tx = pool.begin().await.expect("isolated transaction");
     assert!(matches!(
         insert(&mut tx, &snapshot, &intent, "place", &"5".repeat(32)).await,
         Err(OrderStoreError::InvalidRequest)
+    ));
+    tx.rollback().await.expect("rollback");
+    // Positive envelope control reaches the relational boundary; this pure fixture
+    // deliberately has no owned quote/guest rows and must fail there instead.
+    let mut tx = pool.begin().await.expect("isolated transaction");
+    assert!(matches!(
+        insert(&mut tx, &snapshot, &valid_intent, "place", &"5".repeat(32)).await,
+        Err(OrderStoreError::Database)
     ));
     tx.rollback().await.expect("rollback");
     let count: i64 = sqlx::query_scalar("SELECT count(*) FROM checkout_orders")
