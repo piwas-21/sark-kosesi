@@ -236,3 +236,8 @@ Final source/identity checks follow inserts; revocation waits for active claims,
 and rollback leaves no quote or successful-issuance charge. Historical receipts
 cannot refresh expiry or bypass current order readiness. Public bridge abuse
 controls, retention operations and complete order/payment authority remain required.
+
+The time-bounded development-only minimatch advisory disposition is recorded in
+[dependency review](DEPENDENCIES.md#temporary-development-tooling-exception).
+It expires at 2026-11-03T00:00:00Z, preserves visible moderate audit findings and existing
+CI timeouts, and grants no ownership/payment, high/critical or production waiver.

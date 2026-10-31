@@ -106,6 +106,18 @@ async fn corrupt_restored_policy_shapes_limits_and_source_headers_fail_normal_re
     pool.execute("UPDATE promotion_policy_drafts SET reason='restored'")
         .await
         .expect("restore reason");
+    pool.execute("ALTER TABLE promotion_policy_drafts DROP CONSTRAINT promotion_policy_drafts_actor_fkey; UPDATE promotion_policy_drafts SET actor=E'bad\\nactor'").await.expect("damaged restore identity");
+    assert!(matches!(
+        inspect(&pool, 1).await,
+        Err(PolicyError::InvalidStoredData)
+    ));
+    assert!(matches!(
+        approved(&pool).await,
+        Err(PolicyError::InvalidStoredData)
+    ));
+    pool.execute("UPDATE promotion_policy_drafts SET actor='author'")
+        .await
+        .expect("restore identity");
     assert!(approved(&pool).await.is_ok());
     pool.execute("ALTER TABLE promotion_policy_reviews DISABLE TRIGGER guard_promotion_review; ALTER TABLE promotion_policy_reviews DROP CONSTRAINT promotion_policy_reviews_revision_check, DROP CONSTRAINT promotion_policy_reviews_decision_check").await.expect("review corruption fixture");
     for sql in [

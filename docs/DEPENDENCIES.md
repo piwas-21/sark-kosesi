@@ -62,3 +62,24 @@ access remain separate work. No password or MFA verification is introduced.
 Owned quote snapshot tests add a domain dev-dependency edge to the already pinned
 `serde_json` 1.0.154 for closed round-trip/corruption checks. No locked package
 version changes; its existing MIT/Apache-2.0 review applies.
+
+## Temporary development tooling exception
+
+`GHSA-g3hv-75wg-m249` is a moderate resource-exhaustion advisory affecting the
+locked `minimatch` 10.2.6 and 5.1.9 copies in ESLint, typescript-eslint and the
+OpenAPI generator's Redocly tooling. The current audit reports 13 propagated
+moderate package findings from this advisory; `npm audit --omit=dev` reports zero.
+The advisory's fix is 11.0.1, outside the installed parents' declared major ranges.
+Current compatible parent metadata still selects those older major ranges.
+See the [reviewed advisory](https://github.com/advisories/GHSA-g3hv-75wg-m249).
+
+Exception owner: Piwas engineering. Recorded 2026-10-31; expires at 2026-11-03T00:00:00Z.
+Scope: private, non-production development and CI only. Patterns and generated
+contract inputs remain repository-controlled, and existing CI job timeouts remain
+active. No remote customer pattern input is accepted by this tooling. Keep the
+finding visible in audit evidence; no audit/check suppression or forced major
+transitive override is approved. Ownership, payment, high/critical findings and
+production dependency changes receive no exception. Before expiry, adopt and
+validate compatible upstream fixes or replace the affected development tools;
+otherwise this exception ceases to permit the affected work. Production release
+requires a fresh dependency/image review and an unexpired disposition of findings.
