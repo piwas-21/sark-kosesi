@@ -269,8 +269,12 @@ supervision or live provider activation follows from deploying the empty preview
    key, worker or payment transition. Bounded private unknown-ID list pages now
    return metadata-associated identity hints, preserving duplicate critical fields
    and validated fixed-origin cursors. Every candidate needs a separate checked
-   GET; no/partial results cannot authorize another POST. Add durable search
-   custody, observations and worker processing before operational provider I/O;
+   GET; no/partial results cannot authorize another POST. Private verified-fetch
+   observations now persist minimal exact original-attempt projections, actual
+   fetched-key fingerprints and immutable operation receipts with processing
+   events. They preserve reordered/different-ID evidence without selecting current
+   payment state or affecting stock. Add durable search custody, identity
+   resolution and worker processing before operational provider I/O;
    uncertain outcomes
    reconcile under the original identity and never mint a replacement charge.
    Fetch and verify webhook identifiers against order/amount/currency/profile/mode.

@@ -609,7 +609,7 @@ profile was independently verified against the SAME captured profile. Its actual
 credential fingerprint remains available for observation audit. Rotation never
 authorizes another POST under the old attempt: initial permits still require the
 original complete configuration identity. This client persists no provider ID or
-payment state. Durable search custody, observations/jobs, callbacks, late-paid
+payment state. Durable search custody/jobs, identity resolution, callbacks, late-paid
 stock recovery and separate finance/fulfilment transitions remain required.
 Loopback instruments are not provider sandbox acceptance or configured credentials.
 
@@ -634,6 +634,42 @@ parameters, user info, fragments, ports and a repeated current offset fail close
 Only the decoded cursor survives; the next request is constructed against the
 fixed provider endpoint instead of following the supplied URL. There is no
 automatic pagination, durable scan/job or persisted result in this library.
+
+### Private fetched-observation custody
+
+The trusted observation store accepts only the opaque authenticated GET result,
+never callback/redirect JSON or a caller's amount/status projection. It restores
+the immutable original order/attempt and committed dispatch, rechecks the full
+provider binding, and captures the actual fetched credential fingerprint, including
+a separately verified rotated same-profile key. No raw key, response details,
+address or checkout link enters this minimal financial evidence record.
+
+One attempt-row UPDATE claim serializes append and full-intent effect replay.
+Exact receipts retain their original revision/time even when clock or entropy
+ports are now unavailable; changed status, identity or credential evidence under
+that same effect conflicts. Workers must look up that operation's receipt before
+refetching on retry and use a new effect for a new fetch operation. New records
+require checked contiguous revisions and nondecreasing server operation time,
+including a final observed-clock check after the actual event write. The timestamp
+is neither provider paidAt nor an exact commit timestamp. No current stock/source/
+guest/configuration expiry discards genuine matched late-paid evidence.
+
+The minimal immutable observation and PII-free processing event commit atomically.
+Original order/prepared/recovery event kinds retain their per-order uniqueness;
+observation events instead have one unique observation identity. SQL guards bind
+closed snapshots to captured attempt money/profile/metadata and dispatch-start records,
+serialize raw appends, and defer event completeness until commit. Bounded private
+reads revalidate record shape, original binding, headers and exact event presence;
+a damaged/oversized/orphaned receipt fails without falling back to older history.
+Reads expose individual historical facts, not a certification of the entire journal.
+
+Recording a fact neither binds a single provider identity nor chooses current
+payment state. Reordered statuses and different matched provider IDs remain
+separate evidence. No order/stock/payment/fulfilment/refund transition, public
+customer read, queue consumer or runtime credential is installed. Future identity
+resolution and idempotent transitions must preserve paid evidence and surface
+ambiguity; callbacks, supervised jobs, late-paid allocation and provider acceptance
+remain required.
 
 ## Sessions, uploads and rendering
 

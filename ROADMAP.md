@@ -163,7 +163,11 @@ separately fetches checked minimal payment evidence, with bounded one-use permit
 transport. Bounded private payment-list pages now return exact metadata-associated
 identity hints and validated continuation cursors; every candidate still needs a
 separate verified fetch. Empty or incomplete searches never prove absence or allow
-another charge. No key or runtime worker is installed. Add durable search custody,
-observations, workers/callbacks, late-paid stock recovery
+another charge. Private verified-fetch observations now preserve minimal original
+attempt facts and actual credential fingerprints with immutable revisions and a
+processing event in the same transaction. Exact operation receipts replay history;
+reordered statuses and different IDs remain evidence without choosing current
+payment state. No key or runtime worker is installed. Add durable search custody,
+identity resolution, workers/callbacks, late-paid stock recovery
 and separate order/payment/fulfilment/refund/invoice transitions. A pure domain
 plan or matched synthetic response is not dispatch or payment authority.

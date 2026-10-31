@@ -2,6 +2,7 @@
 use crate::Currency;
 use serde::{Deserialize, Serialize};
 mod dispatch;
+pub mod observations;
 mod provider;
 pub use dispatch::{DispatchPlan, DispatchState, bind_provider, plan_dispatch};
 pub use provider::{PaymentStatus, ProviderPayment, match_provider};

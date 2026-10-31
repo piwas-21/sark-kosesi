@@ -396,3 +396,20 @@ controls weaken the object-shape guard, provider-origin check, page limit,
 near-match rule and raw entry preservation. Each must compile and fail its named assertion, with a healthy
 baseline, exact source restoration and healthy rerun. These source tests do not
 prove a complete durable scan, provider sandbox behavior or payment acceptance.
+
+Verified-observation custody uses isolated PostgreSQL with real authenticated
+loopback fetch results, immutable original orders and committed dispatches.
+Exact/concurrent retries and distinct appends, actual hold expiry, late paid,
+reordered statuses/different provider IDs, key rotation, false original bindings,
+clock/entropy/database failures and cancellation exercise fact/event atomicity
+without stock or payment-state effects. Final clock rewind is tested after an
+observed event INSERT wait; the blocker permits reads so the test reaches that
+write. Native negative and healthy paired controls check deferred event
+completeness, original outbox uniqueness, minimal snapshot binding, immutable
+history, sequence/time bounds and exact event metadata. Damaged/oversized/orphaned
+imports fail readers and retries; exact fixture repair restores a healthy read.
+Populated positional arrays and every header have separate stored-decoder
+controls. Financial/dispatch binding, event presence, operation-effect matching
+and the post-write clock check require compiled fault controls with healthy
+baselines, intended assertion failure and exact restoration. These tests provide
+source custody evidence, not current payment state, provider acceptance or release.
