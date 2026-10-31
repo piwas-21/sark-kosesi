@@ -246,10 +246,12 @@ supervision or live provider activation follows from deploying the empty preview
    reviewed policy and publication/BOM revisions to checked allocations and a
    fixed maximum five-minute lifetime. Full-intent retries retain old receipts;
    final identity/source/deadline checks follow the actual insert wait. Complete
-   trusted-edge abuse controls before a public customer bridge. Add immutable
-   order/address/policy snapshots and integrate atomic whole-basket holds.
-   Revalidate current basket, publications, policy and amounts during order
-   creation; an earlier quote grants no authority.
+   trusted-edge abuse controls before a public customer bridge. Private immutable order/address/seller/market/product snapshots now compose
+   whole-basket holds and a minimal outbox event in one transaction. Current basket,
+   publications, reviewed policy and exact amounts are revalidated; changes require
+   fresh acceptance. One quote creates one order and exact retries preserve history.
+   Finish atomic coupon claims, lifecycle/payment transitions and retention before
+   public checkout; seller/legal facts remain required trusted configuration.
    Expose the same-origin API/contracts and checkout UI only with those controls.
 4. Add Mollie sandbox adapter and stable persisted payment attempts/idempotency
    keys before provider I/O; timeouts retain unknown outcomes for reconciliation.
@@ -264,11 +266,11 @@ Trusted whole-basket reservation primitives now provide immutable manifests,
 exact fresh child bindings and aggregated component claims in one transaction.
 Historical retries preserve terminal members; expiry still uses the existing
 worker. Integrate the caller-owned transaction entry with freshly authorized
-checkout, immutable order/address/policy snapshots, coupon claims and outbox
-records. An indicative quote or standalone reservation grants no charge authority.
+checkout; the private order primitive now persists immutable snapshots, all
+holds and an outbox event together. Add coupon claims and payment transitions. An indicative quote or standalone reservation grants no charge authority.
 
-No guest checkout route, order persistence, provider calls, payment acceptance or
-production activation follows from the initial server quote consumer. Preserve
+No public guest checkout route, provider calls, payment acceptance or production
+activation follows from these private primitives. Preserve
 all nine CI gates and the approved courtyard visual source/baselines.
 
 ## Next session prompt

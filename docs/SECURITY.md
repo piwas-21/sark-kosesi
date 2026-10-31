@@ -241,3 +241,13 @@ The time-bounded development-only minimatch advisory disposition is recorded in
 [dependency review](DEPENDENCIES.md#temporary-development-tooling-exception).
 It expires at 2026-11-03T00:00:00Z, preserves visible moderate audit findings and existing
 CI timeouts, and grants no ownership/payment, high/critical or production waiver.
+
+Private order creation accepts intent only through a trusted infrastructure entry.
+Fresh guest ownership/CSRF and current reviewed sources protect an atomic order,
+complete component reservation and minimal PII-free outbox event. Buyer/address/
+seller snapshots intentionally lack Debug; the boundary maps database errors to
+static classes and never returns failed-row detail. Stored bounded closed objects
+and source/header bindings are revalidated on reads and retries. Address/email
+syntax is neither ownership nor delivery proof. Seller/legal snapshots require
+trusted configuration; installation supplies none. Public routes, abuse controls,
+retention/erasure operations, coupon accounting and payment authority remain gates.

@@ -63,6 +63,13 @@ Owned quote snapshot tests add a domain dev-dependency edge to the already pinne
 `serde_json` 1.0.154 for closed round-trip/corruption checks. No locked package
 version changes; its existing MIT/Apache-2.0 review applies.
 
+`email_address` 0.2.9 (MIT) is an exact domain dependency with default features
+disabled and no additional transitive packages. The order boundary uses only its
+bounded parse result, disables display names/domain literals and requires a TLD.
+UTF-8 mailbox syntax remains supported. Syntax does not prove mailbox ownership,
+postal delivery or transport-provider SMTPUTF8 support. Release notices and the
+existing cargo-audit/cargo-deny gates apply.
+
 ## Temporary development tooling exception
 
 `GHSA-g3hv-75wg-m249` is a moderate resource-exhaustion advisory affecting the

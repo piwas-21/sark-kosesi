@@ -115,9 +115,12 @@ coupon route, promotion authority, budget claim or refund effect is installed.
 Private promotion drafts and independent exact-revision reviews now persist
 canonical eligibility/discount terms and explicit lifetime budget/redemption limits.
 New drafts and withdrawal block older approvals; no coupons or grants are seeded.
-These configuration limits are not spending claims. Complete country/territory
-readiness evidence, atomic promotion/customer limits in order transactions, guest
-checkout/orders, Mollie sandbox attempts/
+These configuration limits are not spending claims. Private immutable guest orders
+now compose accepted quote/seller/market/merchandise snapshots, whole-basket holds
+and minimal outbox events atomically. Exact receipt retries preserve history;
+changed commercial terms require fresh acceptance. Complete country/territory
+readiness evidence, atomic promotion/customer limits, public checkout controls,
+order/payment lifecycle, Mollie sandbox attempts/
 reconciliation, invoices and executed refunds remain P3 work under the [implementation plan](docs/IMPLEMENTATION.md). P3 owns
 late-payment reallocation. Supervision of expiry remains a deployment gate.
 P0 inputs remain pending. All seven languages are draft previews,

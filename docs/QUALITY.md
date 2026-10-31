@@ -296,3 +296,16 @@ unready destinations and finite resource limits. Compiled omissions of the final
 must fail their intended policy-expiry and cross-owner assertions; source hashes
 are restored afterward. Synthetic clocks and manually replayed cookies are
 transport evidence, not native browser/device acceptance.
+
+Private accepted-order tests use isolated PostgreSQL and explicitly invented
+seller/contact/catalogue evidence. Literal captured cents, exact event payload,
+shared-component balances and row counts verify one atomic order/hold/outbox effect.
+Two shoppers contest the last components; concurrent receipt retries create one
+order without extending stock. Current-source changes require new acceptance;
+ownership, CSRF, revocation and changed intent reject access/effects. Real waits
+after outbox insertion exercise final deadlines, seller expiry, clock rewind and
+cancellation rollback. Event-write failure rolls back all movements without private
+database detail. Damaged-import controls exercise bounded object shapes, captured
+money, header/intent/source mismatches and exact positive restoration. Domain
+oracles cover explicit seller/tax/document/locale policy and bounded contact syntax.
+These source tests establish no actual seller, provider or fulfilment acceptance.
