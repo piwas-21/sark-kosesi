@@ -1,8 +1,6 @@
 use super::*;
 use crate::MIGRATOR;
-#[allow(dead_code)]
-#[path = "../../../../tests/fixtures/checkout_order_snapshot.rs"]
-mod fixture;
+use crate::payment_test_fixture::order::snapshot_fixture as fixture;
 #[sqlx::test(migrator = "MIGRATOR")]
 async fn serialization_envelopes_reject_oversized_trusted_arguments_before_any_storage(
     pool: sqlx::PgPool,

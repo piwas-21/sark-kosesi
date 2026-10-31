@@ -14,7 +14,9 @@ mod create;
 mod read;
 mod stored;
 pub use create::create_order;
+pub(crate) use create::products as product_snapshots;
 pub use read::owned_order;
+pub(crate) use stored::by_id as snapshot_in_transaction;
 /// Failure classes contain no database detail or private request/snapshot material.
 #[derive(Debug, PartialEq, Eq)]
 pub enum OrderStoreError {

@@ -10,7 +10,7 @@ impl Clock for Time {
     }
 }
 #[path = "basket_holds_fixture.rs"]
-mod fixture;
+pub(super) mod fixture;
 #[sqlx::test(migrator = "MIGRATOR")]
 async fn caller_owns_commit_with_complete_order_side_effect_rollback(pool: PgPool) {
     fixture::seed(&pool, 10, 4).await;

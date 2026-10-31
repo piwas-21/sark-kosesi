@@ -1,6 +1,14 @@
 //! Parameterized PostgreSQL catalogue adapter and forward migration owner.
 #![forbid(unsafe_code)]
 
+// Shared integration fixtures also exercise crate-private composition contracts.
+#[cfg(test)]
+extern crate self as commerce_infrastructure;
+#[cfg(test)]
+#[allow(dead_code)]
+#[path = "../tests/support/payment_fixture.rs"]
+mod payment_test_fixture;
+
 pub mod bom;
 pub mod catalogue_authoring;
 pub mod catalogue_prices;
@@ -86,3 +94,5 @@ pub async fn catalogue(pool: &PgPool, locale: Locale) -> Result<Vec<CatalogueIte
 
 pub mod checkout_orders;
 pub mod checkout_quotes;
+
+pub mod payment_attempts;

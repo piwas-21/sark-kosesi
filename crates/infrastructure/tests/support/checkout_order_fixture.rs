@@ -2,7 +2,7 @@
 use commerce_domain::checkout_orders::*;
 #[allow(dead_code)]
 #[path = "../../../../tests/fixtures/checkout_order_snapshot.rs"]
-mod snapshot_fixture;
+pub(crate) mod snapshot_fixture;
 pub use snapshot_fixture::{address, seller};
 pub fn intent(quote_id: &str) -> OrderIntent {
     OrderIntent {

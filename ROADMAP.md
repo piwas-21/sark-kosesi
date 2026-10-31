@@ -1,6 +1,6 @@
 # Implementation status
 
-**Current stage: P3 quote/readiness controls in progress; production disabled.**
+**Current stage: P3 checkout/payment custody in progress; production disabled.**
 
 The read-only Rust/SQLx catalogue, migrations, typed contracts, API/worker readiness
 and courtyard Next.js shells are implemented. Explicit clock/identifier ports
@@ -152,3 +152,12 @@ intent-bound retries and final source checks after writes. Historical prices gra
 no current order authority. Continue immutable order/address/policy snapshots and
 fresh source/amount validation in the atomic whole-basket reservation transaction.
 Complete trusted-edge abuse controls before exposing customer routes.
+
+Private durable owned-order test attempts and one serialized dispatch-start fact
+now compose the frozen request policy, existing physically backed reservation and
+minimal transactional recovery events. Fresh commercial and clock checks protect
+new work; original receipts remain historical. No provider I/O or dispatcher is
+installed. Started/unknown attempts must reconcile without automatic replacement. Add actual
+Mollie transport/fetch verification, workers/callbacks, late-paid stock recovery
+and separate order/payment/fulfilment/refund/invoice transitions. A pure domain
+plan or matched synthetic response is not dispatch or payment authority.

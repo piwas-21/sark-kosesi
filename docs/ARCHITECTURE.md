@@ -511,6 +511,73 @@ Order, payment, fulfilment and return states are separate. Late paid payments af
 
 Write domain changes and outbox events in one transaction. Workers claim leases using PostgreSQL, retry with backoff and stable effect identifiers, and recover abandoned leases. Emails, stock alerts and fulfilment requests are idempotent. Record provider acceptance separately from customer delivery. Failed jobs are visible and replayable only through bounded, audited admin actions.
 
+### Initial test-attempt model
+
+The private version-1 payment domain captures immutable server/order/basket/stock
+identities, positive bounded EUR minor units, explicit test mode, profile and
+credential fingerprint, a configuration digest, a frozen-request digest and an
+active dispatch deadline. Validated request-independent bindings are separate
+from the final frozen snapshot, so construction needs no placeholder hashes.
+Its idempotency key derives from the immutable attempt identity. No key, request,
+profile, amount or readiness is accepted from a customer by this model.
+
+The pure dispatch policy requests a single Prepared-to-Started transition.
+Prepared plans reject changed profile, credential or configuration identity.
+Infrastructure must durably serialize that transition before any provider I/O;
+a pure plan supplies no dispatch authority. Started means the request may have
+reached the provider. Every subsequent plan reconciles, including after credential
+rotation, hold expiry or the provider cache window. A known provider ID is immutable
+and does not imply payment success. Initial automatic POST replay is deliberately
+absent; uncertain outcomes remain visible until reconciled, never replaced blindly.
+
+A server-fetched payment projection must match resource, provider/profile identity,
+mode, exact EUR amount and order/attempt metadata. Version 1 uses closed test/EUR
+contracts with no missing/unknown fallback. Matching retains late-paid evidence
+without consuming stock or changing order/payment/fulfilment state. Provider IDs
+are bounded opaque prefixed values, accommodating longer upstream identifiers.
+Identifiers and credential custody data have no Debug implementation.
+
+The application freezer now captures canonical request bytes, exact decimal EUR,
+configured supported-method syntax, oneoff sequence and order/attempt metadata.
+Return/callback URLs must be distinct canonical HTTPS routes under one explicitly
+configured DNS origin, without user info, query or fragments. Return identifiers
+are added by the server. No profileId/testmode parameter, raw key or contact/address
+data enters the provider request. Stable configuration and request digests bind
+these bytes; restore requires exact canonical reproduction under the captured
+policy. No active policy, method eligibility or deployment is installed.
+
+Private PostgreSQL preparation now binds one immutable attempt to one owned
+accepted order and its captured EUR total, original stock group, exact canonical
+request bytes and configuration digest material. Native SHA-256 constraints bind
+the stored UTF-8 bytes. Fresh guest ownership/CSRF protects preparation; only the
+original effect and confirmed intent replay its receipt. New preparation rechecks
+current reviewed market, publication, merchandise, photo rights and seller policy,
+then claims the complete original active reservation and its physical backing.
+The accepted order may outlive the original indicative quote and current cart;
+its own reserved components are never counted as unavailable indicative stock.
+No new hold, movement, cart clearing or source activation follows from preparation.
+The attempt and minimal prepared event commit together, with final combined
+source/hold/identity clock checks after the actual event write. Private history
+revalidates bounded closed records, canonical request/configuration and the
+original accepted order; reading old history grants no new payment authority.
+
+The trusted internal dispatch entry serializes contenders on the immutable attempt.
+A new start requires the same configuration and fresh commercial/held-stock claims.
+One immutable start and a reconciliation-required event commit before a noncloneable,
+nonserializable dispatch permit is returned. Permit consumption checks the final
+observed clock minimum, configuration, stock deadline and retained market/photo/
+seller time limits again, after database claims have ended. The permit retains
+only the pure eligibility proof and seller expiry, without a transaction or buyer/
+address snapshot. Existing starts return reconciliation, including after guest
+revocation, policy withdrawal, hold expiry or key rotation. Losing a permit or
+crashing after commit cannot create another initial POST. SQL uniqueness and
+deferred event completeness provide durable custody; no provider transport or
+running dispatcher is installed.
+
+Complete authenticated fetch/reconciliation, late-paid stock recovery and separate
+finance/fulfilment transitions before using it for payments.
+Actual profile/method/key and sandbox acceptance remain independent requirements.
+
 ## Sessions, uploads and rendering
 
 Rust owns secure sessions and server-side authorization. Use a maintained password/session implementation with Argon2id where passwords are stored; verified email, rotating sessions, hashed reset tokens, admin MFA and separate guest-order access tokens. Browser credentials are HttpOnly/Secure/SameSite cookies; never store bearer tokens in browser local storage. CSRF and origin checks protect cookie-authenticated mutations. No duplicate identity system in Next.js.
@@ -667,5 +734,5 @@ Nothing installs or infers real seller/legal facts. Email validation checks boun
 single-mailbox syntax only, including UTF-8; it proves neither delivery nor identity.
 Initial orders require a positive payable total and accept no coupon. Promotion
 budget accounting, order/payment/fulfilment transitions, retained-data operations,
-public HTTP/UI/edge controls, outbox dispatch and provider attempts remain separate
-work. No transaction performs provider/network I/O or sends a customer message.
+public HTTP/UI/edge controls, outbox processing and actual provider transport remain
+separate work. Private test attempts and initial dispatch custody are described above. No transaction performs provider/network I/O or sends a customer message.
