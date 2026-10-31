@@ -6,20 +6,15 @@ use commerce_domain::{
 pub(super) struct Eligibility {
     sources: quotes::QuoteProof,
     reservation: holds::basket::ActiveBasket,
-    locale: Locale,
+    seller_expires_at: i64,
 }
 impl Eligibility {
-    pub(super) fn check_at(
-        &mut self,
-        order: &OrderSnapshot,
-        at: i64,
-    ) -> Result<(), PaymentStoreError> {
+    pub(super) fn check_at(&mut self, at: i64) -> Result<(), PaymentStoreError> {
         self.sources.check_at(at)?;
         self.reservation.check_at(at)?;
-        order
-            .seller
-            .permits(self.locale.internal(), at)
-            .map_err(|_| PaymentStoreError::Unavailable)?;
+        if at >= self.seller_expires_at {
+            return Err(PaymentStoreError::Unavailable);
+        }
         Ok(())
     }
 }
@@ -96,20 +91,22 @@ pub(super) async fn claim(
         },
     )
     .await?;
+    let at = i64::try_from(
+        clock
+            .unix_seconds()
+            .map_err(|_| PaymentStoreError::ClockUnavailable)?,
+    )
+    .map_err(|_| PaymentStoreError::ClockUnavailable)?;
+    order
+        .seller
+        .permits(locale.internal(), at)
+        .map_err(|_| PaymentStoreError::Unavailable)?;
     let mut proof = Eligibility {
         sources,
         reservation,
-        locale,
+        seller_expires_at: order.seller.expires_at,
     };
-    proof.check_at(
-        order,
-        i64::try_from(
-            clock
-                .unix_seconds()
-                .map_err(|_| PaymentStoreError::ClockUnavailable)?,
-        )
-        .map_err(|_| PaymentStoreError::ClockUnavailable)?,
-    )?;
+    proof.check_at(at)?;
     Ok(proof)
 }
 

@@ -8,12 +8,13 @@ use sqlx::PgPool;
 pub struct DispatchPermit {
     frozen: FrozenAttempt,
     checked_at: i64,
+    proof: Box<eligibility::Eligibility>,
 }
 impl DispatchPermit {
     /// Consume once immediately before transport I/O, after releasing every DB claim.
     /// Failure retains durable uncertainty and cannot grant a replacement capability.
     pub fn into_request(
-        self,
+        mut self,
         clock: &dyn Clock,
         configuration: &Configuration,
     ) -> Result<FrozenAttempt, PaymentStoreError> {
@@ -22,6 +23,7 @@ impl DispatchPermit {
             return Err(PaymentStoreError::ClockUnavailable);
         }
         initial_plan(&self.frozen, at, configuration)?;
+        self.proof.check_at(at)?;
         Ok(self.frozen)
     }
 }
@@ -117,7 +119,7 @@ pub async fn start_dispatch(
     initial_plan(&frozen, now(&clock)?, configuration)?;
     let mut proof = eligibility::claim(&mut tx, &clock, &order).await?;
     let started_at = now(&clock)?;
-    proof.check_at(&order, started_at)?;
+    proof.check_at(started_at)?;
     initial_plan(&frozen, started_at, configuration)?;
     let dispatch_id = new_id(identifiers)?;
     let event_id = new_id(identifiers)?;
@@ -130,12 +132,13 @@ pub async fn start_dispatch(
     sqlx::query("INSERT INTO commerce_outbox(id,aggregate_id,kind,payload,created_at) VALUES($1,$2,'payment.reconciliation_required.v1',$3,$4)")
         .bind(event_id).bind(&order.identity.id).bind(serde_json::json!({"schema_version":1,"order_id":order.identity.id,"attempt_id":attempt_id,"dispatch_id":dispatch_id})).bind(started_at).execute(&mut *tx).await?;
     let at = now(&clock)?;
-    proof.check_at(&order, at)?;
+    proof.check_at(at)?;
     initial_plan(&frozen, at, configuration)?;
     tx.commit().await?;
     Ok(DispatchOutcome::Start(DispatchPermit {
         frozen,
         checked_at: at,
+        proof: Box::new(proof),
     }))
 }
 fn new_id(identifiers: &dyn Identifiers) -> Result<String, PaymentStoreError> {

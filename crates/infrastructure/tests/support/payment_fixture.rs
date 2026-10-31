@@ -36,24 +36,47 @@ pub async fn accepted(
     String,
     OrderSnapshot,
 ) {
+    accepted_with_windows(pool, 1100, 2000, None).await
+}
+pub async fn accepted_with_windows(
+    pool: &PgPool,
+    created_at: u64,
+    seller_expires_at: i64,
+    market_expires_at: Option<i64>,
+) -> (
+    GuestSessionStore,
+    Arc<quote::Time>,
+    tower_sessions::Session,
+    String,
+    OrderSnapshot,
+) {
     quote::seed(pool).await;
+    if let Some(expires_at) = market_expires_at {
+        let mut p = quote::policy();
+        p.revision = 2;
+        p.expires_at = expires_at;
+        quote::draft(pool, &p).await;
+        quote::decide(pool, 2, 0, true, "short-market").await;
+    }
     pool.execute("UPDATE stock_balances SET on_hand=6")
         .await
         .expect("only exact whole order demand");
-    let (store, time) = quote::store(pool, 1100);
+    let (store, time) = quote::store(pool, created_at);
     let (session, csrf) = quote::guest(&store).await;
     let key = GuestCredential::from_session(&session).expect("owned credential");
     let q = issue_quote(&store, &key, &csrf, Locale::Nl, &quote::request("quote"))
         .await
         .expect("indicative")
         .snapshot;
+    let mut seller = order::seller();
+    seller.expires_at = seller_expires_at;
     let order = create_order(
         &store,
         &key,
         &csrf,
         "place",
         &order::intent(&q.binding.quote_id),
-        &order::seller(),
+        &seller,
     )
     .await
     .expect("accepted order")

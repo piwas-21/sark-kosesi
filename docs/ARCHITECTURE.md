@@ -565,8 +565,10 @@ The trusted internal dispatch entry serializes contenders on the immutable attem
 A new start requires the same configuration and fresh commercial/held-stock claims.
 One immutable start and a reconciliation-required event commit before a noncloneable,
 nonserializable dispatch permit is returned. Permit consumption checks the final
-observed clock minimum, configuration and dispatch deadline again, after database
-claims have ended. Existing starts return reconciliation, including after guest
+observed clock minimum, configuration, stock deadline and retained market/photo/
+seller time limits again, after database claims have ended. The permit retains
+only the pure eligibility proof and seller expiry, without a transaction or buyer/
+address snapshot. Existing starts return reconciliation, including after guest
 revocation, policy withdrawal, hold expiry or key rotation. Losing a permit or
 crashing after commit cannot create another initial POST. SQL uniqueness and
 deferred event completeness provide durable custody; no provider transport or

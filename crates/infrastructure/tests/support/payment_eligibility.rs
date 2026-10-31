@@ -27,7 +27,7 @@ async fn current_sources_must_equal_the_accepted_money_and_merchandise_with_exac
     let mut proof = claim(&mut tx, time.as_ref(), &order)
         .await
         .expect("exact original source");
-    assert!(proof.check_at(&order, 1500).is_ok());
+    assert!(proof.check_at(1500).is_ok());
     tx.rollback().await.expect("read claims only");
     assert_eq!(fixture::counts(&pool).await, (0, 1, 1, 1, 2));
 }
@@ -69,16 +69,26 @@ async fn stored_locale_seller_deadline_and_clock_outages_never_grant_source_auth
     ));
     tx.rollback().await.expect("rollback");
     let mut tx = pool.begin().await.expect("caller");
-    let mut proof = claim(&mut tx, time.as_ref(), &order)
+    let mut expiring = order.clone();
+    expiring.seller.expires_at = 1600;
+    let mut proof = claim(&mut tx, time.as_ref(), &expiring)
         .await
         .expect("positive source");
-    let mut expired = order.clone();
-    expired.seller.expires_at = 1600;
     assert!(matches!(
-        proof.check_at(&expired, 1600),
+        proof.check_at(1600),
         Err(PaymentStoreError::Unavailable)
     ));
     tx.rollback().await.expect("rollback");
+    let mut expired = order.clone();
+    expired.seller.expires_at = 1500;
+    let mut tx = pool.begin().await.expect("caller");
+    assert!(matches!(
+        claim(&mut tx, time.as_ref(), &expired).await,
+        Err(PaymentStoreError::Unavailable)
+    ));
+    tx.rollback()
+        .await
+        .expect("expired seller never grants authority");
     for overflow in [false, true] {
         let mut denied = 0;
         let mut permitted = 0;

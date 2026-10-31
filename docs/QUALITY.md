@@ -351,11 +351,13 @@ request and digest are individually coherent. Actual event-write waits exercise
 cancellation, expiry, clock rewind and final authority rollback without extending
 or replacing holds. Competing internal dispatchers obtain one initial permit and
 one durable recovery event. Later calls reconcile after guest/policy/key/hold
-changes; a lost or expired permit cannot authorize another initial POST. None of
+changes; a lost or expired permit cannot authorize another initial POST. Delayed
+permits also reject seller, market and photo-rights expiry before stock expires;
+the durable start remains reconcilable. None of
 these tests is provider sandbox, callback, deployment or fulfilment acceptance.
 
 Compiled payment fault controls remove physical backing validation, remove the
-owned-history query predicate and replace reconciliation with another initial
-permit. Each must compile and fail its specific custody assertion; the unmodified
+owned-history query predicate, replace reconciliation with another initial
+permit and bypass retained source deadlines. Each must compile and fail its specific custody assertion; the unmodified
 baseline and exact restored source must both pass. Compilation errors cannot count
 as killed defects. Source hashes and per-control logs bind the restored evidence.

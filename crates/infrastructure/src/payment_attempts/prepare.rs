@@ -42,7 +42,7 @@ pub async fn prepare_attempt(
     let clock = scope.clock();
     let mut proof = eligibility::claim(scope.transaction(), clock.as_ref(), &order).await?;
     let created_at = scope.checked_at()?;
-    proof.check_at(&order, created_at)?;
+    proof.check_at(created_at)?;
     let current = configuration.identity();
     let binding = AttemptBinding {
         id: scope.new_id()?,
@@ -67,7 +67,7 @@ pub async fn prepare_attempt(
         &event_id,
     )
     .await?;
-    proof.check_at(&order, scope.checked_at()?)?;
+    proof.check_at(scope.checked_at()?)?;
     scope.commit().await?;
     Ok(PreparationReceipt {
         frozen,
