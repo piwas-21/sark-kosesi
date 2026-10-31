@@ -965,3 +965,6 @@ async fn streaming_limit_rejects_before_an_unfinished_provider_body_can_timeout_
 
 #[path = "mollie_search.rs"]
 mod search_cases;
+
+#[path = "mollie_observations.rs"]
+mod observation_cases;

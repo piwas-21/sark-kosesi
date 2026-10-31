@@ -274,5 +274,18 @@ original JSON entries preserve duplicate critical-field rejection. Either matchi
 order/attempt metadata identifier requires complete financial matching; unrelated
 metadata and provider PII never become stored observations. Multiple identities
 remain explicit candidates for separate GETs. Empty/unfinished discovery cannot
-end uncertainty or grant a replacement create. Durable cursor/observation custody,
+end uncertainty or grant a replacement create. Durable cursor/job custody,
 job budgets and authenticated callback processing remain unimplemented.
+
+Private observation recording consumes the authenticated-fetch capability and
+revalidates original order/attempt/dispatch money, profile and metadata before
+persisting a minimal closed projection. The actual fetched-key fingerprint is
+audited; no raw key, provider details, address or checkout capability is stored.
+Observations have no Debug, financial-state, ownership or fulfilment authority.
+They retain late/reordered/different-ID evidence without selecting a winner.
+Trusted internal reads require bounded closed headers/snapshots and the exact
+processing event; they are not customer routes. New writes serialize per attempt,
+bind full-intent retries, check final monotonic time and commit the immutable fact
+with its PII-free event. Database errors discard query/detail data. No network
+operation occurs in this transaction. Identity resolution, supervised processing,
+customer ownership wrappers and all actual provider/release gates remain required.
