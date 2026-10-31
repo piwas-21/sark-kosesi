@@ -950,3 +950,15 @@ fn duplicate_critical_provider_fields_are_not_resolved_by_a_lossy_json_projectio
     assert!(wire::profile(br#"{"resource":"profile","id":"pfl_SYNTHETIC_NotARealProfile","name":"ignored merchant detail"}"#,"pfl_SYNTHETIC_NotARealProfile").is_ok());
     assert!(wire::payment(source.as_bytes(), f.snapshot(), None).is_ok());
 }
+
+#[tokio::test]
+async fn streaming_limit_rejects_before_an_unfinished_provider_body_can_timeout_or_grow() {
+    let server = Server::start(vec![Reply::OversizedPrefixThenStall]);
+    let started = std::time::Instant::now();
+    assert!(matches!(
+        local(&server).verify_profile().await,
+        Err(MollieError::ResponseTooLarge)
+    ));
+    assert!(started.elapsed() < Duration::from_secs(1));
+    assert_eq!(server.count(), 1);
+}

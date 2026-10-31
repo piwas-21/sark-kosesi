@@ -375,3 +375,11 @@ proving the transport holds no database transaction. GET accepts genuine late-pa
 state under a separately verified same-profile rotated test key; it changes no
 order, stock, payment or fulfilment state. A wire response is not actual provider
 sandbox or customer/payment acceptance.
+
+Compiled provider controls bypass authenticated-profile verification, fetched
+payment matching, the early streamed-byte limit, duplicate-field preservation and
+sensitive authorization marking. Each must compile and fail its named assertion;
+healthy baselines and exact restored-source reruns must pass. The streaming
+instrument sends 65537 bytes then stalls, so a second JSON-size check after reading
+the whole body cannot fake an early transport bound. These controls establish
+source behavior, never actual Mollie acceptance.

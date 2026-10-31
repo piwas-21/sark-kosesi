@@ -1,6 +1,7 @@
 //! Bounded loopback Hyper instrument; no actual provider, credentials or shared resources.
 use bytes::Bytes;
-use http_body_util::{BodyExt, Full, Limited};
+use http_body_util::{BodyExt, Full, Limited, combinators::BoxBody};
+use hyper::body::{Body, Frame};
 use hyper::{Request as HttpRequest, Response, body::Incoming, service::service_fn};
 use hyper_util::rt::TokioIo;
 use serde_json::Value;
@@ -27,6 +28,7 @@ pub enum Reply {
     Delay(Duration),
     Gate(Arc<AtomicBool>),
     Close,
+    OversizedPrefixThenStall,
 }
 pub struct Request {
     pub method: String,
@@ -109,7 +111,7 @@ impl Drop for Server {
 async fn respond(
     request: HttpRequest<Incoming>,
     state: Arc<State>,
-) -> Result<Response<Full<Bytes>>, std::io::Error> {
+) -> Result<Response<BoxBody<Bytes, std::convert::Infallible>>, std::io::Error> {
     let (parts, body) = request.into_parts();
     let body = Limited::new(body, 16384)
         .collect()
@@ -140,7 +142,7 @@ async fn respond(
                 .header("Content-Type", "application/json")
                 .header("Content-Encoding", encoding)
                 .header("Connection", "close")
-                .body(Full::new(Bytes::from(value.to_string())))
+                .body(Full::new(Bytes::from(value.to_string())).boxed())
                 .map_err(|_| std::io::ErrorKind::InvalidData.into());
         }
         Reply::Json(status, v) => (status, v.to_string(), "application/hal+json", false, None),
@@ -164,6 +166,14 @@ async fn respond(
             }
             (200, "{}".into(), "application/json", false, None)
         }
+        Reply::OversizedPrefixThenStall => {
+            return Response::builder()
+                .status(200)
+                .header("Content-Type", "application/json")
+                .header("Connection", "close")
+                .body(StalledBody { sent: false }.boxed())
+                .map_err(|_| std::io::ErrorKind::InvalidData.into());
+        }
         Reply::Close => return Err(std::io::ErrorKind::ConnectionReset.into()),
     };
     let mut response = Response::builder()
@@ -177,6 +187,25 @@ async fn respond(
         response = response.header("Location", location);
     }
     response
-        .body(Full::new(Bytes::from(body)))
+        .body(Full::new(Bytes::from(body)).boxed())
         .map_err(|_| std::io::ErrorKind::InvalidData.into())
+}
+
+struct StalledBody {
+    sent: bool,
+}
+impl Body for StalledBody {
+    type Data = Bytes;
+    type Error = std::convert::Infallible;
+    fn poll_frame(
+        mut self: std::pin::Pin<&mut Self>,
+        _: &mut std::task::Context<'_>,
+    ) -> std::task::Poll<Option<Result<Frame<Bytes>, Self::Error>>> {
+        if self.sent {
+            std::task::Poll::Pending
+        } else {
+            self.sent = true;
+            std::task::Poll::Ready(Some(Ok(Frame::data(Bytes::from(vec![b'x'; 65537])))))
+        }
+    }
 }
