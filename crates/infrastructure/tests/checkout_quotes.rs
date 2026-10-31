@@ -425,7 +425,7 @@ async fn raw_imports_require_exact_basket_review_publication_and_bom_bindings(po
         .await
         .expect("quote")
         .snapshot;
-    for case in 0..13 {
+    for case in 0..14 {
         let mut s = original.clone();
         s.binding.quote_id = format!("{:032x}", 1000 + case);
         let mut value = serde_json::to_value(&s).expect("snapshot");
@@ -456,6 +456,7 @@ async fn raw_imports_require_exact_basket_review_publication_and_bom_bindings(po
                 value["binding"]["created_at"] = 1200.into();
                 value["binding"]["expires_at"] = 1500.into();
             }
+            13 => value["total"]["gross_minor"] = 38246.into(),
             _ => {}
         }
         let b = &s.binding;
@@ -468,8 +469,10 @@ async fn raw_imports_require_exact_basket_review_publication_and_bom_bindings(po
             let read = owned_quote(&store, &key, &b.quote_id).await;
             if case == 11 {
                 assert!(read.expect("revalidated import") == s);
-            } else {
+            } else if case == 12 {
                 assert!(matches!(read, Err(QuoteStoreError::ClockUnavailable)));
+            } else {
+                assert!(matches!(read, Err(QuoteStoreError::InvalidStoredData)));
             }
         } else {
             let error = result.expect_err("malformed import denied");
@@ -482,7 +485,7 @@ async fn raw_imports_require_exact_basket_review_publication_and_bom_bindings(po
             );
         }
     }
-    assert_eq!(counts(&pool).await, (3, 0, 0));
+    assert_eq!(counts(&pool).await, (4, 0, 0));
 }
 #[sqlx::test(migrator = "MIGRATOR")]
 async fn invalid_intent_empty_cart_and_failed_entropy_never_issue_snapshots(pool: PgPool) {
