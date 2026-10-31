@@ -511,6 +511,35 @@ Order, payment, fulfilment and return states are separate. Late paid payments af
 
 Write domain changes and outbox events in one transaction. Workers claim leases using PostgreSQL, retry with backoff and stable effect identifiers, and recover abandoned leases. Emails, stock alerts and fulfilment requests are idempotent. Record provider acceptance separately from customer delivery. Failed jobs are visible and replayable only through bounded, audited admin actions.
 
+### Initial test-attempt model
+
+The private version-1 payment domain captures immutable server/order/basket/stock
+identities, positive bounded EUR minor units, explicit test mode, profile and
+credential fingerprint, a frozen-request digest and an active dispatch deadline.
+Its idempotency key derives from the immutable attempt identity. No key, request,
+profile, amount or readiness is accepted from a customer by this model.
+
+The pure dispatch policy requests a single Prepared-to-Started transition.
+Infrastructure must durably serialize that transition before any provider I/O;
+a pure plan supplies no dispatch authority. Started means the request may have
+reached the provider. Every subsequent plan reconciles, including after credential
+rotation, hold expiry or the provider cache window. A known provider ID is immutable
+and does not imply payment success. Initial automatic POST replay is deliberately
+absent; uncertain outcomes remain visible until reconciled, never replaced blindly.
+
+A server-fetched payment projection must match resource, provider/profile identity,
+mode, exact EUR amount and order/attempt metadata. Version 1 uses closed test/EUR
+contracts with no missing/unknown fallback. Matching retains late-paid evidence
+without consuming stock or changing order/payment/fulfilment state. Provider IDs
+are bounded opaque prefixed values, accommodating longer upstream identifiers.
+Identifiers and credential custody data have no Debug implementation.
+
+This model adds no attempt persistence, provider adapter, worker or callback.
+Complete frozen request/URL configuration, owned-order transactional composition,
+durable dispatch custody, authenticated fetch/reconciliation, late-paid stock
+recovery and separate finance/fulfilment transitions before using it for payments.
+Actual profile/method/key and sandbox acceptance remain independent requirements.
+
 ## Sessions, uploads and rendering
 
 Rust owns secure sessions and server-side authorization. Use a maintained password/session implementation with Argon2id where passwords are stored; verified email, rotating sessions, hashed reset tokens, admin MFA and separate guest-order access tokens. Browser credentials are HttpOnly/Secure/SameSite cookies; never store bearer tokens in browser local storage. CSRF and origin checks protect cookie-authenticated mutations. No duplicate identity system in Next.js.

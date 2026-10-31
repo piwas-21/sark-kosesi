@@ -152,3 +152,10 @@ intent-bound retries and final source checks after writes. Historical prices gra
 no current order authority. Continue immutable order/address/policy snapshots and
 fresh source/amount validation in the atomic whole-basket reservation transaction.
 Complete trusted-edge abuse controls before exposing customer routes.
+
+Complete the private test-payment model with durable owned-order attempts, frozen
+provider requests/configuration and a serialized dispatch-start fact before I/O.
+Started/unknown attempts must reconcile without automatic replacement. Add actual
+Mollie transport/fetch verification, workers/callbacks, late-paid stock recovery
+and separate order/payment/fulfilment/refund/invoice transitions. A pure domain
+plan or matched synthetic response is not dispatch or payment authority.

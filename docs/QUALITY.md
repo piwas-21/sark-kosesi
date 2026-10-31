@@ -326,3 +326,11 @@ locked dependencies, then requires each intended executable mutant to fail its
 named assertion. A stale miniature dependency manifest, baseline compilation
 failure or unrelated mutant compilation error fails the instrument; none counts
 as a killed arithmetic defect.
+
+Payment-attempt domain oracles use literal minor units and a literal stable key.
+They cover positive dispatch boundaries, invalid clocks/configuration, unknown
+outcomes after cache/hold expiry and credential rotation, immutable provider IDs,
+exact amount/profile/metadata matching and preserved late-paid evidence. Closed
+serialization rejects live mode, non-EUR currency, missing custody fields and
+unknown statuses. Matching every supported status changes no order/stock state.
+These pure tests establish no durable dispatch, provider or sandbox acceptance.
