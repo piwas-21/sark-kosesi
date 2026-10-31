@@ -36,6 +36,22 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/guest/quotes/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["read_guest_quote"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/guest/session": {
         parameters: {
             query?: never;
@@ -47,6 +63,22 @@ export interface paths {
         put?: never;
         post: operations["issue"];
         delete: operations["revoke"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/guest/{locale}/quotes": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["issue_guest_quote"];
+        delete?: never;
         options?: never;
         head?: never;
         patch?: never;
@@ -231,6 +263,50 @@ export interface components {
             size_code: string;
             sku: string;
             textile_code: string;
+        };
+        QuoteAmounts: {
+            /** Format: int64 */
+            gross_minor: number;
+            /** Format: int64 */
+            net_minor: number;
+            /** Format: int64 */
+            vat_minor: number;
+        };
+        QuoteRequestBody: {
+            country: string;
+            effect_key: string;
+            /** Format: int32 */
+            expected_basket_revision: number;
+            postcode: string;
+        };
+        QuoteResponse: {
+            quote: components["schemas"]["QuoteView"];
+            replayed: boolean;
+        };
+        QuoteView: {
+            /** Format: int32 */
+            basket_revision: number;
+            currency: string;
+            /** Format: int64 */
+            expires_at: number;
+            id: string;
+            indicative: boolean;
+            lines: components["schemas"]["QuotedLine"][];
+            locale: string;
+            shipping: components["schemas"]["QuoteAmounts"];
+            /** Format: int32 */
+            shipping_vat_basis_points: number;
+            total: components["schemas"]["QuoteAmounts"];
+        };
+        QuotedLine: {
+            amounts: components["schemas"]["QuoteAmounts"];
+            /** Format: int32 */
+            quantity: number;
+            sku: string;
+            /** Format: int64 */
+            unit_gross_minor: number;
+            /** Format: int32 */
+            vat_basis_points: number;
         };
     };
     responses: never;
@@ -419,6 +495,67 @@ export interface operations {
             };
         };
     };
+    read_guest_quote: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["QuoteView"];
+                };
+            };
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            410: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+        };
+    };
     issue: {
         parameters: {
             query?: never;
@@ -527,6 +664,106 @@ export interface operations {
                 };
             };
             403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+        };
+    };
+    issue_guest_quote: {
+        parameters: {
+            query?: never;
+            header: {
+                Origin: string;
+                "x-csrf-token": string;
+            };
+            path: {
+                locale: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["QuoteRequestBody"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["QuoteResponse"];
+                };
+            };
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            410: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            413: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            415: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            429: {
                 headers: {
                     [name: string]: unknown;
                 };

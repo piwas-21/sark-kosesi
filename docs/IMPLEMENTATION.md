@@ -238,10 +238,14 @@ supervision or live provider activation follows from deploying the empty preview
    checks, hashed credential custody, revocation serialization, bounded counters,
    optimistic versions and full-intent replay receipts. Internal routes are opt-in
    behind preview authentication; no frontend bridge or public activation exists.
-   Complete trusted-edge abuse controls before a public customer bridge. Add
-   immutable quote/order/address/policy snapshots and integrate atomic whole-basket
-   holds. Revalidate publications,
-   policy and amounts during order creation; an earlier quote grants no authority.
+   Owned indicative quote snapshots now bind basket revision, destination/locale,
+   reviewed policy and publication/BOM revisions to checked allocations and a
+   fixed maximum five-minute lifetime. Full-intent retries retain old receipts;
+   final identity/source/deadline checks follow the actual insert wait. Complete
+   trusted-edge abuse controls before a public customer bridge. Add immutable
+   order/address/policy snapshots and integrate atomic whole-basket holds.
+   Revalidate current basket, publications, policy and amounts during order
+   creation; an earlier quote grants no authority.
    Expose the same-origin API/contracts and checkout UI only with those controls.
 4. Add Mollie sandbox adapter and stable persisted payment attempts/idempotency
    keys before provider I/O; timeouts retain unknown outcomes for reconciliation.

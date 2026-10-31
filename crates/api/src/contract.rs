@@ -8,7 +8,7 @@ use utoipa::{
 };
 
 #[derive(OpenApi)]
-#[openapi(paths(crate::get_catalogue,crate::published::page,crate::published::product,crate::published::image,crate::guest::issue,crate::guest::read,crate::guest::write,crate::guest::revoke), components(schemas(Catalogue, Product, ApiError, crate::published_types::PublishedCatalogue, crate::published_types::PublishedProduct)), modifiers(&PreviewAuth))]
+#[openapi(paths(crate::get_catalogue,crate::published::page,crate::published::product,crate::published::image,crate::guest::issue,crate::guest::read,crate::guest::write,crate::guest::revoke,crate::guest::quotes::issue,crate::guest::quotes::read), components(schemas(Catalogue, Product, ApiError, crate::published_types::PublishedCatalogue, crate::published_types::PublishedProduct)), modifiers(&PreviewAuth))]
 pub struct ApiDoc;
 struct PreviewAuth;
 impl Modify for PreviewAuth {

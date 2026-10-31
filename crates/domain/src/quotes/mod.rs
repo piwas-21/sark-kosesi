@@ -40,12 +40,19 @@ pub enum QuoteError {
     ShippingUnavailable,
     AmountTooLarge,
 }
+impl Destination {
+    pub fn validate(&self) -> Result<(), QuoteError> {
+        if !valid_country(&self.country) || !valid_postcode(&self.postcode) {
+            return Err(QuoteError::InvalidRequest);
+        }
+        Ok(())
+    }
+}
 impl QuoteRequest {
     pub fn validate(&self) -> Result<(), QuoteError> {
         let mut seen = BTreeSet::new();
-        if !valid_country(&self.destination.country)
-            || !valid_postcode(&self.destination.postcode)
-            || self.lines.is_empty()
+        self.destination.validate()?;
+        if self.lines.is_empty()
             || self.lines.len() > MAX_LINES
             || !self.lines.iter().all(|line| {
                 merchant_code(&line.sku)

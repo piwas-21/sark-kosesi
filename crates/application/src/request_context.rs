@@ -33,3 +33,30 @@ impl RequestContext {
         Ok(Self { id, unix_seconds })
     }
 }
+
+/// One composed use case shares a nondecreasing observation across its clock consumers.
+/// The source remains authoritative; a backward observation fails instead of being clamped.
+pub struct ObservedClock {
+    source: std::sync::Arc<dyn Clock>,
+    latest: std::sync::atomic::AtomicU64,
+}
+impl ObservedClock {
+    pub fn new(source: std::sync::Arc<dyn Clock>, minimum: u64) -> Self {
+        Self {
+            source,
+            latest: std::sync::atomic::AtomicU64::new(minimum),
+        }
+    }
+}
+impl Clock for ObservedClock {
+    fn unix_seconds(&self) -> Result<u64, ContextError> {
+        let at = self.source.unix_seconds()?;
+        let previous = self
+            .latest
+            .fetch_max(at, std::sync::atomic::Ordering::SeqCst);
+        if at < previous {
+            return Err(ContextError::ClockUnavailable);
+        }
+        Ok(at)
+    }
+}

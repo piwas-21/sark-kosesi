@@ -139,6 +139,9 @@ Before any private-repository switch, run the protection audit and follow [opera
 
 Guest-basket intent has an opt-in internal session/CSRF API with durable ownership,
 revocation, bounded counters and immutable version receipts. No public customer
-bridge, order creation, basket stock reservation or payment follows from it.
-Continue immutable checkout/order snapshots and atomic holds, with trusted-edge
-abuse controls before exposing cookie-authenticated customer routes.
+bridge, order creation or payment follows from it. Owned indicative quote snapshots
+now retain exact source revisions, checked totals and short fixed expiry, with
+intent-bound retries and final source checks after writes. Historical prices grant
+no current order authority. Continue immutable order/address/policy snapshots and
+fresh source/amount validation in the atomic whole-basket reservation transaction.
+Complete trusted-edge abuse controls before exposing customer routes.

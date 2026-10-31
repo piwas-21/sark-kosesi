@@ -82,3 +82,5 @@ pub async fn catalogue(pool: &PgPool, locale: Locale) -> Result<Vec<CatalogueIte
         })
         .collect()
 }
+
+pub mod checkout_quotes;

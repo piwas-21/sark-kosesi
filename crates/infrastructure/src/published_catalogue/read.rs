@@ -128,9 +128,11 @@ pub(crate) async fn load_eligible(
                 .product_rights_active(&s.image.asset, evaluated)
         })
         .map(|(sku, revision, selection, sources, in_stock)| {
+            let bom_revision = selection.facts.bom_revision;
             let rights = sources.image.rights.clone();
             let asset = sources.image.asset.clone();
             Ok(EligibleProduct {
+                bom_revision,
                 product: product::assemble(sku, locale, revision, selection, sources, in_stock)?,
                 rights,
                 asset,

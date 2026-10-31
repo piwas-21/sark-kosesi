@@ -246,6 +246,86 @@
         ]
       }
     },
+    "/api/guest/quotes/{id}": {
+      "get": {
+        "tags": [
+          "crate::guest::quotes"
+        ],
+        "operationId": "read_guest_quote",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/QuoteView"
+                }
+              }
+            }
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "410": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "guest": [],
+            "preview": []
+          }
+        ]
+      }
+    },
     "/api/guest/session": {
       "post": {
         "tags": [
@@ -387,6 +467,148 @@
             }
           },
           "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "guest": [],
+            "preview": []
+          }
+        ]
+      }
+    },
+    "/api/guest/{locale}/quotes": {
+      "post": {
+        "tags": [
+          "crate::guest::quotes"
+        ],
+        "operationId": "issue_guest_quote",
+        "parameters": [
+          {
+            "name": "locale",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "Origin",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "x-csrf-token",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/QuoteRequestBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/QuoteResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "410": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "413": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "415": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "429": {
             "content": {
               "application/json": {
                 "schema": {
@@ -1168,6 +1390,154 @@
           },
           "textile_code": {
             "type": "string"
+          }
+        }
+      },
+      "QuoteAmounts": {
+        "type": "object",
+        "required": [
+          "gross_minor",
+          "net_minor",
+          "vat_minor"
+        ],
+        "properties": {
+          "gross_minor": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "net_minor": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "vat_minor": {
+            "type": "integer",
+            "format": "int64"
+          }
+        }
+      },
+      "QuoteRequestBody": {
+        "type": "object",
+        "required": [
+          "expected_basket_revision",
+          "effect_key",
+          "country",
+          "postcode"
+        ],
+        "properties": {
+          "country": {
+            "type": "string"
+          },
+          "effect_key": {
+            "type": "string"
+          },
+          "expected_basket_revision": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "postcode": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": false
+      },
+      "QuoteResponse": {
+        "type": "object",
+        "required": [
+          "quote",
+          "replayed"
+        ],
+        "properties": {
+          "quote": {
+            "$ref": "#/components/schemas/QuoteView"
+          },
+          "replayed": {
+            "type": "boolean"
+          }
+        }
+      },
+      "QuoteView": {
+        "type": "object",
+        "required": [
+          "id",
+          "basket_revision",
+          "locale",
+          "expires_at",
+          "currency",
+          "lines",
+          "shipping",
+          "shipping_vat_basis_points",
+          "total",
+          "indicative"
+        ],
+        "properties": {
+          "basket_revision": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "currency": {
+            "type": "string"
+          },
+          "expires_at": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "id": {
+            "type": "string"
+          },
+          "indicative": {
+            "type": "boolean"
+          },
+          "lines": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/QuotedLine"
+            }
+          },
+          "locale": {
+            "type": "string"
+          },
+          "shipping": {
+            "$ref": "#/components/schemas/QuoteAmounts"
+          },
+          "shipping_vat_basis_points": {
+            "type": "integer",
+            "format": "int32",
+            "minimum": 0
+          },
+          "total": {
+            "$ref": "#/components/schemas/QuoteAmounts"
+          }
+        }
+      },
+      "QuotedLine": {
+        "type": "object",
+        "required": [
+          "sku",
+          "quantity",
+          "unit_gross_minor",
+          "vat_basis_points",
+          "amounts"
+        ],
+        "properties": {
+          "amounts": {
+            "$ref": "#/components/schemas/QuoteAmounts"
+          },
+          "quantity": {
+            "type": "integer",
+            "format": "int32",
+            "minimum": 0
+          },
+          "sku": {
+            "type": "string"
+          },
+          "unit_gross_minor": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "vat_basis_points": {
+            "type": "integer",
+            "format": "int32",
+            "minimum": 0
           }
         }
       }

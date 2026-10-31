@@ -63,6 +63,16 @@ async fn trace_level_transport_and_database_errors_never_log_cookie_csrf_or_body
             .await
             .expect("invalid");
         assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+        let response = app.clone().oneshot(request(
+            "POST", "/api/guest/nl/quotes", Some(&cookie), Some(&csrf),
+            r#"{"expected_basket_revision":1,"effect_key":"quote-log-private-effect","country":"NL","postcode":"private-postcode-marker"}"#,
+        )).await.expect("quote failure");
+        assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+        let response = app.clone().oneshot(request(
+            "POST", "/api/guest/nl/quotes", Some(&cookie), Some(&csrf),
+            r#"{"expected_basket_revision":1,"effect_key":"quote-log-private-effect","country":"NL","postcode":"1234 ZZ"}"#,
+        )).await.expect("unready quote");
+        assert_eq!(response.status(), StatusCode::CONFLICT);
         pool.close().await;
         let response = app
             .oneshot(request("GET", "/api/guest/basket", Some(&cookie), None, ""))
@@ -84,6 +94,9 @@ async fn trace_level_transport_and_database_errors_never_log_cookie_csrf_or_body
         "malformed-secret-marker",
         "private-body-marker",
         "log-negative-control",
+        "quote-log-private-effect",
+        "private-postcode-marker",
+        "1234 ZZ",
     ] {
         assert!(!log.contains(secret), "sensitive marker leaked");
     }

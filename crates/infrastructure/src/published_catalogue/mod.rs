@@ -44,6 +44,7 @@ pub struct PublishedProduct {
 /// Kept separate from the customer projection and never exposed by HTTP.
 pub(crate) struct EligibleProduct {
     pub product: PublishedProduct,
+    pub(crate) bom_revision: i32,
     rights: commerce_domain::media::MediaRightsChange,
     asset: commerce_domain::media::MediaAssetDraft,
 }

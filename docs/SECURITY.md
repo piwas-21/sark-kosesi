@@ -213,3 +213,15 @@ claims span aggregate demand and all effects, and fresh final clocks deny expiry
 or rewind after waits. Later checkout must supply fresh guest authority, approved
 publications/policies, totals, complete order/outbox atomicity and final clocks.
 No payment or fulfilment permission follows from a trusted reservation receipt.
+
+Private guest quote routes reuse the existing credential, Origin/CSRF and preview
+boundary. Owner claims precede stored quote lookup; a quote ID never authenticates
+a reader. Requests cannot supply owner, lines, prices, policy, tax, stock or roles.
+Closed bounded JSON and static errors prevent internal source/destination exposure.
+Snapshots and command inputs omit Debug; customer projections omit owner, policy
+and destination. Stored JSON is size-bounded and allocation/shape/header validated.
+Immutable rows cannot be edited/deleted or rebound to another basket/review/BOM.
+Final source/identity checks follow inserts; revocation waits for active claims,
+and rollback leaves no quote or successful-issuance charge. Historical receipts
+cannot refresh expiry or bypass current order readiness. Public bridge abuse
+controls, retention operations and complete order/payment authority remain required.

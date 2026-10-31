@@ -4,6 +4,7 @@
 use serde::{Deserialize, Serialize};
 
 pub mod catalogue_authoring;
+pub mod checkout_quotes;
 pub mod factual_review;
 pub mod guest_baskets;
 pub mod holds;
