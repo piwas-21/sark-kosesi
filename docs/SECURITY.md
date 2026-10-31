@@ -289,3 +289,12 @@ bind full-intent retries, check final monotonic time and commit the immutable fa
 with its PII-free event. Database errors discard query/detail data. No network
 operation occurs in this transaction. Identity resolution, supervised processing,
 customer ownership wrappers and all actual provider/release gates remain required.
+
+Private search custody accepts only opaque authenticated list results bound to the
+entire original frozen attempt and requested cursor. Actual key fingerprints and
+minimal identity hints are retained; provider response bodies, raw keys and buyer
+information are excluded. Continuation requires exact immutable predecessor
+custody, rejects forks/cycles and caps each scan at 100 pages. An end/empty/capped
+scan cannot prove absence, authorize a replacement create or change payment/stock
+state. Receipt retries and processing events are atomic; runtime workers,
+callbacks, supervised escalation and identity resolution remain required.

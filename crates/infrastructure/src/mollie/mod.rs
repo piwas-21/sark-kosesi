@@ -8,10 +8,12 @@ mod client;
 mod credential;
 mod http;
 mod search;
+mod search_evidence;
 mod wire;
 pub use client::{TestClient, VerifiedTestClient};
 pub use credential::TestCredential;
 pub use search::{SearchCursor, SearchPage};
+pub use search_evidence::VerifiedSearchPage;
 #[derive(Debug, PartialEq, Eq)]
 pub enum MollieError {
     InvalidCredential,

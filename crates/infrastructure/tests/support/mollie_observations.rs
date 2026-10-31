@@ -4,7 +4,7 @@ use crate::payment_attempts::observations::{read_observation, read_recorded, rec
 use commerce_application::request_context::{Clock, ContextError, Identifiers};
 use commerce_domain::payment_attempts::observations::ObservationSnapshot;
 use std::sync::Arc;
-async fn prepared(
+pub(super) async fn prepared(
     pool: &PgPool,
     start: bool,
 ) -> (Arc<crate::payment_test_fixture::quote::Time>, FrozenAttempt) {
@@ -69,10 +69,10 @@ async fn fetched(
     );
     verified
 }
-fn ids() -> crate::payment_test_fixture::Ids {
+pub(super) fn ids() -> crate::payment_test_fixture::Ids {
     crate::payment_test_fixture::Ids(AtomicU64::new(20000))
 }
-struct BadPorts;
+pub(super) struct BadPorts;
 impl Clock for BadPorts {
     fn unix_seconds(&self) -> Result<u64, ContextError> {
         Err(ContextError::ClockUnavailable)

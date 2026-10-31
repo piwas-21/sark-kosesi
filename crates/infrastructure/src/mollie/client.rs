@@ -71,14 +71,25 @@ impl VerifiedTestClient {
         &self,
         attempt: &AttemptSnapshot,
         from: Option<&SearchCursor>,
-    ) -> Result<SearchPage, MollieError> {
+    ) -> Result<VerifiedSearchPage, MollieError> {
         self.check_profile(attempt)?;
         let body = self
             .inner
             .http
             .payment_page(from.map(SearchCursor::provider_id))
             .await?;
-        search::decode(&body, attempt, from)
+        let page = search::decode(&body, attempt, from)?;
+        Ok(VerifiedSearchPage::capture(
+            page,
+            attempt,
+            from,
+            &self
+                .inner
+                .configuration
+                .snapshot()
+                .profile
+                .credential_fingerprint,
+        ))
     }
     fn check_profile(&self, attempt: &AttemptSnapshot) -> Result<(), MollieError> {
         attempt
