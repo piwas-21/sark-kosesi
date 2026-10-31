@@ -239,7 +239,8 @@ supervision or live provider activation follows from deploying the empty preview
    optimistic versions and full-intent replay receipts. Internal routes are opt-in
    behind preview authentication; no frontend bridge or public activation exists.
    Complete trusted-edge abuse controls before a public customer bridge. Add
-   immutable quote/order/address/policy snapshots and atomic whole-basket holds. Revalidate publications,
+   immutable quote/order/address/policy snapshots and integrate atomic whole-basket
+   holds. Revalidate publications,
    policy and amounts during order creation; an earlier quote grants no authority.
    Expose the same-origin API/contracts and checkout UI only with those controls.
 4. Add Mollie sandbox adapter and stable persisted payment attempts/idempotency
@@ -250,6 +251,13 @@ supervision or live provider activation follows from deploying the empty preview
 5. Add separate order/payment/fulfilment/refund state, invoices/credit documents,
    bounded audited refunds and independent restock actions. Prove sandbox outcomes,
    concurrency, cent allocations and crash recovery without duplicate effects.
+
+Trusted whole-basket reservation primitives now provide immutable manifests,
+exact fresh child bindings and aggregated component claims in one transaction.
+Historical retries preserve terminal members; expiry still uses the existing
+worker. Integrate the caller-owned transaction entry with freshly authorized
+checkout, immutable order/address/policy snapshots, coupon claims and outbox
+records. An indicative quote or standalone reservation grants no charge authority.
 
 No guest checkout route, order persistence, provider calls, payment acceptance or
 production activation follows from the initial server quote consumer. Preserve

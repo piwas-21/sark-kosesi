@@ -202,3 +202,14 @@ an approved trusted-edge policy, retention/deletion operations and complete
 checkout authority. Logs expose static failure codes and correlation IDs, with
 positive/negative capture controls for cookies, CSRF and body values. No public
 customer bridge or order/payment effect is enabled by these routes.
+
+Whole-basket manifests are trusted stock primitives, with no customer mutation
+route. Opaque group/child identifiers and server order ownership cannot select
+customer roles or publish products. Immutable insert-time child/group bindings
+and deferred completeness checks prevent legacy adoption, partial groups and
+reuse of a hold across groups. Exact normalized retries bind every member and
+window; they never reactivate expired/released/consumed history. Global component
+claims span aggregate demand and all effects, and fresh final clocks deny expiry
+or rewind after waits. Later checkout must supply fresh guest authority, approved
+publications/policies, totals, complete order/outbox atomicity and final clocks.
+No payment or fulfilment permission follows from a trusted reservation receipt.

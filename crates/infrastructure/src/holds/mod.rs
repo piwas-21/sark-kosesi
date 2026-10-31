@@ -1,5 +1,7 @@
 //! Trusted reservation primitives. Session authorization/provider recovery follow.
 
+pub(crate) mod basket;
+pub use basket::{BasketHoldLine, BasketHoldReceipt, BasketHoldRequest, reserve_basket};
 mod create;
 mod expiry;
 mod transition;
@@ -16,6 +18,7 @@ use sqlx::{Postgres, Transaction};
 #[derive(Debug)]
 pub enum HoldWriteError {
     InvalidRequest,
+    ClockUnavailable,
     MissingBom,
     NotFound,
     Ownership,

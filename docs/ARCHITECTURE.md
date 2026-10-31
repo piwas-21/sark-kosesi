@@ -330,6 +330,34 @@ outbox processing for external effects; hold expiry performs only database work.
 
 The Rust quote service computes item/discount/tax/shipping allocations in integer minor units and a single currency (EUR at launch). Persist immutable order line, bundle, price, VAT, discount, address and policy snapshots. A later catalogue edit cannot rewrite order history. Discounts have explicit eligibility, budget, per-customer limits, stacking and time-zone rules; concurrent redemption cannot exceed a limit.
 
+### Atomic basket reservation manifests
+
+The trusted basket primitive accepts at most 20 exact sealed-BOM selections,
+stable child/group identifiers, an immutable server order identity and one
+bounded hold window. It creates an immutable manifest and fresh child holds in
+one transaction. Child bindings are fixed at insert time; legacy holds cannot
+be adopted, and another group cannot share a child. Deferred schema guards
+reject open, incomplete or mismatched manifests. Installation seeds no groups,
+holds, stock or customer authority.
+
+Admission and completion clocks prove new holds remain inside the domain's
+consume window and reject rewind from the latest observed time. All child IDs
+are inserted in a common order, and missing-balance insertion plus UPDATE claims
+use the same database component order as existing stock transitions. Aggregate
+shared demand is checked before per-SKU ledger effects. There is no quote SHARE
+claim upgraded into a reservation; every selected physical component is claimed
+before effects, avoiding cross-SKU lock cycles. Scarcity, failure or cancellation
+rolls back the manifest, holds, snapshots, stock and movements together.
+
+Exact retries bind the full owner/window/member selection and return historical
+current child states in canonical SKU order, with no reactivation or new stock.
+The immutable manifest remains compatible with per-hold expiry; future payment
+consumption/release must use one caller-owned transaction for the entire order.
+The internal transaction entry does not commit: the checkout caller supplies a
+fresh read-committed transaction, bounds and final authorization/source/window
+checks alongside order, promotion claims and outbox writes. Public customer
+routes, order creation and payment recovery remain separate P3 integration work.
+
 ### Indicative server quotes
 
 The trusted quote consumer accepts a closed destination/SKU/quantity request;

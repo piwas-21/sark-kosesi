@@ -256,3 +256,15 @@ Trace log checks include a positive capture control and secret/body markers; the
 log test runs in its own binary so concurrent subscriber interest caches cannot
 produce a false zero. These HTTP/store tests do not establish a public browser
 checkout, deployed cookie acceptance, provider payment or physical fulfilment.
+
+Whole-basket reservation logic retains 95% critical native line/branch thresholds.
+Independent PostgreSQL oracles cover a last shared component, complete loser
+rollback, changed/omitted/extra retry intent, immutable raw imports, legacy child
+adoption denial, existing expiry compatibility and covers-only stock. Named
+connection/lock instruments force opposing SKU/component orders; both whole
+baskets must complete. Compiled omission of global component claims must fail
+that oracle. Real waits prove final expiry, rewind and cancellation rollback;
+scripted clocks also test admission-to-completion rewind and clock failures.
+A caller-owned transaction test proves reservations remain invisible until the
+outer commit and disappear after a later caller rollback. These primitives do
+not prove customer checkout, provider sandbox or operational stock acceptance.
