@@ -258,8 +258,14 @@ supervision or live provider activation follows from deploying the empty preview
    strict server-fetched matching. It performs no persistence, network or payment
    transition. The application now freezes exact request bytes under validated
    explicit HTTPS return/callback configuration and matching configuration identity.
-   Add owned-order transactional attempts and Mollie sandbox adapter before
-   provider I/O; uncertain outcomes
+   Private owned-order attempts now persist exact captured amount/configuration/
+   request bytes and their prepared event, with fresh ownership, current commercial
+   eligibility and complete existing physically backed holds. Exact effect retries
+   preserve historical receipts without new stock effects. One serialized dispatch
+   start and reconciliation event commit before a single-use permit; later callers
+   reconcile even after key/hold/source expiry. Add the actual Mollie sandbox
+   transport, authenticated fetch and worker processing before provider I/O;
+   uncertain outcomes
    reconcile under the original identity and never mint a replacement charge.
    Fetch and verify webhook identifiers against order/amount/currency/profile/mode.
    Add durable outbox/reconciler, duplicate/reordered notifications and atomic late

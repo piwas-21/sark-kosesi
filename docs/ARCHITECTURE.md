@@ -546,10 +546,34 @@ data enters the provider request. Stable configuration and request digests bind
 these bytes; restore requires exact canonical reproduction under the captured
 policy. No active policy, method eligibility or deployment is installed.
 
-These primitives add no attempt persistence, provider adapter, worker or callback.
-Complete owned-order transactional composition,
-durable dispatch custody, authenticated fetch/reconciliation, late-paid stock
-recovery and separate finance/fulfilment transitions before using it for payments.
+Private PostgreSQL preparation now binds one immutable attempt to one owned
+accepted order and its captured EUR total, original stock group, exact canonical
+request bytes and configuration digest material. Native SHA-256 constraints bind
+the stored UTF-8 bytes. Fresh guest ownership/CSRF protects preparation; only the
+original effect and confirmed intent replay its receipt. New preparation rechecks
+current reviewed market, publication, merchandise, photo rights and seller policy,
+then claims the complete original active reservation and its physical backing.
+The accepted order may outlive the original indicative quote and current cart;
+its own reserved components are never counted as unavailable indicative stock.
+No new hold, movement, cart clearing or source activation follows from preparation.
+The attempt and minimal prepared event commit together, with final combined
+source/hold/identity clock checks after the actual event write. Private history
+revalidates bounded closed records, canonical request/configuration and the
+original accepted order; reading old history grants no new payment authority.
+
+The trusted internal dispatch entry serializes contenders on the immutable attempt.
+A new start requires the same configuration and fresh commercial/held-stock claims.
+One immutable start and a reconciliation-required event commit before a noncloneable,
+nonserializable dispatch permit is returned. Permit consumption checks the final
+observed clock minimum, configuration and dispatch deadline again, after database
+claims have ended. Existing starts return reconciliation, including after guest
+revocation, policy withdrawal, hold expiry or key rotation. Losing a permit or
+crashing after commit cannot create another initial POST. SQL uniqueness and
+deferred event completeness provide durable custody; no provider transport or
+running dispatcher is installed.
+
+Complete authenticated fetch/reconciliation, late-paid stock recovery and separate
+finance/fulfilment transitions before using it for payments.
 Actual profile/method/key and sandbox acceptance remain independent requirements.
 
 ## Sessions, uploads and rendering
@@ -708,5 +732,5 @@ Nothing installs or infers real seller/legal facts. Email validation checks boun
 single-mailbox syntax only, including UTF-8; it proves neither delivery nor identity.
 Initial orders require a positive payable total and accept no coupon. Promotion
 budget accounting, order/payment/fulfilment transitions, retained-data operations,
-public HTTP/UI/edge controls, outbox dispatch and provider attempts remain separate
-work. No transaction performs provider/network I/O or sends a customer message.
+public HTTP/UI/edge controls, outbox processing and actual provider transport remain
+separate work. Private test attempts and initial dispatch custody are described above. No transaction performs provider/network I/O or sends a customer message.

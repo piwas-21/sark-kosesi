@@ -89,7 +89,7 @@ pub(crate) async fn in_transaction(
         request,
         policies,
         None,
-        StockClaim::Indicative,
+        Some(StockClaim::Indicative),
     )
     .await?
     .original)
@@ -109,7 +109,7 @@ pub(crate) async fn promoted_in_transaction(
         request,
         policies,
         Some(promotion),
-        StockClaim::Indicative,
+        Some(StockClaim::Indicative),
     )
     .await?;
     let totals = evaluation.promoted.ok_or(QuoteFailure::InvalidStoredData)?;
@@ -127,7 +127,7 @@ async fn evaluate(
     request: &QuoteRequest,
     policies: &[MarketPolicy],
     promotion: Option<&commerce_domain::promotions::Promotion>,
-    stock_claim: StockClaim,
+    stock_claim: Option<StockClaim>,
 ) -> Result<QuoteProof, QuoteFailure> {
     request.validate()?;
     if policies.len() > 64 {
@@ -169,7 +169,9 @@ async fn evaluate(
             vat_basis_points: rule.vat_basis_points,
         });
     }
-    stock::check(tx, &products, &request.lines, stock_claim).await?;
+    if let Some(claim) = stock_claim {
+        stock::check(tx, &products, &request.lines, claim).await?;
+    }
     let totals = calculate(
         &priced,
         policy.shipping.gross,
@@ -213,7 +215,7 @@ pub(crate) async fn prepare_in_transaction(
         request,
         policies,
         None,
-        StockClaim::Indicative,
+        Some(StockClaim::Indicative),
     )
     .await
 }
@@ -262,7 +264,19 @@ pub(crate) async fn prepare_order_in_transaction(
         request,
         policies,
         None,
-        StockClaim::Reservation,
+        Some(StockClaim::Reservation),
     )
     .await
+}
+
+/// Retain current commercial/source claims only. No stock or payment authority:
+/// the caller must claim the complete existing reservation in this same transaction.
+pub(crate) async fn prepare_captured_sources_in_transaction(
+    tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
+    clock: &dyn Clock,
+    locale: Locale,
+    request: &QuoteRequest,
+    policies: &[MarketPolicy],
+) -> Result<QuoteProof, QuoteFailure> {
+    evaluate(tx, clock, locale, request, policies, None, None).await
 }

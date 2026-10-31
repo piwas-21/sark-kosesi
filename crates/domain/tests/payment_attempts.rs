@@ -322,3 +322,30 @@ fn stored_contract_has_no_missing_mode_currency_or_unknown_status_fallback() {
     let round: DispatchState = serde_json::from_value(raw).expect("state");
     assert!(round == DispatchState::Started { started_at: 1200 });
 }
+
+#[test]
+fn payment_preparation_intent_is_explicit_closed_and_contains_no_customer_total() {
+    let intent = PreparationIntent {
+        order_id: "2".repeat(32),
+        confirmed: true,
+    };
+    assert_eq!(intent.validate(), Ok(()));
+    for v in [
+        PreparationIntent {
+            order_id: "bad".into(),
+            confirmed: true,
+        },
+        PreparationIntent {
+            order_id: "2".repeat(32),
+            confirmed: false,
+        },
+    ] {
+        assert_eq!(v.validate(), Err(PaymentError::InvalidRequest));
+    }
+    let mut value = serde_json::to_value(&intent).expect("intent");
+    value["amount_minor"] = serde_json::json!(1);
+    assert!(serde_json::from_value::<PreparationIntent>(value).is_err());
+    let mut value = serde_json::to_value(&intent).expect("intent");
+    value.as_object_mut().expect("object").remove("confirmed");
+    assert!(serde_json::from_value::<PreparationIntent>(value).is_err());
+}

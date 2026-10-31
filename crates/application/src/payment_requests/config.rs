@@ -37,6 +37,7 @@ pub struct Configuration {
     snapshot: ConfigurationSnapshot,
     return_url: Url,
     sha256: String,
+    fingerprint_material: String,
 }
 impl Configuration {
     pub fn capture(snapshot: ConfigurationSnapshot) -> Result<Self, RequestError> {
@@ -86,6 +87,7 @@ impl Configuration {
             snapshot,
             return_url,
             sha256,
+            fingerprint_material: canonical,
         })
     }
     pub fn identity(&self) -> CurrentConfiguration {
@@ -93,6 +95,10 @@ impl Configuration {
             profile: self.snapshot.profile.clone(),
             sha256: self.sha256.clone(),
         }
+    }
+    /// Exact versioned digest preimage for immutable relational custody; contains no raw key.
+    pub fn fingerprint_material(&self) -> &str {
+        &self.fingerprint_material
     }
     pub fn snapshot(&self) -> &ConfigurationSnapshot {
         &self.snapshot

@@ -57,6 +57,14 @@ fn frozen_request_has_literal_decimal_metadata_routes_and_no_profile_key_or_cont
     ] {
         assert!(!frozen.body().contains(forbidden));
     }
+    assert_eq!(
+        config.identity().sha256,
+        "af25a72d9b84e860ab9b8c237bcb509876391bdc9f3534cf682184af80f25701"
+    );
+    assert_eq!(
+        config.fingerprint_material(),
+        r#"["piwas-mollie-test-configuration-v1","pfl_SYNTHETIC_NotARealProfile","aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","test","ideal","https://shop.example.test","https://shop.example.test/payment-return","https://shop.example.test/api/payment-webhook"]"#
+    );
     let config2 = Configuration::capture(policy()).expect("same exact policy");
     assert_eq!(config.identity().sha256, config2.identity().sha256);
     assert!(config.snapshot() == &policy());

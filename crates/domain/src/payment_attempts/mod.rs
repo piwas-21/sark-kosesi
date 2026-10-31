@@ -8,6 +8,7 @@ pub use provider::{PaymentStatus, ProviderPayment, match_provider};
 pub const ATTEMPT_SCHEMA_VERSION: u16 = 1;
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum PaymentError {
+    InvalidRequest,
     InvalidSnapshot,
     InvalidClock,
     Expired,
@@ -32,6 +33,20 @@ impl ProfileBinding {
     pub fn validate(&self) -> Result<(), PaymentError> {
         if !opaque(&self.id, "pfl_") || !hex(&self.credential_fingerprint, 64) {
             return Err(PaymentError::InvalidSnapshot);
+        }
+        Ok(())
+    }
+}
+#[derive(Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct PreparationIntent {
+    pub order_id: String,
+    pub confirmed: bool,
+}
+impl PreparationIntent {
+    pub fn validate(&self) -> Result<(), PaymentError> {
+        if !hex(&self.order_id, 32) || !self.confirmed {
+            return Err(PaymentError::InvalidRequest);
         }
         Ok(())
     }

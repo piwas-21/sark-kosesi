@@ -45,6 +45,9 @@ Owner/admin grants are least-privilege; admin MFA is mandatory. Sensitive action
 | Operations           | Sender domain SPF/DKIM/DMARC, templates, delivery/bounce checks, support staffing and promises                                                          | Customer operations               |
 | Engineering          | Separate hosting, restore/rollback, alert ownership and capacity evidence                                                                               | Production                        |
 
+Actual supplier/SKU specifications, BOM and measured packaging data are not yet
+available. Keep these inputs pending; fixture data cannot fill them.
+
 Create the market matrix from evidence for AT, BE, BG, HR, CY, CZ, DK, EE, FI, FR, DE, GR, HU, IE, IT, LV, LT, LU, MT, NL, PL, PT, RO, SK, SI, ES, SE. Every row is pending/blocked/ready; missing prices or rules fail closed. Special territories/postcodes require explicit handling. Language support does not imply delivery readiness. Unready destinations cannot take payment; resolving them remains a blocker against EU-wide launch intent.
 
 Obtain qualified current review of applicable legal/tax requirements. Ordinary size/foam choices are not automatically a withdrawal-rights exception. Do not invent certifications, testimonials, origin claims or shipping promises to fill missing inputs.

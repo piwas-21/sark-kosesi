@@ -31,7 +31,7 @@ pub(super) async fn by_quote(
     sqlx::query_as::<_,Row>("SELECT left(o.id,33) AS id,left(o.basket_id,33) AS basket_id,o.basket_revision,left(o.quote_id,33) AS quote_id,left(o.effect_key,129) AS effect_key,left(o.stock_group_id,33) AS stock_group_id,o.created_at,o.hold_expires_at,CASE WHEN octet_length(o.intent::text)<=16384 THEN o.intent END AS intent,CASE WHEN octet_length(o.snapshot::text)<=65536 THEN o.snapshot END AS snapshot,CASE WHEN octet_length(q.snapshot::text)<=32768 THEN q.snapshot END AS original_quote,CASE WHEN octet_length(p.policy::text)<=65536 THEN p.policy END AS original_market FROM checkout_orders o LEFT JOIN guest_quote_snapshots q ON q.id=o.quote_id LEFT JOIN market_policy_drafts p ON p.id=q.policy_id AND p.revision=q.policy_revision WHERE o.basket_id=$1 AND o.quote_id=$2")
  .bind(owner).bind(id).fetch_optional(&mut **tx).await?.map(Row::decode).transpose()
 }
-pub(super) async fn by_id(
+pub(crate) async fn by_id(
     tx: &mut Transaction<'_, Postgres>,
     owner: &str,
     id: &str,

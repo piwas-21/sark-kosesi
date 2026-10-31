@@ -3,7 +3,7 @@ use commerce_domain::{
     holds::{HoldAction, HoldState, HoldWindow},
     quotes::QuoteRequest,
 };
-fn products(proof: &quotes::QuoteProof) -> Vec<ProductSnapshot> {
+pub(crate) fn products(proof: &quotes::QuoteProof) -> Vec<ProductSnapshot> {
     let mut products: Vec<_> = proof
         .selected_products()
         .map(|(p, bom)| ProductSnapshot {
