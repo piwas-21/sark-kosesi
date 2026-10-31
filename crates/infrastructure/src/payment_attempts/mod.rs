@@ -14,6 +14,7 @@ use commerce_domain::{
     payment_attempts::{AttemptBinding, AttemptSnapshot, PreparationIntent},
 };
 use sqlx::{Postgres, Transaction};
+pub mod callbacks;
 mod dispatch;
 mod eligibility;
 pub(crate) mod evidence;
@@ -77,7 +78,7 @@ impl From<RequestError> for PaymentStoreError {
         }
     }
 }
-fn identifier(value: &str) -> bool {
+pub(crate) fn identifier(value: &str) -> bool {
     value.len() == 32
         && value
             .bytes()

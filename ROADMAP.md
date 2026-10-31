@@ -177,7 +177,11 @@ worker command. No runtime key or scheduler is installed. Private finance-author
 recovery now retains immutable full-checkpoint decisions and permits at most three
 lifetime resumes without resetting claim, poll or scan budgets. Fresh session/MFA,
 exact generation and confirmation protect every call, including receipt replay.
-Paid, ambiguous, capped and invalid-custody stops remain unresolved. Add callbacks,
+Paid, ambiguous, capped and invalid-custody stops remain unresolved. Private
+callback-ID GETs now obtain exact-profile minimal evidence and use authenticated
+metadata only to locate and fully match the original frozen order/attempt/dispatch
+before atomic observation/outbox custody. No callback body or return status grants
+financial authority. Add durable bounded callback ingress and queue processing,
 remaining operator dispositions, late-paid stock recovery
 and separate order/payment/fulfilment/refund/invoice transitions. A pure domain
 plan or matched synthetic response is not dispatch or payment authority.

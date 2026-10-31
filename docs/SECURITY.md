@@ -307,3 +307,13 @@ and the exact job change commit together; replay requires current authority and
 cannot restart subsequent progress. Three lifetime resumes retain all hard work
 budgets. Paid/ambiguous/capped/invalid-custody stops remain blocked. Errors discard
 raw storage detail. This adds no public endpoint or charge/refund/stock authority.
+
+Private callback-ID lookup exposes only a verified GET-only test client. Returned
+metadata is an original-attempt lookup hint, never ownership or payment authority.
+Exact authenticated profile/resource/ID, closed mode/currency and bounded metadata
+checks precede the opaque result. Full frozen order/attempt/dispatch matching is
+required before the existing atomic observation/outbox append; optional checkout
+capabilities and provider details are discarded. Duplicate critical JSON fields,
+wrong scope and forged original financial terms fail closed. No callback HTTP
+route or inbox is exposed; durable ingress, quotas and runtime supervision remain
+required before accepting notifications operationally.

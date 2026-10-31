@@ -793,6 +793,32 @@ retries return the original decision without restarting later progress, while
 still requiring fresh authority. No public route, staff grant, provider key,
 financial disposition or operational activation is installed.
 
+### Callback-ID fetch and original custody
+
+Legacy payment `webhookUrl` notifications carry an untrusted form `id`, which must
+trigger an authenticated GET; they supply no payment-status authority. This is
+separate from next-generation snapshot webhooks. The owning provider contract is
+[Mollie's legacy webhook reference](https://docs.mollie.com/reference/webhooks).
+
+The verified GET-only test client can now fetch a bounded provider ID without a
+previously known attempt. Canonical wire decoding preserves duplicate critical
+field rejection, closed Test/EUR types, exact decimal amounts and one-off identity.
+Resource, expected ID/profile, metadata schema and bounded original identifiers
+must match before an opaque callback result is returned. Authenticated metadata is
+only a lookup hint. The private recorder restores the immutable original
+order/attempt/dispatch, performs complete financial matching and repeats that
+matching under the existing serialized observation append. Late/reordered facts,
+exact historical operation receipts, actual fetched-key fingerprints and the
+minimal atomic processing event retain their existing semantics. Callback evidence
+discards optional checkout capabilities and provider/customer details.
+
+Provider I/O completes before database custody starts. No caller-controlled URL,
+callback amount/status, client body or financial transition enters this boundary.
+A future bounded durable inbox must retain each operation before I/O and look up
+its committed receipt before fetching again; changed fetched facts require a new
+operation. This primitive installs no receiver, public route, inbox/worker,
+credential, scheduler, payment/stock/fulfilment action or production activation.
+
 ## Sessions, uploads and rendering
 
 Rust owns secure sessions and server-side authorization. Use a maintained password/session implementation with Argon2id where passwords are stored; verified email, rotating sessions, hashed reset tokens, admin MFA and separate guest-order access tokens. Browser credentials are HttpOnly/Secure/SameSite cookies; never store bearer tokens in browser local storage. CSRF and origin checks protect cookie-authenticated mutations. No duplicate identity system in Next.js.

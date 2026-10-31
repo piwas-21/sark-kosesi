@@ -471,3 +471,16 @@ survives exhausted authenticated GETs, resumes without another list/create and
 retains late-paid evidence for separate resolution. Hostile stored-snapshot
 controls reject open, missing and inconsistent objects. Compiled fault controls
 must expose final-authority and lifetime-budget removal before exact restoration.
+
+Private callback-ID fetch checks combine real isolated PostgreSQL with bounded,
+authenticated loopback GETs. Literal wrong-profile/mode/currency/resource/ID,
+metadata schema/identifier, sequence, nested-shape and duplicate-field controls
+have paired healthy projections. Wrong original order/amount, unknown/unstarted
+attempts and invalid effect/time/entropy/storage fail without effects. Late paid
+and reordered fetches preserve sticky paid identity through separate resolution;
+exact concurrent receipts append once and record rotated-key fingerprints. GET
+cancellation retains no database claims or facts; encoded identifiers cannot
+choose an origin/path/query and redirects cannot propagate credentials. Compiled
+controls must expose removal of profile scope and original-attempt matching, then
+pass exact source restoration. This is source evidence, not installed callback
+handling or provider payment acceptance.
