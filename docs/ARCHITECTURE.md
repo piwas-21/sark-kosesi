@@ -717,8 +717,9 @@ later open/pending/failed observations and remains attached to every identity.
 These are historical facts, not a current payment status or fulfilment authority.
 
 Each test-profile/provider-ID pair can belong to only one original attempt.
-Sorted transaction advisory claims serialize cross-attempt ownership against
-immutable resolution history. A conflicting attempt retains its fetched evidence
+A unique immutable database claim binds its initial resolution, original attempt
+and exact profile. Native uniqueness forces stale repeatable-read writers to abort
+as well as serializing ordinary application claims. A conflicting attempt retains its fetched evidence
 and fails resolution for explicit recovery; different profiles remain isolated.
 
 Resolution and its minimal outbox event commit together. Native guards independently

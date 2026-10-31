@@ -10,13 +10,15 @@ fn row() -> Row {
         recorded_at: 1500,
         summary: Some(serde_json::json!({"provider_ids":[],"paid_provider_ids":[]})),
         event_present: true,
+        ownership_present: true,
     }
 }
 #[test]
 fn headers_require_original_attempt_event_bounded_identity_sequence_and_time() {
     assert!(row().decode_header(&"2".repeat(32), 1500).is_ok());
-    let changes: [fn(&mut Row); 9] = [
+    let changes: [fn(&mut Row); 10] = [
         |r| r.event_present = false,
+        |r| r.ownership_present = false,
         |r| r.id = "bad".into(),
         |r| r.attempt_id = "3".repeat(32),
         |r| r.effect_key = "bad effect".into(),

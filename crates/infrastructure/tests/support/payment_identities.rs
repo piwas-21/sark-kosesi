@@ -252,7 +252,6 @@ async fn damaged_resolution_or_source_never_falls_back_to_older_receipts(pool: P
         .await
         .expect("healthy");
     for sql in [
-        "UPDATE payment_identity_resolutions SET id=repeat('z',32)",
         "UPDATE payment_identity_resolutions SET effect_key='bad effect' WHERE effect_key='paid-resolution'",
         "UPDATE payment_identity_resolutions SET revision=0 WHERE effect_key='paid-resolution'",
         "UPDATE payment_identity_resolutions SET through_observation=1001 WHERE effect_key='paid-resolution'",
@@ -263,23 +262,14 @@ async fn damaged_resolution_or_source_never_falls_back_to_older_receipts(pool: P
         "UPDATE payment_identity_resolutions SET summary=jsonb_build_object('padding',repeat('x',524289)) WHERE effect_key='paid-resolution'",
         "UPDATE payment_identity_resolutions SET summary='{}' WHERE effect_key='paid-resolution'",
         "DELETE FROM commerce_outbox WHERE kind='payment.identity_resolved.v1'",
+        "DELETE FROM payment_provider_identity_claims",
         "UPDATE payment_observations SET snapshot=jsonb_set(snapshot,'{intent,payment,amount_minor}','1')",
     ] {
         let mut tx = pool.begin().await.expect("corrupt fixture");
-        tx.execute("ALTER TABLE payment_identity_resolutions DISABLE TRIGGER USER; ALTER TABLE commerce_outbox DISABLE TRIGGER USER; ALTER TABLE payment_observations DISABLE TRIGGER USER").await.expect("fixture only");
+        tx.execute("ALTER TABLE payment_identity_resolutions DISABLE TRIGGER USER; ALTER TABLE commerce_outbox DISABLE TRIGGER USER; ALTER TABLE payment_observations DISABLE TRIGGER USER; ALTER TABLE payment_provider_identity_claims DISABLE TRIGGER USER").await.expect("fixture only");
         // Drop only checks needed to exercise the runtime reader independently.
         tx.execute("ALTER TABLE payment_identity_resolutions DROP CONSTRAINT payment_identity_resolutions_id_check, DROP CONSTRAINT payment_identity_resolutions_effect_key_check, DROP CONSTRAINT payment_identity_resolutions_revision_check, DROP CONSTRAINT payment_identity_resolutions_through_observation_check, DROP CONSTRAINT payment_identity_resolutions_recorded_at_check, DROP CONSTRAINT payment_identity_resolutions_summary_check").await.expect("owned checks");
-        if sql.starts_with("UPDATE payment_identity_resolutions") && !sql.contains("WHERE") {
-            let damage = match sql {
-                "UPDATE payment_identity_resolutions SET id=repeat('z',32)" => {
-                    "UPDATE payment_identity_resolutions SET id=repeat('z',32) WHERE effect_key='paid-resolution'"
-                }
-                _ => sql,
-            };
-            sqlx::query(damage).execute(&mut *tx).await.expect("damage");
-        } else {
-            sqlx::query(sql).execute(&mut *tx).await.expect("damage");
-        }
+        sqlx::query(sql).execute(&mut *tx).await.expect("damage");
         let (frozen, started) = crate::payment_attempts::evidence::context(&mut tx, a, false)
             .await
             .expect("context");

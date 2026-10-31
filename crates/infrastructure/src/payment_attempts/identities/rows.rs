@@ -9,6 +9,7 @@ struct Row {
     recorded_at: i64,
     summary: Option<serde_json::Value>,
     event_present: bool,
+    ownership_present: bool,
 }
 pub(crate) async fn load(
     tx: &mut Transaction<'_, Postgres>,
@@ -17,16 +18,21 @@ pub(crate) async fn load(
     effect: Option<&str>,
 ) -> Result<Option<Resolution>, PaymentStoreError> {
     let row = sqlx::query_as::<_, Row>(
-        r#"SELECT left(id,33) AS id,left(attempt_id,33) AS attempt_id,
-      left(effect_key,129) AS effect_key,revision,through_observation,recorded_at,
+        r#"SELECT left(r.id,33) AS id,left(r.attempt_id,33) AS attempt_id,
+      left(r.effect_key,129) AS effect_key,revision,through_observation,recorded_at,
       CASE WHEN octet_length(summary::text)<=524288 THEN summary END AS summary,
       EXISTS(SELECT 1 FROM commerce_outbox e JOIN payment_attempts a ON a.id=r.attempt_id
         WHERE e.kind='payment.identity_resolved.v1' AND e.payload->>'resolution_id'=r.id
           AND e.aggregate_id=a.order_id AND e.created_at=r.recorded_at
           AND e.payload=jsonb_build_object('schema_version',1,'order_id',a.order_id,
-            'attempt_id',a.id,'resolution_id',r.id)) AS event_present
-      FROM payment_identity_resolutions r WHERE attempt_id=$1
-        AND ($2::text IS NULL OR effect_key=$2) ORDER BY revision DESC LIMIT 1"#,
+             'attempt_id',a.id,'resolution_id',r.id)) AS event_present,
+      CASE WHEN jsonb_typeof(r.summary->'provider_ids')='array' AND octet_length(r.summary::text)<=524288
+      THEN NOT EXISTS(SELECT 1 FROM jsonb_array_elements_text(r.summary->'provider_ids') i
+        WHERE NOT EXISTS(SELECT 1 FROM payment_provider_identity_claims c
+          WHERE c.profile_id=owner.snapshot->'binding'->'profile'->>'id'
+          AND c.provider_id=i AND c.attempt_id=r.attempt_id)) ELSE false END AS ownership_present
+      FROM payment_identity_resolutions r JOIN payment_attempts owner ON owner.id=r.attempt_id WHERE r.attempt_id=$1
+        AND ($2::text IS NULL OR r.effect_key=$2) ORDER BY revision DESC LIMIT 1"#,
     )
     .bind(&frozen.snapshot().binding.id)
     .bind(effect)
@@ -58,6 +64,7 @@ impl Row {
         started_at: i64,
     ) -> Result<Resolution, PaymentStoreError> {
         if !self.event_present
+            || !self.ownership_present
             || !identifier(&self.id)
             || self.attempt_id != attempt_id
             || !valid_command_id(&self.effect_key)
