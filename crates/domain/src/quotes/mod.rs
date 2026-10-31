@@ -65,7 +65,8 @@ impl QuoteRequest {
         Ok(())
     }
 }
-pub(crate) fn valid_country(country: &str) -> bool {
+/// Supported EU country code, not delivery/tax/readiness authority.
+pub fn valid_country(country: &str) -> bool {
     [
         "AT", "BE", "BG", "HR", "CY", "CZ", "DK", "EE", "FI", "FR", "DE", "GR", "HU", "IE", "IT",
         "LV", "LT", "LU", "MT", "NL", "PL", "PT", "RO", "SK", "SI", "ES", "SE",

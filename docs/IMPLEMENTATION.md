@@ -227,8 +227,12 @@ supervision or live provider activation follows from deploying the empty preview
    newer drafts, withdrawal and expiry block old approvals. No policies/grants are
    installed. Complete the explicit country/postcode/territory readiness matrix
    from actual reviewed tax/carrier/returns inputs before enabling destinations.
-   Finish durable promotion administration and atomic budget/redemption limits
-   in order transactions. Version 1 indicative fixed/percentage quote and captured
+   Promotion configuration now has immutable canonical drafts, independent
+   exact-revision reviews, explicit EUR currency, separate unseeded capabilities and lifetime
+   discount/redemption ceilings. Latest approved state only; configuration creates
+   no coupon route or spending claim. Integrate atomic lifetime budget/redemption
+   accounting with order transactions and verified customer limits. A guest cookie
+   cannot establish a per-person allowance. Version 1 indicative fixed/percentage quote and captured
    refund arithmetic is implemented; it installs no promotion or refund authority.
    One promotion per quote, exact eligibility, UTC windows and immutable cent/tax
    allocations must remain consistent through checkout, payment and credit records.

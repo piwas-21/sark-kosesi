@@ -10,6 +10,16 @@ pub enum ContextError {
 pub trait Clock: Send + Sync {
     fn unix_seconds(&self) -> Result<u64, ContextError>;
 }
+impl<C: Clock + ?Sized> Clock for &C {
+    fn unix_seconds(&self) -> Result<u64, ContextError> {
+        (**self).unix_seconds()
+    }
+}
+impl<C: Clock + ?Sized> Clock for std::sync::Arc<C> {
+    fn unix_seconds(&self) -> Result<u64, ContextError> {
+        self.as_ref().unix_seconds()
+    }
+}
 pub trait Identifiers: Send + Sync {
     fn next(&self) -> Result<[u8; 16], ContextError>;
 }
@@ -36,19 +46,19 @@ impl RequestContext {
 
 /// One composed use case shares a nondecreasing observation across its clock consumers.
 /// The source remains authoritative; a backward observation fails instead of being clamped.
-pub struct ObservedClock {
-    source: std::sync::Arc<dyn Clock>,
+pub struct ObservedClock<C> {
+    source: C,
     latest: std::sync::atomic::AtomicU64,
 }
-impl ObservedClock {
-    pub fn new(source: std::sync::Arc<dyn Clock>, minimum: u64) -> Self {
+impl<C: Clock> ObservedClock<C> {
+    pub fn new(source: C, minimum: u64) -> Self {
         Self {
             source,
             latest: std::sync::atomic::AtomicU64::new(minimum),
         }
     }
 }
-impl Clock for ObservedClock {
+impl<C: Clock> Clock for ObservedClock<C> {
     fn unix_seconds(&self) -> Result<u64, ContextError> {
         let at = self.source.unix_seconds()?;
         let previous = self

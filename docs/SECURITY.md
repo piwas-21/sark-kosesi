@@ -181,8 +181,8 @@ quotes reuse reviewed market/publication/stock claims and final source clocks;
 promotion expiry cannot extend country or photography eligibility. Stored quote
 arithmetic is revalidated before discounting, and every amount remains bounded EUR
 minor units. Refund arithmetic preserves immutable captured tax but grants no
-finance capability, ownership, provider attempt or restocking effect. Durable
-administration, redemption limits and authenticated checkout remain prerequisites.
+finance capability, ownership, provider attempt or restocking effect. Atomic
+redemption limits and authenticated checkout remain prerequisites.
 
 Guest basket credentials use a maintained stateful transport and a private SQLx
 store. The opt-in internal routes retain preview authentication and a validated
@@ -202,6 +202,17 @@ an approved trusted-edge policy, retention/deletion operations and complete
 checkout authority. Logs expose static failure codes and correlation IDs, with
 positive/negative capture controls for cookies, CSRF and body values. No public
 customer bridge or order/payment effect is enabled by these routes.
+
+Promotion policy writes require their own unseeded manage/review capabilities,
+recent MFA and confirmation. Market/catalogue authority does not imply promotion
+authority. A different actor reviews exact immutable source terms; effect replay
+cannot reverse a newer withdrawal or draft. Bounded closed stored objects and
+canonical identity/limits are revalidated. A shared borrowed observation clock
+covers staff checks, waits and final writes; revocation retains its exclusive
+ordering. No customer can submit discount amounts, policy, limits or role claims.
+Configuration has no budget-spending or payment authority. Verified customer
+limits cannot be satisfied by treating a guest cookie as a person. Current
+promotion readers remain trusted private primitives without HTTP exposure.
 
 Whole-basket manifests are trusted stock primitives, with no customer mutation
 route. Opaque group/child identifiers and server order ownership cannot select
@@ -225,3 +236,8 @@ Final source/identity checks follow inserts; revocation waits for active claims,
 and rollback leaves no quote or successful-issuance charge. Historical receipts
 cannot refresh expiry or bypass current order readiness. Public bridge abuse
 controls, retention operations and complete order/payment authority remain required.
+
+The time-bounded development-only minimatch advisory disposition is recorded in
+[dependency review](DEPENDENCIES.md#temporary-development-tooling-exception).
+It expires at 2026-11-03T00:00:00Z, preserves visible moderate audit findings and existing
+CI timeouts, and grants no ownership/payment, high/critical or production waiver.

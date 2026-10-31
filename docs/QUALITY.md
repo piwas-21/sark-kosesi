@@ -257,6 +257,19 @@ log test runs in its own binary so concurrent subscriber interest caches cannot
 produce a false zero. These HTTP/store tests do not establish a public browser
 checkout, deployed cookie acceptance, provider payment or physical fulfilment.
 
+Promotion policy and shared borrowed-clock code retain 95% critical native
+line/branch gates. Isolated PostgreSQL cases cover separate capabilities, recent
+MFA, self-review, canonical full-intent receipts, competing drafts/reviews,
+withdrawal/new-draft fallback denial and lifetime limit snapshot preservation.
+Actual waits cover source/withdrawal ordering, revocation, post-insert expiry,
+backward time and cancellation rollback, with a valid write positive control.
+Corrupt restored shapes/headers/limits, immutable raw imports, stale repeatable-read
+writers and upgrade preservation are independent negative/positive controls.
+Compiled removal of the observation wrapper, source SHARE claim and promotion
+capability must fail the intended real-clock, lock-ordering and role assertions.
+Configuration tests do not prove atomic redemption budgets, per-customer identity,
+public coupons, provider sandbox or operational promotion acceptance.
+
 Whole-basket reservation logic retains 95% critical native line/branch thresholds.
 Independent PostgreSQL oracles cover a last shared component, complete loser
 rollback, changed/omitted/extra retry intent, immutable raw imports, legacy child

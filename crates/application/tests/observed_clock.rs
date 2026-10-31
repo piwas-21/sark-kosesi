@@ -39,3 +39,19 @@ fn shared_use_case_observations_reject_reverse_time_and_never_cache_through_sour
     let higher = ObservedClock::new(source, 1103);
     assert_eq!(higher.unix_seconds(), Err(ContextError::ClockUnavailable));
 }
+
+#[test]
+fn borrowed_staff_clock_uses_the_same_observation_without_lifetime_or_error_bypass() {
+    let source = Source {
+        at: AtomicU64::new(1100),
+        failed: AtomicBool::new(false),
+    };
+    let clock = ObservedClock::new(&source, 1100);
+    assert_eq!(clock.unix_seconds(), Ok(1100));
+    source.at.store(1101, Ordering::SeqCst);
+    assert_eq!(clock.unix_seconds(), Ok(1101));
+    source.at.store(1100, Ordering::SeqCst);
+    assert_eq!(clock.unix_seconds(), Err(ContextError::ClockUnavailable));
+    source.failed.store(true, Ordering::SeqCst);
+    assert_eq!(clock.unix_seconds(), Err(ContextError::ClockUnavailable));
+}

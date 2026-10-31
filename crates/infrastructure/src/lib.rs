@@ -11,6 +11,7 @@ pub mod image_ingestion;
 pub mod image_review;
 pub mod market_policies;
 pub mod media;
+pub mod promotion_policies;
 pub mod publication;
 pub mod published_catalogue;
 pub mod quotes;
