@@ -87,26 +87,56 @@ pub async fn reviewed_quote(
     let mut tx = published_catalogue::begin(pool)
         .await
         .map_err(|e| MarketError::Quote(e.into()))?;
+    let policy = reviewed_policy(&mut tx, request).await?;
+    let quote = quotes::in_transaction(&mut tx, clock, locale, request, &[policy])
+        .await
+        .map_err(MarketError::Quote)?;
+    tx.rollback().await?;
+    Ok(quote)
+}
+
+async fn reviewed_policy(
+    tx: &mut Transaction<'_, Postgres>,
+    request: &QuoteRequest,
+) -> Result<MarketPolicy, MarketError> {
     let id: Option<String> = sqlx::query_scalar(
         "SELECT id FROM market_policy_anchors WHERE country=$1 AND postcode=$2 FOR SHARE",
     )
     .bind(&request.destination.country)
     .bind(&request.destination.postcode)
-    .fetch_optional(&mut *tx)
+    .fetch_optional(&mut **tx)
     .await?;
     let id = id.ok_or(MarketError::NotFound)?;
     let revision: Option<i32> =
         sqlx::query_scalar("SELECT max(revision) FROM market_policy_drafts WHERE id=$1")
             .bind(&id)
-            .fetch_one(&mut *tx)
+            .fetch_one(&mut **tx)
             .await?;
-    let policy = inspection(&mut tx, &id, revision.ok_or(MarketError::NotFound)?).await?;
+    let policy = inspection(tx, &id, revision.ok_or(MarketError::NotFound)?).await?;
     if !policy.review.is_some_and(|r| r.approved) {
         return Err(MarketError::NotFound);
     }
-    let quote = quotes::in_transaction(&mut tx, clock, locale, request, &[policy.policy])
+    Ok(policy.policy)
+}
+/// Indicative trusted server terms only; no coupon HTTP route or budget claim.
+pub async fn reviewed_promotion_quote(
+    pool: &PgPool,
+    clock: &dyn Clock,
+    locale: Locale,
+    request: &QuoteRequest,
+    promotion: &commerce_domain::promotions::Promotion,
+) -> Result<quotes::PromotedServerQuote, MarketError> {
+    request
+        .validate()
+        .map_err(|e| MarketError::Quote(e.into()))?;
+    let mut tx = published_catalogue::begin(pool)
         .await
-        .map_err(MarketError::Quote)?;
+        .map_err(|e| MarketError::Quote(e.into()))?;
+    let policy = reviewed_policy(&mut tx, request).await?;
+    let quote =
+        quotes::promoted_in_transaction(&mut tx, clock, locale, request, &[policy], promotion)
+            .await
+            .map_err(MarketError::Quote)?;
     tx.rollback().await?;
     Ok(quote)
 }
