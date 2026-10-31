@@ -578,6 +578,41 @@ Complete authenticated fetch/reconciliation, late-paid stock recovery and separa
 finance/fulfilment transitions before using it for payments.
 Actual profile/method/key and sandbox acceptance remain independent requirements.
 
+### Private test-provider transport
+
+The explicit test credential accepts only bounded `test_` keys and binds a
+versioned domain-separated SHA-256 fingerprint to the configured profile. Raw
+keys have no Debug/serialization/getter and survive only in sensitive HTTP
+Authorization headers. An unverified client has no payment operation: an
+authenticated `GET /v2/profiles/me` must match the expected profile before it can
+become a verified client. No environment provisioning or worker activation is
+installed by the library.
+
+Production construction fixes the HTTPS Mollie API origin. The HTTP client uses
+an explicit Ring/Rustls configuration and reviewed WebPKI roots, HTTP/1, no system
+proxy, redirects, automatic retries, referer or decompression, and bounded connect/
+read/total deadlines. Responses are limited to 65536 bytes under both declared
+length and streamed framing. A loopback override exists only in unit-test builds.
+
+Create consumes the durable one-use permit and sends its exact frozen body/key
+after all database claims have ended. Every unusable create reply remains
+uncertain. A matched create response supplies only an identity hint; a separate
+authenticated GET must verify resource/provider ID, profile, explicit Test/EUR,
+checked decimal minor units, exact order/attempt metadata, status and oneoff
+sequence. Only the minimal projection survives; bank/card/address details are
+ignored. Unknown statuses and malformed critical objects fail closed. Optional
+checkout links require canonical HTTPS and an explicit Mollie-host allowlist;
+invalid links are withheld without discarding matched financial evidence.
+
+A GET has no current hold/source deadline and can use a rotated test key whose
+profile was independently verified against the SAME captured profile. Its actual
+credential fingerprint remains available for observation audit. Rotation never
+authorizes another POST under the old attempt: initial permits still require the
+original complete configuration identity. This client persists no provider ID or
+payment state. Unknown-ID search, durable observations/jobs, callbacks, late-paid
+stock recovery and separate finance/fulfilment transitions remain required.
+Loopback instruments are not provider sandbox acceptance or configured credentials.
+
 ## Sessions, uploads and rendering
 
 Rust owns secure sessions and server-side authorization. Use a maintained password/session implementation with Argon2id where passwords are stored; verified email, rotating sessions, hashed reset tokens, admin MFA and separate guest-order access tokens. Browser credentials are HttpOnly/Secure/SameSite cookies; never store bearer tokens in browser local storage. CSRF and origin checks protect cookie-authenticated mutations. No duplicate identity system in Next.js.

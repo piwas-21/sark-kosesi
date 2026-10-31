@@ -263,8 +263,11 @@ supervision or live provider activation follows from deploying the empty preview
    eligibility and complete existing physically backed holds. Exact effect retries
    preserve historical receipts without new stock effects. One serialized dispatch
    start and reconciliation event commit before a single-use permit; later callers
-   reconcile even after key/hold/source expiry. Add the actual Mollie sandbox
-   transport, authenticated fetch and worker processing before provider I/O;
+   reconcile even after key/hold/source expiry. The private test-key HTTP client now
+   verifies the authenticated expected profile, sends exact permit bytes once and
+   separately fetches a bounded checked payment projection. It installs no runtime
+   key, worker or payment transition. Add bounded unknown-ID search, durable
+   observations and worker processing before operational provider I/O;
    uncertain outcomes
    reconcile under the original identity and never mint a replacement charge.
    Fetch and verify webhook identifiers against order/amount/currency/profile/mode.

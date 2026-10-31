@@ -157,7 +157,10 @@ Private durable owned-order test attempts and one serialized dispatch-start fact
 now compose the frozen request policy, existing physically backed reservation and
 minimal transactional recovery events. Fresh commercial and clock checks protect
 new work; original receipts remain historical. No provider I/O or dispatcher is
-installed. Started/unknown attempts must reconcile without automatic replacement. Add actual
-Mollie transport/fetch verification, workers/callbacks, late-paid stock recovery
+installed. Started/unknown attempts must reconcile without automatic replacement.
+The private test-key HTTP client now verifies its authenticated profile and
+separately fetches checked minimal payment evidence, with bounded one-use permit
+transport. No key or runtime worker is installed. Add unknown-ID search, durable
+observations, workers/callbacks, late-paid stock recovery
 and separate order/payment/fulfilment/refund/invoice transitions. A pure domain
 plan or matched synthetic response is not dispatch or payment authority.

@@ -96,3 +96,15 @@ The payment-request application now directly uses the already locked `serde`,
 MIT/Apache-2.0 reviews apply; no package version or dependency closure changes.
 Maintained URL parsing validates explicit merchant endpoints, and SHA-256 binds
 canonical configuration/request bytes. A digest alone grants no provider authority.
+
+The private test-provider HTTP boundary pins Reqwest 0.13.5 without default features,
+using its supported `rustls-no-provider` feature and an explicit preconfigured
+Rustls 0.23.46 Ring client with WebPKI-roots 1.0.11. URL 2.5.8 is now a direct
+infrastructure dependency. Rustls/roots/URL versions already existed in the lock;
+no existing package/version is removed or upgraded. Reqwest and its transitive
+platform/HTTP/WASM support add 39 locked packages, all under the existing reviewed
+free licence/source policy. Default charset, HTTP/2, proxy, compression and cookie
+features are not selected. No paid SDK or provider engine is introduced.
+Hyper 1.12.0, Hyper-util 0.1.21, HTTP-body-util 0.1.5 and Bytes 1.12.1 become exact test
+edges over already locked packages, providing a protocol-correct bounded loopback
+instrument. They add no provider credential or production service.
