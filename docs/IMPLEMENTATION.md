@@ -329,9 +329,15 @@ supervision or live provider activation follows from deploying the empty preview
    New observations make earlier decisions explicitly stale; historical replay
    preserves paid facts without stock/refund/fulfilment effects. READ COMMITTED
    and the shared attempt claim protect new decisions and current inspection;
-   detached receipts grant no later transition authority. Complete independent
-   order/fulfilment/refund lifecycle, late-paid atomic stock recovery and
-   invoices/credit documents,
+   detached receipts grant no later transition authority. Private original-stock
+   settlement now atomically consumes the complete still-active reservation under
+   that same current financial proof and attempt claim. One immutable receipt and
+   digest-bound order event retain exact member/component effects. Native final
+   proof and a transaction completion seal prevent partial effects or later
+   same-transaction changes after early constraint evaluation. Historical replay
+   revalidates original custody without repeating consumption; expired or released
+   originals require separate recovery. Complete late-paid atomic reallocation,
+   independent order/fulfilment/refund lifecycle and invoices/credit documents,
    bounded audited refunds and independent restock actions. Prove sandbox outcomes,
    concurrency, cent allocations and crash recovery without duplicate effects.
 

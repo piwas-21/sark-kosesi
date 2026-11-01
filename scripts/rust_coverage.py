@@ -36,6 +36,8 @@ def validate(document, root, branches=True):
             "crates/*/src/checkout_quotes/*.rs",
             "crates/*/src/checkout_orders/*.rs",
             "crates/*/src/checkout_orders/*/*.rs",
+            "crates/*/src/order_stock.rs",
+            "crates/*/src/order_stock/*.rs",
             "crates/*/src/payment_attempts/*.rs",
             "crates/*/src/payment_attempts/*/*.rs",
             "crates/*/src/payment_attempts/callbacks/lookup/*.rs",
