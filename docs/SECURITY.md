@@ -325,5 +325,26 @@ snapshot SHA-256 binding in the immutable event also rejects otherwise-valid sta
 amount or fingerprint changes in imported data. Complete original matching still
 precedes order-associated observations; namespaced receipt replay
 cannot turn an unknown attempt into an order or replace a prior fetched fact.
-Durable ingress, quotas and runtime supervision remain required before accepting
-notifications operationally.
+Private inbox admission now commits minimal immutable intake/source/job custody
+under atomic global/profile rates and active-capacity limits. Native guarded
+independent active custody prevents completed history from making scans unbounded
+or a damaged settlement flag from hiding work;
+older unresolved generations and review dispositions cannot release their slot.
+Claims bind exact generations to one-use GET operations before I/O. Immutable
+consumed-claim receipts prevent historical lease reuse after checkpoint damage.
+Only current
+leases can advance checkpoints, while independently authenticated late facts may
+still enter durable receipt processing. Stored dispositions must revalidate the
+lookup digest, original observation and identity-resolution custody. No saved job
+or outcome string creates authenticated payment evidence. Fresh processing cannot
+precede the saved receipt's time. A custody-invalid exception requires a real raw
+receipt and complete independent intake/generation source, contains no observation
+or resolution authority, and cannot premark an in-flight GET. Damaged receipt or
+deterministic identity-history failures stop that operation visibly while other
+receipts can progress. Damaged proof behind an existing immutable disposition
+creates a separate source-only quarantine, without changing the original outcome
+or payment facts. Quarantine retains capacity and review status even after exact
+proof repair; it grants no financial authority. Bounded retries stop
+visibly and unchanged later worker passes retain failure status. There is no
+public receiver, runtime key or scheduler; bounded parsing, trusted-edge abuse
+controls and staging acceptance remain required before operational notifications.

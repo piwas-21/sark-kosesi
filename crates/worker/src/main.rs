@@ -3,12 +3,14 @@
 use commerce_infrastructure::runtime::SystemClock;
 use commerce_infrastructure::{connect, readiness};
 use commerce_worker::expire_batch;
+mod callbacks;
 mod payments;
 #[derive(PartialEq, Eq)]
 enum Mode {
     Probe,
     Expire,
     Reconcile,
+    Callbacks,
 }
 
 fn mode() -> Result<Mode, std::io::Error> {
@@ -17,6 +19,7 @@ fn mode() -> Result<Mode, std::io::Error> {
         [] => Ok(Mode::Probe),
         [argument] if argument == "--expire-holds" => Ok(Mode::Expire),
         [argument] if argument == "--reconcile-payments" => Ok(Mode::Reconcile),
+        [argument] if argument == "--reconcile-callbacks" => Ok(Mode::Callbacks),
         _ => Err(std::io::Error::other("unsupported worker command")),
     }
 }
@@ -67,6 +70,8 @@ async fn main() -> Result<(), std::io::Error> {
         }
     } else if mode == Mode::Reconcile {
         payments::run(&pool).await?;
+    } else if mode == Mode::Callbacks {
+        callbacks::run(&pool).await?;
     } else {
         tracing::info!(code = "worker_dependencies_ready", effects_enabled = false);
     }

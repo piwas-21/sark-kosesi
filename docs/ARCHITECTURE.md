@@ -848,6 +848,59 @@ fingerprints retain their existing semantics. No transaction spans provider I/O.
 This boundary installs no receiver, public route, bounded inbox supervisor,
 credential, scheduler, payment/stock/fulfilment action or production activation.
 
+### Private callback inbox and supervision
+
+Callback intake has independent immutable source events and jobs. It cannot use
+order-bound reconciliation jobs or the receipt-only callback processing events
+as pre-fetch custody. Admission retains only a server-generated ID, configured
+profile, untrusted provider ID and time; it neither invents an order nor stores
+incoming status, amounts or raw bodies. Repeated provider IDs remain admissible
+because later notifications may represent changed state.
+
+The local/test policy caps active intakes at 200 globally and 50 per profile,
+with 120 global and 30 profile admissions per 60-second window. Native quota locks
+serialize admission and reject clock rewind; intake, event, job and quota effects
+commit together. These are private engineering limits, not measured production
+capacity. An independent indexed active-custody set bounds capacity and supervision
+reads; a mutable settlement flag alone cannot hide work. Its minimal headers are
+audited globally within the 200-intake bound before profile selection. A job
+releases capacity only when its current work is done and every created generation
+has a successful, non-review receipt disposition. An older unresolved GET or paid,
+ambiguous, unmatched or invalid-custody disposition retains capacity and visibility.
+
+Each claim atomically commits a fresh generation, exact lookup-operation binding,
+single-use fetch start and 60-second lease before yielding a usable GET permit.
+An immutable consumed-claim receipt prevents reusing a historical lease after a
+damaged import recreates an older mutable checkpoint.
+A batch claims at most 25 steps; an intake has at most five lifetime GET
+generations. Transient failures back off from 60 seconds and end in visible
+review. Committed receipts are recovered before another GET, including when a
+bounded processing backlog has not yet reached them. No transaction spans I/O,
+and lease expiry cannot grant a replacement payment create.
+
+Receipt processing drains independently of the latest job checkpoint, including
+after a newer open result or a review stop. A delayed worker may retain its
+authenticated result under the original operation; it cannot advance a newer
+checkpoint. Complete lookup digest/start/original matching precedes observation
+and sticky identity resolution. Immutable dispositions bind that exact custody;
+historical reads revalidate it instead of trusting a saved outcome string.
+Recovery checks the saved receipt's time before any fresh observation or identity
+effect, so clock rewind cannot poison later retries with earlier immutable facts.
+Malformed receipt or deterministic original-history failures retain a source-bound,
+redacted exception without reconstructing payment evidence, and processing can
+continue for other receipts. If proof behind an already committed disposition
+is damaged, a separate immutable, source-bound quarantine preserves that original
+row and its facts. It retains admission capacity and a visible review stop while
+unrelated work continues; repairing the proof does not silently remove quarantine.
+A paid
+or ambiguous fact remains an operational exception, not fulfilment authority.
+
+The explicit local/test worker command installs no key or scheduler. It reports
+outstanding review and retry work even on unchanged later passes. Public form
+parsing, trusted-edge abuse controls and an exact staging callback exception
+remain separate work before public notification acceptance. Production remains
+disabled; no financial, stock or fulfilment transition follows from this inbox.
+
 ## Sessions, uploads and rendering
 
 Rust owns secure sessions and server-side authorization. Use a maintained password/session implementation with Argon2id where passwords are stored; verified email, rotating sessions, hashed reset tokens, admin MFA and separate guest-order access tokens. Browser credentials are HttpOnly/Secure/SameSite cookies; never store bearer tokens in browser local storage. CSRF and origin checks protect cookie-authenticated mutations. No duplicate identity system in Next.js.

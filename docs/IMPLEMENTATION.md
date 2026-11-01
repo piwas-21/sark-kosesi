@@ -302,7 +302,18 @@ supervision or live provider activation follows from deploying the empty preview
    order. Closed stored revalidation and complete original matching protect the
    namespaced idempotent observation append. Complete bounded ingress, processing
    leases/budgets and visible review stops before a public callback exception.
-   No callback route or runtime supervisor is installed by this primitive. Uncertain outcomes
+   Private independent callback intake now applies atomic global/profile admission
+   rates and unsettled capacity, with immutable source events and bounded jobs.
+   Generation-to-lookup custody and one-use GET starts commit before I/O; receipt
+   processing remains independent of current leases so old paid facts cannot be
+   stranded after newer open results or review stops. Indexed unsettled custody
+   releases capacity only after all generations have non-review dispositions.
+   The explicit local/test supervisor retains five-generation budgets, leases,
+   backoff and persistent redacted exceptions. Separate immutable quarantine
+   retains damaged existing dispositions without blocking healthy successors or
+   releasing admission capacity. Complete bounded form parsing and
+   trusted-edge controls before public ingress; no key or scheduler is installed.
+   Uncertain outcomes
    reconcile under the original identity and never mint a replacement charge.
    Fetch and verify webhook identifiers against order/amount/currency/profile/mode.
    Add durable outbox/reconciler, duplicate/reordered notifications and atomic late

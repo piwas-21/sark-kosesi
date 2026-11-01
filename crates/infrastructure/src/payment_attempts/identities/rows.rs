@@ -98,7 +98,15 @@ pub(super) async fn insert(
     let summary =
         serde_json::to_value(&r.summary).map_err(|_| PaymentStoreError::InvalidStoredData)?;
     sqlx::query("INSERT INTO payment_identity_resolutions(id,attempt_id,effect_key,revision,through_observation,recorded_at,summary) VALUES($1,$2,$3,$4,$5,$6,$7)")
-        .bind(&r.id).bind(&r.attempt_id).bind(&r.effect_key).bind(r.revision).bind(r.through_observation).bind(r.recorded_at).bind(summary).execute(&mut **tx).await?;
+        .bind(&r.id).bind(&r.attempt_id).bind(&r.effect_key).bind(r.revision).bind(r.through_observation).bind(r.recorded_at).bind(summary).execute(&mut **tx).await.map_err(|error| {
+            // Native identity/source integrity stops are deterministic. They must
+            // become visible review exceptions rather than endless storage retries.
+            // Connection failures, lock/statement timeouts and other SQL failures
+            // retain their transient storage classification.
+            if matches!(&error,sqlx::Error::Database(database) if database.code().as_deref()==Some("23514")) {
+                PaymentStoreError::InvalidStoredData
+            } else { PaymentStoreError::Database }
+        })?;
     sqlx::query("INSERT INTO commerce_outbox(id,aggregate_id,kind,payload,created_at) VALUES($1,$2,'payment.identity_resolved.v1',$3,$4)")
         .bind(event).bind(order).bind(serde_json::json!({"schema_version":1,"order_id":order,"attempt_id":r.attempt_id,"resolution_id":r.id})).bind(r.recorded_at).execute(&mut **tx).await?;
     Ok(())

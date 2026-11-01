@@ -70,6 +70,12 @@ UTF-8 mailbox syntax remains supported. Syntax does not prove mailbox ownership,
 postal delivery or transport-provider SMTPUTF8 support. Release notices and the
 existing cargo-audit/cargo-deny gates apply.
 
+Callback-worker integration tests reuse the already pinned workspace `tracing`
+package as an infrastructure dev-dependency. This lets isolated loopback tests
+execute the same worker configuration, verified GET orchestration and redacted
+reporting code. No package version, production dependency or provider-origin
+configuration changes; the existing MIT/Apache-2.0 review applies.
+
 ## Temporary development tooling exception
 
 `GHSA-g3hv-75wg-m249` is a moderate resource-exhaustion advisory affecting the
