@@ -5,7 +5,7 @@ use commerce_domain::payment_attempts::{
     AttemptSnapshot, ProfileBinding, ProviderPayment, match_provider, searches::SearchIntent,
 };
 mod callback;
-pub use callback::CallbackPayment;
+pub use callback::{CallbackLookupPayment, CallbackPayment};
 mod client;
 mod credential;
 mod http;

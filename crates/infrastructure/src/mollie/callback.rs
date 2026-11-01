@@ -49,3 +49,83 @@ impl VerifiedReconciliationClient {
         })
     }
 }
+
+/// Authenticated fetched evidence bound to an opaque durable pre-I/O operation.
+pub struct CallbackLookupPayment {
+    operation: commerce_domain::payment_attempts::callbacks::LookupOperationSnapshot,
+    fetched: CallbackPayment,
+    started_at: i64,
+}
+impl CallbackLookupPayment {
+    pub(crate) fn operation(
+        &self,
+    ) -> &commerce_domain::payment_attempts::callbacks::LookupOperationSnapshot {
+        &self.operation
+    }
+    pub(crate) fn snapshot(
+        &self,
+        id: String,
+        recorded_at: i64,
+    ) -> commerce_domain::payment_attempts::callbacks::LookupSnapshot {
+        commerce_domain::payment_attempts::callbacks::LookupSnapshot {
+            schema_version: 1,
+            id,
+            operation: self.operation.clone(),
+            started_at: self.started_at,
+            recorded_at,
+            payment: self.fetched.payment.clone(),
+            credential_fingerprint: self.fetched.credential_fingerprint.clone(),
+        }
+    }
+    pub(crate) fn matches(
+        &self,
+        snapshot: &commerce_domain::payment_attempts::callbacks::LookupSnapshot,
+    ) -> bool {
+        self.operation == snapshot.operation
+            && self.started_at == snapshot.started_at
+            && self.fetched.payment == snapshot.payment
+            && self.fetched.credential_fingerprint == snapshot.credential_fingerprint
+    }
+    pub(crate) fn copy_payment(&self) -> CallbackPayment {
+        CallbackPayment {
+            payment: self.fetched.payment.clone(),
+            credential_fingerprint: self.fetched.credential_fingerprint.clone(),
+        }
+    }
+}
+impl VerifiedReconciliationClient {
+    pub async fn fetch_lookup(
+        &self,
+        permit: crate::payment_attempts::callbacks::lookup::LookupFetchPermit,
+    ) -> Result<CallbackLookupPayment, MollieError> {
+        let (snapshot, started_at) = permit.into_parts();
+        if snapshot.profile_id != self.profile_id() {
+            return Err(MollieError::ProfileMismatch);
+        }
+        let fetched = self.fetch_callback(&snapshot.provider_id).await?;
+        Ok(CallbackLookupPayment {
+            operation: snapshot,
+            fetched,
+            started_at,
+        })
+    }
+}
+impl CallbackPayment {
+    /// Called only by the durable custody decoder after exact operation/header/event
+    /// checks. A caller's JSON or domain projection cannot access this constructor.
+    pub(crate) fn from_custody(
+        snapshot: &commerce_domain::payment_attempts::callbacks::LookupSnapshot,
+    ) -> Result<Self, MollieError> {
+        snapshot
+            .validate()
+            .map_err(|_| MollieError::PaymentMismatch)?;
+        Ok(Self {
+            payment: snapshot.payment.clone(),
+            credential_fingerprint: snapshot.credential_fingerprint.clone(),
+        })
+    }
+}
+
+#[cfg(test)]
+#[path = "../../tests/support/mollie_callback_capabilities.rs"]
+mod capability_tests;

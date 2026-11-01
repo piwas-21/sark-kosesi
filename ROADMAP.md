@@ -181,7 +181,11 @@ Paid, ambiguous, capped and invalid-custody stops remain unresolved. Private
 callback-ID GETs now obtain exact-profile minimal evidence and use authenticated
 metadata only to locate and fully match the original frozen order/attempt/dispatch
 before atomic observation/outbox custody. No callback body or return status grants
-financial authority. Add durable bounded callback ingress and queue processing,
+financial authority. Durable private callback lookup operations now precede bound
+GETs and recover immutable minimal receipts with dedicated callback processing
+events. Unknown/unmatched facts remain visible without an invented order; closed
+stored revalidation and complete original matching protect idempotent observation
+processing. Add bounded callback ingress and supervised queue processing,
 remaining operator dispositions, late-paid stock recovery
 and separate order/payment/fulfilment/refund/invoice transitions. A pure domain
 plan or matched synthetic response is not dispatch or payment authority.

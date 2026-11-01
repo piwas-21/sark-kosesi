@@ -1,6 +1,7 @@
 //! Test-payment identity and pure custody policy; no network or payment authority.
 use crate::Currency;
 use serde::{Deserialize, Serialize};
+pub mod callbacks;
 mod dispatch;
 pub mod identities;
 pub mod observations;

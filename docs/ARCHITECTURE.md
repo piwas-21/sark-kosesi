@@ -812,11 +812,37 @@ exact historical operation receipts, actual fetched-key fingerprints and the
 minimal atomic processing event retain their existing semantics. Callback evidence
 discards optional checkout capabilities and provider/customer details.
 
-Provider I/O completes before database custody starts. No caller-controlled URL,
+Provider response recording starts only after I/O completes. No caller-controlled URL,
 callback amount/status, client body or financial transition enters this boundary.
-A future bounded durable inbox must retain each operation before I/O and look up
-its committed receipt before fetching again; changed fetched facts require a new
-operation. This primitive installs no receiver, public route, inbox/worker,
+The private durable lookup boundary now commits an immutable server-generated
+operation with the expected profile and provider ID before I/O. Only its opaque
+committed capability can obtain a durable fetch start and a single-use GET permit
+consumed by the transport. Recovery reads the committed receipt before doing I/O. A started
+operation without a receipt remains visibly unresolved; it cannot issue another
+GET. A fresh fetch requires a new operation. Concurrent writers serialize on the
+operation under read committed isolation and retain one full-intent receipt rather
+than replacing earlier evidence. A future bounded inbox supervisor must retain
+each generation's operation so late facts from an earlier GET remain recordable.
+
+Each bounded minimal fetched receipt commits with a dedicated callback processing
+event. This aggregate is independent of orders: `commerce_outbox.aggregate_id`
+requires a real checkout order, and an authenticated unknown attempt must remain
+visible without inventing one. The callback event records custody for later
+processing; it is not an order/payment transition. Immutable database bindings
+and deferred completeness checks protect the receipt/event pair. Trusted reads
+bound stored data and revalidate closed snapshots, headers and the exact event
+before reconstructing the private fetched capability. Saved JSON alone cannot
+enter the observation recorder.
+
+Processing uses a namespaced operation effect and restores the complete original
+order/attempt/dispatch before the existing serialized observation/event append.
+The durable lookup start must not precede the original dispatch; installing a
+later dispatch cannot authorize an older unmatched provider fact.
+An unknown attempt or mismatched original fails processing while retaining the
+callback receipt. A crash after observation commit can replay the same operation
+without duplicating that observation. Late/reordered facts and actual fetched-key
+fingerprints retain their existing semantics. No transaction spans provider I/O.
+This boundary installs no receiver, public route, bounded inbox supervisor,
 credential, scheduler, payment/stock/fulfilment action or production activation.
 
 ## Sessions, uploads and rendering

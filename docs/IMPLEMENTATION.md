@@ -294,9 +294,15 @@ supervision or live provider activation follows from deploying the empty preview
    Private callback-ID GETs now capture only authenticated exact-profile Test/EUR
    evidence; metadata locates the original attempt but cannot establish its matching
    order/amount/dispatch. The complete original custody is revalidated before the
-   existing atomic observation/event append. Preserve each future inbox operation
-   before I/O and read its receipt before retrying a fetch. No callback route or
-   runtime supervisor is installed by this primitive. Uncertain outcomes
+   existing atomic observation/event append. Durable private lookup operations now
+   commit server-generated profile/provider identities and a single-use fetch
+   start before a bound GET. Recovery reads the immutable minimal receipt first;
+   started operations without receipts remain unresolved and cannot refetch. A separate callback
+   aggregate/event pair retains authenticated unmatched facts without inventing an
+   order. Closed stored revalidation and complete original matching protect the
+   namespaced idempotent observation append. Complete bounded ingress, processing
+   leases/budgets and visible review stops before a public callback exception.
+   No callback route or runtime supervisor is installed by this primitive. Uncertain outcomes
    reconcile under the original identity and never mint a replacement charge.
    Fetch and verify webhook identifiers against order/amount/currency/profile/mode.
    Add durable outbox/reconciler, duplicate/reordered notifications and atomic late
