@@ -484,3 +484,31 @@ choose an origin/path/query and redirects cannot propagate credentials. Compiled
 controls must expose removal of profile scope and original-attempt matching, then
 pass exact source restoration. This is source evidence, not installed callback
 handling or provider payment acceptance.
+
+Durable private callback lookup tests use real isolated PostgreSQL and
+authenticated loopback GETs. Server-generated operations commit before unique
+single-use fetch starts; concurrent callers cannot issue a second GET for the same
+operation. Saved receipts recover without clock, entropy or network access.
+Cancelled/uncertain starts remain unresolved, while fresh operations retain
+late-paid and reordered facts. Independent UPDATE claims during gated GETs prove
+the transport holds no database transaction. Receipt/event write waits exercise
+clock rewind and cancellation with complete rollback. A lookup preceding the
+original dispatch cannot gain observation authority from a later dispatch.
+
+Unknown originals retain dedicated callback custody without a checkout order or
+order outbox event. Complete matching, namespaced observation replay and actual
+stock expiry preserve the existing observation/identity semantics. Native
+negative/healthy controls cover immutable operations, starts, receipts and events,
+exact minimal projection bindings, deferred completeness and schema 28 upgrades.
+Damaged bounded snapshots, headers, starts and events fail stored reads and
+processing without falling back to another GET.
+Immutable event digests must reject an otherwise-valid `open` to `paid` snapshot
+alteration, as well as changed amounts or credential fingerprints, on restarted
+reads and processing; exact restoration supplies the paired healthy control.
+The new domain, transport and nested custody readers retain the 95% critical
+line/branch gates. Compiled fault
+controls must expose missing operation binding, event custody, snapshot digest,
+dispatch chronology and final clock checks, then pass again after exact source
+restoration. This is source custody evidence; bounded public ingress/supervision
+and actual provider/deployment/payment
+acceptance remain separate gates.

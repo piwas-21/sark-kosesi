@@ -986,3 +986,6 @@ mod operator_cases;
 
 #[path = "mollie_callbacks.rs"]
 mod callback_cases;
+
+#[path = "mollie_callback_custody.rs"]
+mod callback_custody;

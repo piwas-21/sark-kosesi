@@ -315,5 +315,15 @@ checks precede the opaque result. Full frozen order/attempt/dispatch matching is
 required before the existing atomic observation/outbox append; optional checkout
 capabilities and provider details are discarded. Duplicate critical JSON fields,
 wrong scope and forged original financial terms fail closed. No callback HTTP
-route or inbox is exposed; durable ingress, quotas and runtime supervision remain
-required before accepting notifications operationally.
+route or inbox is exposed. Durable private lookup operations now bind opaque
+committed server identities and durable single-use starts to GETs, recover
+receipts before I/O and retain authenticated unmatched results in a separate
+callback aggregate. Minimal closed snapshots, exact operation/header/event bindings
+and immutable native guards
+are required before private stored-capability reconstruction. Complete lookup
+snapshot SHA-256 binding in the immutable event also rejects otherwise-valid status,
+amount or fingerprint changes in imported data. Complete original matching still
+precedes order-associated observations; namespaced receipt replay
+cannot turn an unknown attempt into an order or replace a prior fetched fact.
+Durable ingress, quotas and runtime supervision remain required before accepting
+notifications operationally.
