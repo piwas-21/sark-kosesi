@@ -357,3 +357,6 @@ async fn recognition_native_journal_and_pointer_observe_paid_append_after_actual
         Some(PaymentStoreError::Unavailable)
     );
 }
+
+#[path = "payment_recognition_native_sources.rs"]
+mod sources;

@@ -31,14 +31,22 @@ impl Server {
             .stderr(Stdio::piped())
             .spawn()
             .expect("private callback binary");
-        let server = Self { child, address };
-        for _ in 0..100 {
+        let mut server = Self { child, address };
+        let ready_until = std::time::Instant::now() + Duration::from_secs(5);
+        loop {
+            match server.child.try_wait() {
+                Ok(Some(status)) => panic!("configured API exited before readiness: {status}"),
+                Ok(None) => {}
+                Err(_) => panic!("configured API readiness status unavailable"),
+            }
             if TcpStream::connect(address).is_ok() {
                 return server;
             }
+            if std::time::Instant::now() >= ready_until {
+                panic!("configured API did not become ready within startup deadline");
+            }
             std::thread::sleep(Duration::from_millis(10));
         }
-        panic!("configured API did not start");
     }
     fn exchange(&self, content_type: &str, chunks: &[&[u8]]) -> String {
         let mut stream = TcpStream::connect(self.address).expect("owned HTTP connection");
