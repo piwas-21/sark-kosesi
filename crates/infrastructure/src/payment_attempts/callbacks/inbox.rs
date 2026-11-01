@@ -15,6 +15,7 @@ mod active;
 pub(crate) mod drain;
 pub(crate) mod jobs;
 mod processing_source;
+pub(crate) mod quarantine;
 mod rows;
 pub struct IntakeReceipt {
     pub intake_id: String,
@@ -162,7 +163,7 @@ pub async fn run_callback_batch(
     batch.drained += drain::drain_receipts(pool, &clock, ids, client.profile_id(), limit).await?;
     jobs::sweep(pool, &clock, client.profile_id()).await?;
     (batch.needs_review, batch.retry_pending) =
-        jobs::outstanding(pool, client.profile_id()).await?;
+        jobs::outstanding(pool, &clock, client.profile_id()).await?;
     now(&clock)?;
     Ok(batch)
 }

@@ -1,7 +1,7 @@
 //! Revalidated processing headers reject isolated imported damage before authority.
 use super::*;
 use store::drain::{Disposition, process_operation, read_disposition};
-async fn open(
+pub(super) async fn open(
     pool: &PgPool,
 ) -> (
     Arc<crate::payment_test_fixture::quote::Time>,

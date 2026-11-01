@@ -888,7 +888,11 @@ Recovery checks the saved receipt's time before any fresh observation or identit
 effect, so clock rewind cannot poison later retries with earlier immutable facts.
 Malformed receipt or deterministic original-history failures retain a source-bound,
 redacted exception without reconstructing payment evidence, and processing can
-continue for other receipts. A paid
+continue for other receipts. If proof behind an already committed disposition
+is damaged, a separate immutable, source-bound quarantine preserves that original
+row and its facts. It retains admission capacity and a visible review stop while
+unrelated work continues; repairing the proof does not silently remove quarantine.
+A paid
 or ambiguous fact remains an operational exception, not fulfilment authority.
 
 The explicit local/test worker command installs no key or scheduler. It reports

@@ -341,7 +341,10 @@ precede the saved receipt's time. A custody-invalid exception requires a real ra
 receipt and complete independent intake/generation source, contains no observation
 or resolution authority, and cannot premark an in-flight GET. Damaged receipt or
 deterministic identity-history failures stop that operation visibly while other
-receipts can progress. Bounded retries stop
+receipts can progress. Damaged proof behind an existing immutable disposition
+creates a separate source-only quarantine, without changing the original outcome
+or payment facts. Quarantine retains capacity and review status even after exact
+proof repair; it grants no financial authority. Bounded retries stop
 visibly and unchanged later worker passes retain failure status. There is no
 public receiver, runtime key or scheduler; bounded parsing, trusted-edge abuse
 controls and staging acceptance remain required before operational notifications.

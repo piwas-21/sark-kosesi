@@ -42,6 +42,30 @@ impl tracing::Subscriber for CaptureEvents {
 
 #[test]
 fn callback_worker_logging_emits_only_the_redacted_code_and_literal_operational_counts() {
+    const CHILD: &str = "SARK_CALLBACK_LOG_CAPTURE_CHILD";
+    if std::env::var_os(CHILD).is_none() {
+        let thread = std::thread::current();
+        let name = thread.name().expect("libtest supplies the exact test name");
+        let output =
+            std::process::Command::new(std::env::current_exe().expect("current test binary"))
+                .args(["--exact", name, "--nocapture"])
+                .env(CHILD, "1")
+                .env("RUST_TEST_THREADS", "1")
+                .output()
+                .expect("fresh logging capture test process");
+        let stdout = String::from_utf8_lossy(&output.stdout);
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        assert!(output.status.success(), "child failed:\n{stdout}\n{stderr}");
+        assert!(
+            stdout.contains("running 1 test"),
+            "exact child test was selected: {stdout}"
+        );
+        assert!(
+            stdout.contains("1 passed; 0 failed"),
+            "calibrated child passed: {stdout}"
+        );
+        return;
+    }
     let captured = Arc::new(Mutex::new(Vec::new()));
     tracing::subscriber::with_default(CaptureEvents(captured.clone()), || {
         tracing::callsite::rebuild_interest_cache();

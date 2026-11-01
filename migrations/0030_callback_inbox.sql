@@ -80,6 +80,12 @@ CREATE TABLE callback_receipt_processing (
  CHECK(outcome IN ('observed','paid_observed','ambiguous') OR (observation_id IS NULL AND resolution_id IS NULL))
 );
 
+-- A redacted source-only stop never rewrites a previously immutable disposition.
+CREATE TABLE callback_processing_quarantine (
+ operation_id text PRIMARY KEY REFERENCES callback_inbox_generations(operation_id),
+ recorded_at bigint NOT NULL CHECK(recorded_at BETWEEN 0 AND 9007199254740991)
+);
+
 CREATE FUNCTION callback_intake_event_exact(event callback_intake_events) RETURNS boolean LANGUAGE sql STABLE AS $$
  SELECT EXISTS(SELECT 1 FROM callback_intakes i WHERE i.id=event.intake_id AND event.created_at=i.received_at
   AND event.kind='payment.callback_received.v1' AND event.payload=jsonb_build_object('schema_version',1,'intake_id',i.id,'profile_id',i.profile_id,'provider_id',i.provider_id,'received_at',i.received_at))
@@ -95,6 +101,32 @@ CREATE FUNCTION callback_generation_source(operation text) RETURNS boolean LANGU
   AND o.profile_id=i.profile_id AND o.provider_id=i.provider_id AND o.created_at=g.created_at
   AND g.created_at>=i.received_at AND s.started_at=g.created_at AND g.lease_until=g.created_at+60)
 $$;
+CREATE FUNCTION callback_quarantine_exact(stopped callback_processing_quarantine) RETURNS boolean LANGUAGE sql STABLE AS $$
+ SELECT callback_generation_source(stopped.operation_id)
+  AND EXISTS(SELECT 1 FROM callback_lookup_receipts r WHERE r.operation_id=stopped.operation_id)
+  AND EXISTS(SELECT 1 FROM callback_receipt_processing p WHERE p.operation_id=stopped.operation_id)
+  AND EXISTS(SELECT 1 FROM callback_inbox_generations g JOIN callback_inbox_jobs j ON j.intake_id=g.intake_id
+   JOIN callback_inbox_active active ON active.intake_id=j.intake_id JOIN callback_intakes i ON i.id=j.intake_id
+   WHERE g.operation_id=stopped.operation_id AND NOT j.settled AND stopped.recorded_at>=g.created_at
+   AND active.profile_id=i.profile_id AND active.created_at=i.received_at)
+$$;
+CREATE FUNCTION guard_callback_quarantine() RETURNS trigger LANGUAGE plpgsql AS $$
+DECLARE allowed boolean;
+BEGIN
+ IF TG_OP<>'INSERT' THEN RAISE EXCEPTION 'Callback processing quarantine is immutable' USING ERRCODE='23514'; END IF;
+ -- Owning job first: serialize against settlement and active-custody release.
+ -- The NOT settled predicate is rechecked by EPQ after an actual lock wait.
+ PERFORM 1 FROM callback_inbox_jobs j JOIN callback_inbox_generations g ON g.intake_id=j.intake_id
+  WHERE g.operation_id=NEW.operation_id AND NOT j.settled FOR UPDATE OF j;
+ IF NOT FOUND THEN RAISE EXCEPTION 'Quarantine requires unsettled owning job' USING ERRCODE='23514'; END IF;
+ -- This explicit SPI statement obtains a fresh post-lock snapshot under the
+ -- VOLATILE trigger, even if the INSERT began before a competing commit.
+ SELECT callback_quarantine_exact(NEW) INTO allowed;
+ IF NOT allowed THEN RAISE EXCEPTION 'Quarantine requires exact existing source custody' USING ERRCODE='23514'; END IF;
+ RETURN NEW;
+END;
+$$;
+CREATE TRIGGER guard_callback_quarantine BEFORE INSERT OR UPDATE OR DELETE ON callback_processing_quarantine FOR EACH ROW EXECUTE FUNCTION guard_callback_quarantine();
 CREATE FUNCTION callback_processing_exact(processed callback_receipt_processing) RETURNS boolean LANGUAGE sql STABLE AS $$
  SELECT callback_generation_source(processed.operation_id) AND CASE WHEN processed.outcome='custody_invalid' THEN
   processed.observation_id IS NULL AND processed.resolution_id IS NULL
@@ -126,6 +158,7 @@ CREATE FUNCTION callback_processing_exact(processed callback_receipt_processing)
 $$;
 CREATE FUNCTION callback_intake_settleable(intake text) RETURNS boolean LANGUAGE sql STABLE AS $$
  SELECT EXISTS(SELECT 1 FROM callback_inbox_jobs j WHERE j.intake_id=intake AND j.state='done' AND j.generation BETWEEN 1 AND 5
+  AND NOT EXISTS(SELECT 1 FROM callback_inbox_generations g JOIN callback_processing_quarantine q ON q.operation_id=g.operation_id WHERE g.intake_id=intake)
   AND (SELECT count(*) FROM callback_inbox_generations g WHERE g.intake_id=intake)=j.generation
   AND NOT EXISTS(SELECT 1 FROM callback_inbox_generations g LEFT JOIN callback_receipt_processing p ON p.operation_id=g.operation_id
    WHERE g.intake_id=intake AND (p.operation_id IS NULL OR p.outcome<>'observed' OR NOT callback_processing_exact(p))))
@@ -239,7 +272,7 @@ $$;
 CREATE TRIGGER guard_callback_processing BEFORE INSERT OR UPDATE OR DELETE ON callback_receipt_processing FOR EACH ROW EXECUTE FUNCTION guard_callback_processing();
 
 CREATE FUNCTION guard_callback_job() RETURNS trigger LANGUAGE plpgsql AS $$
-DECLARE current_outcome text; processed_at bigint;
+DECLARE current_outcome text; processed_at bigint; settlement_valid boolean;
 BEGIN
  IF TG_OP='DELETE' THEN RAISE EXCEPTION 'Callback jobs retain custody' USING ERRCODE='23514'; END IF;
  IF NOT EXISTS(SELECT 1 FROM callback_intakes i JOIN callback_intake_events e ON e.intake_id=i.id
@@ -259,12 +292,21 @@ BEGIN
   AND NEW.due_at=OLD.due_at AND NEW.review_reason IS NULL
   AND EXISTS(SELECT 1 FROM callback_inbox_generations g WHERE g.intake_id=NEW.intake_id AND g.generation=NEW.generation AND g.created_at=NEW.updated_at AND g.lease_until=NEW.lease_until) THEN RETURN NEW; END IF;
  IF NEW.generation<>OLD.generation THEN RAISE EXCEPTION 'Callback job requires exact generation custody' USING ERRCODE='23514'; END IF;
- IF OLD.state='done' AND NEW.state='done' AND NEW.settled AND NEW.lease_until IS NULL AND NEW.review_reason IS NULL AND NEW.due_at=NEW.updated_at AND callback_intake_settleable(NEW.intake_id) THEN RETURN NEW; END IF;
+ IF OLD.state='done' AND NEW.state='done' AND NEW.settled THEN
+  -- A VOLATILE trigger's separate SPI read sees quarantines committed while
+  -- this UPDATE waited for its owning job lock; do not reuse a stale IF plan.
+  SELECT callback_intake_settleable(NEW.intake_id) INTO settlement_valid;
+  IF NEW.lease_until IS NULL AND NEW.review_reason IS NULL AND NEW.due_at=NEW.updated_at AND settlement_valid THEN RETURN NEW; END IF;
+ END IF;
  IF OLD.state<>'leased' OR NEW.settled OR NEW.lease_until IS NOT NULL OR NEW.state NOT IN ('pending','done','needs_review') THEN
   RAISE EXCEPTION 'Callback terminal checkpoint cannot silently restart' USING ERRCODE='23514';
  END IF;
- SELECT p.outcome,p.processed_at INTO current_outcome,processed_at FROM callback_inbox_generations g JOIN callback_receipt_processing p ON p.operation_id=g.operation_id
-  WHERE g.intake_id=NEW.intake_id AND g.generation=NEW.generation AND callback_processing_exact(p);
+ SELECT 'custody_invalid',q.recorded_at INTO current_outcome,processed_at FROM callback_inbox_generations g JOIN callback_processing_quarantine q ON q.operation_id=g.operation_id
+  WHERE g.intake_id=NEW.intake_id AND g.generation=NEW.generation AND callback_quarantine_exact(q);
+ IF current_outcome IS NULL THEN
+  SELECT p.outcome,p.processed_at INTO current_outcome,processed_at FROM callback_inbox_generations g JOIN callback_receipt_processing p ON p.operation_id=g.operation_id
+   WHERE g.intake_id=NEW.intake_id AND g.generation=NEW.generation AND callback_processing_exact(p);
+ END IF;
  IF current_outcome IS NOT NULL AND NEW.updated_at>=processed_at AND NEW.due_at=NEW.updated_at AND (
   (current_outcome='observed' AND NEW.state='done' AND NEW.review_reason IS NULL)
   OR (current_outcome<>'observed' AND NEW.state='needs_review' AND NEW.review_reason=current_outcome)) THEN RETURN NEW; END IF;

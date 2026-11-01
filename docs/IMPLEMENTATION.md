@@ -309,7 +309,9 @@ supervision or live provider activation follows from deploying the empty preview
    stranded after newer open results or review stops. Indexed unsettled custody
    releases capacity only after all generations have non-review dispositions.
    The explicit local/test supervisor retains five-generation budgets, leases,
-   backoff and persistent redacted exceptions. Complete bounded form parsing and
+   backoff and persistent redacted exceptions. Separate immutable quarantine
+   retains damaged existing dispositions without blocking healthy successors or
+   releasing admission capacity. Complete bounded form parsing and
    trusted-edge controls before public ingress; no key or scheduler is installed.
    Uncertain outcomes
    reconcile under the original identity and never mint a replacement charge.

@@ -112,7 +112,24 @@ pub(crate) async fn finish(
 }
 /// Expired leased jobs with committed dispositions settle without another GET;
 /// otherwise the immutable five-generation budget ends in visible review.
+/// Quarantine checked reads run without holding a job row. The locked sweep may
+/// only read immutable outcomes; a raced invalid import is retried once after
+/// rolling the job transaction back, so it cannot self-deadlock or hide successors.
 pub(crate) async fn sweep(
+    pool: &PgPool,
+    clock: &dyn Clock,
+    profile: &str,
+) -> Result<(), PaymentStoreError> {
+    quarantine::inspect_profile(pool, clock, profile).await?;
+    match sweep_once(pool, clock, profile).await {
+        Err(PaymentStoreError::InvalidStoredData) => {
+            quarantine::inspect_profile(pool, clock, profile).await?;
+            sweep_once(pool, clock, profile).await
+        }
+        outcome => outcome,
+    }
+}
+async fn sweep_once(
     pool: &PgPool,
     clock: &dyn Clock,
     profile: &str,
@@ -151,8 +168,9 @@ pub(crate) async fn sweep(
         } else {
             continue;
         };
+        let written_at = now(clock)?;
         sqlx::query("UPDATE callback_inbox_jobs SET state=$1,review_reason=$2,lease_until=NULL,updated_at=$3,due_at=$3 WHERE intake_id=$4 AND generation=$5")
-            .bind(state).bind(reason).bind(at).bind(&id).bind(job.generation).execute(&mut *tx).await?;
+            .bind(state).bind(reason).bind(written_at).bind(&id).bind(job.generation).execute(&mut *tx).await?;
     }
     // Settlement is separate from completion: old in-flight generations or review
     // dispositions retain their bounded admission slot even after newer OPEN.
@@ -181,6 +199,7 @@ pub(crate) async fn sweep(
 }
 pub(crate) async fn outstanding(
     pool: &PgPool,
+    clock: &dyn Clock,
     profile: &str,
 ) -> Result<(u64, u64), PaymentStoreError> {
     active::audit(pool).await?;
@@ -195,7 +214,7 @@ pub(crate) async fn outstanding(
         let operations = rows::bounded_operations(operations)?;
         let mut needs_review = job.state == JobState::NeedsReview;
         for op in operations {
-            if drain::read_disposition(pool, &op)
+            if quarantine::checked_disposition(pool, clock, &op)
                 .await?
                 .is_some_and(|v| v != drain::Disposition::Observed)
             {

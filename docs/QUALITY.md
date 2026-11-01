@@ -533,7 +533,11 @@ Malformed lookup/event data and deterministic original identity-history failures
 must retain source-bound redacted exceptions while unrelated healthy jobs progress.
 An exception cannot be created before a raw receipt exists or grant payment
 authority. Stored import controls have exact healthy repairs; unchanged later
-worker passes retain outstanding failures. Worker configuration rejects production,
+worker passes retain outstanding failures. Crash-after-disposition controls damage
+receipt, observation and resolution proof independently: each must preserve the
+original disposition, quarantine its source and allow a healthy successor to
+progress. Exact proof repair cannot silently erase that quarantine or release its
+capacity. Worker configuration rejects production,
 live credentials, malformed bounds and diagnostic leaks. New inbox/domain/worker
 modules retain 95% critical coverage and relevant compiled fault controls. This is
 source supervision evidence; public ingress, provider and operational acceptance
@@ -550,6 +554,9 @@ duplicate counters, rewrite them or exclude the worker to satisfy the gate. The
 nonlogic build/test wiring is reviewed and covered by compilation, fmt and Clippy.
 The worker logs a closed aggregate record and uses the same count snapshot for
 its command outcome. A capturing subscriber verifies every event field and literal
-count, with an unexpected-field probe proving the detector is active. This also
+count, with an unexpected-field probe proving the detector is active. That
+calibration runs as exactly one selected test in a fresh child process so parallel
+tests cannot change its tracing callsite cache; the parent verifies selection and
+success, and the child retains native coverage instrumentation. This also
 keeps macro-span instrumentation from obscuring evaluated logging inputs; native
 coverage counters remain unmodified.

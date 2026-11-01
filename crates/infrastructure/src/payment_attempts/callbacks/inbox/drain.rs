@@ -66,6 +66,9 @@ pub(crate) async fn read_disposition(
     pool: &PgPool,
     op: &str,
 ) -> Result<Option<Disposition>, PaymentStoreError> {
+    if quarantine::read(pool, op).await? {
+        return Ok(Some(Disposition::CustodyInvalid));
+    }
     let row=sqlx::query_as::<_,ProcessingRow>("SELECT left(event_id,33) AS event_id,processed_at,left(outcome,32) AS outcome,left(observation_id,33) AS observation_id,left(resolution_id,33) AS resolution_id FROM callback_receipt_processing WHERE operation_id=$1")
         .bind(op).fetch_optional(pool).await?;
     let Some(row) = row else { return Ok(None) };
@@ -107,9 +110,12 @@ pub(crate) async fn read_disposition(
             .filter(|v| identifier(v))
             .ok_or(PaymentStoreError::InvalidStoredData)?;
         let attempt = &receipt.snapshot.payment.attempt_id;
-        let observation = observations::read_observation(pool, attempt, observation_id).await?;
+        let observation = observations::read_observation(pool, attempt, observation_id)
+            .await
+            .map_err(quarantine::proof_error)?;
         let resolution = identities::read_recorded(pool, attempt, &format!("callback-inbox-{op}"))
-            .await?
+            .await
+            .map_err(quarantine::proof_error)?
             .ok_or(PaymentStoreError::InvalidStoredData)?;
         row.validate_financial(op, &receipt.snapshot, &observation, &resolution, outcome)?;
     } else if row.observation_id.is_some() || row.resolution_id.is_some() {
@@ -135,7 +141,7 @@ pub(crate) async fn process_operation(
     if !identifier(op) {
         return Err(PaymentStoreError::InvalidRequest);
     }
-    if let Some(outcome) = read_disposition(pool, op).await? {
+    if let Some(outcome) = quarantine::checked_disposition(pool, clock, op).await? {
         return Ok(outcome);
     }
     let receipt = match lookup::read_lookup(pool, op).await {

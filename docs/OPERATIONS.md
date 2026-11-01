@@ -110,5 +110,8 @@ active capacity until every generation is processed without a review outcome;
 an unresolved older GET cannot disappear behind a completed newer checkpoint.
 Inspect the private job and its immutable generation, receipt, observation,
 resolution and processing records. No automatic restart of a review stop exists.
+If proof behind an existing processing result is damaged, inspect its separate
+immutable quarantine record as well. The original result and payment facts remain
+intact; exact proof repair alone does not clear quarantine or release capacity.
 Public form ingress, edge controls, actual provider acceptance and deployment
 remain separate gates.

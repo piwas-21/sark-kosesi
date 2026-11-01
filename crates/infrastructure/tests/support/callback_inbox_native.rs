@@ -368,20 +368,6 @@ async fn saved_processing_outcomes_never_bless_changed_receipt_observation_or_re
             Some(PaymentStoreError::InvalidStoredData),
             "{field}"
         );
-        assert_eq!(
-            store::jobs::sweep(&pool, clock.as_ref(), PROFILE)
-                .await
-                .err(),
-            Some(PaymentStoreError::InvalidStoredData),
-            "{field}"
-        );
-        assert_eq!(
-            run_callback_batch(&pool, clock.as_ref(), &i, &c, 1)
-                .await
-                .err(),
-            Some(PaymentStoreError::InvalidStoredData),
-            "{field}"
-        );
         assert_eq!(server.count(), 2);
         let mut tx = pool.begin().await.expect("restore only isolated fixture");
         match field {
