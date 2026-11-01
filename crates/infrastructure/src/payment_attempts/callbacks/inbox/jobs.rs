@@ -185,7 +185,8 @@ async fn sweep_once(
             }
         }
         if ready {
-            sqlx::query("UPDATE callback_inbox_jobs SET settled=true,updated_at=$1,due_at=$1 WHERE intake_id=$2 AND callback_intake_settleable(intake_id)").bind(at).bind(&id).execute(&mut *tx).await?;
+            let settlement_at = now(clock)?;
+            sqlx::query("UPDATE callback_inbox_jobs SET settled=true,updated_at=$1,due_at=$1 WHERE intake_id=$2 AND callback_intake_settleable(intake_id)").bind(settlement_at).bind(&id).execute(&mut *tx).await?;
             sqlx::query("DELETE FROM callback_inbox_active WHERE intake_id=$1")
                 .bind(&id)
                 .execute(&mut *tx)

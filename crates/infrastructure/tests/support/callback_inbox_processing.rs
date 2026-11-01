@@ -376,3 +376,62 @@ async fn private_exception_write_checks_source_receipt_and_final_clock_before_co
         );
     }
 }
+
+struct TickingClock(std::sync::atomic::AtomicU64);
+impl commerce_application::request_context::Clock for TickingClock {
+    fn unix_seconds(&self) -> Result<u64, commerce_application::request_context::ContextError> {
+        Ok(self.0.fetch_add(1, Ordering::SeqCst))
+    }
+}
+#[sqlx::test(migrator = "MIGRATOR")]
+async fn ticking_sweep_completes_and_settles_saved_observation_in_one_transaction(pool: PgPool) {
+    let (_, _, operation) = open(&pool).await;
+    let intake: String = sqlx::query_scalar(
+        "SELECT intake_id FROM callback_inbox_generations WHERE operation_id=$1",
+    )
+    .bind(&operation)
+    .fetch_one(&pool)
+    .await
+    .expect("original intake");
+    let before = read_callback_job(&pool, &intake)
+        .await
+        .expect("read before recovery")
+        .expect("leased job");
+    assert!(before.state == JobState::Leased && !before.settled);
+    let clock = TickingClock(std::sync::atomic::AtomicU64::new(1560));
+    store::jobs::sweep(&pool, &clock, PROFILE)
+        .await
+        .expect("clock advances during completion and settlement without rewinding checkpoint");
+    let after = read_callback_job(&pool, &intake)
+        .await
+        .expect("read after recovery")
+        .expect("retained job");
+    assert!(after.state == JobState::Done && after.settled);
+    assert_eq!(
+        after.generation, before.generation,
+        "no new GET generation during receipt recovery"
+    );
+    assert!(after.updated_at >= 1560 && after.updated_at > before.updated_at);
+    assert_eq!(after.due_at, after.updated_at);
+    assert!(
+        clock.0.load(Ordering::SeqCst) > 1562,
+        "the clock really ticked across both transitions"
+    );
+    assert_eq!(
+        sqlx::query_scalar::<_, i64>(
+            "SELECT count(*) FROM callback_inbox_active WHERE intake_id=$1"
+        )
+        .bind(&intake)
+        .fetch_one(&pool)
+        .await
+        .expect("capacity release"),
+        0
+    );
+    assert_eq!(
+        sqlx::query_scalar::<_, i64>("SELECT count(*) FROM callback_lookup_fetch_starts")
+            .fetch_one(&pool)
+            .await
+            .expect("one original GET"),
+        1
+    );
+}
