@@ -1,0 +1,82 @@
+{
+  "services": {
+    "api": {
+      "environment": {
+        "CALLBACK_INTAKE_PROFILE_ID": "${CALLBACK_INTAKE_PROFILE_ID:?dedicated Test profile required}"
+      }
+    },
+    "callback-edge": {
+      "profiles": [
+        "callback-edge"
+      ],
+      "image": "sark-kosesi-callback-edge:${STAGING_REVISION:?reviewed source revision required}",
+      "user": "1000:1000",
+      "environment": {
+        "APP_ENV": "staging",
+        "CALLBACK_EDGE_ENABLED": "true",
+        "CALLBACK_EDGE_BIND": "0.0.0.0:45672",
+        "CALLBACK_EDGE_PROXY_IPS": "${CALLBACK_EDGE_PROXY_IPS:?inspected exact proxy addresses required}",
+        "API_URL": "http://127.0.0.1:45671",
+        "PREVIEW_TOKEN": "${STAGING_PREVIEW_TOKEN:?private preview token required}",
+        "PREVIEW_REVISION": "${STAGING_REVISION:?reviewed source revision required}"
+      },
+      "network_mode": "service:web",
+      "depends_on": {
+        "web": {
+          "condition": "service_started"
+        },
+        "api": {
+          "condition": "service_started"
+        }
+      },
+      "healthcheck": {
+        "test": [
+          "CMD",
+          "node",
+          "-e",
+          "fetch('http://127.0.0.1:45672/health/live',{signal:AbortSignal.timeout(1000)}).then(r=>{if(r.status!==204)process.exit(1)}).catch(()=>process.exit(1))"
+        ],
+        "interval": "10s",
+        "timeout": "3s",
+        "retries": 6,
+        "start_period": "10s"
+      },
+      "labels": {
+        "traefik.enable": "${STAGING_CALLBACK_INGRESS_ENABLED:-false}",
+        "traefik.docker.network": "coolify",
+        "traefik.http.routers.sark-callback-edge.entrypoints": "https",
+        "traefik.http.routers.sark-callback-edge.rule": "Host(`${STAGING_HOST}`) && Path(`/api/callbacks/mollie`) && Method(`POST`)",
+        "traefik.http.routers.sark-callback-edge.priority": "1000",
+        "traefik.http.routers.sark-callback-edge.service": "sark-callback-edge",
+        "traefik.http.routers.sark-callback-edge.tls": "true",
+        "traefik.http.routers.sark-callback-edge.tls.certresolver": "letsencrypt",
+        "traefik.http.routers.sark-callback-edge.middlewares": "sark-callback-rate,sark-callback-group,sark-callback-flight,sark-callback-buffer",
+        "traefik.http.services.sark-callback-edge.loadbalancer.server.port": "45672",
+        "traefik.http.middlewares.sark-callback-rate.ratelimit.average": "30",
+        "traefik.http.middlewares.sark-callback-rate.ratelimit.period": "1m",
+        "traefik.http.middlewares.sark-callback-rate.ratelimit.burst": "10",
+        "traefik.http.middlewares.sark-callback-group.headers.customrequestheaders.x-piwas-callback-budget": "sark-callback",
+        "traefik.http.middlewares.sark-callback-flight.inflightreq.amount": "16",
+        "traefik.http.middlewares.sark-callback-flight.inflightreq.sourcecriterion.requestheadername": "X-Piwas-Callback-Budget",
+        "traefik.http.middlewares.sark-callback-buffer.buffering.maxrequestbodybytes": "1024",
+        "traefik.http.middlewares.sark-callback-buffer.buffering.memrequestbodybytes": "1024",
+        "traefik.http.middlewares.sark-callback-buffer.buffering.maxresponsebodybytes": "1024",
+        "traefik.http.middlewares.sark-callback-buffer.buffering.memresponsebodybytes": "1024"
+      },
+      "restart": "unless-stopped",
+      "read_only": true,
+      "tmpfs": [
+        "/tmp:size=16m,uid=1000,gid=1000"
+      ],
+      "mem_limit": "256m",
+      "cpus": 0.5,
+      "pids_limit": 64,
+      "cap_drop": [
+        "ALL"
+      ],
+      "security_opt": [
+        "no-new-privileges:true"
+      ]
+    }
+  }
+}

@@ -18,7 +18,9 @@ run as UID 1000 with dropped capabilities, read-only roots, bounded temporary
 storage, process limits and memory/CPU caps. PostgreSQL has its own internal
 network and persistent volume and no published port. The API shares the web
 network namespace and listens only on 127.0.0.1:45671. The web's debug port is
-published only on host loopback. Only the web ingress can be routed. The default remains a private preview. Set
+published only on host loopback. The base stack routes only web ingress. The
+optional callback edge below has a separate disabled-by-default router. The
+default remains a private preview. Set
 `STAGING_PUBLIC_STOREFRONT=true` to open the existing storefront GET/HEAD routes
 without a browser login. Keep noindex/no-store, disabled production and internal
 API authentication. Unknown routes and mutations remain gated.
@@ -72,9 +74,86 @@ This is preview acceptance, not actual order/payment/load/fulfilment or producti
 acceptance. Use only a dedicated test profile/key for later Mollie work. Keep live
 keys and payment-method activation outside this workflow.
 
+## Optional callback edge — source only, ingress disabled
+
+The base file does not start a callback edge or add an anonymous POST exception.
+The separate `callback-edge.compose.yml` overlay uses JSON-compatible Compose
+syntax so the source policy check needs no additional parser dependency. Include
+both files and explicitly select the `callback-edge` profile only after the edge
+source is accepted through independent review and all nine current-head checks.
+Build the third image from that same accepted tree:
+
+```sh
+python3 scripts/check_callback_edge_deploy.py
+docker build --file deploy/staging/Dockerfile --target callback-edge --build-arg SOURCE_REVISION=REVISION --tag sark-kosesi-callback-edge:REVISION .
+docker compose --env-file PRIVATE_ENV --file deploy/staging/compose.yml --file deploy/staging/callback-edge.compose.yml --profile callback-edge config --quiet
+```
+
+Keep `STAGING_CALLBACK_INGRESS_ENABLED=false`. The overlay requires an explicitly
+configured dedicated Test `CALLBACK_INTAKE_PROFILE_ID` for the private API and one
+to four inspected exact private `CALLBACK_EDGE_PROXY_IPS` for the edge. Do not
+substitute a Coolify subnet, a shared SNAT gateway, a hostname or a guessed address.
+The process uses the existing project's server Bearer credential, shares web's
+network namespace and forwards only to `127.0.0.1:45671`. It receives no database
+credentials or Mollie key. Its port 45672 has no host mapping. The health check is
+only a bounded process-liveness GET; it does not prove API, database or provider
+acceptance. Preserve the private environment file's mode 0600; never print a full
+rendered Compose document from that file.
+
+With those prerequisites prepared, private startup uses the same two files and
+profile:
+
+```sh
+docker compose --env-file PRIVATE_ENV --file deploy/staging/compose.yml --file deploy/staging/callback-edge.compose.yml --profile callback-edge up --detach --wait
+```
+
+The edge container owns its Traefik labels. When it is absent or its independent
+ingress flag is false, it contributes no anonymous router. Existing web labels,
+Next's Basic gate and public storefront GET/HEAD policy remain unchanged. The
+optional router uses only entrypoint `https`, the exact staging host and
+`POST /api/callbacks/mollie`, with an explicit service and priority. There is no
+HTTP callback redirect router. Configure provider URLs as canonical HTTPS URLs.
+
+The middleware chain applies per-remote-address rate limits, overwrites a
+nonsensitive constant budget header, applies a global 16-request inflight group,
+and buffers at most 1024 bytes in memory. It has no retry expression. That header
+is a resource-group identifier, never an authentication credential. Rust verifies
+the actual socket peer, ignores forwarding headers for trust, imposes its own
+concurrency/body/deadline limits, strips caller headers and acknowledges only a
+finished empty 200 from the private API.
+
+These files do not establish the running proxy's identity or behavior. Before any
+public activation, separately record and verify:
+
+- The actual proxy image/version and its support for container-shared network
+  address discovery. The reviewed [Traefik v3.3 Docker provider source](https://raw.githubusercontent.com/traefik/traefik/v3.3.0/pkg/provider/docker/config.go)
+  supports this topology; the installed version remains an external dependency.
+- A unique, stable mapping from the edge's observed socket peers to that proxy,
+  and denial of direct network/host access, including forged forwarding headers.
+  This is a network ACL, not cryptographic proxy identity or Mollie authentication.
+- Actual header replacement, rate/inflight/buffering behavior, absence of inherited
+  POST retries and nonzero ingress read timeouts. [Buffering](https://doc.traefik.io/traefik/v3.3/middlewares/http/buffering/)
+  reads the client body before forwarding, so Rust's one-second body deadline
+  cannot bound an upload still held by Traefik. The complete upload/processing
+  budget must fit the provider's delivery deadline. Do not reconfigure or restart
+  the shared proxy implicitly to satisfy this gate.
+- Exact-revision TLS, protected admin/unknown paths, private API denial and actual
+  provider delivery/retry behavior in an authorized isolated non-selling pilot.
+  Never run that pilot against a shared development or production database.
+
+Only after that evidence and the applicable explicit activation authorization may
+this project's callback ingress flag become true. Source/config checks and the
+existing read-only staging smoke cannot prove callback acceptance. No worker,
+provider key, scheduler, financial/stock action or production activation is added
+by the overlay. The fixed limits are engineering policy, not measured production
+capacity.
+
 ## Rollback
 
-Disable this project's ingress flag first if the preview is unsafe. Restore the
+Disable `STAGING_CALLBACK_INGRESS_ENABLED` first if the optional callback edge is
+unsafe, and disable `STAGING_INGRESS_ENABLED` when stopping all preview ingress.
+Recreate only this project's affected services with the same overlay/profile
+selection; do not change another application's router. Restore the
 previous reviewed image tags/revision and recreate only this Compose project's
 web/API services; do not reset financial data or run reverse migrations. Keep the
 database volume and private environment. `docker compose down` stops only this

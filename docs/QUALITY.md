@@ -19,7 +19,7 @@ Ignored framework build/runtime keys are not source; force-tracked ignored files
 remain scanned, and the complete tracked history scan still runs. A generated
 fake credential must be detected before accepting the clean source result.
 
-`npm run check` runs format/lint, foundation contracts and tooling coverage. Python tools are hash-pinned in `requirements-dev.txt`; JavaScript tools in the npm lockfile. Coverage is a minimum 90% statements/branches combined for the pure gate-policy modules (`gate_policy`, `review_policy`, `sonar_policy`, `check_app_coverage`, `rust_coverage`); wrapper/network/tooling execution is separately exercised by CI and negative-control tests. Do not call this whole-application coverage. Prototype source is a reference design, checked for syntax/assets/browser behavior; production lint, coverage and size budgets cannot exempt production code by moving it under design.
+`npm run check` runs format/lint, foundation contracts and tooling coverage. Python tools are hash-pinned in `requirements-dev.txt`; JavaScript tools in the npm lockfile. Coverage is a minimum 90% statements/branches combined for the pure gate-policy modules (`gate_policy`, `review_policy`, `sonar_policy`, `check_app_coverage`, `rust_coverage`, `visual_policy`, `check_callback_edge_deploy`); wrapper/network/tooling execution is separately exercised by CI and negative-control tests. Do not call this whole-application coverage. Prototype source is a reference design, checked for syntax/assets/browser behavior; production lint, coverage and size budgets cannot exempt production code by moving it under design.
 
 ## Sonar ownership and operation
 
@@ -557,6 +557,22 @@ external cancellation rollback, and clock rewind after actual lock waits. Real
 chunked transport exercises body limits; positive leak calibration checks captured
 output as well as static errors. Configuration and callback modules require 95%
 critical coverage. These checks cannot establish public staging/provider acceptance.
+
+The disabled staging edge requires actual TCP-peer positive/negative controls,
+including forged forwarding headers, and literal global concurrency/body/deadline
+boundaries. Loopback transport fixtures exercise fixed targets, fresh header
+selection, disabled proxies/redirects/POST retries, nonempty/truncated responses,
+timeouts and cancellation. A real private API with isolated PostgreSQL proves the
+deferred-COMMIT acknowledgement boundary across both services. Healthy binary tests
+shut down normally so native profiles measure startup and server wiring. Config,
+edge handler/binary and forwarding modules require 95% critical coverage.
+
+The pure deployment-policy checker is included in tooling coverage. Semantic
+positive and hostile mutation controls check the actual optional overlay's scope,
+default-off routing, resources, buffering and absent secret labels. Compose merge
+and interpolation checks use synthetic inputs without creating resources. These
+checks cannot establish installed Traefik behavior, proxy-peer uniqueness,
+network bypass, ingress upload timeouts, TLS or provider acceptance.
 
 Worker loopback tests execute the same configuration, profile verification,
 supervisor and reporting code through a private client-factory seam; production

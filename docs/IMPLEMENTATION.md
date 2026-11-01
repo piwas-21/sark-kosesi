@@ -313,7 +313,10 @@ supervision or live provider activation follows from deploying the empty preview
    retains damaged existing dispositions without blocking healthy successors or
    releasing admission capacity. A private Bearer-protected API adapter now accepts
    closed, bounded classic forms and acknowledges only durable admission. Complete
-   trusted-edge controls and an exact staging POST exception before public ingress;
+   runtime proxy and abuse-control verification before public ingress. An optional
+   default-disabled Rust edge now gates actual connection peers and forwards
+   bounded forms to the private API. Its optional exact staging POST router requires
+   separate no-bypass, upload-timeout, TLS and provider acceptance;
    no key or scheduler is installed.
    Uncertain outcomes
    reconcile under the original identity and never mint a replacement charge.
