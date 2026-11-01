@@ -99,3 +99,6 @@ async fn recognition_public_readers_revalidate_original_resolution_source_events
     .await;
     assert!(current(&pool, a).await.expect("repaired pointer") == Some(original));
 }
+
+#[path = "payment_recognition_headers.rs"]
+mod headers;
