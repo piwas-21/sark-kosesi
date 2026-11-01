@@ -64,7 +64,11 @@ calling this validator. Its hostile fixture tests prove the validator only;
 application coverage remains pending until actual app/crate reports pass.
 
 Rust coverage gates consume native LLVM JSON: stable line/region data and a
-separate pinned-nightly branch run. LLVM LCOV summary line totals include async
+separate pinned-nightly branch run. The normal coverage command uses distinct
+owned target directories for these toolchains, including cleanup and nightly
+LCOV export. Sharing instrumented output can mix incompatible object mappings
+and produce false zero-hit regions; never repair those counters by hand.
+LLVM LCOV summary line totals include async
 and macro regions that do not map one-to-one to emitted DA records; do not rewrite
 those totals to manufacture consistency. LCOV remains the Sonar import format.
 The native validator requires every owned source and populated counters, with
