@@ -989,3 +989,6 @@ mod callback_cases;
 
 #[path = "mollie_callback_custody.rs"]
 mod callback_custody;
+
+#[path = "payment_recognition.rs"]
+mod recognition_cases;

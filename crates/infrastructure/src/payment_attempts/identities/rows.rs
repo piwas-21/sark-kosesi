@@ -17,6 +17,23 @@ pub(crate) async fn load(
     started_at: i64,
     effect: Option<&str>,
 ) -> Result<Option<Resolution>, PaymentStoreError> {
+    load_selected(tx, frozen, started_at, effect, None).await
+}
+pub(crate) async fn by_id(
+    tx: &mut Transaction<'_, Postgres>,
+    frozen: &FrozenAttempt,
+    started_at: i64,
+    id: &str,
+) -> Result<Option<Resolution>, PaymentStoreError> {
+    load_selected(tx, frozen, started_at, None, Some(id)).await
+}
+async fn load_selected(
+    tx: &mut Transaction<'_, Postgres>,
+    frozen: &FrozenAttempt,
+    started_at: i64,
+    effect: Option<&str>,
+    id: Option<&str>,
+) -> Result<Option<Resolution>, PaymentStoreError> {
     let row = sqlx::query_as::<_, Row>(
         r#"SELECT left(r.id,33) AS id,left(r.attempt_id,33) AS attempt_id,
       left(r.effect_key,129) AS effect_key,revision,through_observation,recorded_at,
@@ -32,10 +49,12 @@ pub(crate) async fn load(
           WHERE c.profile_id=owner.snapshot->'binding'->'profile'->>'id'
           AND c.provider_id=i AND c.attempt_id=r.attempt_id)) ELSE false END AS ownership_present
       FROM payment_identity_resolutions r JOIN payment_attempts owner ON owner.id=r.attempt_id WHERE r.attempt_id=$1
-        AND ($2::text IS NULL OR r.effect_key=$2) ORDER BY revision DESC LIMIT 1"#,
+        AND ($2::text IS NULL OR r.effect_key=$2)
+        AND ($3::text IS NULL OR r.id=$3) ORDER BY revision DESC LIMIT 1"#,
     )
     .bind(&frozen.snapshot().binding.id)
     .bind(effect)
+    .bind(id)
     .fetch_optional(&mut **tx)
     .await?;
     let Some(r) = row else {

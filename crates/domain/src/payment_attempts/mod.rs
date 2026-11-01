@@ -7,6 +7,7 @@ mod dispatch;
 pub mod identities;
 pub mod observations;
 mod provider;
+pub mod recognition;
 pub mod searches;
 pub use dispatch::{DispatchPlan, DispatchState, bind_provider, plan_dispatch};
 pub use provider::{PaymentStatus, ProviderPayment, match_provider};

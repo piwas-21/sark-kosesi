@@ -574,6 +574,26 @@ and interpolation checks use synthetic inputs without creating resources. These
 checks cannot establish installed Traefik behavior, proxy-peer uniqueness,
 network bypass, ingress upload timeouts, TLS or provider acceptance.
 
+Private payment recognition requires literal independent state/money oracles and
+real isolated PostgreSQL. Zero/open evidence remains unconfirmed; paid then open
+retains received gross history; later distinct identities require review. Expired
+holds do not erase genuine payment facts. Historical receipts and canonical
+same-prefix replay survive later evidence, duplicate resolution receipts and
+unavailable clock/entropy without another journal or event.
+
+Actual competing transactions exercise observation append against recognition and
+current inspection, including a pool whose default isolation is repeatable read.
+Native SQL rejects non-READ-COMMITTED financial writes, stale prefixes, forged
+state/money/order/resolution, missing source events/ownership, detached or rewound
+pointers and incomplete journal/event/pointer commits. Captured historical reads
+remain valid after a new observation makes the pointer explicitly stale. Bound,
+malformed and noncontiguous evidence controls require paired healthy restoration.
+Actual outbox waits test final clock rewind and cancellation with atomic rollback.
+Tests compare accepted order snapshots and stock before/after. All recognition
+sources retain 95% critical coverage; compiled fault controls exercise the financial
+proof boundaries and pass after exact restoration. This establishes source custody,
+not provider acceptance, stock recovery, refund or fulfilment authority.
+
 Worker loopback tests execute the same configuration, profile verification,
 supervisor and reporting code through a private client-factory seam; production
 still selects the fixed provider client. Infrastructure's small build script

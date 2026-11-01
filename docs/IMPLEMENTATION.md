@@ -323,7 +323,15 @@ supervision or live provider activation follows from deploying the empty preview
    Fetch and verify webhook identifiers against order/amount/currency/profile/mode.
    Add durable outbox/reconciler, duplicate/reordered notifications and atomic late
    paid reallocation with visible recovery when components are unavailable.
-5. Add separate order/payment/fulfilment/refund state, invoices/credit documents,
+5. Private gross-payment recognition now records canonical immutable decisions
+   over complete authenticated evidence and their original resolution, with a
+   separately validated current pointer and atomic digest-bound order event.
+   New observations make earlier decisions explicitly stale; historical replay
+   preserves paid facts without stock/refund/fulfilment effects. READ COMMITTED
+   and the shared attempt claim protect new decisions and current inspection;
+   detached receipts grant no later transition authority. Complete independent
+   order/fulfilment/refund lifecycle, late-paid atomic stock recovery and
+   invoices/credit documents,
    bounded audited refunds and independent restock actions. Prove sandbox outcomes,
    concurrency, cent allocations and crash recovery without duplicate effects.
 
