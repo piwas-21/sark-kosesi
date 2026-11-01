@@ -78,7 +78,7 @@ fn operation_decoder_binds_requested_identity_and_revalidates_every_imported_hea
 }
 #[test]
 fn receipt_decoder_rejects_root_positional_forms_and_each_mismatched_header() {
-    let changes: [fn(&mut ReceiptRow); 7] = [
+    let changes: [fn(&mut ReceiptRow); 9] = [
         |r| r.id = "3".repeat(32),
         |r| r.operation_id = "3".repeat(32),
         |r| r.recorded_at = 1701,
@@ -95,11 +95,38 @@ fn receipt_decoder_rejects_root_positional_forms_and_each_mismatched_header() {
                 "a".repeat(64)
             ]))
         },
+        |r| {
+            r.snapshot.as_mut().expect("fixture")["operation"] =
+                json!([1, "1".repeat(32), "pfl_SYNTHETIC", "tr_SYNTHETIC", 1500])
+        },
+        |r| {
+            r.snapshot.as_mut().expect("fixture")["payment"] = json!([
+                "payment",
+                "tr_SYNTHETIC",
+                "pfl_SYNTHETIC",
+                "test",
+                "EUR",
+                38245,
+                1,
+                "3".repeat(32),
+                "4".repeat(32),
+                "paid"
+            ])
+        },
         |r| r.snapshot.as_mut().expect("fixture")["operation"]["profile_id"] = "pfl_OTHER".into(),
     ];
     for change in changes {
         let mut row = row();
         change(&mut row);
+        if let Some(value) = &row.snapshot
+            && (value.get("operation").is_some_and(Value::is_array)
+                || value.get("payment").is_some_and(Value::is_array))
+        {
+            assert!(
+                serde_json::from_value::<LookupSnapshot>(value.clone()).is_ok(),
+                "populated positional controls reach the explicit object-shape guard"
+            );
+        }
         assert_eq!(
             row.decode(&operation()).err(),
             Some(PaymentStoreError::InvalidStoredData)
