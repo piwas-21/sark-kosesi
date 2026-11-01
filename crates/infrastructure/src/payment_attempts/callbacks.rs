@@ -1,4 +1,5 @@
 //! Private callback evidence custody, not ingress, financial or fulfilment authority.
+pub mod inbox;
 pub mod lookup;
 use super::{
     evidence::{context, limits},

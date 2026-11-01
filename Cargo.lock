@@ -284,6 +284,7 @@ dependencies = [
  "subtle",
  "tokio",
  "tower-sessions",
+ "tracing",
  "url",
  "webpki-roots",
 ]

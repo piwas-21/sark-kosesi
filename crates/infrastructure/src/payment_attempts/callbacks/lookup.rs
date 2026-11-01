@@ -1,7 +1,7 @@
 //! Durable pre-I/O operations and immutable authenticated lookup receipts.
 use super::super::{
     PaymentStoreError,
-    evidence::{context, fresh_id, limits, now},
+    evidence::{fresh_id, limits, now},
     identifier,
 };
 use crate::mollie::{
@@ -63,6 +63,35 @@ pub async fn start_lookup(
         started_at,
     })
 }
+/// The inbox can atomically persist a generation and one-use GET start. This
+/// boundary validates the durable start, commits, and only then yields a permit.
+pub(crate) async fn commit_started(
+    mut tx: sqlx::Transaction<'_, sqlx::Postgres>,
+    clock: &dyn Clock,
+    operation: LookupOperationSnapshot,
+    started_at: i64,
+    until: i64,
+) -> Result<LookupFetchPermit, PaymentStoreError> {
+    let stored = rows::operation(&mut tx, &operation.id, true).await?;
+    let start: Option<i64> = sqlx::query_scalar(
+        "SELECT started_at FROM callback_lookup_fetch_starts WHERE operation_id=$1",
+    )
+    .bind(&operation.id)
+    .fetch_optional(&mut *tx)
+    .await?;
+    if stored != operation || start != Some(started_at) {
+        return Err(PaymentStoreError::InvalidStoredData);
+    }
+    let at = now(clock)?;
+    if at < started_at || at >= until {
+        return Err(PaymentStoreError::Conflict);
+    }
+    tx.commit().await?;
+    Ok(LookupFetchPermit {
+        operation,
+        started_at,
+    })
+}
 /// A historical fetched fact, not order/payment/stock authority. No deserialization.
 pub struct LookupReceipt {
     pub snapshot: LookupSnapshot,
@@ -76,29 +105,43 @@ pub async fn prepare_lookup(
     profile_id: &str,
     provider_id: &str,
 ) -> Result<LookupOperation, PaymentStoreError> {
-    let at = clock
+    let initial = clock
         .unix_seconds()
         .map_err(|_| PaymentStoreError::ClockUnavailable)?;
-    let clock = ObservedClock::new(clock, at);
+    let clock = ObservedClock::new(clock, initial);
+    let mut tx = pool.begin().await?;
+    limits(&mut tx).await?;
+    let snapshot = prepare_in_transaction(&mut tx, &clock, ids, profile_id, provider_id).await?;
+    now(&clock)?;
+    tx.commit().await?;
+    Ok(LookupOperation { snapshot })
+}
+/// Compose an inbox generation and operation in one caller-owned transaction.
+/// The returned snapshot is data only: no usable operation/GET permit escapes.
+/// Callers obtain the opaque operation by re-reading only after committing.
+pub(crate) async fn prepare_in_transaction(
+    tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
+    clock: &dyn Clock,
+    ids: &dyn Identifiers,
+    profile_id: &str,
+    provider_id: &str,
+) -> Result<LookupOperationSnapshot, PaymentStoreError> {
     let snapshot = LookupOperationSnapshot {
         schema_version: 1,
         id: fresh_id(ids)?,
         profile_id: profile_id.into(),
         provider_id: provider_id.into(),
-        created_at: now(&clock)?,
+        created_at: now(clock)?,
     };
     snapshot
         .validate()
         .map_err(|_| PaymentStoreError::InvalidRequest)?;
-    let mut tx = pool.begin().await?;
-    limits(&mut tx).await?;
     sqlx::query("INSERT INTO callback_lookup_operations(id,profile_id,provider_id,created_at) VALUES($1,$2,$3,$4)")
         .bind(&snapshot.id).bind(&snapshot.profile_id).bind(&snapshot.provider_id).bind(snapshot.created_at)
-        .execute(&mut *tx).await?;
-    now(&clock)?;
-    tx.commit().await?;
-    Ok(LookupOperation { snapshot })
+        .execute(&mut **tx).await?;
+    Ok(snapshot)
 }
+
 pub async fn read_operation(pool: &PgPool, id: &str) -> Result<LookupOperation, PaymentStoreError> {
     if !identifier(id) {
         return Err(PaymentStoreError::InvalidRequest);
@@ -194,37 +237,8 @@ pub async fn fetch_lookup(
         .await
         .map_err(MollieError::Custody)
 }
-/// Unknown or mismatching originals leave lookup custody visible. Full original
-/// matching is repeated under the existing serialized observation append. The
-/// server operation identity makes replay after an append/crash idempotent.
-pub async fn process_lookup(
-    pool: &PgPool,
-    clock: &dyn Clock,
-    ids: &dyn Identifiers,
-    operation_id: &str,
-) -> Result<super::super::observations::ObservationReceipt, PaymentStoreError> {
-    let receipt = read_lookup(pool, operation_id)
-        .await?
-        .ok_or(PaymentStoreError::Unavailable)?;
-    // Authenticated metadata cannot make a GET predating the original dispatch
-    // into evidence of that dispatch. The restored original is immutable; the
-    // recorder below repeats complete matching under its serialized append.
-    let mut tx = pool.begin().await?;
-    limits(&mut tx).await?;
-    let (_, dispatched_at) = context(&mut tx, &receipt.snapshot.payment.attempt_id, false).await?;
-    if receipt.snapshot.started_at < dispatched_at {
-        return Err(PaymentStoreError::Conflict);
-    }
-    tx.rollback().await?;
-    super::record_fetched(
-        pool,
-        clock,
-        ids,
-        &format!("callback-lookup-{operation_id}"),
-        &receipt.fetched,
-    )
-    .await
-}
+mod process;
+pub use process::process_lookup;
 
 #[cfg(test)]
 #[path = "../../../tests/support/payment_callback_lookup_internal.rs"]

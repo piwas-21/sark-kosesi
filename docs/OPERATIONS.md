@@ -87,3 +87,28 @@ Do not install a scheduler or production supervision until launch ownership,
 callbacks, financial transitions, late-paid stock recovery and provider acceptance
 have separate evidence. Unit/loopback PostgreSQL tests are source evidence, not an
 actual Mollie sandbox payment or deployed/physical acceptance.
+
+## Private callback supervision
+
+`cargo run --locked -p commerce-worker -- --reconcile-callbacks` runs one bounded
+local/test pass. It uses the dedicated `MOLLIE_TEST_PROFILE_ID` and
+`MOLLIE_TEST_API_KEY` policy described above; production and live credentials are
+rejected. `CALLBACK_RECONCILIATION_BATCH` defaults to 10 and accepts 1–25 steps.
+No credential, scheduler or public receiver is installed by this command.
+
+The pass drains saved receipt work independently of current job leases, claims
+at most one authenticated GET per generation and retains five lifetime generations
+per intake. Expired or cancelled work cannot restore a single-use fetch permit.
+Committed receipts are recovered before a fresh GET; transient failures back off
+and stop visibly. A stale generation can preserve its fetched fact but cannot
+advance a newer checkpoint. Delayed paid facts remain visible even after newer
+open evidence or a review stop. Such facts never authorize shipment, stock
+consumption/reallocation or refunds.
+
+Review and retry counts include unchanged older exceptions. An intake retains
+active capacity until every generation is processed without a review outcome;
+an unresolved older GET cannot disappear behind a completed newer checkpoint.
+Inspect the private job and its immutable generation, receipt, observation,
+resolution and processing records. No automatic restart of a review stop exists.
+Public form ingress, edge controls, actual provider acceptance and deployment
+remain separate gates.

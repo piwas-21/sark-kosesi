@@ -335,3 +335,6 @@ mod guards;
 
 #[path = "mollie_callback_custody_native.rs"]
 mod native;
+
+#[path = "callback_inbox.rs"]
+mod inbox;

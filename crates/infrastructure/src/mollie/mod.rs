@@ -111,3 +111,8 @@ fn provider_id(value: &str) -> bool {
 #[cfg(test)]
 #[path = "../../tests/support/mollie_transport.rs"]
 mod tests;
+
+// The worker environment wrapper has CLI tests; this fixture exercises the same
+// production orchestration through the existing authenticated loopback transport.
+#[cfg(test)]
+include!(concat!(env!("OUT_DIR"), "/callback_worker_fixture.rs"));

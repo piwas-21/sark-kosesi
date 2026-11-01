@@ -512,3 +512,44 @@ dispatch chronology and final clock checks, then pass again after exact source
 restoration. This is source custody evidence; bounded public ingress/supervision
 and actual provider/deployment/payment
 acceptance remain separate gates.
+
+Private callback inbox and supervisor acceptance uses isolated PostgreSQL and
+authenticated loopback GETs. Literal global/profile rate and capacity boundaries,
+concurrent admission, full intake-event headers and final clock checks protect
+atomic admission. Native active-custody and consumed-generation receipts reject
+false settlement, source/profile rebinding, orphan jobs and historical lease reuse.
+Capacity remains occupied while any older generation lacks a successful receipt
+disposition, even after the current checkpoint completes.
+
+Recovery exercises every crash boundary, a committed receipt behind a bounded
+processing backlog, five lifetime GET generations, backoff and persistent review
+stops. Expired workers may retain authenticated paid facts after newer open results
+or terminal stops; they cannot advance checkpoints. Actual database waits prove
+no transaction spans provider I/O and exercise lease expiry, clock rewind and
+cancellation rollback. A saved receipt recovered under an earlier clock must leave
+no earlier immutable observation/resolution and remain recoverable later.
+
+Malformed lookup/event data and deterministic original identity-history failures
+must retain source-bound redacted exceptions while unrelated healthy jobs progress.
+An exception cannot be created before a raw receipt exists or grant payment
+authority. Stored import controls have exact healthy repairs; unchanged later
+worker passes retain outstanding failures. Worker configuration rejects production,
+live credentials, malformed bounds and diagnostic leaks. New inbox/domain/worker
+modules retain 95% critical coverage and relevant compiled fault controls. This is
+source supervision evidence; public ingress, provider and operational acceptance
+remain separate requirements.
+
+Worker loopback tests execute the same configuration, profile verification,
+supervisor and reporting code through a private client-factory seam; production
+still selects the fixed provider client. Infrastructure's small build script
+generates only a test module declaration for the canonical, fixed worker source
+path. This compile-time wiring avoids duplicate lexical filenames in LLVM
+coverage; it adds no runtime origin setting or commerce policy. Native reports
+must contain one canonical worker source entry with actual counters. Do not merge
+duplicate counters, rewrite them or exclude the worker to satisfy the gate. The
+nonlogic build/test wiring is reviewed and covered by compilation, fmt and Clippy.
+The worker logs a closed aggregate record and uses the same count snapshot for
+its command outcome. A capturing subscriber verifies every event field and literal
+count, with an unexpected-field probe proving the detector is active. This also
+keeps macro-span instrumentation from obscuring evaluated logging inputs; native
+coverage counters remain unmodified.

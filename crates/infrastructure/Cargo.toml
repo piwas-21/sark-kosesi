@@ -34,6 +34,7 @@ name = "browser-fixture-effect"
 path = "tests/support/browser_fixture_effect.rs"
 
 [dev-dependencies]
+tracing.workspace = true
 hyper.workspace = true
 hyper-util.workspace = true
 http-body-util.workspace = true
