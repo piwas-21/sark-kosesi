@@ -4,7 +4,7 @@ COPY Cargo.toml Cargo.lock rust-toolchain.toml ./
 COPY crates ./crates
 COPY migrations ./migrations
 ENV CARGO_BUILD_JOBS=1
-RUN cargo build --release --locked -p commerce-api
+RUN cargo build --release --locked -p commerce-api --bins
 
 FROM node:24.22.1-bookworm-slim@sha256:be8204d4bd327363357f532187b752ff62759c31bedf98e9e18fc08c9cbd605c AS web-build
 WORKDIR /app
@@ -27,6 +27,14 @@ WORKDIR /app
 COPY --from=rust-build /source/target/release/commerce-api /app/commerce-api
 USER node
 ENTRYPOINT ["/app/commerce-api"]
+
+FROM node:24.22.1-bookworm-slim@sha256:be8204d4bd327363357f532187b752ff62759c31bedf98e9e18fc08c9cbd605c AS callback-edge
+ARG SOURCE_REVISION
+LABEL org.opencontainers.image.source="https://github.com/piwas-21/sark-kosesi" org.opencontainers.image.revision=$SOURCE_REVISION org.piwas.environment="staging"
+WORKDIR /app
+COPY --from=rust-build /source/target/release/commerce-callback-edge /app/commerce-callback-edge
+USER node
+ENTRYPOINT ["/app/commerce-callback-edge"]
 
 FROM node:24.22.1-bookworm-slim@sha256:be8204d4bd327363357f532187b752ff62759c31bedf98e9e18fc08c9cbd605c AS web
 ARG SOURCE_REVISION

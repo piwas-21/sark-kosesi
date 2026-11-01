@@ -358,3 +358,20 @@ Only durable intake commit permits the indistinguishable empty success response.
 Errors, responses and request logging contain no body, provider ID, authorization
 or cookie values. Public staging POST access and trusted-edge controls remain
 unconfigured; this adapter does not authenticate a provider notification.
+
+The optional staging edge validates the actual TCP connection peer against exact
+configured private proxy addresses before consuming a body. It never trusts XFF,
+Host or a budget-group header for identity. This is a network ACL, rather than
+cryptographic proxy or provider authentication; unique mapping and no-bypass
+network evidence remain deployment gates. Whole subnets and shared SNAT gateways
+are not acceptable proxy identities.
+
+The forwarder uses a fixed validated loopback target, fresh sensitive Bearer and
+canonical form headers, and no environment proxy, redirects or POST retries.
+Incoming credentials/cookies/forwarding fields and upstream diagnostics never
+cross that boundary. Only a completed empty private-API 200 permits success.
+Global concurrency, streaming byte and deadline bounds limit admitted work. The
+optional Traefik route and process are off by default, production remains rejected,
+and no secret is stored in routing labels. Its nonsensitive overwritten inflight
+group is only a resource bucket. Source tests cannot establish the actual proxy's
+read timeout, network identity or provider delivery.

@@ -1,5 +1,6 @@
 //! Bounded, authenticated preview catalogue HTTP interface. No sales or public publishing.
 #![forbid(unsafe_code)]
+pub mod callback_edge;
 pub mod callbacks;
 pub mod config;
 pub mod contract;

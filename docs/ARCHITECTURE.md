@@ -931,6 +931,51 @@ and [payment-ID contract](https://docs.mollie.com/reference/get-payment).
 Next-gen JSON/signature events are a separate protocol. This private adapter does
 not add a public staging POST exception, trusted-edge policy or deployment.
 
+### Disabled staging callback edge
+
+A separate Rust edge binary in the API crate forwards only the classic callback
+POST to the private loopback API. This preserves Next's browser POST gate and
+provides actual socket-peer metadata. It has no database credentials, provider
+key, payment fetch or financial authority. The ordinary API remains loopback-only.
+
+`CALLBACK_EDGE_ENABLED` is absent/false by default. Production is rejected even
+when disabled; enabled local/test/staging configuration requires a validated bind,
+loopback `API_URL`, server `PREVIEW_TOKEN` and one to four distinct exact numeric
+`CALLBACK_EDGE_PROXY_IPS`. Staging accepts only private proxy addresses, requires
+the exact source revision and binds the dedicated container port 45672. Local/test
+may use loopback peers and ephemeral ports. No subnet, gateway assumption, Host,
+XFF or other incoming header establishes trust. The peer ACL is a network boundary,
+not cryptographic proxy identity or provider authentication.
+
+Check the actual connection peer before consuming a body. Admit at most 16
+concurrent callback requests globally; read at most 1024 body bytes within one
+second, reuse the closed classic-form/media policy, and finish each request within
+three seconds. Forward raw validated bytes to the fixed `/api/callbacks/mollie`
+path with newly constructed canonical form Content-Type and server Bearer headers.
+Do not forward caller credentials, cookies, Host, Origin or forwarding fields.
+The infrastructure client disables environment proxies, redirects and automatic
+POST retries, and bounds the complete upstream exchange to 1500 ms. Only a finished
+empty upstream 200 permits an empty external 200. Other upstream results are static
+non-success responses; no body or diagnostic header is relayed. Cancellation may
+leave no admission or an already durable intake; it cannot grant a false success.
+
+The base staging Compose file stays unchanged. A separate optional overlay/profile
+defines the edge image, API profile configuration and edge-owned Traefik labels.
+`STAGING_CALLBACK_INGRESS_ENABLED` defaults false, independently of starting the
+private edge process. The only HTTPS router matches the exact host, path and POST
+method with explicit priority/service. There are no credentials in labels. Use
+per-remote-address rate limits, an overwritten nonsensitive constant inflight group,
+global inflight limits and 1024-byte bounded buffering without buffering retries.
+Existing web routing and its Basic gate remain intact.
+
+Source checks do not establish the existing proxy's version, unique peer mapping,
+address stability or no-bypass network boundary. Public activation also requires
+verified nonzero ingress read timeouts: Traefik buffers uploads before Rust's body
+deadline begins. Confirm the actual middleware behavior, exact-revision TLS and
+provider delivery in a separate authorized isolated pilot. Do not trust a shared
+SNAT gateway or the whole Coolify subnet as proxy identity. No public callback
+ingress, deployment or production activation follows from adding this source.
+
 ## Sessions, uploads and rendering
 
 Rust owns secure sessions and server-side authorization. Use a maintained password/session implementation with Argon2id where passwords are stored; verified email, rotating sessions, hashed reset tokens, admin MFA and separate guest-order access tokens. Browser credentials are HttpOnly/Secure/SameSite cookies; never store bearer tokens in browser local storage. CSRF and origin checks protect cookie-authenticated mutations. No duplicate identity system in Next.js.

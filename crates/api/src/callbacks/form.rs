@@ -5,16 +5,16 @@ use axum::http::{
 };
 use commerce_domain::payment_attempts::callback_inbox::valid_provider_id;
 
-pub(super) const MAX_BODY: usize = 1024;
+pub(crate) const MAX_BODY: usize = 1024;
 
 #[derive(Debug, PartialEq, Eq)]
-pub(super) enum FormError {
+pub(crate) enum FormError {
     InvalidBody,
     UnsupportedMediaType,
     TooLarge,
 }
 
-pub(super) fn parse(headers: &HeaderMap, body: &[u8]) -> Result<String, FormError> {
+pub(crate) fn parse(headers: &HeaderMap, body: &[u8]) -> Result<String, FormError> {
     if body.len() > MAX_BODY {
         return Err(FormError::TooLarge);
     }

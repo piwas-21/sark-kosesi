@@ -190,7 +190,9 @@ profile/global quotas, generation/operation custody, fenced checkpoints and
 independent receipt processing. Unresolved older generations retain capacity;
 late paid facts stay visible after newer open results or review stops. A private
 authenticated API adapter accepts closed bounded classic forms and acknowledges
-durable intake only. Complete trusted-edge controls and public callback ingress,
+durable intake only. An optional default-disabled Rust edge validates configured
+socket peers and forwards bounded forms to the private API. Complete actual proxy,
+resource-limit, no-bypass and TLS/provider acceptance before public activation,
 remaining operator dispositions, late-paid stock recovery
 and separate order/payment/fulfilment/refund/invoice transitions. A pure domain
 plan or matched synthetic response is not dispatch or payment authority.

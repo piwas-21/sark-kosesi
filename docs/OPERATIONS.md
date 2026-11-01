@@ -22,7 +22,7 @@ Use only reviewed free self-hostable libraries/tools; retain licences/notices an
 
 ## Environments and credentials
 
-Compose runs independent storefront, Rust API/worker, PostgreSQL and storage services behind Caddy. No public DB/admin debug port. Separate sandbox/staging/production secrets, profiles, sender and storage; least-privilege credentials with documented rotation and revocation. Inject secrets at runtime; verify logs/artifacts never disclose them. Access is audited and MFA protected. Use small bounded production-safe health endpoints without customer data.
+Compose runs independent storefront, Rust API/worker, PostgreSQL and storage services. The current non-selling staging deployment uses the existing Traefik/Coolify TLS proxy; future production ingress needs its own reviewed policy. No public DB/admin debug port. Separate sandbox/staging/production secrets, profiles, sender and storage; least-privilege credentials with documented rotation and revocation. Inject secrets at runtime; verify logs/artifacts never disclose them. Access is audited and MFA protected. Use small bounded production-safe health endpoints without customer data.
 
 Metrics/logs remain exportable to free self-hosted tools through open formats; add OpenTelemetry instrumentation and a modest Prometheus/Grafana or equivalent setup only for useful alerts. Track payment reconciliation age, stock exceptions, queue lag/dead letters, mail failures, error rate/latency, disk/DB connections and backup age. Define an owner and response for each alert. Do not add a paid monitoring dependency.
 
@@ -129,3 +129,31 @@ failures remain non-successful. If an acknowledgement is lost after commit, a
 repeated notification may create another bounded intake. The worker's receipt
 and observation idempotency rules still govern payment facts. Public edge policy,
 TLS/provider acceptance and deployment are separate work.
+
+## Disabled staging callback edge
+
+`commerce-callback-edge` is a separate Rust process with no database or provider
+credentials. It is disabled by default and rejects production. Its configured
+exact proxy peers come from actual socket metadata, rather than request headers.
+The normal API's loopback Bearer gate and Next's browser POST gate stay intact.
+
+The optional [staging overlay](../deploy/staging/callback-edge.compose.yml) starts
+only when explicitly included with its profile and required configuration. Starting
+the private edge and enabling its Traefik ingress are separate actions;
+`STAGING_CALLBACK_INGRESS_ENABLED` defaults false. Keep it false until the runbook's
+runtime gates pass. No preview-token or provider credential belongs in labels.
+
+Application limits are 16 inflight callbacks, 1024 body bytes within one second,
+1500 ms for the complete fixed loopback API exchange and three seconds overall.
+Only a finished empty upstream 200 becomes an empty external 200. No upstream
+redirect, automatic POST retry, body, cookie or diagnostic header is relayed.
+Health indicates process availability, not API/profile or provider readiness.
+
+Verify the installed proxy version, unique peer-address mapping, address stability,
+no direct-network bypass, actual middleware behavior and nonzero ingress upload
+read timeouts before public activation. Traefik buffers client bodies before
+Rust's body deadline begins. A shared SNAT gateway or Coolify subnet cannot stand
+in for proxy identity. Then require exact-revision TLS and isolated provider
+delivery acceptance. The committed source and Compose checks prove none of these
+runtime states. Rollback disables both callback ingress and the separate web
+ingress flag before recreating only this project's services.

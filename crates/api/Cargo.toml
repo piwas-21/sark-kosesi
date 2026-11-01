@@ -5,6 +5,16 @@ edition.workspace = true
 rust-version.workspace = true
 license.workspace = true
 publish.workspace = true
+default-run = "commerce-api"
+autobins = false
+
+[[bin]]
+name = "commerce-api"
+path = "src/main.rs"
+
+[[bin]]
+name = "commerce-callback-edge"
+path = "src/bin/callback_edge.rs"
 
 [lints]
 workspace = true

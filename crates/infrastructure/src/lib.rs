@@ -10,6 +10,7 @@ extern crate self as commerce_infrastructure;
 mod payment_test_fixture;
 
 pub mod bom;
+pub mod callback_forwarder;
 pub mod catalogue_authoring;
 pub mod catalogue_prices;
 pub mod factual_review;

@@ -1,5 +1,5 @@
 //! Opt-in private classic form intake. No provider key, fetch or payment authority.
-mod form;
+pub(crate) mod form;
 use crate::{ApiError, AppState, error};
 use axum::{
     Extension,
