@@ -1,10 +1,11 @@
 //! Bounded, authenticated preview catalogue HTTP interface. No sales or public publishing.
 #![forbid(unsafe_code)]
+pub mod callbacks;
 pub mod config;
 pub mod contract;
 pub mod guest;
 mod routing;
-pub use routing::{router, router_with_guest};
+pub use routing::{router, router_with_guest, router_with_options};
 pub mod published;
 pub mod published_types;
 

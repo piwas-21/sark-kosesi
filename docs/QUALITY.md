@@ -547,6 +547,17 @@ modules retain 95% critical coverage and relevant compiled fault controls. This 
 source supervision evidence; public ingress, provider and operational acceptance
 remain separate requirements.
 
+The optional private classic-form API adapter requires the existing preview
+Bearer gate and validated configured profile, with no provider key. Literal raw
+body/header and decoded-ID bounds, malformed percent/UTF-8, duplicate encoded
+names, unknown fields, media parameters and content encoding are exercised before
+database effects. Isolated PostgreSQL proves atomic intake custody, native quota
+and capacity limits, a deferred-COMMIT barrier before acknowledgement, timeout and
+external cancellation rollback, and clock rewind after actual lock waits. Real
+chunked transport exercises body limits; positive leak calibration checks captured
+output as well as static errors. Configuration and callback modules require 95%
+critical coverage. These checks cannot establish public staging/provider acceptance.
+
 Worker loopback tests execute the same configuration, profile verification,
 supervisor and reporting code through a private client-factory seam; production
 still selects the fixed provider client. Infrastructure's small build script

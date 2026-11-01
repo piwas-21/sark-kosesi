@@ -10,6 +10,88 @@
     "version": "0.1.0"
   },
   "paths": {
+    "/api/callbacks/mollie": {
+      "post": {
+        "tags": [
+          "crate::callbacks"
+        ],
+        "operationId": "intake",
+        "requestBody": {
+          "content": {
+            "application/x-www-form-urlencoded": {
+              "schema": {
+                "$ref": "#/components/schemas/CallbackForm"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Intake committed; no payment fact confirmed"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "413": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "415": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "504": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "preview": []
+          }
+        ]
+      }
+    },
     "/api/catalogue/{locale}": {
       "get": {
         "tags": [
@@ -931,6 +1013,22 @@
           "in_stock",
           "out_of_stock"
         ]
+      },
+      "CallbackForm": {
+        "type": "object",
+        "required": [
+          "id"
+        ],
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "Opaque payment identifier, at most 256 UTF-8 bytes.",
+            "maxLength": 256,
+            "minLength": 4,
+            "pattern": "^tr_.+$"
+          }
+        },
+        "additionalProperties": false
       },
       "Catalogue": {
         "type": "object",

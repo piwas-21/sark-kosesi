@@ -348,3 +348,13 @@ proof repair; it grants no financial authority. Bounded retries stop
 visibly and unchanged later worker passes retain failure status. There is no
 public receiver, runtime key or scheduler; bounded parsing, trusted-edge abuse
 controls and staging acceptance remain required before operational notifications.
+
+The optional private classic-form adapter retains preview Bearer authentication,
+loopback binding and rejected production startup. Its profile is validated server
+configuration; neither form nor URL parameters provide profile, mode or payment
+authority. A closed 1024-byte form and bounded Content-Type policy reject duplicate
+decoded IDs, extra fields, malformed percent/UTF-8 input and content encoding.
+Only durable intake commit permits the indistinguishable empty success response.
+Errors, responses and request logging contain no body, provider ID, authorization
+or cookie values. Public staging POST access and trusted-edge controls remain
+unconfigured; this adapter does not authenticate a provider notification.

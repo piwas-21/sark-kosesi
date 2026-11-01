@@ -4,6 +4,22 @@
  */
 
 export interface paths {
+    "/api/callbacks/mollie": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["intake"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/catalogue/{locale}": {
         parameters: {
             query?: never;
@@ -141,6 +157,10 @@ export interface components {
         };
         /** @enum {string} */
         Availability: "in_stock" | "out_of_stock";
+        CallbackForm: {
+            /** @description Opaque payment identifier, at most 256 UTF-8 bytes. */
+            id: string;
+        };
         Catalogue: {
             items: components["schemas"]["Product"][];
             locale: string;
@@ -317,6 +337,76 @@ export interface components {
 }
 export type $defs = Record<string, never>;
 export interface operations {
+    intake: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/x-www-form-urlencoded": components["schemas"]["CallbackForm"];
+            };
+        };
+        responses: {
+            /** @description Intake committed; no payment fact confirmed */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            413: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            415: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            504: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+        };
+    };
     get_catalogue: {
         parameters: {
             query?: never;
