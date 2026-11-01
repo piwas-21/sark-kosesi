@@ -199,9 +199,11 @@ expiry. New observations make earlier current decisions explicitly stale. Journa
 exact source digest and minimal order event commit atomically. Private original
 reservation settlement now consumes a still-intact paid order's complete shared
 component allocation once, with a native exact physical proof, immutable receipt
-and atomic order event. Historical replay preserves original custody; expired or
-released reservations require separate recovery. Complete late-paid atomic
-reallocation, actual proxy/resource-limit/no-bypass and TLS/provider acceptance
-before public activation, remaining operator dispositions and separate
+and atomic order event. Private late allocation now recovers intact expired
+originals using the same single allocation identity and frozen component demand.
+Released or consumed originals and persistent scarcity retain durable review stops;
+restock cannot silently restart them. Historical replay preserves original custody.
+Complete authorized stock-review dispositions, actual proxy/resource-limit/no-bypass
+and TLS/provider acceptance before public activation, remaining operator dispositions and separate
 order/fulfilment/refund/invoice transitions. A pure domain
 plan or matched synthetic response is not dispatch or payment authority.

@@ -335,9 +335,13 @@ supervision or live provider activation follows from deploying the empty preview
    digest-bound order event retain exact member/component effects. Native final
    proof and a transaction completion seal prevent partial effects or later
    same-transaction changes after early constraint evaluation. Historical replay
-   revalidates original custody without repeating consumption; expired or released
-   originals require separate recovery. Complete late-paid atomic reallocation,
-   independent order/fulfilment/refund lifecycle and invoices/credit documents,
+   revalidates original custody without repeating consumption. Private late
+   allocation now shares one canonical allocation with original settlement and
+   atomically expires/reserves/consumes the full frozen demand for intact expired
+   originals. Released, consumed or scarce originals retain immutable review
+   stops; changed availability after rollback creates no permanent scarcity case.
+   No automatic retry or disposition authority is installed. Complete authorized
+   stock-review dispositions, independent order/fulfilment/refund lifecycle and invoices/credit documents,
    bounded audited refunds and independent restock actions. Prove sandbox outcomes,
    concurrency, cent allocations and crash recovery without duplicate effects.
 

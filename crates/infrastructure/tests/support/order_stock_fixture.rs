@@ -40,7 +40,12 @@ pub async fn receive(pool: &PgPool, key: &str, component: &str, change: Warehous
     .await
     .expect("genuine warehouse movement");
 }
-async fn additional_variant(pool: &PgPool, sku: &str, filled: bool, components: &[(String, u32)]) {
+pub(crate) async fn additional_variant(
+    pool: &PgPool,
+    sku: &str,
+    filled: bool,
+    components: &[(String, u32)],
+) {
     use catalogue::*;
     definition(
         pool,
@@ -408,4 +413,4 @@ pub async fn footprint(pool: &PgPool) -> Value {
 }
 
 #[path = "order_stock_bounds.rs"]
-mod bounds;
+pub(crate) mod bounds;

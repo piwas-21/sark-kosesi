@@ -3,7 +3,7 @@
 use super::*;
 use commerce_domain::{ComponentKind, catalogue_authoring::CatalogueCommand};
 
-async fn component(pool: &PgPool, code: &str, kind: ComponentKind, on_hand: u32) {
+pub(crate) async fn component(pool: &PgPool, code: &str, kind: ComponentKind, on_hand: u32) {
     catalogue::definition(
         pool,
         &CatalogueCommand::Component {
@@ -16,7 +16,7 @@ async fn component(pool: &PgPool, code: &str, kind: ComponentKind, on_hand: u32)
     receive(pool, code, code, WarehouseChange::Receive(on_hand)).await;
 }
 
-async fn market(pool: &PgPool, skus: &[String]) {
+pub(crate) async fn market(pool: &PgPool, skus: &[String]) {
     let mut policy = quote::policy();
     policy.revision = 2;
     policy.products = skus
@@ -34,7 +34,7 @@ async fn market(pool: &PgPool, skus: &[String]) {
     quote::decide(pool, 2, 0, true, "bounded-settlement-market").await;
 }
 
-async fn accepted_lines(pool: &PgPool, skus: &[String]) -> Fixture {
+pub(crate) async fn accepted_lines(pool: &PgPool, skus: &[String]) -> Fixture {
     let (store, time) = quote::store(pool, 1100);
     let session = tower_sessions::Session::new(None, Arc::new(store.clone()), None);
     let established = ensure_session(&store, &session).await.expect("owned guest");

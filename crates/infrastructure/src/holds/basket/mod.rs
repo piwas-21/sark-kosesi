@@ -11,8 +11,10 @@ use sqlx::{PgPool, Postgres, Transaction};
 use std::collections::{BTreeMap, BTreeSet};
 mod active;
 pub(crate) use active::{ActiveBasket, ExistingBasketBinding, ExistingBasketLine, claim_active};
+mod fresh;
 mod history;
 mod stock;
+pub(crate) use fresh::{FreshPreparation, prepare_fresh, reserve_claimed};
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct BasketHoldLine {
     pub id: String,

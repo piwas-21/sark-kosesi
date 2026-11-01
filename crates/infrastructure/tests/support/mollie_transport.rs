@@ -994,4 +994,7 @@ mod callback_custody;
 mod recognition_cases;
 
 #[path = "order_stock.rs"]
-mod order_stock_cases;
+pub(crate) mod order_stock_cases;
+
+#[path = "late_stock.rs"]
+mod late_stock_cases;

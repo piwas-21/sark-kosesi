@@ -12,11 +12,23 @@ struct Row {
     fence_key: i32,
     footprint: Option<serde_json::Value>,
     event_present: bool,
+    allocation_present: bool,
 }
-pub(super) async fn load(
+pub(crate) async fn load(
     tx: &mut Transaction<'_, Postgres>,
     order_id: &str,
 ) -> Result<Option<Settlement>, SettlementError> {
+    let (present, orphan): (bool, bool) = sqlx::query_as("SELECT EXISTS(SELECT 1 FROM order_stock_settlements WHERE order_id=$1),EXISTS(SELECT 1 FROM commerce_outbox WHERE aggregate_id=$1 AND kind='order.stock_settled.v1') OR EXISTS(SELECT 1 FROM order_stock_allocations WHERE order_id=$1 AND kind='original')")
+        .bind(order_id).fetch_one(&mut **tx).await?;
+    if !present {
+        #[cfg(test)]
+        absence_hook::pause(tx, order_id).await?;
+        // Keep the captured orphan flag: a later probe would use a different snapshot.
+        if orphan {
+            return Err(SettlementError::InvalidStoredData);
+        }
+        return Ok(None);
+    }
     let row: Option<Row> = sqlx::query_as(
         r#"SELECT left(s.id,33) AS id,left(s.order_id,33) AS order_id,
       left(s.attempt_id,33) AS attempt_id,left(s.recognition_id,33) AS recognition_id,
@@ -25,21 +37,19 @@ pub(super) async fn load(
       CASE WHEN octet_length(s.footprint::text)<=1048576 THEN EXISTS(SELECT 1 FROM commerce_outbox e WHERE e.aggregate_id=s.order_id
         AND e.kind='order.stock_settled.v1' AND e.created_at=s.settled_at
         AND e.payload=jsonb_build_object('schema_version',1,'order_id',s.order_id,
-          'settlement_id',s.id,'settlement_sha256',order_stock_digest(s))) ELSE false END AS event_present
+          'settlement_id',s.id,'settlement_sha256',order_stock_digest(s))) ELSE false END AS event_present,
+      EXISTS(SELECT 1 FROM order_stock_allocations a WHERE a.order_id=s.order_id AND a.attempt_id=s.attempt_id AND a.kind='original' AND a.receipt_id=s.id)
+        AND NOT EXISTS(SELECT 1 FROM late_stock_review_cases WHERE order_id=s.order_id)
+        AND NOT EXISTS(SELECT 1 FROM late_stock_allocations WHERE order_id=s.order_id)
+        AND NOT EXISTS(SELECT 1 FROM commerce_outbox WHERE aggregate_id=s.order_id AND kind IN ('order.stock_late_allocated.v1','order.stock_recovery_review.v1')) AS allocation_present
       FROM order_stock_settlements s WHERE s.order_id=$1"#,
     )
     .bind(order_id)
     .fetch_optional(&mut **tx)
     .await?;
-    let Some(row) = row else {
-        let orphan: bool = sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM commerce_outbox WHERE aggregate_id=$1 AND kind='order.stock_settled.v1')")
-            .bind(order_id).fetch_one(&mut **tx).await?;
-        if orphan {
-            return Err(SettlementError::InvalidStoredData);
-        }
-        return Ok(None);
-    };
+    let row = row.ok_or(SettlementError::InvalidStoredData)?;
     if !row.event_present
+        || !row.allocation_present
         || row.fence_key <= 0
         || !identifier(&row.attempt_id)
         || !identifier(&row.recognition_id)
@@ -167,3 +177,7 @@ fn decode_footprint(value: serde_json::Value) -> Result<Footprint, SettlementErr
 #[cfg(test)]
 #[path = "../../tests/support/order_stock_rows_unit.rs"]
 mod decoder_tests;
+
+#[cfg(test)]
+#[path = "../../tests/support/order_stock_absence_hook.rs"]
+pub(crate) mod absence_hook;
