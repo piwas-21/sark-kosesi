@@ -733,6 +733,61 @@ than truncating evidence; further recovery requires an explicit operator decisio
 Supervised processing, callbacks, separate financial transitions, late-paid stock
 recovery and provider acceptance remain required before operational use.
 
+### Private payment recognition
+
+The existing unique immutable attempt per order remains the financial source.
+A private recognition journal records separate gross-payment state without
+rewriting accepted checkout snapshots. The complete authenticated observation
+prefix and its closed identity resolution determine exactly three states:
+`needs_review` when more than one matched provider identity exists; `received`
+when exactly one identity has any paid evidence; otherwise `unconfirmed`.
+Unconfirmed does not prove absence or authorize a replacement charge. Received
+retains the original expected EUR amount as a gross historical fact, including
+after hold expiry or reordered open/failed observations. Later identity ambiguity
+requires review and preserves earlier paid history. No net balance, refund,
+invoice, stock, fulfilment or customer-facing authority follows.
+
+Each immutable recognition binds its actual order, unique attempt, original money,
+complete observation watermark, originally selected resolution receipt, derived
+state and nondecreasing server timestamp. There is one canonical recognition per
+`(order_id, through_observation)`, with watermark 0–1000. A separate current pointer
+advances atomically with the journal and its minimal order outbox event. Missing,
+malformed, noncontiguous or over-bound evidence fails closed. Readers revalidate
+the exact original resolution, authenticated prefix, provider ownership and event
+custody; storing another resolution for the same watermark does not invalidate
+canonical replay. Historical lookup and same-prefix replay retain their original
+receipt without fresh clock/identifier requirements or duplicate effects.
+The recognition event binds a SHA-256 digest of the canonical PostgreSQL JSONB
+object containing every journal field, as well as the order, attempt and recognition
+identifiers. This retains the originally selected resolution and headers across
+damaged imports; substituting another otherwise-valid resolution cannot silently
+rewrite the receipt. The event carries no buyer/address or provider payload.
+
+New recognition and current inspection explicitly establish READ COMMITTED before
+any transaction read. They acquire the original attempt FOR UPDATE in a separate
+statement, then inspect the complete current evidence and require a validated
+resolution at exactly that watermark. Observation append uses the same attempt
+lock, serializing evidence through commit. Native journal/pointer guards also
+reject other isolation levels and independently lock before querying current
+evidence. Their snapshot-sensitive functions are VOLATILE; do not combine the
+lock and evidence inspection in a CTE or STABLE wrapper. New writes sample a
+nondecreasing observed clock after proof/lock waits and again after actual event
+and pointer writes. Failure or cancellation rolls back the whole decision.
+
+A current pointer behind new observations is explicitly stale/unavailable; never
+return its old state as current or synthesize unconfirmed. A successful current
+inspection proves currency only within its locked transaction. A returned detached
+receipt cannot authorize later effects. Future caller-owned operations must retain
+READ COMMITTED and that same claim through their dependent transaction. Lock order
+is attempt, recognition/pointer, then event; raw conflicting lock order may abort
+under bounded lock/statement deadlines and must not reuse detached proof.
+
+Native constraints independently derive state and original money, bind the exact
+order/attempt/resolution/current prefix, preserve immutable history, prevent
+pointer rewind or detachment, and require complete event/pointer custody at commit.
+No route, worker command, scheduler, credential installation or provider I/O is
+added by recognition. Sandbox/provider and deployed acceptance remain separate.
+
 ### Supervised test-payment recovery
 
 The explicit local/test recovery command uses a separate authenticated GET-only

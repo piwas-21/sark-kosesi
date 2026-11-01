@@ -191,8 +191,14 @@ independent receipt processing. Unresolved older generations retain capacity;
 late paid facts stay visible after newer open results or review stops. A private
 authenticated API adapter accepts closed bounded classic forms and acknowledges
 durable intake only. An optional default-disabled Rust edge validates configured
-socket peers and forwards bounded forms to the private API. Complete actual proxy,
-resource-limit, no-bypass and TLS/provider acceptance before public activation,
+socket peers and forwards bounded forms to the private API. Private payment
+recognition now retains a canonical immutable gross-payment decision per complete
+evidence prefix and a separately validated current pointer. Unconfirmed and
+ambiguous evidence remains visible; sticky paid facts survive reordering and hold
+expiry. New observations make earlier current decisions explicitly stale. Journal,
+exact source digest and minimal order event commit atomically, without stock,
+refund or fulfilment authority. Complete actual proxy, resource-limit, no-bypass
+and TLS/provider acceptance before public activation,
 remaining operator dispositions, late-paid stock recovery
 and separate order/payment/fulfilment/refund/invoice transitions. A pure domain
 plan or matched synthetic response is not dispatch or payment authority.
