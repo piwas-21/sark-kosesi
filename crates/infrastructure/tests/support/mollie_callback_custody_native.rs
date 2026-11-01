@@ -1,15 +1,17 @@
 //! Concurrent claims, migration preservation and hostile native/import controls.
 use super::*;
+use sha2::{Digest, Sha256};
 
 #[sqlx::test(migrator = "MIGRATOR")]
-async fn a_bound_fetched_result_cannot_replay_a_different_well_formed_imported_fact(pool: PgPool) {
-    let (_, f) = captured(38245);
-    let clock = time();
+async fn a_coherently_changed_receipt_never_reconstructs_authenticated_authority_after_restart(
+    pool: PgPool,
+) {
+    let (clock, f) = prepared(&pool, true).await;
     let i = ids();
     let op = operation(&pool, clock.as_ref(), &i, "tr_REPLAY_INTENT").await;
     let server = Server::start(vec![
         profile(),
-        Reply::Json(200, response(f.snapshot(), "tr_REPLAY_INTENT", "paid")),
+        Reply::Json(200, response(f.snapshot(), "tr_REPLAY_INTENT", "open")),
     ]);
     let c = client(&server).await;
     let permit = start_lookup(&pool, clock.as_ref(), &op)
@@ -18,42 +20,104 @@ async fn a_bound_fetched_result_cannot_replay_a_different_well_formed_imported_f
     let fetched = c
         .fetch_lookup(permit)
         .await
-        .expect("authenticated original");
+        .expect("authenticated original OPEN");
     let first = record_lookup(&pool, clock.as_ref(), &i, &op.snapshot().id, &fetched)
         .await
         .expect("original receipt");
-    let mut tx = pool.begin().await.expect("isolated coherent import damage");
-    tx.execute("ALTER TABLE callback_lookup_receipts DISABLE TRIGGER USER")
-        .await
-        .expect("test-only immutable bypass");
-    tx.execute("UPDATE callback_lookup_receipts SET snapshot=jsonb_set(snapshot,'{payment,status}','\"open\"')").await.expect("different otherwise valid fact");
-    tx.execute("ALTER TABLE callback_lookup_receipts ENABLE TRIGGER USER")
-        .await
-        .expect("guard restored");
-    tx.commit().await.expect("import fixture");
-    assert_eq!(
-        record_lookup(&pool, clock.as_ref(), &i, &op.snapshot().id, &fetched)
+    assert!(matches!(first.snapshot.payment.status, PaymentStatus::Open));
+    let canonical: String =
+        sqlx::query_scalar("SELECT snapshot::text FROM callback_lookup_receipts")
+            .fetch_one(&pool)
             .await
-            .err(),
-        Some(PaymentStoreError::Conflict)
+            .expect("canonical persisted JSONB");
+    let independently_hashed = format!("{:x}", Sha256::digest(canonical.as_bytes()));
+    let recorded_hash: String =
+        sqlx::query_scalar("SELECT payload->>'snapshot_sha256' FROM callback_processing_events")
+            .fetch_one(&pool)
+            .await
+            .expect("independent immutable event binding");
+    assert_eq!(
+        recorded_hash, independently_hashed,
+        "SQL canonical SHA-256 agrees with a separate implementation"
     );
-    let mut tx = pool.begin().await.expect("exact fixture repair");
-    tx.execute("ALTER TABLE callback_lookup_receipts DISABLE TRIGGER USER")
+    for (path, value) in [
+        ("/payment/status", json!("paid")),
+        ("/payment/amount_minor", json!(38244)),
+        ("/credential_fingerprint", json!("b".repeat(64))),
+    ] {
+        let mut changed = serde_json::to_value(&first.snapshot).expect("exact original");
+        *changed.pointer_mut(path).expect("literal field") = value;
+        let mut tx = pool.begin().await.expect("isolated coherent import damage");
+        tx.execute("ALTER TABLE callback_lookup_receipts DISABLE TRIGGER USER")
+            .await
+            .expect("test-only immutable bypass");
+        sqlx::query("UPDATE callback_lookup_receipts SET snapshot=$1")
+            .bind(changed)
+            .execute(&mut *tx)
+            .await
+            .expect("different otherwise valid fact");
+        tx.execute("ALTER TABLE callback_lookup_receipts ENABLE TRIGGER USER")
+            .await
+            .expect("guard restored");
+        tx.commit().await.expect("import fixture");
+        assert_eq!(
+            read_lookup(&pool, &op.snapshot().id).await.err(),
+            Some(PaymentStoreError::InvalidStoredData),
+            "{path}"
+        );
+        assert_eq!(
+            process_lookup(&pool, clock.as_ref(), &i, &op.snapshot().id)
+                .await
+                .err(),
+            Some(PaymentStoreError::InvalidStoredData),
+            "{path}"
+        );
+        assert_eq!(
+            fetch_lookup(&pool, clock.as_ref(), &i, &op.snapshot().id, &c)
+                .await
+                .err(),
+            Some(MollieError::Custody(PaymentStoreError::InvalidStoredData)),
+            "{path}"
+        );
+        assert_eq!(
+            record_lookup(&pool, clock.as_ref(), &i, &op.snapshot().id, &fetched)
+                .await
+                .err(),
+            Some(PaymentStoreError::InvalidStoredData),
+            "{path}"
+        );
+        assert_eq!(counts(&pool).await, (1, 1, 1, 1, 0));
+        assert_eq!(
+            server.count(),
+            2,
+            "saved corruption cannot trigger a fallback GET"
+        );
+        let mut tx = pool.begin().await.expect("exact fixture repair");
+        tx.execute("ALTER TABLE callback_lookup_receipts DISABLE TRIGGER USER")
+            .await
+            .expect("test repair");
+        sqlx::query("UPDATE callback_lookup_receipts SET snapshot=$1")
+            .bind(serde_json::to_value(&first.snapshot).expect("exact source"))
+            .execute(&mut *tx)
+            .await
+            .expect("restore original OPEN fact");
+        tx.execute("ALTER TABLE callback_lookup_receipts ENABLE TRIGGER USER")
+            .await
+            .expect("guard restored");
+        tx.commit().await.expect("repaired fixture");
+        let restored = record_lookup(&pool, &BadPorts, &BadPorts, &op.snapshot().id, &fetched)
+            .await
+            .expect("paired healthy exact replay");
+        assert!(restored.replayed && restored.snapshot == first.snapshot);
+    }
+    let observed = process_lookup(&pool, clock.as_ref(), &i, &op.snapshot().id)
         .await
-        .expect("test repair");
-    sqlx::query("UPDATE callback_lookup_receipts SET snapshot=$1")
-        .bind(serde_json::to_value(&first.snapshot).expect("exact source"))
-        .execute(&mut *tx)
-        .await
-        .expect("restore original fact");
-    tx.execute("ALTER TABLE callback_lookup_receipts ENABLE TRIGGER USER")
-        .await
-        .expect("guard restored");
-    tx.commit().await.expect("repaired fixture");
-    let restored = record_lookup(&pool, &BadPorts, &BadPorts, &op.snapshot().id, &fetched)
-        .await
-        .expect("paired healthy exact replay");
-    assert!(restored.replayed && restored.snapshot == first.snapshot);
+        .expect("only original independently bound OPEN fact is processable");
+    assert!(matches!(
+        observed.snapshot.intent.payment.status,
+        PaymentStatus::Open
+    ));
+    assert_eq!(counts(&pool).await, (1, 1, 1, 1, 1));
 }
 
 #[sqlx::test(migrator = "MIGRATOR")]
@@ -292,7 +356,14 @@ async fn native_receipt_and_event_guards_bind_every_projection_before_complete_p
         );
         tx.rollback().await.expect("isolated rollback");
     }
-    for field in ["operation", "receipt", "created", "kind", "payload"] {
+    for field in [
+        "operation",
+        "receipt",
+        "created",
+        "kind",
+        "payload",
+        "digest",
+    ] {
         let mut tx = pool.begin().await.expect("valid pending receipt");
         sqlx::query("INSERT INTO callback_lookup_receipts(id,operation_id,recorded_at,snapshot) VALUES($1,$2,1500,$3)").bind(&s.id).bind(&s.operation.id).bind(&good).execute(&mut *tx).await.expect("valid minimal source");
         let operation_id = if field == "operation" {
@@ -311,10 +382,21 @@ async fn native_receipt_and_event_guards_bind_every_projection_before_complete_p
         } else {
             "payment.callback_lookup_recorded.v1"
         };
-        let payload = if field == "payload" {
-            json!({"schema_version":2,"operation_id":s.operation.id,"receipt_id":s.id})
+        let canonical: String =
+            sqlx::query_scalar("SELECT snapshot::text FROM callback_lookup_receipts WHERE id=$1")
+                .bind(&s.id)
+                .fetch_one(&mut *tx)
+                .await
+                .expect("native persisted snapshot");
+        let snapshot_sha256 = if field == "digest" {
+            "f".repeat(64)
         } else {
-            json!({"schema_version":1,"operation_id":s.operation.id,"receipt_id":s.id})
+            format!("{:x}", Sha256::digest(canonical.as_bytes()))
+        };
+        let payload = if field == "payload" {
+            json!({"schema_version":2,"operation_id":s.operation.id,"receipt_id":s.id,"snapshot_sha256":snapshot_sha256})
+        } else {
+            json!({"schema_version":1,"operation_id":s.operation.id,"receipt_id":s.id,"snapshot_sha256":snapshot_sha256})
         };
         let error=sqlx::query("INSERT INTO callback_processing_events(id,operation_id,receipt_id,created_at,kind,payload) VALUES($1,$2,$3,$4,$5,$6)").bind("b".repeat(32)).bind(operation_id).bind(receipt_id).bind(created).bind(kind).bind(payload).execute(&mut *tx).await.expect_err("false native processing event rejected");
         assert_eq!(

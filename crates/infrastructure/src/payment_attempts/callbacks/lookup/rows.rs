@@ -57,9 +57,10 @@ pub(super) async fn receipt(
 ) -> Result<Option<LookupReceipt>, PaymentStoreError> {
     let row = sqlx::query_as::<_, ReceiptRow>(r#"SELECT left(r.id,33) AS id,left(r.operation_id,33) AS operation_id,r.recorded_at,
         CASE WHEN octet_length(r.snapshot::text)<=8192 THEN r.snapshot END AS snapshot,
-        EXISTS(SELECT 1 FROM callback_processing_events e WHERE e.operation_id=r.operation_id
+        CASE WHEN octet_length(r.snapshot::text)<=8192 THEN EXISTS(SELECT 1 FROM callback_processing_events e WHERE e.operation_id=r.operation_id
             AND e.receipt_id=r.id AND e.created_at=r.recorded_at AND e.kind='payment.callback_lookup_recorded.v1'
-            AND e.payload=jsonb_build_object('schema_version',1,'operation_id',r.operation_id,'receipt_id',r.id)) AS event_present
+            AND e.payload=jsonb_build_object('schema_version',1,'operation_id',r.operation_id,'receipt_id',r.id,
+              'snapshot_sha256',encode(sha256(convert_to(r.snapshot::text,'UTF8')),'hex'))) ELSE false END AS event_present
         FROM callback_lookup_receipts r WHERE r.operation_id=$1"#).bind(&operation.id).fetch_optional(&mut **tx).await?;
     let receipt = row.map(|row| row.decode(operation)).transpose()?;
     if let Some(receipt) = &receipt {
@@ -109,9 +110,10 @@ pub(super) async fn insert(
     let snapshot = serde_json::to_value(s).map_err(|_| PaymentStoreError::InvalidStoredData)?;
     sqlx::query("INSERT INTO callback_lookup_receipts(id,operation_id,recorded_at,snapshot) VALUES($1,$2,$3,$4)")
         .bind(&s.id).bind(&s.operation.id).bind(s.recorded_at).bind(snapshot).execute(&mut **tx).await?;
-    sqlx::query("INSERT INTO callback_processing_events(id,operation_id,receipt_id,created_at,kind,payload) VALUES($1,$2,$3,$4,'payment.callback_lookup_recorded.v1',$5)")
-        .bind(event_id).bind(&s.operation.id).bind(&s.id).bind(s.recorded_at)
-        .bind(serde_json::json!({"schema_version":1,"operation_id":s.operation.id,"receipt_id":s.id})).execute(&mut **tx).await?;
+    // Hash the exact persisted canonical JSONB text in PostgreSQL. The immutable
+    // event independently binds every minimal fetched field before reconstruction.
+    sqlx::query("INSERT INTO callback_processing_events(id,operation_id,receipt_id,created_at,kind,payload) SELECT $1,r.operation_id,r.id,r.recorded_at,'payment.callback_lookup_recorded.v1',jsonb_build_object('schema_version',1,'operation_id',r.operation_id,'receipt_id',r.id,'snapshot_sha256',encode(sha256(convert_to(r.snapshot::text,'UTF8')),'hex')) FROM callback_lookup_receipts r WHERE r.id=$2 AND r.operation_id=$3")
+        .bind(event_id).bind(&s.id).bind(&s.operation.id).execute(&mut **tx).await?;
     Ok(())
 }
 

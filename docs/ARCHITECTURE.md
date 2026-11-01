@@ -829,7 +829,10 @@ event. This aggregate is independent of orders: `commerce_outbox.aggregate_id`
 requires a real checkout order, and an authenticated unknown attempt must remain
 visible without inventing one. The callback event records custody for later
 processing; it is not an order/payment transition. Immutable database bindings
-and deferred completeness checks protect the receipt/event pair. Trusted reads
+and deferred completeness checks protect the receipt/event pair. The event binds
+the SHA-256 digest of the complete canonical PostgreSQL JSONB snapshot; a valid
+status, amount or fingerprint changed in a damaged import cannot retain the
+original event's custody. Trusted reads
 bound stored data and revalidate closed snapshots, headers and the exact event
 before reconstructing the private fetched capability. Saved JSON alone cannot
 enter the observation recorder.

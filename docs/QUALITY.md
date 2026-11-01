@@ -501,9 +501,14 @@ stock expiry preserve the existing observation/identity semantics. Native
 negative/healthy controls cover immutable operations, starts, receipts and events,
 exact minimal projection bindings, deferred completeness and schema 28 upgrades.
 Damaged bounded snapshots, headers, starts and events fail stored reads and
-processing without falling back to another GET. The new domain, transport and
-nested custody readers retain the 95% critical line/branch gates. Compiled fault
-controls must expose missing operation binding, event custody, dispatch chronology
-and final clock checks, then pass again after exact source restoration. This is source custody
-evidence; bounded public ingress/supervision and actual provider/deployment/payment
+processing without falling back to another GET.
+Immutable event digests must reject an otherwise-valid `open` to `paid` snapshot
+alteration, as well as changed amounts or credential fingerprints, on restarted
+reads and processing; exact restoration supplies the paired healthy control.
+The new domain, transport and nested custody readers retain the 95% critical
+line/branch gates. Compiled fault
+controls must expose missing operation binding, event custody, snapshot digest,
+dispatch chronology and final clock checks, then pass again after exact source
+restoration. This is source custody evidence; bounded public ingress/supervision
+and actual provider/deployment/payment
 acceptance remain separate gates.

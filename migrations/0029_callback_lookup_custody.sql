@@ -75,7 +75,7 @@ CREATE FUNCTION guard_callback_processing_event() RETURNS trigger LANGUAGE plpgs
 BEGIN
  IF TG_OP<>'INSERT' THEN RAISE EXCEPTION 'Callback processing events are immutable' USING ERRCODE='23514'; END IF;
  IF NOT EXISTS(SELECT 1 FROM callback_lookup_receipts r WHERE r.id=NEW.receipt_id AND r.operation_id=NEW.operation_id
-  AND r.recorded_at=NEW.created_at AND NEW.payload=jsonb_build_object('schema_version',1,'operation_id',r.operation_id,'receipt_id',r.id))
+  AND r.recorded_at=NEW.created_at AND NEW.payload=jsonb_build_object('schema_version',1,'operation_id',r.operation_id,'receipt_id',r.id,'snapshot_sha256',encode(sha256(convert_to(r.snapshot::text,'UTF8')),'hex')))
  THEN RAISE EXCEPTION 'Callback event requires exact receipt custody' USING ERRCODE='23514'; END IF;
  RETURN NEW;
 END;
@@ -85,7 +85,7 @@ CREATE FUNCTION require_complete_callback_lookup() RETURNS trigger LANGUAGE plpg
 BEGIN
  IF NOT EXISTS(SELECT 1 FROM callback_processing_events e WHERE e.receipt_id=NEW.id AND e.operation_id=NEW.operation_id
   AND e.created_at=NEW.recorded_at AND e.kind='payment.callback_lookup_recorded.v1'
-  AND e.payload=jsonb_build_object('schema_version',1,'operation_id',NEW.operation_id,'receipt_id',NEW.id))
+  AND e.payload=jsonb_build_object('schema_version',1,'operation_id',NEW.operation_id,'receipt_id',NEW.id,'snapshot_sha256',encode(sha256(convert_to(NEW.snapshot::text,'UTF8')),'hex')))
  THEN RAISE EXCEPTION 'Callback receipt requires durable processing custody' USING ERRCODE='23514'; END IF;
  RETURN NULL;
 END;
