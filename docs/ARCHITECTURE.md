@@ -788,6 +788,105 @@ pointer rewind or detachment, and require complete event/pointer custody at comm
 No route, worker command, scheduler, credential installation or provider I/O is
 added by recognition. Sandbox/provider and deployed acceptance remain separate.
 
+### Atomic settlement of original reservations
+
+The private stock settlement consumes only the complete still-active original
+reservation of an order whose unique attempt has current `received` recognition.
+It creates one immutable successful settlement per actual order, binding the exact
+attempt, original recognition receipt, original stock group, server-selected
+`payment-settlement` actor, observed time and bounded source/component footprint.
+It neither dispatches goods nor authorizes refunds, restocking or another charge.
+
+The caller establishes READ COMMITTED before reads and retains one transaction
+through commit. A crate-private recognition verifier claims the original attempt
+in a separate statement and validates the current pointer, complete observation
+prefix, original resolution, ownership and event/digest custody. Its returned data
+is not detached authority. Unconfirmed, ambiguous, missing or stale recognition
+cannot authorize new consumption. Canonical historical lookup precedes fresh
+financial eligibility: replay validates its originally bound recognition and exact
+immutable effects before requiring new clock or identifiers;
+later payment ambiguity cannot repeat consumption or automatically restock goods.
+
+Lock order is attempt/current financial proof, original sealed group SHARE, every
+original hold UPDATE in database hold-ID order, then all union component balances
+UPDATE in the same database component-code order as existing stock operations.
+Expiry takes a hold before components and never the group. Do not acquire ordinary
+active-reservation SHARE claims before these stronger preclaims, or introduce a
+different collation for locks. Existing active-source validation and per-hold
+transition helpers may run after all strong claims; effects follow the captured
+member order. All physical components are claimed before the first consumption.
+
+The manifest must exactly match the immutable order's group, owner/window, selected
+SKUs, sealed BOM revisions and quantities. Bound reads to 20 members, 64 component
+lines per BOM and 1,280 hold/component pairs or union components, with an explicit
+one-MiB footprint limit. Cover and foam are kinds, not one-code-per-kind limits.
+Multiple cover codes remain distinct physical components. Reject incomplete,
+duplicate, excessive, changed or malformed source instead of truncating it.
+
+The settlement receipt is inserted before effects. Its native VOLATILE INSERT
+guard independently requires RC, fresh current received proof and the same ordered
+claims. It validates complete original membership/BOM/reservation-movement custody,
+all-active state, absence of any terminal movement for those active holds, and real
+physical backing. It captures actual component before balances and expected after
+balances from exact aggregate demand. The footprint also freezes each original
+member's component quantities; an aggregate alone cannot preserve allocation.
+This prevents adopting previously consumed groups or manufacturing completion from
+valid-looking ledger rows that never changed physical balances.
+
+Consume each member and append its existing canonical hold/component movements,
+then the minimal real-order settlement event, in that same transaction. Native
+deferred completeness proves every original hold consumed, exactly the required
+reserve/consume movement set, original reserve bindings, fixed settlement actor/
+reason/quantities/deltas on consumption and consistent
+per-component intermediate after balances in captured member order. Actual final
+balances must equal captured before minus aggregate demand for on-hand/reserved,
+with quarantine unchanged. The immutable event binds all settlement fields and
+the complete footprint with a canonical digest. Missing, extra, detached or
+partially written effects abort the whole transaction. No caller-selected effect
+key can create another settlement for the order.
+
+Final validation also requires the bound recognition to remain current and
+received. A caller can flush deferred constraints early, so successful final proof
+acquires a transaction-level completion seal using a dedicated advisory-lock
+namespace and a database-generated unique positive fence key. The key is immutable
+and digest-bound; exhaustion fails closed. Existing locks never substitute for the
+full proof. Native BEFORE guards reject subsequent related financial or stock
+writes in that transaction, checking both old and new identifiers and movements
+touching either original holds or affected components. Lookup starts with this
+backend's granted exclusive two-integer advisory locks in the current database,
+then indexed fence keys and bounded footprints; never scan all historical receipts.
+Transaction seals cannot be manually unlocked and disappear at transaction end.
+An early flush therefore prohibits later related writes, including overlapping
+stock settlements in that transaction. Savepoint rollback must restore pending
+proof if it releases a child seal; savepoint release retains the seal. Unrelated
+writes and legitimate warehouse/financial changes in later transactions remain
+permitted. A manually acquired matching advisory lock can only inhibit writes,
+never authorize or skip proof.
+
+After lock/proof waits and after all actual receipt/movement/event writes, sample
+one nondecreasing observed server clock. A successful consumption remains strictly
+before the original expiry and no earlier than its recognition. Expiry, rewind,
+entropy failure or cancellation rolls back every effect. PostgreSQL ledger audit
+timestamps are not inputs to the domain's explicit expiry clock.
+
+Validate original source and complete reserve/terminal custody before classifying
+an intact expired, released or mixed terminal reservation as `RecoveryRequired`.
+An active hold with terminal movements, missing effects or invalid physical
+balances is stored-data corruption, not an ordinary recovery outcome. A recovery
+return changes no stock and does not consume canonical settlement identity. It
+preserves durable gross paid recognition for separately designed late reallocation;
+never reactivate expired holds or create fictional stock pools. A typed return is
+not a durable operational review queue: activated processing must add that custody.
+
+Historical readers revalidate the receipt's original order/group/recognition,
+frozen footprint, exact immutable movements and digest-bound event. They must not
+compare current warehouse balances with the old after footprint: later legitimate
+stock operations change them. An order settlement event without its canonical
+receipt is corruption. Receipt replay returns history without new effects.
+No route, worker command, scheduler, provider call, runtime credential or deployment
+is added by this primitive. Late-paid reallocation, durable review dispositions
+and actual fulfilment remain separate requirements before operational acceptance.
+
 ### Supervised test-payment recovery
 
 The explicit local/test recovery command uses a separate authenticated GET-only

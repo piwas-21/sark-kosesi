@@ -611,3 +611,24 @@ tests cannot change its tracing callsite cache; the parent verifies selection an
 success, and the child retains native coverage instrumentation. This also
 keeps macro-span instrumentation from obscuring evaluated logging inputs; native
 coverage counters remain unmodified.
+
+Original reservation settlement requires independent literal balance/movement
+oracles, covers-only and distinct shared-component cases, and the full 20 × 64
+source bound. Real isolated PostgreSQL tests exercise concurrent replay, competing
+expiry in both winner orders, observation append, opposite member ordering, actual
+outbox waits, cancellation, clock expiry/rewind and rollback after partial work.
+Native negative/healthy pairs distinguish shaped ledger rows from actual physical
+changes, current unconfirmed from received recognition, and complete original
+custody from corruption. Migration from schema 31 preserves the existing paid
+order and reservation without implicit consumption. Historical reads survive
+legitimate later warehouse/financial changes without granting another effect.
+
+Early constraint-flush tests must prove the transaction completion seal blocks
+later affected physical and financial writes, survives savepoint release/session
+unlock, and is removed with rollback that restores pending proof. Unrelated
+same-transaction work remains possible; a manually acquired matching advisory
+lock cannot skip native completeness. Oversized stored footprints fail before
+digest evaluation, with a paired healthy restoration. Domain/adapter settlement
+modules retain positive native 95% line/branch coverage and compiled fault
+controls at these proof boundaries. These source tests establish neither runtime
+stock consumption nor late-payment reallocation, shipment or provider acceptance.

@@ -30,19 +30,32 @@ No expiry worker, admin authority, merchant data or test fixtures are seeded.
 
 1. Use accepted `develop` source whose complete tree matches the independently
    reviewed feature and all nine current-head gates. Keep `productionEnabled=false`.
+   Before upgrading an existing database, prove migration/startup compatibility
+   and the recovery path described under [Rollback](#rollback).
 2. Resolve the staging hostname to the intended server and verify the existing
    proxy/network before creating any resources. Do not restart or reconfigure
    existing applications. Set the hostname and exact accepted commit in a private
    environment file; generate independent passwords/tokens and leave ingress false.
 3. Build immutable local image tags from that exact source, sequentially. Rust
-   compilation uses one job and the web build has a bounded heap. Retain build
-   results and image IDs; do not pull an unreviewed mutable application image.
+   job and Node heap settings alone do not bound a shared host. Verify the actual
+   driver's kernel memory/CPU/swap/process limits, including a `RUN` descendant
+   under the capped parent cgroup, and measure host memory/disk reserve. Recheck
+   limits after builder restarts. Use the explicit local daemon, an owned builder
+   and private Docker configuration; preserve
+   other applications and the default builder. Retain build results and image IDs.
+   Export each archive, stop that builder, then import sequentially with reserve
+   monitoring: daemon image import is outside the builder's cap. The examples
+   assume those builder/resource checks have passed.
 
 ```sh
-docker build --file deploy/staging/Dockerfile --target api --build-arg SOURCE_REVISION=REVISION --tag sark-kosesi-api:REVISION .
-docker build --file deploy/staging/Dockerfile --target web --build-arg SOURCE_REVISION=REVISION --tag sark-kosesi-web:REVISION .
-docker compose --env-file PRIVATE_ENV --file deploy/staging/compose.yml config --quiet
-docker compose --env-file PRIVATE_ENV --file deploy/staging/compose.yml up --detach --wait
+docker --config PRIVATE_DOCKER_CONFIG --host unix:///var/run/docker.sock buildx build --builder OWNED_BUILDER --file deploy/staging/Dockerfile --target api --build-arg SOURCE_REVISION=REVISION --tag sark-kosesi-api:REVISION --output type=docker,dest=PRIVATE_API_ARCHIVE .
+docker --config PRIVATE_DOCKER_CONFIG --host unix:///var/run/docker.sock buildx stop OWNED_BUILDER
+docker --config PRIVATE_DOCKER_CONFIG --host unix:///var/run/docker.sock load --input PRIVATE_API_ARCHIVE
+docker --config PRIVATE_DOCKER_CONFIG --host unix:///var/run/docker.sock buildx build --builder OWNED_BUILDER --file deploy/staging/Dockerfile --target web --build-arg SOURCE_REVISION=REVISION --tag sark-kosesi-web:REVISION --output type=docker,dest=PRIVATE_WEB_ARCHIVE .
+docker --config PRIVATE_DOCKER_CONFIG --host unix:///var/run/docker.sock buildx stop OWNED_BUILDER
+docker --config PRIVATE_DOCKER_CONFIG --host unix:///var/run/docker.sock load --input PRIVATE_WEB_ARCHIVE
+docker --config PRIVATE_DOCKER_CONFIG --host unix:///var/run/docker.sock compose --project-name OWNED_PROJECT --env-file PRIVATE_ENV --file deploy/staging/compose.yml config --quiet
+docker --config PRIVATE_DOCKER_CONFIG --host unix:///var/run/docker.sock compose --project-name OWNED_PROJECT --env-file PRIVATE_ENV --file deploy/staging/compose.yml up --detach --wait
 ```
 
 4. With ingress disabled, verify both images/processes and the dedicated database.
@@ -81,12 +94,15 @@ The separate `callback-edge.compose.yml` overlay uses JSON-compatible Compose
 syntax so the source policy check needs no additional parser dependency. Include
 both files and explicitly select the `callback-edge` profile only after the edge
 source is accepted through independent review and all nine current-head checks.
-Build the third image from that same accepted tree:
+Build the third image from that same accepted tree with the builder/resource and
+archive-import checks above:
 
 ```sh
 python3 scripts/check_callback_edge_deploy.py
-docker build --file deploy/staging/Dockerfile --target callback-edge --build-arg SOURCE_REVISION=REVISION --tag sark-kosesi-callback-edge:REVISION .
-docker compose --env-file PRIVATE_ENV --file deploy/staging/compose.yml --file deploy/staging/callback-edge.compose.yml --profile callback-edge config --quiet
+docker --config PRIVATE_DOCKER_CONFIG --host unix:///var/run/docker.sock buildx build --builder OWNED_BUILDER --file deploy/staging/Dockerfile --target callback-edge --build-arg SOURCE_REVISION=REVISION --tag sark-kosesi-callback-edge:REVISION --output type=docker,dest=PRIVATE_EDGE_ARCHIVE .
+docker --config PRIVATE_DOCKER_CONFIG --host unix:///var/run/docker.sock buildx stop OWNED_BUILDER
+docker --config PRIVATE_DOCKER_CONFIG --host unix:///var/run/docker.sock load --input PRIVATE_EDGE_ARCHIVE
+docker --config PRIVATE_DOCKER_CONFIG --host unix:///var/run/docker.sock compose --project-name OWNED_PROJECT --env-file PRIVATE_ENV --file deploy/staging/compose.yml --file deploy/staging/callback-edge.compose.yml --profile callback-edge config --quiet
 ```
 
 Keep `STAGING_CALLBACK_INGRESS_ENABLED=false`. The overlay requires an explicitly
@@ -104,7 +120,7 @@ With those prerequisites prepared, private startup uses the same two files and
 profile:
 
 ```sh
-docker compose --env-file PRIVATE_ENV --file deploy/staging/compose.yml --file deploy/staging/callback-edge.compose.yml --profile callback-edge up --detach --wait
+docker --config PRIVATE_DOCKER_CONFIG --host unix:///var/run/docker.sock compose --project-name OWNED_PROJECT --env-file PRIVATE_ENV --file deploy/staging/compose.yml --file deploy/staging/callback-edge.compose.yml --profile callback-edge up --detach --wait
 ```
 
 The edge container owns its Traefik labels. When it is absent or its independent
@@ -153,10 +169,35 @@ capacity.
 Disable `STAGING_CALLBACK_INGRESS_ENABLED` first if the optional callback edge is
 unsafe, and disable `STAGING_INGRESS_ENABLED` when stopping all preview ingress.
 Recreate only this project's affected services with the same overlay/profile
-selection; do not change another application's router. Restore the
-previous reviewed image tags/revision and recreate only this Compose project's
-web/API services; do not reset financial data or run reverse migrations. Keep the
-database volume and private environment. `docker compose down` stops only this
-project; never add `--volumes` during routine rollback. Keep the accepted source,
-image IDs and redacted probe result. An empty first deployment can be stopped
-without touching existing applications or their proxy routes.
+selection; do not change another application's router. Before a schema upgrade,
+prove actual startup against stored migration versions/checksums and each image's
+embedded manifest. SQLx can reject newer recorded migrations absent from an older
+image, even when the old read queries remain compatible. Restore previous images
+against that database only after this proof; never delete migration history,
+reverse migrations or reset data to make rollback work.
+
+For a quiescent non-selling preview, preserve the old database, volume and
+containers and restore a consistent private backup into a new owned Compose
+project/database. Before starting its database, check exact rendered volume and
+network names, ownership labels, loopback port and fixed Traefik router/service
+name collisions. Keep candidate ingress disabled; verify the actual isolated
+backend/volume identity before restoring. Compare restored per-table counts and
+content hashes with the same consistent snapshot; record archive hashes and
+migration checksums. Apply forward migrations only in the clone.
+Verify accepted image identities, private health/admin/privacy guards and disabled
+features before cutover.
+
+Assert the old router's web/API containers are stopped before enabling the
+candidate router. Recreate candidate web/API together because the API shares the
+web network namespace; then verify proper TLS, served revision and access mode.
+Rollback stops candidate router services first and restarts the preserved old
+containers against their unchanged database. Retain candidate data and evidence.
+If any business writes occur after the snapshot, require reviewed catch-up and
+reconciliation before switching either way; do not blindly copy or discard them.
+This snapshot procedure does not replace production's separate compatible
+migration/coexistence/recovery plan.
+
+Keep database volumes and private environments. `docker compose down` stops only
+the explicitly selected project; never add `--volumes` during routine rollback.
+Keep accepted source, image IDs and redacted probe results. An empty first
+deployment can be stopped without touching other applications or proxy routes.

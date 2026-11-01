@@ -196,9 +196,12 @@ recognition now retains a canonical immutable gross-payment decision per complet
 evidence prefix and a separately validated current pointer. Unconfirmed and
 ambiguous evidence remains visible; sticky paid facts survive reordering and hold
 expiry. New observations make earlier current decisions explicitly stale. Journal,
-exact source digest and minimal order event commit atomically, without stock,
-refund or fulfilment authority. Complete actual proxy, resource-limit, no-bypass
-and TLS/provider acceptance before public activation,
-remaining operator dispositions, late-paid stock recovery
-and separate order/payment/fulfilment/refund/invoice transitions. A pure domain
+exact source digest and minimal order event commit atomically. Private original
+reservation settlement now consumes a still-intact paid order's complete shared
+component allocation once, with a native exact physical proof, immutable receipt
+and atomic order event. Historical replay preserves original custody; expired or
+released reservations require separate recovery. Complete late-paid atomic
+reallocation, actual proxy/resource-limit/no-bypass and TLS/provider acceptance
+before public activation, remaining operator dispositions and separate
+order/fulfilment/refund/invoice transitions. A pure domain
 plan or matched synthetic response is not dispatch or payment authority.

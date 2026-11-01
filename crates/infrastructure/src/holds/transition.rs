@@ -97,3 +97,30 @@ pub(super) async fn transition_locked(
         replayed: false,
     })
 }
+
+/// Settlement already owns every original hold and all union balance UPDATE claims.
+pub(crate) async fn consume_claimed(
+    tx: &mut Transaction<'_, Postgres>,
+    id: &str,
+    owner: &str,
+    at: i64,
+) -> Result<(), HoldWriteError> {
+    let stored = sqlx::query_as::<_, StoredHold>("SELECT * FROM stock_holds WHERE id=$1")
+        .bind(id)
+        .fetch_one(&mut **tx)
+        .await?;
+    let receipt = transition_locked(
+        tx,
+        &stored,
+        &HoldCommand::Consume {
+            owner_id: owner,
+            actor_id: commerce_domain::order_stock::ACTOR,
+        },
+        at,
+    )
+    .await?;
+    if receipt.replayed {
+        return Err(HoldWriteError::InvalidRequest);
+    }
+    Ok(())
+}

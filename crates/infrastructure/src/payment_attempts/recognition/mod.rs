@@ -119,3 +119,45 @@ fn validate(attempt: &str) -> Result<(), PaymentStoreError> {
     }
     Ok(())
 }
+
+/// Caller has established RC before reads; this retains the original attempt claim.
+pub(crate) async fn current_in_transaction(
+    tx: &mut Transaction<'_, Postgres>,
+    attempt: &str,
+) -> Result<(FrozenAttempt, Option<Recognition>), PaymentStoreError> {
+    let (frozen, started) = proof::context(tx, attempt, true).await?;
+    let watermark = proof::watermark(tx, &frozen, started).await?;
+    let recognition = rows::pointer(tx, &frozen, started).await?;
+    if recognition
+        .as_ref()
+        .is_some_and(|r| r.through_observation != watermark)
+    {
+        return Err(PaymentStoreError::Unavailable);
+    }
+    Ok((frozen, recognition))
+}
+/// Original receipt only; later observations and warehouse state are not consulted.
+pub(crate) async fn historical_in_transaction(
+    tx: &mut Transaction<'_, Postgres>,
+    attempt: &str,
+    recognition_id: &str,
+) -> Result<(FrozenAttempt, Recognition), PaymentStoreError> {
+    let (frozen, started) = proof::context(tx, attempt, true).await?;
+    let through: Option<i64> = sqlx::query_scalar(
+        "SELECT through_observation FROM payment_recognitions WHERE id=$1 AND attempt_id=$2",
+    )
+    .bind(recognition_id)
+    .bind(attempt)
+    .fetch_optional(&mut **tx)
+    .await?;
+    let recognition = rows::load(
+        tx,
+        &frozen,
+        started,
+        Some(through.ok_or(PaymentStoreError::InvalidStoredData)?),
+    )
+    .await?
+    .filter(|r| r.id == recognition_id)
+    .ok_or(PaymentStoreError::InvalidStoredData)?;
+    Ok((frozen, recognition))
+}
