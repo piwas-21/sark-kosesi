@@ -311,8 +311,10 @@ supervision or live provider activation follows from deploying the empty preview
    The explicit local/test supervisor retains five-generation budgets, leases,
    backoff and persistent redacted exceptions. Separate immutable quarantine
    retains damaged existing dispositions without blocking healthy successors or
-   releasing admission capacity. Complete bounded form parsing and
-   trusted-edge controls before public ingress; no key or scheduler is installed.
+   releasing admission capacity. A private Bearer-protected API adapter now accepts
+   closed, bounded classic forms and acknowledges only durable admission. Complete
+   trusted-edge controls and an exact staging POST exception before public ingress;
+   no key or scheduler is installed.
    Uncertain outcomes
    reconcile under the original identity and never mint a replacement charge.
    Fetch and verify webhook identifiers against order/amount/currency/profile/mode.

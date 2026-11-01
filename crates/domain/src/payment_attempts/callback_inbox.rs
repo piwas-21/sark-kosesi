@@ -11,6 +11,16 @@ pub const PROFILE_CAPACITY: i64 = 50;
 pub const GLOBAL_PER_MINUTE: i64 = 120;
 pub const PROFILE_PER_MINUTE: i64 = 30;
 
+/// Configured profile identity uses the same opaque bounds as durable intake.
+pub fn valid_profile_id(value: &str) -> bool {
+    opaque(value, "pfl_")
+}
+
+/// Provider IDs are opaque; the transport must not impose a narrower suffix.
+pub fn valid_provider_id(value: &str) -> bool {
+    opaque(value, "tr_")
+}
+
 #[derive(Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct IntakeSnapshot {
@@ -24,8 +34,8 @@ impl IntakeSnapshot {
     pub fn validate(&self) -> Result<(), PaymentError> {
         if self.schema_version != 1
             || !hex(&self.id, 32)
-            || !opaque(&self.profile_id, "pfl_")
-            || !opaque(&self.provider_id, "tr_")
+            || !valid_profile_id(&self.profile_id)
+            || !valid_provider_id(&self.provider_id)
             || !(0..=MAX_QUOTE_UNIX_SECONDS).contains(&self.received_at)
         {
             return Err(PaymentError::InvalidSnapshot);

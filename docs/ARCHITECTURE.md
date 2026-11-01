@@ -901,6 +901,36 @@ parsing, trusted-edge abuse controls and an exact staging callback exception
 remain separate work before public notification acceptance. Production remains
 disabled; no financial, stock or fulfilment transition follows from this inbox.
 
+### Private classic callback form intake
+
+The private receiver uses `POST /api/callbacks/mollie`, behind the existing
+preview Bearer gate and loopback-only API. It is absent unless a validated
+`CALLBACK_INTAKE_PROFILE_ID` is configured; production startup remains rejected.
+The profile comes only from server configuration. Intake needs no provider key,
+performs no provider request and grants no payment, stock or fulfilment authority.
+
+Local closed-input policy is a maximum 1024 raw body bytes, one Content-Type
+header of at most 128 bytes, `application/x-www-form-urlencoded` with at most one
+optional UTF-8 charset parameter (case-insensitive, optionally double-quoted),
+and no Content-Encoding. After strict percent/UTF-8 decoding there must be exactly
+one field named `id`; duplicate decoded names, unknown fields and empty segments
+fail. The value must satisfy the existing provider-ID policy, including its
+256-byte bound. These limits and rejection rules are local policy, rather than
+additional provider guarantees. Raw bodies and identifiers never enter logs.
+
+Return the same empty `200 OK` for every committed intake, including unknown IDs.
+Commit the intake, source event, job and active custody before acknowledging.
+Malformed or unsupported input has no database effect; storage, quota and timeout
+failures cannot produce a success acknowledgement. Request cancellation may leave
+no transaction or an already durable intake; a later notification remains
+admissible because classic callbacks have no stable delivery identifier.
+The worker fetches and verifies payment facts independently.
+
+This follows the [classic webhook contract](https://docs.mollie.com/reference/webhooks)
+and [payment-ID contract](https://docs.mollie.com/reference/get-payment).
+Next-gen JSON/signature events are a separate protocol. This private adapter does
+not add a public staging POST exception, trusted-edge policy or deployment.
+
 ## Sessions, uploads and rendering
 
 Rust owns secure sessions and server-side authorization. Use a maintained password/session implementation with Argon2id where passwords are stored; verified email, rotating sessions, hashed reset tokens, admin MFA and separate guest-order access tokens. Browser credentials are HttpOnly/Secure/SameSite cookies; never store bearer tokens in browser local storage. CSRF and origin checks protect cookie-authenticated mutations. No duplicate identity system in Next.js.

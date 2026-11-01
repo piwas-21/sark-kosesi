@@ -52,6 +52,41 @@ fn config_is_validated_and_never_enables_production() {
         ("API_BIND".into(), "127.0.0.1:4567".into()),
     ]);
     assert!(Config::parse(&valid).is_ok());
+    assert!(
+        Config::parse(&valid)
+            .expect("callbacks disabled by default")
+            .callback_profile
+            .is_none()
+    );
+    let mut callback = valid.clone();
+    callback.insert(
+        "CALLBACK_INTAKE_PROFILE_ID".into(),
+        "pfl_SYNTHETIC_TestOnly".into(),
+    );
+    assert!(
+        Config::parse(&callback)
+            .expect("explicit callback profile")
+            .callback_profile
+            .is_some()
+    );
+    callback.insert("GUEST_ORIGIN".into(), "https://private.example.test".into());
+    let both =
+        Config::parse(&callback).expect("independent optional guest and callback configuration");
+    assert!(both.callback_profile.is_some() && both.guest_origin.is_some());
+    for profile in [
+        "",
+        "pfl_",
+        "tr_wrong",
+        "pfl_invalid\n",
+        "pfl_invalid ",
+        &format!("pfl_{}", "x".repeat(253)),
+    ] {
+        callback.insert("CALLBACK_INTAKE_PROFILE_ID".into(), profile.into());
+        assert_eq!(
+            Config::parse(&callback).err(),
+            Some("Invalid CALLBACK_INTAKE_PROFILE_ID")
+        );
+    }
     let mut guest = valid.clone();
     guest.insert("GUEST_ORIGIN".into(), "https://private.example.test".into());
     assert!(

@@ -11,6 +11,53 @@ fn intake() -> IntakeSnapshot {
         received_at: 1500,
     }
 }
+#[test]
+fn configured_profile_and_provider_helpers_preserve_the_existing_opaque_byte_policy() {
+    for value in [
+        "pfl_a",
+        "pfl_internal space",
+        "pfl_é&=+",
+        &format!("pfl_{}", "x".repeat(252)),
+        &format!("pfl_{}", "é".repeat(126)),
+    ] {
+        assert!(valid_profile_id(value), "{value}");
+    }
+    for value in [
+        "tr_a",
+        "tr_internal space",
+        "tr_é&=+",
+        &format!("tr_{}", "x".repeat(253)),
+        &format!("tr_{}x", "é".repeat(126)),
+    ] {
+        assert!(valid_provider_id(value), "{value}");
+    }
+    for value in [
+        "",
+        "pfl_",
+        "tr_a",
+        "pfl_a ",
+        " pfl_a",
+        "pfl_a\n",
+        "pfl_a\u{0085}",
+        "pfl_a\u{00a0}",
+        &format!("pfl_{}x", "x".repeat(252)),
+    ] {
+        assert!(!valid_profile_id(value), "{value:?}");
+    }
+    for value in [
+        "",
+        "tr_",
+        "pfl_a",
+        "tr_a ",
+        " tr_a",
+        "tr_a\n",
+        "tr_a\u{0085}",
+        "tr_a\u{00a0}",
+        &format!("tr_{}x", "x".repeat(253)),
+    ] {
+        assert!(!valid_provider_id(value), "{value:?}");
+    }
+}
 fn job() -> CallbackJob {
     CallbackJob {
         intake_id: "1".repeat(32),

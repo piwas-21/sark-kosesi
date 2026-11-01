@@ -53,6 +53,8 @@ def validate(document, root, branches=True):
             "crates/*/src/guest_baskets/*.rs",
             "crates/*/src/guest_access.rs",
             "crates/api/src/guest/*.rs",
+            "crates/api/src/callbacks/*.rs",
+            "crates/api/src/config.rs",
             "crates/api/src/routing.rs",
             "crates/*/src/stock.rs",
             "crates/*/src/holds.rs",

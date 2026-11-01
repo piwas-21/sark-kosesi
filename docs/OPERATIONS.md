@@ -115,3 +115,17 @@ immutable quarantine record as well. The original result and payment facts remai
 intact; exact proof repair alone does not clear quarantine or release capacity.
 Public form ingress, edge controls, actual provider acceptance and deployment
 remain separate gates.
+
+The optional private HTTP intake uses `CALLBACK_INTAKE_PROFILE_ID` in the API
+process. Its absence leaves `/api/callbacks/mollie` unregistered. A configured
+profile enables only the existing Bearer-protected, loopback API route; it does
+not change the staging browser gate. No provider key is needed in this process.
+Use the same dedicated Test profile in the separately configured worker.
+
+The route acknowledges an admitted classic form with an empty `200 OK` after
+durable commit. This acknowledges custody, rather than a verified payment status.
+Malformed input has no admission effect; quota, storage and request-timeout
+failures remain non-successful. If an acknowledgement is lost after commit, a
+repeated notification may create another bounded intake. The worker's receipt
+and observation idempotency rules still govern payment facts. Public edge policy,
+TLS/provider acceptance and deployment are separate work.

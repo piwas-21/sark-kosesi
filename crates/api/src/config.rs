@@ -5,6 +5,7 @@ pub struct Config {
     pub preview_token: String,
     pub bind: SocketAddr,
     pub guest_origin: Option<crate::guest::GuestOrigin>,
+    pub callback_profile: Option<crate::callbacks::CallbackProfile>,
 }
 
 impl Config {
@@ -47,11 +48,16 @@ impl Config {
             .get("GUEST_ORIGIN")
             .map(|value| crate::guest::GuestOrigin::parse(value))
             .transpose()?;
+        let callback_profile = values
+            .get("CALLBACK_INTAKE_PROFILE_ID")
+            .map(|value| crate::callbacks::CallbackProfile::parse(value))
+            .transpose()?;
         Ok(Self {
             database_url,
             preview_token,
             bind,
             guest_origin,
+            callback_profile,
         })
     }
 }
