@@ -998,21 +998,20 @@ Review admission proves that snapshot under current source/financial claims; its
 commit proof requires immutable case/event custody. It deliberately has no
 completion seal or guarantee of current scarcity after later same-transaction
 changes. Successful original/late allocations retain the full final-current proof
-and seal above. A case and successful allocation cannot be newly admitted together; native guards
-serialize both on the original attempt. A recorded stop blocks automatic retry,
-including after restock, process restart or a new caller key. Separate future
-stock-recovery authority, fresh persisted staff/MFA/confirmation and exact review
-revision are required for any disposition; finance reconciliation authority alone
-never implies warehouse authority. This slice installs no such retry or grant.
+and seal above. Native guards serialize cases and allocations on the original
+attempt. A recorded stop blocks automatic retry after restock, process restart or
+a new caller key. Only the explicitly confirmed scarcity command below can link
+a later allocation to an existing case. Finance reconciliation uses a separate
+capability. Installation seeds no stock recovery grants.
 
 A private staff inbox requires the dedicated persisted `stock.review` grant, an
 enabled session and recent MFA, rechecked after reading while authority rows remain
 locked. No grants, login or HTTP route are installed. Each live C-collated keyset
 page scans at most four candidate case IDs and validates each complete historical
 custody proof before applying an optional closed reason filter. Invalid custody
-fails the entire page; the result contains only case/order IDs, assessment time
-and reason. A cursor advances across scanned candidates even on an empty filtered
-page. This is not a snapshot: inserts at or before the cursor require refreshing
+fails the entire page. The minimal summary exposes the case/order IDs, assessment
+time, closed reason, exact case digest and validated retry status. A cursor advances
+across scanned candidates even on an empty filtered page. This is not a snapshot: inserts at or before the cursor require refreshing
 from the beginning. The read grants no retry, disposition or financial/stock effect.
 
 Historical review validates captured immutable identities and exact per-pair
@@ -1027,7 +1026,58 @@ reads. Do not require captured states to equal current states, use a global stoc
 sequence as commit chronology, or compare current balances with old snapshots.
 Captured terminal references must remain exact. Successful history validates all
 original/fresh effects and claim custody without requiring current recognition or
-warehouse balances. Every replay returns history without new clock, IDs or effects.
+warehouse balances. Automatic historical replay uses the existing receipt without
+new time, IDs or effects.
+
+### Staff-authorized scarcity retry
+
+One private command can retry an exact historical `component_scarcity` case.
+Require the separate unseeded `stock.recover` capability, recent MFA and explicit
+confirmation of the case ID, immutable case digest, expected next generation
+and a bounded operator reason. The staff session supplies the actor. The
+32-character lower-case hexadecimal effect key binds the complete intent.
+Allow at most three contiguous committed generations per case. A fresh
+confirmation is required for each generation. Replayed exact intent can return
+the validated historical result under current staff authority. Conflicting
+reuse of an effect key or a stale generation cannot start another attempt.
+
+Claim staff authority first and keep it locked through commit. Claim the
+common payment attempt before inspecting current state or deriving a new
+generation. Revalidate the original review source and event, current received
+recognition for the same order and attempt, the original frozen order and
+complete hold custody, and the absence of any existing canonical allocation.
+An originally released or consumed case stays stopped. If an eligible
+scarcity case's current holds have since been released or consumed, deny a
+retry. Use the same stock equations, claim order, fresh 60-second window and
+completion seal as the automatic path. Check the observed clock and staff
+authority again after writes and waits. A transient failure, cancellation or
+state change rolls back the decision and all attempted effects.
+
+A committed decision has either one exact successful allocation or a fresh
+still-scarce assessment. Before a successful retry makes stock effects, insert
+the immutable decision in the same savepoint as its exact late allocation,
+using a pre-generated receipt ID. The common allocation claim remains unique.
+Keep the original review case and its event. Native guards allow review and
+allocation to coexist only through the exact authorized successful decision.
+Deferred validation requires the reciprocal decision, allocation, canonical
+claim and digest-bound events. Preserve native final physical and current
+financial proof even if constraints flush early. At admission the decision
+binds an authenticated staff account through Rust; native row custody and its
+actor foreign key do not authenticate an arbitrary database writer.
+
+If the initial fresh attempt finds scarcity, roll back the savepoint and
+reclaim the source and stock before recording the current locked assessment.
+Bind its bounded footprint and refreshed financial proof to one still-scarce
+decision and event. Retain the original case and leave stock intact. If the
+fresh snapshot is no longer scarce, return a state-change error and require
+another confirmed attempt. The assessment is historical after commit.
+
+Keep historical reads bounded and fail closed on any detached decision, event,
+case or allocation. An allocated case can appear as resolved only after its
+reciprocal evidence validates. A still-scarce or never-retried case remains
+open. No scheduler or automatic retry derives authority from the case or its
+event. The private command has no provider, refund, invoice, shipment, or
+public-route effects.
 
 ### Supervised test-payment recovery
 

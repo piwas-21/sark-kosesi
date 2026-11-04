@@ -130,24 +130,36 @@ pub(super) async fn recover(
         },
     };
     receipt.validate()?;
-    rows::insert_allocation(&mut savepoint, &receipt).await?;
-    for member in &original {
-        if member.state == OriginalState::Active {
-            crate::holds::expire_claimed(&mut savepoint, &member.member.hold_id, allocated).await?;
-        }
-    }
-    reserve_claimed(&mut savepoint, &clock, &fresh_plan).await?;
-    for member in &receipt.footprint.fresh {
-        crate::holds::consume_claimed(&mut savepoint, &member.hold_id, order, allocated).await?;
-    }
-    rows::allocation_event(&mut savepoint, &receipt.id, &fresh(ids)?).await?;
-    let final_at = now(&clock)?;
-    check_time(final_at, allocated, allocated)?;
-    check_window(final_at, expires)?;
+    allocate(&mut savepoint, &clock, ids, &receipt, &fresh_plan).await?;
     savepoint.commit().await?;
     Ok(Outcome::Late(receipt))
 }
-async fn prepare(
+/// Commit the exact frozen allocation using the shared physical hold primitives.
+pub(super) async fn allocate(
+    tx: &mut Transaction<'_, Postgres>,
+    clock: &dyn Clock,
+    ids: &dyn Identifiers,
+    receipt: &LateAllocation,
+    plan: &FreshPreparation,
+) -> Result<(), LateStockError> {
+    rows::insert_allocation(tx, receipt).await?;
+    for member in &receipt.footprint.original {
+        if member.state == OriginalState::Active {
+            crate::holds::expire_claimed(tx, &member.member.hold_id, receipt.allocated_at).await?;
+        }
+    }
+    reserve_claimed(tx, clock, plan).await?;
+    for member in &receipt.footprint.fresh {
+        crate::holds::consume_claimed(tx, &member.hold_id, &receipt.order_id, receipt.allocated_at)
+            .await?;
+    }
+    rows::allocation_event(tx, &receipt.id, &fresh(ids)?).await?;
+    let final_at = now(clock)?;
+    check_time(final_at, receipt.allocated_at, receipt.allocated_at)?;
+    check_window(final_at, receipt.expires_at)?;
+    Ok(())
+}
+pub(super) async fn prepare(
     tx: &mut Transaction<'_, Postgres>,
     ids: &dyn Identifiers,
     context: &Context,

@@ -11,6 +11,7 @@ pub enum Capability {
     PromotionReview,
     PaymentReconcile,
     StockReview,
+    StockRecover,
 }
 impl Capability {
     pub fn code(self) -> &'static str {
@@ -24,6 +25,7 @@ impl Capability {
             Self::PromotionReview => "promotion.review",
             Self::PaymentReconcile => "payment.reconcile",
             Self::StockReview => "stock.review",
+            Self::StockRecover => "stock.recover",
         }
     }
 }

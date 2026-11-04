@@ -5,9 +5,12 @@ pub use commerce_domain::late_stock::*;
 use commerce_domain::{checkout_orders::OrderSnapshot, order_stock::identifier};
 use sqlx::{Acquire, PgPool, Postgres, Transaction};
 mod decode;
+pub mod disposition;
 mod engine;
 mod history;
 pub mod inbox;
+mod index;
+mod retry_engine;
 mod rows;
 mod source;
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -166,6 +169,9 @@ async fn current(
     let received = received
         .filter(|receipt| receipt.state == recognition::State::Received)
         .ok_or(LateStockError::Unavailable)?;
+    if frozen.snapshot().binding.order_id != order {
+        return Err(LateStockError::InvalidStoredData);
+    }
     let order = crate::checkout_orders::snapshot_in_transaction(
         tx,
         &frozen.snapshot().binding.basket_id,

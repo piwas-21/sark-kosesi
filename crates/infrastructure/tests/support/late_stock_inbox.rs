@@ -39,10 +39,20 @@ async fn stock_review_inbox_authority_bounded_paging_filter_and_damaged_custody(
     let page = read(None, None, 1)
         .await
         .expect("authorized complete custody");
+    let case_digest: String = sqlx::query_scalar(
+        "SELECT late_stock_review_digest(c) FROM late_stock_review_cases c WHERE id=$1",
+    )
+    .bind(&case.id)
+    .fetch_one(&pool)
+    .await
+    .expect("exact review digest");
     assert_eq!(
         page.cases,
         vec![inbox::Summary {
             case_id: case.id.clone(),
+            case_digest,
+            status: inbox::CaseStatus::Open,
+            next_generation: None,
             order_id: case.order_id.clone(),
             assessed_at: 2000,
             reason: ReviewReason::ReleaseIntentUnresolved
