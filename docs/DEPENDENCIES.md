@@ -9,7 +9,7 @@ contracts remain separate and pending.
 | ------------------------------------------------------------------------------ | ------------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | Axum, Tokio, serde, SQLx, tracing, utoipa, tower, subtle, getrandom, sha2      | MIT / Apache-2.0                     | Retain notices; Rust licence/source allowlist enforced by cargo-deny                                                                                                             |
 | Next.js 16.4.3, React 19.3.1, Tailwind 4.3.3, openapi-fetch 0.17.0, TS tooling | MIT / Apache-2.0                     | Self-hosted SSR; no Vercel service required                                                                                                                                      |
-| TypeScript 5.9.3                                                               | Apache-2.0                           | Kept within the declared openapi-typescript 7.13.0 peer range; no forced peer resolution                                                                                         |
+| TypeScript 5.9.3, @hey-api/openapi-ts 0.97.3                                   | Apache-2.0 / MIT                     | Exact development versions; generator output and the owned openapi-fetch adapter are checked against Rust OpenAPI                                                                |
 | Bricolage Grotesque, DM Sans                                                   | OFL-1.1                              | Existing project font sources subset to WOFF; licences retained in public/fonts; no reserved font names declared in supplied notices                                             |
 | PostgreSQL                                                                     | PostgreSQL licence                   | Disposable native cluster or digest-pinned official image; no shared database                                                                                                    |
 | cargo-llvm-cov, cargo-audit, cargo-deny                                        | MIT / Apache-2.0                     | Checksum-pinned unmodified CLI tools                                                                                                                                             |
@@ -79,9 +79,9 @@ configuration changes; the existing MIT/Apache-2.0 review applies.
 ## Development minimatch advisory
 
 `GHSA-g3hv-75wg-m249` is a moderate resource-exhaustion advisory affecting the
-locked `minimatch` 10.2.6 and 5.1.9 copies in ESLint, typescript-eslint and the
-OpenAPI generator's Redocly tooling. The current audit reports 13 propagated
-moderate package findings from this advisory; `npm audit --omit=dev` reports zero.
+locked `minimatch` 10.2.6 copy in ESLint and typescript-eslint. The replacement
+OpenAPI generator removes Redocly and its 5.1.9 copy. This does not resolve the
+remaining lint closure or reinstate the expired exception.
 The advisory's fix is 11.0.1, outside the installed parents' declared major ranges.
 Current compatible parent metadata still selects those older major ranges.
 See the [reviewed advisory](https://github.com/advisories/GHSA-g3hv-75wg-m249).
@@ -102,6 +102,18 @@ fixed. The backport does not change its code or suppress the audit finding; no
 forced-major override or audit waiver is approved. Patterns and contract inputs
 remain repository-controlled, with CI timeouts in effect. Production release
 still requires a fresh dependency/image review and disposition of findings.
+
+The contract generator uses `@hey-api/openapi-ts` 0.97.3 (MIT) for schema and
+parameter types. The upstream parser 1.4.2 exact-pins vulnerable `js-yaml` 4.1.1;
+a narrow development-only npm override selects the same-major security release
+4.3.2 (MIT). This departs from that parser's exact pin and requires review and
+contract regeneration controls when either tool changes. The schema-only output
+represents OpenAPI binary strings as `Blob | File`; callers must select an
+appropriate fetch response parser. An owned fail-closed adapter retains paths,
+methods, request and response media types and body presence for `openapi-fetch`.
+Unsupported operation shapes fail generation. Exact Rust OpenAPI, model and adapter
+bytes are checked separately; typed contract controls exercise their consumers.
+No vulnerability exception is added by this change.
 
 The payment-request application now directly uses the already locked `serde`,
 `serde_json` 1.0.154, `sha2` 0.10.9 and `url` 2.5.8 packages. Their existing
