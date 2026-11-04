@@ -695,3 +695,15 @@ Confirm the order's stock journal and all provider-side state stay outside
 this transaction. Local tests provide source evidence for reservation custody.
 The order refund allocator and reservation modules use the existing 95% native
 line and branch thresholds for critical financial code.
+
+### Private password credential custody
+
+Use isolated PostgreSQL with two verified accounts and actual Argon2id
+verification. Exercise registration-token misuse, wrong account, wrong or
+expired proof, replacement, simultaneous redemption and stale sibling proofs.
+Prove one exact replacement survives races and a suppressed write or late
+clock check rolls back both effects. Native negative and positive controls
+exercise detached consumption, cross-account proof and revision jumps.
+Measure proof freshness after an actual lock wait. Check that only the current
+hash remains and that the stored challenge verifier differs from the bearer
+and registration verifier. These checks establish private credential custody.

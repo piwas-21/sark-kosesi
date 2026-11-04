@@ -18,6 +18,13 @@ contracts remain separate and pending.
 | webpki-roots                                                                   | CDLA-Permissive-2.0                  | Trust-root data; preserve the agreement with redistributed data                                                                                                                  |
 | sharp/libvips optional native packages                                         | Apache-2.0 / LGPL-3.0-or-later / MIT | Unmodified dynamically loaded libraries. Preserve licence/source/relinking material when distributing runtime images; do not statically combine or modify without renewed review |
 
+The private password credential module uses RustCrypto Argon2 0.6.0 and
+zeroize 1.9.1 under MIT or Apache-2.0, and unicode-normalization 0.1.26 under
+(MIT or Apache-2.0) and Unicode-3.0. Argon2 runs locally with explicit parameters
+and an operating-system random salt. The latter two versions were already
+locked. The normal Rust advisory and licence gates cover all three and their
+transitive dependencies.
+
 Transitive metadata also includes MIT-0, BSD-2/3-Clause, ISC, 0BSD, CC0-1.0,
 CC-BY-4.0, BlueOak-1.0.0, Python-2.0, Unicode-3.0, Zlib and OpenSSL.
 Retain attribution/notices and any source obligations when packaging. MPL applies
