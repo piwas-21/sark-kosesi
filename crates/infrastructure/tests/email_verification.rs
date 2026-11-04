@@ -63,6 +63,24 @@ fn exact_mailbox_policy_has_explicit_positive_and_negative_cases() {
         );
     }
     assert!(normalize_email(&format!("{}@example.com", "a".repeat(65))).is_none());
+
+    let maximal = format!(
+        "{}@{}.{}.{}",
+        "a".repeat(64),
+        "b".repeat(63),
+        "c".repeat(63),
+        "d".repeat(61)
+    );
+    assert_eq!(maximal.len(), 254);
+    assert_eq!(normalize_email(&maximal).as_deref(), Some(maximal.as_str()));
+    assert!(normalize_email(&format!("{maximal}d")).is_none());
+    assert!(normalize_email(&format!("a@{}.com", "a".repeat(64))).is_none());
+    for invalid in ["@example.com", "a@", "a@example-.com", "a@exam_ple.com"] {
+        assert!(
+            normalize_email(invalid).is_none(),
+            "invalid identity: {invalid}"
+        );
+    }
 }
 
 #[sqlx::test(migrator = "MIGRATOR")]
@@ -291,6 +309,92 @@ async fn clock_failure_or_reversal_never_creates_or_consumes_a_challenge(pool: P
             .await
             .expect("row");
     assert!(consumed.is_none());
+}
+
+#[sqlx::test(migrator = "MIGRATOR")]
+async fn clock_boundaries_fail_closed_and_leave_valid_proof_usable(pool: PgPool) {
+    for at in [i64::MAX as u64, u64::MAX] {
+        assert!(matches!(
+            issue(&pool, "a@example.com", &clock(at)).await,
+            Err(VerificationError::Unavailable)
+        ));
+    }
+    let expired_before_commit = SequenceClock {
+        values: std::sync::Mutex::new([1000, 1900].into()),
+    };
+    assert!(matches!(
+        issue(&pool, "a@example.com", &expired_before_commit).await,
+        Err(VerificationError::Unavailable)
+    ));
+    let count: i64 = sqlx::query_scalar("SELECT count(*) FROM email_verification_challenges")
+        .fetch_one(&pool)
+        .await
+        .expect("count");
+    assert_eq!(count, 0);
+
+    let token = issue(&pool, "a@example.com", &clock(1000))
+        .await
+        .expect("issue");
+    assert_eq!(
+        consume(&pool, "a@example.com", &token, &clock(999)).await,
+        Err(VerificationError::Denied)
+    );
+    let reversed_after_update = SequenceClock {
+        values: std::sync::Mutex::new([1000, 1001, 1000].into()),
+    };
+    assert_eq!(
+        consume(&pool, "a@example.com", &token, &reversed_after_update).await,
+        Err(VerificationError::Unavailable)
+    );
+    assert_eq!(
+        consume(&pool, "a@example.com", &token, &clock(1001)).await,
+        Ok(())
+    );
+}
+
+#[sqlx::test(migrator = "MIGRATOR")]
+async fn failed_commit_grants_no_bearer_and_preserves_unspent_proof(pool: PgPool) {
+    let time = clock(1000);
+    let token = issue(&pool, "owner@example.com", &time)
+        .await
+        .expect("healthy issue");
+    sqlx::query(
+        "CREATE FUNCTION reject_verification_commit() RETURNS trigger LANGUAGE plpgsql AS $$
+         BEGIN RAISE EXCEPTION 'isolated commit fault'; END $$",
+    )
+    .execute(&pool)
+    .await
+    .expect("fault function");
+    sqlx::query(
+        "CREATE CONSTRAINT TRIGGER reject_verification_commit
+         AFTER INSERT OR UPDATE ON email_verification_challenges
+         DEFERRABLE INITIALLY DEFERRED FOR EACH ROW EXECUTE FUNCTION reject_verification_commit()",
+    )
+    .execute(&pool)
+    .await
+    .expect("deferred commit fault");
+    assert!(matches!(
+        issue(&pool, "other@example.com", &time).await,
+        Err(VerificationError::Unavailable)
+    ));
+    assert_eq!(
+        consume(&pool, "owner@example.com", &token, &time).await,
+        Err(VerificationError::Unavailable)
+    );
+    let counts: (i64, i64) =
+        sqlx::query_as("SELECT count(*), count(consumed_at) FROM email_verification_challenges")
+            .fetch_one(&pool)
+            .await
+            .expect("rollback counts");
+    assert_eq!(counts, (1, 0));
+    sqlx::query("DROP TRIGGER reject_verification_commit ON email_verification_challenges")
+        .execute(&pool)
+        .await
+        .expect("remove fault");
+    assert_eq!(
+        consume(&pool, "owner@example.com", &token, &time).await,
+        Ok(())
+    );
 }
 
 #[sqlx::test(migrator = "MIGRATOR")]

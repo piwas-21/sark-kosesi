@@ -131,6 +131,73 @@ async fn expiry_after_account_insert_and_suppressed_writes_roll_back_both_effect
 }
 
 #[sqlx::test(migrator = "MIGRATOR")]
+async fn altered_or_failed_account_insert_rolls_back_and_preserves_proof(pool: PgPool) {
+    let time = clock();
+    let token = issue(&pool, "a@example.com", &time).await.expect("issue");
+    let other_token = issue(&pool, "other@example.com", &time)
+        .await
+        .expect("second valid proof");
+    // PostgreSQL fires same-kind triggers alphabetically, so this runs after the
+    // production guard and simulates an altered RETURNING row.
+    sqlx::query("CREATE FUNCTION alter_account_insert() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN NEW.verified_at := NEW.verified_at + 1; RETURN NEW; END $$")
+        .execute(&pool).await.expect("fault function");
+    sqlx::query("CREATE TRIGGER z_alter_account_insert BEFORE INSERT ON verified_customer_accounts FOR EACH ROW EXECUTE FUNCTION alter_account_insert()")
+        .execute(&pool).await.expect("alter insert");
+    assert!(matches!(
+        establish(&pool, "a@example.com", &token, &time).await,
+        Err(VerificationError::Unavailable)
+    ));
+    sqlx::query("DROP TRIGGER z_alter_account_insert ON verified_customer_accounts")
+        .execute(&pool)
+        .await
+        .expect("remove alteration");
+    for function in [
+        "CREATE OR REPLACE FUNCTION alter_account_insert() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN NEW.email_identity := 'altered@example.com'; RETURN NEW; END $$",
+        "CREATE OR REPLACE FUNCTION alter_account_insert() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN SELECT verifier INTO NEW.verification_verifier FROM email_verification_challenges WHERE email_identity='other@example.com'; RETURN NEW; END $$",
+    ] {
+        sqlx::query(function)
+            .execute(&pool)
+            .await
+            .expect("alter function");
+        sqlx::query("CREATE TRIGGER z_alter_account_insert BEFORE INSERT ON verified_customer_accounts FOR EACH ROW EXECUTE FUNCTION alter_account_insert()")
+            .execute(&pool).await.expect("alter insert");
+        assert!(matches!(
+            establish(&pool, "a@example.com", &token, &time).await,
+            Err(VerificationError::Unavailable)
+        ));
+        sqlx::query("DROP TRIGGER z_alter_account_insert ON verified_customer_accounts")
+            .execute(&pool)
+            .await
+            .expect("remove alteration");
+    }
+    sqlx::query("CREATE FUNCTION fail_account_insert() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN RAISE EXCEPTION 'injected failure'; END $$")
+        .execute(&pool).await.expect("failure function");
+    sqlx::query("CREATE TRIGGER z_fail_account_insert BEFORE INSERT ON verified_customer_accounts FOR EACH ROW EXECUTE FUNCTION fail_account_insert()")
+        .execute(&pool).await.expect("fail insert");
+    assert!(matches!(
+        establish(&pool, "a@example.com", &token, &time).await,
+        Err(VerificationError::Unavailable)
+    ));
+    let counts: (i64, i64) = sqlx::query_as("SELECT (SELECT count(*) FROM verified_customer_accounts), (SELECT count(*) FROM email_verification_challenges WHERE consumed_at IS NOT NULL)")
+        .fetch_one(&pool).await.expect("counts");
+    assert_eq!(counts, (0, 0));
+    sqlx::query("DROP TRIGGER z_fail_account_insert ON verified_customer_accounts")
+        .execute(&pool)
+        .await
+        .expect("remove failure");
+    assert!(
+        establish(&pool, "a@example.com", &token, &time)
+            .await
+            .is_ok()
+    );
+    assert!(
+        establish(&pool, "other@example.com", &other_token, &time)
+            .await
+            .is_ok()
+    );
+}
+
+#[sqlx::test(migrator = "MIGRATOR")]
 async fn concurrent_same_proof_and_suppressed_consumption_cannot_create_detached_accounts(
     pool: PgPool,
 ) {

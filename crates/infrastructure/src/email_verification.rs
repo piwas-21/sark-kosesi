@@ -54,20 +54,7 @@ pub async fn issue(
     let mut bytes = [0_u8; 32];
     getrandom::fill(&mut bytes).map_err(|_| VerificationError::Unavailable)?;
     let token = VerificationToken(bytes);
-    let mut tx = pool
-        .begin()
-        .await
-        .map_err(|_| VerificationError::Unavailable)?;
-    sqlx::query("SET TRANSACTION ISOLATION LEVEL READ COMMITTED")
-        .execute(&mut *tx)
-        .await
-        .map_err(|_| VerificationError::Unavailable)?;
-    sqlx::query(
-        "SELECT set_config('lock_timeout','1s',true), set_config('statement_timeout','2s',true)",
-    )
-    .execute(&mut *tx)
-    .await
-    .map_err(|_| VerificationError::Unavailable)?;
+    let mut tx = begin(pool).await?;
     let created = now(clock)?;
     let expires = created
         .checked_add(LIFETIME)
