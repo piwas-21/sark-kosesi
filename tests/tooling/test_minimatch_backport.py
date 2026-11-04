@@ -197,18 +197,19 @@ class MinimatchBackport(unittest.TestCase):
         lock_path = self.project / "package-lock.json"
         lock = json.loads(lock_path.read_text())
         lock["packages"]["node_modules/extra"] = {"dependencies": {"minimatch": "^10.2.4"}}
-        lock_path.write_text(json.dumps(lock))
-        result = subprocess.run(
-            [
-                self.node,
-                str(self.project / "scripts/check_minimatch_consumers.mjs"),
-                str(self.project),
-            ],
-            capture_output=True,
-            text=True,
-        )
-        self.assertNotEqual(result.returncode, 0)
-        self.assertIn("Unexpected minimatch 10 consumer graph", result.stderr)
+        check_graph = [
+            self.node,
+            str(self.project / "scripts/check_minimatch_consumers.mjs"),
+            str(self.project),
+        ]
+        for missing_consumer in (None, "node_modules/eslint"):
+            with self.subTest(missing_consumer=missing_consumer):
+                if missing_consumer:
+                    del lock["packages"][missing_consumer]["dependencies"]["minimatch"]
+                lock_path.write_text(json.dumps(lock))
+                result = subprocess.run(check_graph, capture_output=True, text=True)
+                self.assertNotEqual(result.returncode, 0)
+                self.assertIn("Unexpected minimatch 10 consumer graph", result.stderr)
 
     def test_locked_nested_minimatch_is_rejected(self):
         self.prepare_consumers()

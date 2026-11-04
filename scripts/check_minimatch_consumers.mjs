@@ -28,9 +28,11 @@ if (
 }
 const consumers = Object.entries(lock.packages)
   .filter(([, info]) => info.dependencies?.minimatch)
-  .map(([name]) => name)
-  .sort();
-if (JSON.stringify(consumers) !== JSON.stringify(expectedConsumers)) {
+  .map(([name]) => name);
+if (
+  consumers.length !== expectedConsumers.length ||
+  !expectedConsumers.every((consumer) => consumers.includes(consumer))
+) {
   throw new Error(
     "Unexpected minimatch 10 consumer graph; review backport coverage",
   );
@@ -38,7 +40,7 @@ if (JSON.stringify(consumers) !== JSON.stringify(expectedConsumers)) {
 const expected = realpathSync(
   join(project, "node_modules/minimatch/dist/commonjs/index.js"),
 );
-for (const consumer of consumers) {
+for (const consumer of expectedConsumers) {
   const metadata = join(project, consumer, "package.json");
   const pkg = JSON.parse(readFileSync(metadata, "utf8"));
   if (
