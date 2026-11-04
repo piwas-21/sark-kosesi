@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { assessRoomFit, measurementNanometres } from "../src/lib/room-fit";
+import { assessRoomFit, measurementNanometres } from "../src/index";
 
 const room = { width: "500", depth: "400" };
 const item = { x: "20", y: "20", width: "100", depth: "60", rotation: 0 };
@@ -17,6 +17,8 @@ describe("measurement conversion", () => {
     expect(measurementNanometres("1.25", "cm")).toBe(12_500_000);
     expect(measurementNanometres("1.001", "in")).toBe(25_425_400);
     expect(measurementNanometres("100000", "mm")).toBe(100_000_000_000);
+    expect(measurementNanometres("3937.007", "in")).toBe(99_999_977_800);
+    expect(measurementNanometres("999999.999", "in")).toBeNull();
   });
   it.each(["", "-1", "+1", "1e2", "01", ".5", "1.", "1.0000", "100000.001"])(
     "rejects invalid or out-of-range measurement %s",

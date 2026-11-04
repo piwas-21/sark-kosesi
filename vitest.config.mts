@@ -5,13 +5,18 @@ export default defineConfig({
     include: [
       "apps/web/tests/**/*.test.tsx",
       "packages/design/tests/**/*.test.tsx",
+      "packages/room-fit/tests/**/*.test.tsx",
     ],
     setupFiles: ["./tests/application/setup.ts"],
     coverage: {
       provider: "v8",
       reporter: ["text", "lcov"],
       reportsDirectory: "coverage/typescript",
-      include: ["apps/web/src/**/*.{ts,tsx}", "packages/design/src/**/*.tsx"],
+      include: [
+        "apps/web/src/**/*.{ts,tsx}",
+        "packages/design/src/**/*.tsx",
+        "packages/room-fit/src/**/*.ts",
+      ],
       exclude: [],
       thresholds: { lines: 85, branches: 80, functions: 85, statements: 85 },
     },

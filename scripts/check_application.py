@@ -52,7 +52,7 @@ def main():
         if not identifiers or not identifiers <= ALLOWED:
             raise ValueError(f"Unreviewed npm licence: {name}: {licence}")
         inventory.append({"package": name, "version": package["version"], "licence": licence})
-    for parent in ("apps/web/src", "packages/design/src", "crates"):
+    for parent in ("apps/web/src", "packages/design/src", "packages/room-fit/src", "crates"):
         for path in (ROOT / parent).rglob("*"):
             if (
                 not path.is_file()

@@ -352,6 +352,17 @@ No public guest checkout route, provider calls, payment acceptance or production
 activation follows from these private primitives. Preserve
 all nine CI gates and the approved courtyard visual source/baselines.
 
+## P5 room-fit foundation
+
+The standalone browser-safe room-fit package implements the measured rectangle
+contract in [product](PRODUCT.md#room-fit-calculation-boundary). Exact integer
+units, bounded input, quarter-turns, conservative tolerance, overlap and
+user-supplied door clearance yield invalid, uncertain, conflict or fit results.
+Independently calculated fixtures cover boundaries. No page, persistence, photo
+upload or catalogue facts are connected. Next, build an accessible keyboard/form
+planner using reviewed measurements and clearly communicate approximation limits.
+Original content, reviewed locales and visual/device acceptance remain P5 work.
+
 ## Next session prompt
 
 > Read AGENTS.md and ROADMAP.md, then docs/IMPLEMENTATION.md and its linked requirements. Continue P3 in small independently reviewed PRs to develop. Complete the country/territory readiness matrix and promotions, then durable guest checkout, atomic basket holds and immutable orders. Keep missing P0 facts and unready destinations blocked. Mollie work is sandbox-only; preserve stable payment attempts, reconcile unknown outcomes, fetch/verify notifications and recover late paid stock explicitly. Retain exact money/refund allocations, all real CI/review/merge gates, the approved courtyard design and disabled production. Report source/CI, provider, deployment and fulfilment evidence separately.

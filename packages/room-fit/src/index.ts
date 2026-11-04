@@ -17,7 +17,7 @@ export type FitResult =
   | { status: "conflict"; issues: FitIssue[] }
   | { status: "fit" };
 
-const NANOMETRES_PER_UNIT = { mm: 1_000_000, cm: 10_000_000, in: 25_400_000 };
+const NANOMETRES_PER_THOUSANDTH = { mm: 1_000, cm: 10_000, in: 25_400 };
 const MAX_LENGTH = 100_000_000_000; // 100 m in nanometres
 const MAX_ITEMS = 50;
 const MAX_DOORS = 20;
@@ -36,7 +36,7 @@ export function measurementNanometres(
   }
   const [whole, fraction = ""] = value.split(".");
   const thousandths = Number(whole) * 1000 + Number(fraction.padEnd(3, "0"));
-  const result = (thousandths * NANOMETRES_PER_UNIT[unit]) / 1000;
+  const result = thousandths * NANOMETRES_PER_THOUSANDTH[unit];
   return Number.isSafeInteger(result) && result <= MAX_LENGTH ? result : null;
 }
 
