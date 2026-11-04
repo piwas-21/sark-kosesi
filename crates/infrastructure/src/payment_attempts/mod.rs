@@ -24,6 +24,7 @@ mod prepare;
 mod read;
 pub mod recognition;
 pub mod reconciliation;
+pub mod reversal_item_supervision;
 pub mod reversal_pages;
 pub mod reversal_supervision;
 pub mod reversals;

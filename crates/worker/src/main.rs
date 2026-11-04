@@ -5,6 +5,7 @@ use commerce_infrastructure::{connect, readiness};
 use commerce_worker::expire_batch;
 mod callbacks;
 mod payments;
+mod reversal_items;
 mod reversal_pages;
 
 #[derive(PartialEq, Eq)]
@@ -14,6 +15,9 @@ enum Mode {
     Reconcile,
     Callbacks,
     ReversalPages,
+    ReversalItems,
+    EnrollReversalItem(reversal_items::Enrollment),
+    InspectReversalItem(String),
     EnrollReversal(reversal_pages::Enrollment),
     InspectReversal(String),
 }
@@ -25,6 +29,18 @@ fn parse_mode(args: &[String]) -> Result<Mode, std::io::Error> {
         [argument] if argument == "--reconcile-payments" => Ok(Mode::Reconcile),
         [argument] if argument == "--reconcile-callbacks" => Ok(Mode::Callbacks),
         [argument] if argument == "--reconcile-reversal-pages" => Ok(Mode::ReversalPages),
+        [argument] if argument == "--reconcile-reversal-items" => Ok(Mode::ReversalItems),
+        [argument, attempt, observation, page, ordinal, effect]
+            if argument == "--enroll-reversal-item" =>
+        {
+            reversal_items::Enrollment::parse(attempt, observation, page, ordinal, effect)
+                .map(Mode::EnrollReversalItem)
+        }
+        [argument, job]
+            if argument == "--inspect-reversal-item" && reversal_pages::identifier(job) =>
+        {
+            Ok(Mode::InspectReversalItem(job.clone()))
+        }
         [argument, attempt, observation, kind, effect] if argument == "--enroll-reversal-scan" => {
             reversal_pages::Enrollment::parse(attempt, observation, kind, effect)
                 .map(Mode::EnrollReversal)
@@ -97,6 +113,9 @@ async fn main() -> Result<(), std::io::Error> {
         Mode::Reconcile => payments::run(&pool).await?,
         Mode::Callbacks => callbacks::run(&pool).await?,
         Mode::ReversalPages => reversal_pages::run(&pool, None).await?,
+        Mode::ReversalItems => reversal_items::run(&pool, None).await?,
+        Mode::EnrollReversalItem(intent) => reversal_items::run(&pool, Some(intent)).await?,
+        Mode::InspectReversalItem(id) => reversal_items::inspect(&pool, &id).await?,
         Mode::EnrollReversal(intent) => reversal_pages::run(&pool, Some(intent)).await?,
         Mode::InspectReversal(id) => reversal_pages::inspect(&pool, &id).await?,
         Mode::Probe => tracing::info!(code = "worker_dependencies_ready", effects_enabled = false),
@@ -109,6 +128,42 @@ mod tests {
     use super::*;
     fn args(values: &[&str]) -> Vec<String> {
         values.iter().map(|value| (*value).into()).collect()
+    }
+    #[test]
+    fn reversal_item_commands_require_exact_valid_arguments() {
+        let id = "0123456789abcdef0123456789abcdef";
+        assert!(matches!(
+            parse_mode(&args(&["--reconcile-reversal-items"])),
+            Ok(Mode::ReversalItems)
+        ));
+        for ordinal in ["1", "10"] {
+            assert!(matches!(
+                parse_mode(&args(&[
+                    "--enroll-reversal-item",
+                    id,
+                    id,
+                    id,
+                    ordinal,
+                    "effect-123"
+                ])),
+                Ok(Mode::EnrollReversalItem(_))
+            ));
+        }
+        assert!(matches!(
+            parse_mode(&args(&["--inspect-reversal-item", id])),
+            Ok(Mode::InspectReversalItem(_))
+        ));
+        for command in [
+            vec!["--reconcile-reversal-items", "extra"],
+            vec!["--enroll-reversal-item", id, id, id, "0", "key"],
+            vec!["--enroll-reversal-item", id, id, id, "11", "key"],
+            vec!["--enroll-reversal-item", id, id, id, "01", "key"],
+            vec!["--enroll-reversal-item", id, id, "bad", "1", "key"],
+            vec!["--enroll-reversal-item", id, id, id, "1", "bad_key"],
+            vec!["--inspect-reversal-item", "bad"],
+        ] {
+            assert!(parse_mode(&args(&command)).is_err());
+        }
     }
     #[test]
     fn reversal_commands_require_exact_valid_arguments() {

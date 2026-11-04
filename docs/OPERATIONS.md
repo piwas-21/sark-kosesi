@@ -112,6 +112,22 @@ private evidence for review stops or retries. An ended or capped scan leaves
 provider history unresolved. Review recovery, scheduling, financial and
 inventory transitions, provider sandbox acceptance and deployment remain open.
 
+## Private reversal-item supervision
+
+In an isolated local/test environment, `commerce-worker --enroll-reversal-item
+<attempt-id> <paid-observation-id> <page-id> <ordinal> <effect-key>` binds a
+candidate position to a verified page and paid observation. The ordinal is
+one-based and between 1 and 10. The configured test key must match the page's
+authenticated fingerprint. Enrollment returns an internal job ID.
+
+`commerce-worker --reconcile-reversal-items` verifies the configured test
+profile and runs one bounded pass. `REVERSAL_ITEM_BATCH` defaults to 10 and
+accepts 1–25 steps. `commerce-worker --inspect-reversal-item <job-id>` reads
+validated state from PostgreSQL without provider credentials. An observed job
+retains one authenticated fact. Inspection of an uncertain job indicates when
+the operation's exact late observation is available. The review state and
+provider history remain unresolved.
+
 ## Private callback supervision
 
 `cargo run --locked -p commerce-worker -- --reconcile-callbacks` runs one bounded

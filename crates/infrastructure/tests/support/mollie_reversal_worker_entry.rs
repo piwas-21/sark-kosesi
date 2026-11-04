@@ -4,7 +4,7 @@ use crate::mollie::reversal_worker_fixture as executable;
 use std::sync::Mutex;
 use tracing::instrument::WithSubscriber;
 
-type Fields = Vec<(String, String)>;
+pub(crate) type Fields = Vec<(String, String)>;
 struct Record<'a>(&'a mut Fields);
 impl tracing::field::Visit for Record<'_> {
     fn record_debug(&mut self, field: &tracing::field::Field, value: &dyn std::fmt::Debug) {
@@ -14,7 +14,7 @@ impl tracing::field::Visit for Record<'_> {
         self.0.push((field.name().into(), value.into()));
     }
 }
-struct Capture(Arc<Mutex<Vec<Fields>>>);
+pub(crate) struct Capture(pub(crate) Arc<Mutex<Vec<Fields>>>);
 impl tracing::Subscriber for Capture {
     fn register_callsite(
         &self,
@@ -48,7 +48,10 @@ fn settings(key: &str) -> executable::Settings {
         batch: Some("1".into()),
     }
 }
-fn transport(server: &Server, key: TestCredential) -> Result<ReconciliationClient, MollieError> {
+pub(crate) fn transport(
+    server: &Server,
+    key: TestCredential,
+) -> Result<ReconciliationClient, MollieError> {
     Ok(ReconciliationClient {
         http: http::Http::build(
             server.base.clone(),

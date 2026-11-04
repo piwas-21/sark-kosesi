@@ -97,7 +97,7 @@ pub(super) fn validate(
     }
     Ok(())
 }
-pub(super) async fn load(
+pub(in crate::payment_attempts) async fn load(
     tx: &mut Transaction<'_, Postgres>,
     frozen: &FrozenAttempt,
     started: i64,
@@ -149,7 +149,7 @@ pub(super) async fn load(
     })
     .transpose()
 }
-pub(super) async fn history(
+pub(in crate::payment_attempts) async fn history(
     tx: &mut Transaction<'_, Postgres>,
     attempt_id: &str,
 ) -> Result<(i64, Option<i64>), PaymentStoreError> {

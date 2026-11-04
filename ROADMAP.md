@@ -127,8 +127,10 @@ with effect-key replay. A validated open tip can restore a same-key continuation
 An explicit test-profile supervisor now admits bounded page operations from an
 authenticated paid observation. Durable starts, exact receipt recovery and fenced
 checkpoints keep uncertain work visible for review. Explicit local/test worker
-commands enroll, run a bounded pass and inspect scan state. Candidate item supervision,
-reconciliation, reservation disposition and execution custody remain open.
+commands enroll, run a bounded pass and inspect scan state. A separate item
+supervisor binds one candidate position to an exact authenticated refund or
+chargeback observation. Operator recovery, reconciliation, reservation
+disposition and execution custody remain open.
 Customer coupon routes and budget claims remain pending.
 Private promotion drafts and independent exact-revision reviews now persist
 canonical eligibility/discount terms and explicit lifetime budget/redemption limits.

@@ -32,9 +32,23 @@ fn main() -> io::Result<()> {
         "#[allow(dead_code)]\n#[path = {reversal_worker:?}]\npub(crate) mod reversal_worker_fixture;\n"
     );
     fs::write(
-        PathBuf::from(output).join("reversal_worker_fixture.rs"),
+        PathBuf::from(&output).join("reversal_worker_fixture.rs"),
         declaration,
     )?;
+    let item_worker = manifest
+        .join("../worker/src/reversal_items.rs")
+        .canonicalize()?;
+    let item_worker = item_worker
+        .to_str()
+        .ok_or_else(|| io::Error::other("Worker source path must be UTF-8"))?;
+    let declaration = format!(
+        "#[allow(dead_code)]\n#[path = {item_worker:?}]\npub(crate) mod reversal_item_worker_fixture;\n"
+    );
+    fs::write(
+        PathBuf::from(output).join("reversal_item_worker_fixture.rs"),
+        declaration,
+    )?;
+    println!("cargo:rerun-if-changed=../worker/src/reversal_items.rs");
     println!("cargo:rerun-if-changed=../worker/src/reversal_pages.rs");
     println!("cargo:rerun-if-changed=build.rs");
     println!("cargo:rerun-if-changed=../worker/src/callbacks.rs");

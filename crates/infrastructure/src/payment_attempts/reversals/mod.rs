@@ -4,7 +4,7 @@ use super::*;
 use crate::mollie::{ReversalPhase, VerifiedReversal};
 use commerce_application::request_context::{Clock, Identifiers, ObservedClock};
 use sqlx::PgPool;
-mod rows;
+pub(super) mod rows;
 
 /// Immutable historical evidence. Identifiers and credential provenance are private.
 #[derive(PartialEq, Eq)]

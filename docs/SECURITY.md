@@ -426,6 +426,14 @@ retain late provider evidence. Only the current lease or exact receipt recovery
 can advance a checkpoint. Expiry without a committed receipt leaves an explicit
 review state. A new key uses a separate scan with a fresh root.
 
+Item supervision revalidates page ancestry, the reciprocal page digest and the
+one-based candidate ordinal under the attempt claim. The exact paid parent and
+child are fetched under the same verified test key outside the claim. Completion
+requires the operation's own reciprocal journal receipt with matching child,
+collection and key. A receipt from another operation cannot advance the job.
+Expired operations preserve their evidence for review without starting another
+fetch for the same operation.
+
 ## Private email verification challenge custody
 
 The private challenge primitive accepts only ASCII dot-atom local parts and ASCII

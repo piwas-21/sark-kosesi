@@ -520,8 +520,20 @@ the exact operation and reciprocal receipt. An expired operation can recover an
 already recorded page without another GET. Expiry without a receipt parks the
 scan for review and preserves any late page as separate historical evidence.
 Transport failures that return to the worker retry after 60 seconds and stop
-after three consecutive failures. Candidate item supervision and reservation
-disposition remain separate.
+after three consecutive failures.
+
+The independent item supervisor enrolls one exact candidate ordinal from a
+validated page and its authenticated paid original. The job freezes the actual
+test-key fingerprint, so a newly verified key uses evidence from its own scan.
+Separate pages can retain separate observations of the same child. Each attempt
+can hold up to 128 item jobs and 128 exact observations. Each job has at most
+three operation generations with the same 60-second lease and backoff. One
+operation fetches the paid parent and exact child, then appends the authenticated
+fact to the observation journal under its operation ID. A validated receipt
+ends the job in the observed state. Recovery can use that exact receipt after
+expiry, while an expired start without a receipt stays in review and preserves
+any late observation. The job records evidence for reconciliation and reservation
+disposition, which remain separate operations.
 
 Reservations encumber refundable amounts. Before execution, reconcile
 provider-side refunds and chargebacks, define uncertain and failed attempt

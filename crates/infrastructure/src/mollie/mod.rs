@@ -123,3 +123,7 @@ include!(concat!(env!("OUT_DIR"), "/callback_worker_fixture.rs"));
 
 #[cfg(test)]
 include!(concat!(env!("OUT_DIR"), "/reversal_worker_fixture.rs"));
+#[cfg(test)]
+use reversal_worker_fixture as reversal_pages;
+#[cfg(test)]
+include!(concat!(env!("OUT_DIR"), "/reversal_item_worker_fixture.rs"));

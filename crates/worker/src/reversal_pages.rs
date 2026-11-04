@@ -51,7 +51,11 @@ impl Enrollment {
         })
     }
 }
-fn capture(key: &str, profile: &str, batch: Option<&str>) -> Result<(TestCredential, u16)> {
+pub(super) fn capture(
+    key: &str,
+    profile: &str,
+    batch: Option<&str>,
+) -> Result<(TestCredential, u16)> {
     let limit = batch
         .unwrap_or("10")
         .parse::<u16>()
