@@ -31,6 +31,17 @@ CREATE TABLE payment_reversal_observations (
   OR (phase<>'chargeback_reversed' AND source_reversed_seconds IS NULL AND source_reversed_nanos IS NULL))
 );
 
+-- Bind every stored observation field to the minimal reciprocal event.
+CREATE FUNCTION payment_reversal_observation_event(o payment_reversal_observations)
+ RETURNS jsonb LANGUAGE sql IMMUTABLE STRICT AS $$
+ SELECT jsonb_build_object('schema_version',1,'order_id',o.order_id,'attempt_id',o.attempt_id,
+  'observation_id',o.id,'observation_sha256',encode(sha256(convert_to(jsonb_build_array(
+   o.id,o.attempt_id,o.order_id,o.effect_key,o.payment_id,o.child_id,o.phase,o.amount_minor,
+   o.credential_fingerprint,o.source_created_seconds,o.source_created_nanos,
+   o.source_reversed_seconds,o.source_reversed_nanos,o.recorded_at,o.event_id,o.transaction_id::text
+  )::text,'UTF8')),'hex'))
+$$;
+
 -- Lock the immutable owning attempt before counting, so concurrent READ COMMITTED
 -- writers cannot jointly exceed the bound. Source authentication remains in Rust.
 CREATE FUNCTION guard_payment_reversal_observation() RETURNS trigger LANGUAGE plpgsql VOLATILE AS $$
@@ -70,8 +81,7 @@ BEGIN
  IF NEW.transaction_id IS DISTINCT FROM pg_current_xact_id() OR NOT EXISTS(
   SELECT 1 FROM commerce_outbox e WHERE e.id=NEW.event_id AND e.aggregate_id=NEW.order_id
    AND e.kind='payment.reversal_observed.v1' AND e.created_at=NEW.recorded_at
-   AND e.payload=jsonb_build_object('schema_version',1,'order_id',NEW.order_id,
-    'attempt_id',NEW.attempt_id,'observation_id',NEW.id)) THEN
+   AND e.payload=payment_reversal_observation_event(NEW)) THEN
   RAISE EXCEPTION 'Reversal observation requires exact same-transaction event' USING ERRCODE='23514'; END IF;
  RETURN NULL;
 END;
@@ -201,8 +211,7 @@ BEGIN
   IF reversal.id IS NULL OR reversal.transaction_id IS DISTINCT FROM pg_current_xact_id()
    OR NEW.id IS DISTINCT FROM reversal.event_id OR NEW.aggregate_id IS DISTINCT FROM reversal.order_id
    OR NEW.created_at IS DISTINCT FROM reversal.recorded_at
-   OR NEW.payload IS DISTINCT FROM jsonb_build_object('schema_version',1,'order_id',reversal.order_id,
-    'attempt_id',reversal.attempt_id,'observation_id',reversal.id) THEN
+   OR NEW.payload IS DISTINCT FROM payment_reversal_observation_event(reversal) THEN
    RAISE EXCEPTION 'Reversal event requires exact same-transaction observation binding' USING ERRCODE='23514'; END IF;
  ELSE RAISE EXCEPTION 'Unknown commerce event kind' USING ERRCODE='23514';
  END IF;

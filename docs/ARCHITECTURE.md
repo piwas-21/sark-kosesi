@@ -491,8 +491,9 @@ source and appends an immutable fact with the actual test-key fingerprint. It
 preserves signed source seconds, nanoseconds and the distinction between unknown
 reversal status and an observed reversal. Each attempt has at most 128 receipts.
 The original effect key replays only the identical intent. A reciprocal outbox
-event carries order, attempt and observation identifiers in the same transaction.
-Reads validate that binding before returning a receipt. Observations retain each
+event carries the order, attempt and observation identifiers and a SHA-256 digest
+of the complete immutable receipt in the same transaction. Reads verify that
+binding before returning a receipt. Observations retain each
 provider identity for later reconciliation, including ambiguous payment matches
 and amounts above the original payment. Financial and inventory transitions are
 outside this evidence path. Durable page custody, orchestration and reservation

@@ -405,9 +405,9 @@ credits and inventory effects require independent authority.
 Only an authenticated exact-item result from the test-profile client enters the
 observation writer. Network I/O finishes before the transaction claims the
 dispatched attempt. The writer verifies the frozen source and keeps a bounded,
-immutable history with exact replay and reciprocal event checks. Keep provider
-metadata, reasons, raw credentials and raw SQL errors out of observations and
-diagnostics. The PostgreSQL writer role remains trusted for provider provenance.
+immutable history with exact replay and a reciprocal event bound to the full
+receipt digest. Keep provider metadata, reasons, raw credentials and raw SQL
+errors out of observations and diagnostics. The PostgreSQL writer role remains trusted for provider provenance.
 The journal preserves positive provider facts and leaves current financial,
 stock and fulfilment decisions to separately authorized operations.
 

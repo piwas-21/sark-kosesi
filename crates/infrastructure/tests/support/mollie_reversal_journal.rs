@@ -106,11 +106,22 @@ async fn authenticated_fact_replays_once_and_does_not_transition_money_or_stock(
     .fetch_all(&pool)
     .await
     .expect("outbox");
-    assert_eq!(
-        payloads,
-        vec![
-            json!({"schema_version":1,"order_id":first.order_id,"attempt_id":first.attempt_id,"observation_id":first.id})
-        ]
+    assert_eq!(payloads.len(), 1);
+    let payload = payloads[0].as_object().expect("closed event object");
+    assert_eq!(payload.len(), 5);
+    assert_eq!(payload.get("schema_version"), Some(&json!(1)));
+    assert_eq!(payload.get("order_id"), Some(&json!(first.order_id)));
+    assert_eq!(payload.get("attempt_id"), Some(&json!(first.attempt_id)));
+    assert_eq!(payload.get("observation_id"), Some(&json!(first.id)));
+    let digest = payload
+        .get("observation_sha256")
+        .and_then(Value::as_str)
+        .expect("digest");
+    assert_eq!(digest.len(), 64);
+    assert!(
+        digest
+            .bytes()
+            .all(|c| c.is_ascii_digit() || (b'a'..=b'f').contains(&c))
     );
     let after = crate::payment_test_fixture::counts(&pool).await;
     assert_eq!(
@@ -306,6 +317,10 @@ async fn native_copy(
     sqlx::query("INSERT INTO payment_reversal_observations(id,attempt_id,order_id,effect_key,payment_id,child_id,phase,amount_minor,credential_fingerprint,source_created_seconds,source_created_nanos,source_reversed_seconds,source_reversed_nanos,recorded_at,event_id) SELECT $1,attempt_id,order_id,$2,payment_id,child_id,phase,amount_minor,credential_fingerprint,source_created_seconds,source_created_nanos,source_reversed_seconds,source_reversed_nanos,recorded_at,$3 FROM payment_reversal_observations WHERE id=$4")
         .bind(id).bind(effect).bind(event_id).bind(source_id).execute(&mut **tx).await.expect("valid copied native fact");
 }
+async fn native_payload(tx: &mut sqlx::Transaction<'_, sqlx::Postgres>, id: &str) -> Value {
+    sqlx::query_scalar("SELECT payment_reversal_observation_event(o) FROM payment_reversal_observations o WHERE o.id=$1")
+        .bind(id).fetch_one(&mut **tx).await.expect("canonical stored event")
+}
 async fn native_event(
     tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
     event_id: &str,
@@ -334,7 +349,6 @@ async fn native_custody_rejects_omitted_detached_and_altered_events_with_positiv
     .expect("authenticated source");
     let id = "8".repeat(32);
     let event_id = "7".repeat(32);
-    let payload = json!({"schema_version":1,"order_id":first.order_id,"attempt_id":first.attempt_id,"observation_id":id});
     let mut tx = pool.begin().await.expect("omitted event transaction");
     native_copy(&mut tx, &first.id, &id, &event_id, "native-next").await;
     assert!(
@@ -349,8 +363,9 @@ async fn native_custody_rejects_omitted_detached_and_altered_events_with_positiv
     );
 
     let mut tx = pool.begin().await.expect("detached event transaction");
+    let detached = json!({"schema_version":1,"order_id":first.order_id,"attempt_id":first.attempt_id,"observation_id":id,"observation_sha256":"0".repeat(64)});
     assert!(
-        native_event(&mut tx, &event_id, &first.order_id, payload.clone())
+        native_event(&mut tx, &event_id, &first.order_id, detached)
             .await
             .is_err()
     );
@@ -360,10 +375,11 @@ async fn native_custody_rejects_omitted_detached_and_altered_events_with_positiv
         ("order_id", json!("4".repeat(32))),
         ("attempt_id", json!("4".repeat(32))),
         ("observation_id", json!("4".repeat(32))),
+        ("observation_sha256", json!("0".repeat(64))),
     ] {
         let mut tx = pool.begin().await.expect("altered event transaction");
         native_copy(&mut tx, &first.id, &id, &event_id, "native-next").await;
-        let mut altered = payload.clone();
+        let mut altered = native_payload(&mut tx, &id).await;
         altered[field] = value;
         assert!(
             native_event(&mut tx, &event_id, &first.order_id, altered)
@@ -373,8 +389,22 @@ async fn native_custody_rejects_omitted_detached_and_altered_events_with_positiv
         );
         tx.rollback().await.expect("alteration rollback");
     }
+    let mut tx = pool.begin().await.expect("missing digest transaction");
+    native_copy(&mut tx, &first.id, &id, &event_id, "native-next").await;
+    let mut incomplete = native_payload(&mut tx, &id).await;
+    incomplete
+        .as_object_mut()
+        .expect("event object")
+        .remove("observation_sha256");
+    assert!(
+        native_event(&mut tx, &event_id, &first.order_id, incomplete)
+            .await
+            .is_err()
+    );
+    tx.rollback().await.expect("incomplete event rollback");
     let mut tx = pool.begin().await.expect("positive native transaction");
     native_copy(&mut tx, &first.id, &id, &event_id, "native-next").await;
+    let payload = native_payload(&mut tx, &id).await;
     native_event(&mut tx, &event_id, &first.order_id, payload)
         .await
         .expect("exact same-transaction event");
@@ -449,7 +479,7 @@ async fn per_attempt_capacity_denies_new_facts_but_retains_historical_replay(poo
         let event_id = format!("{:032x}", 2_000_000_u128 + i);
         let effect = format!("capacity-{i}");
         native_copy(&mut tx, &first.id, &id, &event_id, &effect).await;
-        let payload = json!({"schema_version":1,"order_id":first.order_id,"attempt_id":first.attempt_id,"observation_id":id});
+        let payload = native_payload(&mut tx, &id).await;
         native_event(&mut tx, &event_id, &first.order_id, payload)
             .await
             .expect("exact paired fixture event");
@@ -726,6 +756,54 @@ async fn altered_valid_insert_amount_is_detected_and_rolled_back_before_healthy_
         .expect("healthy retry");
     assert_eq!(healthy.amount_minor, 1234);
     assert!(!healthy.replayed);
+}
+
+#[sqlx::test(migrator = "MIGRATOR")]
+async fn changed_stored_amount_or_phase_breaks_digest_bound_receipt_until_restored(pool: PgPool) {
+    let (time, frozen) = observation_cases::prepared(&pool, true).await;
+    let fact = fetched(frozen.snapshot(), refund("pending", "12.34"), false).await;
+    let ids = observation_cases::ids();
+    let first = record(&pool, time.as_ref(), &ids, "row-damage", &fact)
+        .await
+        .expect("authenticated original");
+    for alter in [
+        "UPDATE payment_reversal_observations SET amount_minor=1235 WHERE effect_key='row-damage'",
+        "UPDATE payment_reversal_observations SET phase='refund_refunded' WHERE effect_key='row-damage'",
+    ] {
+        let mut tx = pool.begin().await.expect("isolated stored damage");
+        tx.execute("ALTER TABLE payment_reversal_observations DISABLE TRIGGER USER")
+            .await
+            .expect("test-only damage");
+        tx.execute(alter)
+            .await
+            .expect("valid-looking altered source");
+        tx.execute("ALTER TABLE payment_reversal_observations ENABLE TRIGGER USER")
+            .await
+            .expect("restore native guards");
+        tx.commit().await.expect("imported damage");
+        assert!(matches!(
+            lookup(&pool, &first.attempt_id, "row-damage").await,
+            Err(PaymentStoreError::InvalidStoredData)
+        ));
+        assert!(matches!(
+            record(&pool, time.as_ref(), &ids, "row-damage", &fact).await,
+            Err(PaymentStoreError::InvalidStoredData)
+        ));
+        let mut tx = pool.begin().await.expect("exact repair");
+        tx.execute("ALTER TABLE payment_reversal_observations DISABLE TRIGGER USER")
+            .await
+            .expect("test-only repair");
+        tx.execute("UPDATE payment_reversal_observations SET amount_minor=1234,phase='refund_pending' WHERE effect_key='row-damage'").await.expect("restore original values");
+        tx.execute("ALTER TABLE payment_reversal_observations ENABLE TRIGGER USER")
+            .await
+            .expect("restore native guards");
+        tx.commit().await.expect("repaired receipt");
+        let replay = record(&pool, time.as_ref(), &ids, "row-damage", &fact)
+            .await
+            .expect("healthy exact replay");
+        assert!(replay.replayed);
+        assert_eq!(replay.id, first.id);
+    }
 }
 
 #[path = "mollie_reversal_journal_upgrade.rs"]

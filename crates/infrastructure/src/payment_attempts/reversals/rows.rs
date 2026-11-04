@@ -114,9 +114,8 @@ pub(super) async fn load(
         o.transaction_id IS NOT NULL AS transaction_present,
         EXISTS(SELECT 1 FROM commerce_outbox e WHERE e.id=o.event_id
           AND e.aggregate_id=o.order_id AND e.kind='payment.reversal_observed.v1'
-          AND e.created_at=o.recorded_at AND e.payload=jsonb_build_object(
-            'schema_version',1,'order_id',o.order_id,'attempt_id',o.attempt_id,
-            'observation_id',o.id)) AS event_present
+          AND e.created_at=o.recorded_at
+          AND e.payload=payment_reversal_observation_event(o)) AS event_present
         FROM payment_reversal_observations o WHERE o.attempt_id=$1 AND o.effect_key=$2"#,
     )
     .bind(&frozen.snapshot().binding.id)
@@ -167,10 +166,8 @@ pub(super) async fn insert(
         .bind(&r.credential_fingerprint).bind(r.source_created_seconds).bind(r.source_created_nanos)
         .bind(r.source_reversed_seconds).bind(r.source_reversed_nanos).bind(r.recorded_at)
         .bind(&r.event_id).execute(&mut **tx).await?;
-    sqlx::query("INSERT INTO commerce_outbox(id,aggregate_id,kind,payload,created_at) VALUES($1,$2,'payment.reversal_observed.v1',$3,$4)")
-        .bind(&r.event_id).bind(&r.order_id).bind(serde_json::json!({"schema_version":1,
-            "order_id":r.order_id,"attempt_id":r.attempt_id,"observation_id":r.id}))
-        .bind(r.recorded_at).execute(&mut **tx).await?;
+    sqlx::query("INSERT INTO commerce_outbox(id,aggregate_id,kind,payload,created_at) SELECT o.event_id,o.order_id,'payment.reversal_observed.v1',payment_reversal_observation_event(o),o.recorded_at FROM payment_reversal_observations o WHERE o.id=$1")
+        .bind(&r.id).execute(&mut **tx).await?;
     Ok(())
 }
 
