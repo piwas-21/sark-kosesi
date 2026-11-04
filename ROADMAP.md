@@ -118,9 +118,12 @@ immutable cumulative accounting and a minimal outbox event. Private test-key
 exact-item refund and chargeback GETs now verify the paid original and return
 minimal bounded observations. Payment-specific test-profile list pages now yield
 only bounded reversal identity hints and scoped continuations after verifying the
-paid original. Durable discovery journal and orchestration, observation custody,
-reconciliation, reservation disposition and execution custody remain open. A 404 leaves the exact child unresolved. Customer coupon routes and budget
-claims remain pending.
+paid original. A private journal now records exact authenticated child
+observations and their reciprocal events, with bounded history and effect-key
+replay. It preserves amounts above the original payment and unresolved reversal
+status. Durable page custody, orchestration, reconciliation, reservation
+disposition and execution custody remain open. A 404 leaves the child unresolved.
+Customer coupon routes and budget claims remain pending.
 Private promotion drafts and independent exact-revision reviews now persist
 canonical eligibility/discount terms and explicit lifetime budget/redemption limits.
 New drafts and withdrawal block older approvals; no coupons or grants are seeded.

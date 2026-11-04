@@ -24,6 +24,7 @@ mod prepare;
 mod read;
 pub mod recognition;
 pub mod reconciliation;
+pub mod reversals;
 pub mod searches;
 mod stored;
 pub use dispatch::{DispatchOutcome, DispatchPermit, start_dispatch};

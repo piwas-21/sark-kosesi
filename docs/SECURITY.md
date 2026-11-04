@@ -400,6 +400,17 @@ The database role stays trusted. The event carries only the order, reservation
 and digest. Keep raw reasons and credentials out of diagnostics. Execution,
 credits and inventory effects require independent authority.
 
+## Private provider reversal observation custody
+
+Only an authenticated exact-item result from the test-profile client enters the
+observation writer. Network I/O finishes before the transaction claims the
+dispatched attempt. The writer verifies the frozen source and keeps a bounded,
+immutable history with exact replay and reciprocal event checks. Keep provider
+metadata, reasons, raw credentials and raw SQL errors out of observations and
+diagnostics. The PostgreSQL writer role remains trusted for provider provenance.
+The journal preserves positive provider facts and leaves current financial,
+stock and fulfilment decisions to separately authorized operations.
+
 ## Private email verification challenge custody
 
 The private challenge primitive accepts only ASCII dot-atom local parts and ASCII

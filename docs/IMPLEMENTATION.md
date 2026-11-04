@@ -356,10 +356,12 @@ supervision or live provider activation follows from deploying the empty preview
    Private test-key exact-item refund and chargeback GETs now require a matched
    paid original and retain minimal bounded observations only. One private,
    payment-specific test-profile list page now provides bounded reversal identity
-   hints and a scoped continuation after verifying the same paid original. Implement
-   durable discovery journal and orchestration and observation custody; an exact
-   GET, 404, empty page, ended scan or capped scan cannot establish the provider
-   history or net balance. Complete provider-side
+   hints and a scoped continuation after verifying the same paid original. The
+   private observation journal appends exact child facts after network I/O and
+   serializes bounded custody with a reciprocal event. Same-effect retries
+   verify the original observation. Implement durable discovery-page custody
+   and orchestration. An exact GET, 404, empty page, ended scan or capped scan
+   leaves the provider history and net balance unresolved. Complete provider-side
    refund/chargeback reconciliation, execution custody
    and reservation disposition before moving funds. Complete independent
    order/fulfilment/refund lifecycle and invoices/credit

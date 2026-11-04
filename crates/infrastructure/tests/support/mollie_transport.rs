@@ -22,7 +22,7 @@ fn config(key: &TestCredential) -> Configuration {
     snapshot.profile = key.binding().clone();
     Configuration::capture(snapshot).expect("synthetic server policy")
 }
-fn captured(amount_minor: i64) -> (Configuration, FrozenAttempt) {
+pub(crate) fn captured(amount_minor: i64) -> (Configuration, FrozenAttempt) {
     let key = credential();
     let c = config(&key);
     let current = c.identity();
@@ -1007,3 +1007,6 @@ mod reversal_cases;
 
 #[path = "mollie_reversal_discovery.rs"]
 mod reversal_discovery_cases;
+
+#[path = "mollie_reversal_journal.rs"]
+mod reversal_journal_cases;

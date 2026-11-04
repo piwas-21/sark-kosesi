@@ -485,8 +485,18 @@ Only a validated Mollie next-link offset is used to reconstruct the fixed endpoi
 the returned URL is never followed. Empty, ended, malformed or capped scans do not
 establish absence or a net balance. The contracts are the [refund list](https://docs.mollie.com/reference/list-refunds)
 and [payment chargeback list](https://docs.mollie.com/reference/list-payment-chargebacks).
-Durable discovery journal and orchestration, observation custody and reservation
-disposition remain separate work. Financial and inventory transitions are outside this read path.
+The private observation journal accepts the exact authenticated item result
+after network I/O. It locks the dispatched attempt, compares the full frozen
+source and appends an immutable fact with the actual test-key fingerprint. It
+preserves signed source seconds, nanoseconds and the distinction between unknown
+reversal status and an observed reversal. Each attempt has at most 128 receipts.
+The original effect key replays only the identical intent. A reciprocal outbox
+event carries order, attempt and observation identifiers in the same transaction.
+Reads validate that binding before returning a receipt. Observations retain each
+provider identity for later reconciliation, including ambiguous payment matches
+and amounts above the original payment. Financial and inventory transitions are
+outside this evidence path. Durable page custody, orchestration and reservation
+disposition remain separate work.
 
 Reservations encumber refundable amounts. Before execution, reconcile
 provider-side refunds and chargebacks, define uncertain and failed attempt
