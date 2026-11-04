@@ -118,7 +118,8 @@ immutable cumulative accounting and a minimal outbox event. Private test-key
 exact-item refund and chargeback GETs now verify the paid original and return
 minimal bounded observations. Payment-specific test-profile list pages now yield
 only bounded reversal identity hints and scoped continuations after verifying the
-paid original. A private journal now records exact authenticated child
+paid original. Every verified page retains the authenticated request scope,
+including empty and terminal pages. A private journal records exact authenticated child
 observations and their reciprocal events, with bounded history and effect-key
 replay. It preserves amounts above the original payment and unresolved reversal
 status. Durable page custody, orchestration, reconciliation, reservation

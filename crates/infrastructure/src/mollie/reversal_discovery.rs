@@ -6,7 +6,7 @@ use serde_json::{Value, value::RawValue};
 use std::collections::HashSet;
 use url::Url;
 
-#[derive(Clone, Copy, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum ReversalKind {
     Refund,
     Chargeback,
@@ -42,15 +42,38 @@ pub struct ReversalCursor {
 }
 /// Candidates are hints, and neither an end link nor an empty page proves absence.
 pub struct ReversalPage {
+    attempt: AttemptSnapshot,
+    payment_id: String,
+    kind: ReversalKind,
+    requested_from: Option<String>,
+    credential_fingerprint: String,
     candidates: Vec<String>,
     next: Option<ReversalCursor>,
 }
 impl ReversalPage {
+    pub fn attempt(&self) -> &AttemptSnapshot {
+        &self.attempt
+    }
+    pub fn payment_id(&self) -> &str {
+        &self.payment_id
+    }
+    pub fn kind(&self) -> ReversalKind {
+        self.kind
+    }
+    pub fn requested_from(&self) -> Option<&str> {
+        self.requested_from.as_deref()
+    }
+    pub fn credential_fingerprint(&self) -> &str {
+        &self.credential_fingerprint
+    }
     pub fn candidates(&self) -> &[String] {
         &self.candidates
     }
     pub fn next_cursor(&self) -> Option<&ReversalCursor> {
         self.next.as_ref()
+    }
+    pub fn next_from(&self) -> Option<&str> {
+        self.next.as_ref().map(|cursor| cursor.from.as_str())
     }
 }
 #[derive(Deserialize)]
@@ -181,6 +204,11 @@ fn decode(
         candidates.push(item.id);
     }
     Ok(ReversalPage {
+        attempt: attempt.clone(),
+        payment_id: payment_id.into(),
+        kind,
+        requested_from: from.map(|cursor| cursor.from.clone()),
+        credential_fingerprint: fingerprint.into(),
         candidates,
         next: offset.map(|from| ReversalCursor {
             from,

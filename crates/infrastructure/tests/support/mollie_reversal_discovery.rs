@@ -53,6 +53,15 @@ async fn authenticated_paid_parent_precedes_each_bounded_page_and_cursor_is_reco
             .reversal_page(frozen.snapshot(), PAYMENT, kind, None)
             .await
             .expect("first page");
+        assert!(first.attempt() == frozen.snapshot());
+        assert_eq!(first.payment_id(), PAYMENT);
+        assert_eq!(first.kind(), kind);
+        assert_eq!(first.requested_from(), None);
+        assert_eq!(first.next_from(), Some(offset));
+        assert_eq!(
+            first.credential_fingerprint(),
+            credential().binding().credential_fingerprint
+        );
         assert_eq!(first.candidates().len(), 1);
         let expected = match kind {
             ReversalKind::Refund => "re_first",
@@ -65,6 +74,15 @@ async fn authenticated_paid_parent_precedes_each_bounded_page_and_cursor_is_reco
             .expect("next page");
         assert!(second.candidates().is_empty());
         assert!(second.next_cursor().is_none());
+        assert!(second.attempt() == frozen.snapshot());
+        assert_eq!(second.payment_id(), PAYMENT);
+        assert_eq!(second.kind(), kind);
+        assert_eq!(second.requested_from(), Some(offset));
+        assert_eq!(second.next_from(), None);
+        assert_eq!(
+            second.credential_fingerprint(),
+            first.credential_fingerprint()
+        );
         server.inspect(|r| {
             assert_eq!(r.len(), 5);
             for request in r {
@@ -127,11 +145,17 @@ async fn cursors_reject_cross_attempt_payment_kind_and_credential_before_io() {
         Reply::Json(200, page(ReversalKind::Refund, vec![], link(&url))),
     ]);
     let client = client(&server).await;
-    let page = client
+    let root_page = client
         .reversal_page(frozen.snapshot(), PAYMENT, ReversalKind::Refund, None)
         .await
         .expect("page");
-    let cursor = page.next_cursor();
+    assert!(root_page.candidates().is_empty());
+    assert!(root_page.attempt() == frozen.snapshot());
+    assert_eq!(root_page.payment_id(), PAYMENT);
+    assert_eq!(root_page.kind(), ReversalKind::Refund);
+    assert_eq!(root_page.requested_from(), None);
+    assert_eq!(root_page.next_from(), Some("re_next"));
+    let cursor = root_page.next_cursor();
     let mut other = frozen.snapshot().clone();
     other.binding.id = "f".repeat(32);
     assert!(
@@ -158,7 +182,12 @@ async fn cursors_reject_cross_attempt_payment_kind_and_credential_before_io() {
         "pfl_SYNTHETIC_NotARealProfile",
     )
     .expect("credential");
-    let rotated_server = Server::start(vec![profile()]);
+    let rotated_fingerprint = rotated.binding().credential_fingerprint.clone();
+    let rotated_server = Server::start(vec![
+        profile(),
+        Reply::Json(200, payment(frozen.snapshot())),
+        Reply::Json(200, page(ReversalKind::Refund, vec![], Value::Null)),
+    ]);
     let rotated_config = config(&rotated);
     let rotated_client = TestClient::local(
         rotated,
@@ -178,6 +207,21 @@ async fn cursors_reject_cross_attempt_payment_kind_and_credential_before_io() {
             .is_err()
     );
     assert_eq!(rotated_server.count(), 1);
+    let rotated_page = rotated_client
+        .reversal_page(frozen.snapshot(), PAYMENT, ReversalKind::Refund, None)
+        .await
+        .expect("rotated root page");
+    assert!(rotated_page.candidates().is_empty());
+    assert_eq!(rotated_page.requested_from(), None);
+    assert_eq!(rotated_page.next_from(), None);
+    assert!(rotated_page.attempt() == frozen.snapshot());
+    assert_eq!(rotated_page.payment_id(), PAYMENT);
+    assert_eq!(rotated_page.kind(), ReversalKind::Refund);
+    assert_eq!(rotated_page.credential_fingerprint(), rotated_fingerprint);
+    assert_ne!(
+        rotated_page.credential_fingerprint(),
+        root_page.credential_fingerprint()
+    );
 }
 #[tokio::test]
 async fn invalid_parent_identity_fails_before_a_payment_request() {
