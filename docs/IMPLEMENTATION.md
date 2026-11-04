@@ -398,8 +398,10 @@ cannot overwrite a newer credential. Private login verifies the password outside
 the transaction and claims the account before rechecking the exact hash and
 revision. Session claims require the same current credential revision. Rotation
 consumes the old bearer and issues one replacement within the original 12-hour
-window. Logout revokes the current bearer. Complete secure delivery, password
-blocklist, rate limiting and browser controls before exposing the flow.
+window. Logout revokes the current bearer. A private admission primitive can
+commit both a per-purpose and per-target quota debit. Wire it before credential
+work in the trusted entry points. Complete secure delivery, password blocklist,
+trusted ingress, timing and browser controls before exposing the flow.
 
 Private guest-order linking requires a live guest basket credential and CSRF
 proof to issue a one-use challenge for that exact accepted order. A current

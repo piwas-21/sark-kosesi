@@ -743,3 +743,11 @@ for exact captured totals and absence of buyer details. Assert that later
 withdrawal and newer Dutch source copy preserve accepted titles, while altered
 captured titles and missing, mismatched or rejected source reviews fail closed.
 Browser and delivery acceptance remain open.
+
+Test credential admission against isolated PostgreSQL from separate pools.
+Assert exact independent target and global caps, domain-case normalization,
+purpose separation, committed debits across later failures, and fresh window
+selection after a real lock wait. Test native constraints, backwards or
+unavailable time, stale key versions and inconsistent active configuration.
+Inspect target rows for fixed-length digests and bounded rollover. Public
+enumeration, timing and overload acceptance remain separate.

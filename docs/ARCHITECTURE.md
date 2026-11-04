@@ -1586,3 +1586,14 @@ catalogue changes leave accepted titles intact. History seeks up to eight
 entries in descending link time and order identity. The cursor is a live
 position. Refresh from the beginning to include newer links. Browser
 exposure and verified delivery remain separate.
+
+### Credential admission
+
+Acquire the credential purpose row before its target counter. Use a fresh
+clock reading after that lock and commit the debit in a dedicated transaction
+before starting authentication or proof work. Every worker uses the same
+purpose budget and normalized-mailbox quota without looking up the account.
+A later failure or cancellation of the credential operation leaves the debit
+in place. A successful window rollover removes the expired counters for that
+purpose and starts fresh counts in the same transaction. Never perform Argon2
+or network work while holding quota locks.

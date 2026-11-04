@@ -476,3 +476,28 @@ Read linked orders only under live account and session claims. Filter the
 link by the session account, validate its exact consumed proof and accepted
 order, and check session time again before returning. Keep buyer, delivery
 address, payment and fulfilment details out of the history projection.
+
+### Private credential admission
+
+Reserve capacity before expensive credential work using a separate global
+and target budget per purpose. Normalize with the same account identity rule
+and use a purpose- and window-specific HMAC-SHA256 digest of that mailbox. Malformed
+input shares a dedicated target bucket. Apply the policy before account
+lookup so unknown and known mailboxes consume the same budgets. Counters
+contain neither plaintext mailboxes nor the key.
+
+Run all instances with the same trusted key version and limits. The active
+60-second window pins both. Switch configuration at a window boundary and
+coordinate key version changes across instances. Each purpose rejects a
+version below the one it last admitted and rejects a changed key using the
+same version. Recheck monotonic time after lock waits and preserve the
+post-write sample as the durable high-water mark. Check time again after
+commit. A late result denies permission while retaining the debit.
+One active window per purpose bounds storage. An inactive purpose's expired
+digests persist until its next successful rollover, so time-based purge
+remains an operational requirement before public exposure.
+
+Complete trusted source limits at ingress, neutral responses, enumeration
+and timing tests, and measured overload budgets before wiring public routes.
+The per-target cap can temporarily restrict an account when someone else
+submits its address. Treat that as an abuse case in ingress acceptance.

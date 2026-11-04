@@ -13,6 +13,7 @@ pub mod bom;
 pub mod callback_forwarder;
 pub mod catalogue_authoring;
 pub mod catalogue_prices;
+pub mod customer_credential_admission;
 pub mod customer_passwords;
 pub mod customer_sessions;
 pub mod email_verification;
