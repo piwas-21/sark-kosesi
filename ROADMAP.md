@@ -110,8 +110,13 @@ transaction; a newer draft or withdrawal blocks old approvals. No policies or
 grants are seeded. Trusted indicative promotion quotes now retain original prices,
 allocate capped fixed/percentage discounts by largest remainder, and split VAT on
 discounted extended lines under the same final source/expiry checks. Pure cumulative
-refund allocations preserve captured tax across partial credits. No customer
-coupon route, promotion authority, budget claim or refund effect is installed.
+refund allocations preserve captured tax across partial credits. A pure order-scoped
+allocator now checks explicit SKU/shipping balances and returns exact captured
+gross/net/VAT deltas. A private, confirmed finance reservation claims these
+amounts once against the accepted order and current received evidence, with
+immutable cumulative accounting and a minimal outbox event. Provider-side
+refund/chargeback reconciliation, resolution of reservations and execution
+custody remain open. No customer coupon route or budget claim is installed.
 Private promotion drafts and independent exact-revision reviews now persist
 canonical eligibility/discount terms and explicit lifetime budget/redemption limits.
 New drafts and withdrawal block older approvals; no coupons or grants are seeded.

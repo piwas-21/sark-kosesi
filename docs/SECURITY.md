@@ -388,6 +388,18 @@ review, fresh received evidence and reciprocal decision, claim and effects.
 Database write-role restrictions still apply. The outbox projection carries
 only the decision and order identities and a digest, with no operator reason.
 
+## Private refund reservation custody
+
+Use an unseeded `refund.prepare` grant, recent MFA and explicit confirmation of
+the order, expected received recognition and each requested amount. The server
+derives the audit actor from the locked session and rechecks time before commit.
+Reserve only against the authenticated, exact accepted EUR total and the
+serialized reservation history. Exact receipt replay requires current authority
+and the original intent, including the actor, with historical payment custody.
+The database role stays trusted. The event carries only the order, reservation
+and digest. Keep raw reasons and credentials out of diagnostics. Execution,
+credits and inventory effects require independent authority.
+
 ## Private email verification challenge custody
 
 The private challenge primitive accepts only ASCII dot-atom local parts and ASCII
