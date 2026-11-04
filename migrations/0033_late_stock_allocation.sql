@@ -231,17 +231,20 @@ BEGIN
   SELECT member->>'hold_id' AS hold_id,line->>'component_code' AS code,(line->>'quantity')::bigint AS quantity,
    member_number,line_number
   FROM members CROSS JOIN LATERAL jsonb_array_elements(member->'components') WITH ORDINALITY AS lines(line,line_number)
+ ), components AS MATERIALIZED (
+  -- Decode the bounded component footprint once per stage, including for the largest basket.
+  SELECT value AS c,value->>'component_code' AS code FROM jsonb_array_elements(s.footprint->'components')
  ), measured AS (
   SELECT pairs.*,movement.sequence,movement.effect_key,movement.action,movement.actor,movement.reason,
    movement.quantity AS actual_quantity,movement.on_hand_delta,movement.quarantine_delta,movement.reserved_delta,
    movement.on_hand_after,movement.quarantine_after,movement.reserved_after,
-   sum(pairs.quantity) OVER(PARTITION BY code ORDER BY member_number,line_number) AS progressed,
+   sum(pairs.quantity) OVER(PARTITION BY pairs.code ORDER BY member_number,line_number) AS progressed,
    lag(movement.sequence) OVER(ORDER BY member_number,line_number) AS previous,
    (c->'before'->>'on_hand')::bigint AS p,(c->'before'->>'quarantine')::bigint AS q,
    (c->'before'->>'reserved')::bigint AS r,(c->>'active')::bigint AS active,(c->>'demand')::bigint AS demand
   FROM pairs LEFT JOIN stock_movements movement ON movement.hold_id=pairs.hold_id
     AND movement.component_code=pairs.code AND movement.action=action_name
-   LEFT JOIN LATERAL (SELECT value AS c FROM jsonb_array_elements(s.footprint->'components') WHERE value->>'component_code'=pairs.code) component ON true
+   LEFT JOIN components component ON component.code=pairs.code
  )
  SELECT EXISTS(SELECT 1 FROM measured WHERE sequence IS NULL OR actual_quantity IS DISTINCT FROM quantity
   OR actor IS DISTINCT FROM actor_name OR reason IS DISTINCT FROM 'sealed BOM hold transition'

@@ -981,7 +981,9 @@ including the entire event/digest subquery. No truncation or guessed two-code li
 Native BEFORE and deferred completeness independently require RC, current received
 proof, the common claim, complete original/fresh binding, exact stage movement sets
 and member-order intermediate balances, real final parity and the digest-bound
-order event. Sample final observed time after all actual writes and reject rewind
+order event. Each stage projects the bounded component footprint once and joins
+it by component code before verifying the ordered movement ledger. Sample final
+observed time after all actual writes and reject rewind
 or fresh-window expiry with full rollback. Early constraint flush acquires a
 transaction completion seal only after the full proof. Extend scoped mutation
 guards across original/fresh groups and holds, affected components and financial
