@@ -1,57 +1,56 @@
 //! Canonical cross-path ownership and bounded stored headers; no detached authority.
+use super::index::load_index;
 use super::*;
-#[derive(sqlx::FromRow)]
-struct Index {
-    attempt_id: Option<String>,
-    kind: Option<String>,
-    receipt_id: Option<String>,
-    review: bool,
-    original_id: Option<String>,
-    late_id: Option<String>,
-    original_event: bool,
-    late_event: bool,
-    review_event: bool,
-    orphan: bool,
-}
 pub(super) async fn read(
     tx: &mut Transaction<'_, Postgres>,
     order: &str,
 ) -> Result<Option<Outcome>, LateStockError> {
-    // One statement snapshot prevents a normal concurrent commit from looking orphaned.
-    let index:Index=sqlx::query_as("SELECT (SELECT left(attempt_id,33) FROM order_stock_allocations WHERE order_id=$1) AS attempt_id,(SELECT left(kind,10) FROM order_stock_allocations WHERE order_id=$1) AS kind,(SELECT left(receipt_id,33) FROM order_stock_allocations WHERE order_id=$1) AS receipt_id,(SELECT left(id,33) FROM order_stock_settlements WHERE order_id=$1) AS original_id,(SELECT left(id,33) FROM late_stock_allocations WHERE order_id=$1) AS late_id,EXISTS(SELECT 1 FROM commerce_outbox WHERE aggregate_id=$1 AND kind='order.stock_settled.v1') AS original_event,EXISTS(SELECT 1 FROM commerce_outbox WHERE aggregate_id=$1 AND kind='order.stock_late_allocated.v1') AS late_event,EXISTS(SELECT 1 FROM commerce_outbox WHERE aggregate_id=$1 AND kind='order.stock_recovery_review.v1') AS review_event,EXISTS(SELECT 1 FROM late_stock_review_cases WHERE order_id=$1) AS review,EXISTS(SELECT 1 FROM late_stock_allocations WHERE order_id=$1) OR EXISTS(SELECT 1 FROM order_stock_settlements WHERE order_id=$1) OR EXISTS(SELECT 1 FROM commerce_outbox WHERE aggregate_id=$1 AND kind IN ('order.stock_settled.v1','order.stock_late_allocated.v1','order.stock_recovery_review.v1')) AS orphan")
-        .bind(order).fetch_one(&mut **tx).await?;
-    match (index.attempt_id, index.kind, index.receipt_id) {
+    // An open case can acquire an allocation while its historical proof is read.
+    // Claim its attempt before touching hold/stock sources, then reload the index.
+    let mut index = load_index(tx, order).await?;
+    if index.review && index.attempt_id.is_none() {
+        let case_id = index
+            .review_id
+            .clone()
+            .filter(|id| identifier(id))
+            .ok_or(LateStockError::InvalidStoredData)?;
+        let attempt = index
+            .review_attempt_id
+            .clone()
+            .filter(|id| identifier(id))
+            .ok_or(LateStockError::InvalidStoredData)?;
+        crate::order_stock::source::claim_attempt(tx, &attempt).await?;
+        index = load_index(tx, order).await?;
+        index.require_review_binding(&case_id, &attempt)?;
+    }
+    match (
+        index.attempt_id.as_deref(),
+        index.kind.as_deref(),
+        index.receipt_id.as_deref(),
+    ) {
         (Some(attempt), Some(kind), Some(id)) => {
-            if index.review || index.review_event || !identifier(&attempt) || !identifier(&id) {
-                return Err(LateStockError::InvalidStoredData);
+            if index.review {
+                let case = review_case(tx, order)
+                    .await?
+                    .ok_or(LateStockError::InvalidStoredData)?;
+                index.require_review_binding(&case.id, &case.attempt_id)?;
+                history::review(tx, &case).await?;
+                let decisions = disposition::validate_history(tx, &case.id).await?;
+                validate_decisions(&decisions, index.decisions, Some(id))?;
             }
-            if match kind.as_str() {
+            let outcome = match kind {
                 "original" => {
-                    index.original_id.as_deref() != Some(id.as_str())
-                        || index.late_id.is_some()
-                        || index.late_event
-                }
-                "late" => {
-                    index.late_id.as_deref() != Some(id.as_str())
-                        || index.original_id.is_some()
-                        || index.original_event
-                }
-                _ => true,
-            } {
-                return Err(LateStockError::InvalidStoredData);
-            }
-            let outcome = match kind.as_str() {
-                "original" => Outcome::Original(
-                    crate::order_stock::read_in_transaction(tx, order)
+                    let receipt = crate::order_stock::read_in_transaction(tx, order)
                         .await?
-                        .filter(|receipt| receipt.id == id && receipt.attempt_id == attempt)
-                        .ok_or(LateStockError::InvalidStoredData)?,
-                ),
+                        .ok_or(LateStockError::InvalidStoredData)?;
+                    validate_receipt_binding(&receipt.id, &receipt.attempt_id, id, attempt)?;
+                    Outcome::Original(receipt)
+                }
                 "late" => {
                     let receipt = allocation(tx, order)
                         .await?
-                        .filter(|receipt| receipt.id == id && receipt.attempt_id == attempt)
                         .ok_or(LateStockError::InvalidStoredData)?;
+                    validate_receipt_binding(&receipt.id, &receipt.attempt_id, id, attempt)?;
                     history::allocation(tx, &receipt).await?;
                     Outcome::Late(receipt)
                 }
@@ -61,26 +60,55 @@ pub(super) async fn read(
         }
         (None, None, None) => {
             if index.review {
-                if index.original_id.is_some()
-                    || index.late_id.is_some()
-                    || index.original_event
-                    || index.late_event
-                {
-                    return Err(LateStockError::InvalidStoredData);
-                }
                 let case = review_case(tx, order)
                     .await?
                     .ok_or(LateStockError::InvalidStoredData)?;
+                index.require_review_binding(&case.id, &case.attempt_id)?;
                 history::review(tx, &case).await?;
+                let decisions = disposition::validate_history(tx, &case.id).await?;
+                validate_decisions(&decisions, index.decisions, None)?;
                 return Ok(Some(Outcome::NeedsReview(case)));
-            }
-            if index.orphan {
-                return Err(LateStockError::InvalidStoredData);
             }
             Ok(None)
         }
         _ => Err(LateStockError::InvalidStoredData),
     }
+}
+// The canonical claim must name the actual receipt and its owning attempt.
+fn validate_receipt_binding(
+    receipt_id: &str,
+    receipt_attempt: &str,
+    claimed_id: &str,
+    claimed_attempt: &str,
+) -> Result<(), LateStockError> {
+    if receipt_id != claimed_id || receipt_attempt != claimed_attempt {
+        return Err(LateStockError::InvalidStoredData);
+    }
+    Ok(())
+}
+// The index count and the complete validated history must agree about whether
+// this case remains open or produced the exact canonical allocation.
+fn validate_decisions(
+    decisions: &[disposition::DecisionReceipt],
+    expected_count: i64,
+    allocation_id: Option<&str>,
+) -> Result<(), LateStockError> {
+    use disposition::DecisionOutcome;
+    if i64::try_from(decisions.len()).ok() != Some(expected_count) {
+        return Err(LateStockError::InvalidStoredData);
+    }
+    let consistent = match allocation_id {
+        Some(id) => {
+            matches!(decisions.last().map(|d| &d.outcome), Some(DecisionOutcome::Allocated { allocation_id }) if allocation_id == id)
+        }
+        None => !decisions
+            .iter()
+            .any(|d| matches!(d.outcome, DecisionOutcome::Allocated { .. })),
+    };
+    if !consistent {
+        return Err(LateStockError::InvalidStoredData);
+    }
+    Ok(())
 }
 #[derive(sqlx::FromRow)]
 struct AllocationRow {
@@ -147,7 +175,7 @@ struct ReviewRow {
     footprint: Option<serde_json::Value>,
     event_present: bool,
 }
-async fn review_case(
+pub(super) async fn review_case(
     tx: &mut Transaction<'_, Postgres>,
     order: &str,
 ) -> Result<Option<ReviewCase>, LateStockError> {
@@ -219,7 +247,9 @@ pub(super) async fn review_event(
         .bind(event).bind(receipt).execute(&mut **tx).await?;
     Ok(())
 }
-fn envelope<T: serde::Serialize>(value: &T) -> Result<serde_json::Value, LateStockError> {
+pub(super) fn envelope<T: serde::Serialize>(
+    value: &T,
+) -> Result<serde_json::Value, LateStockError> {
     if serde_json::to_vec(value)
         .map_err(|_| LateStockError::InvalidStoredData)?
         .len()
@@ -233,3 +263,7 @@ fn envelope<T: serde::Serialize>(value: &T) -> Result<serde_json::Value, LateSto
 #[cfg(test)]
 #[path = "../../tests/support/late_stock_rows_unit.rs"]
 mod boundary_tests;
+
+#[cfg(test)]
+#[path = "../../tests/support/late_stock_rows_outcomes_unit.rs"]
+mod outcome_tests;

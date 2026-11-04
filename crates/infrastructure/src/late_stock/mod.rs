@@ -5,9 +5,12 @@ pub use commerce_domain::late_stock::*;
 use commerce_domain::{checkout_orders::OrderSnapshot, order_stock::identifier};
 use sqlx::{Acquire, PgPool, Postgres, Transaction};
 mod decode;
+pub mod disposition;
 mod engine;
 mod history;
 pub mod inbox;
+mod index;
+mod retry_engine;
 mod rows;
 mod source;
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -166,6 +169,9 @@ async fn current(
     let received = received
         .filter(|receipt| receipt.state == recognition::State::Received)
         .ok_or(LateStockError::Unavailable)?;
+    if frozen.snapshot().binding.order_id != order {
+        return Err(LateStockError::InvalidStoredData);
+    }
     let order = crate::checkout_orders::snapshot_in_transaction(
         tx,
         &frozen.snapshot().binding.basket_id,
@@ -177,4 +183,31 @@ async fn current(
         _ => LateStockError::InvalidStoredData,
     })?;
     Ok(Context { order, received })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::{MIGRATOR, mollie::tests::order_stock_cases::fixture as orders};
+
+    #[sqlx::test(migrator = "MIGRATOR")]
+    async fn late_stock_current_source_requires_the_exact_order_for_a_received_attempt(
+        pool: PgPool,
+    ) {
+        let fixture = orders::accepted(&pool, false, true).await;
+        let order = &fixture.order.identity.id;
+        let attempt = &fixture.frozen.snapshot().binding.id;
+        let foreign = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
+        assert_ne!(order, foreign);
+        let mut tx = pool.begin().await.expect("inspect current paid source");
+        assert!(matches!(
+            current(&mut tx, foreign, attempt).await,
+            Err(LateStockError::InvalidStoredData)
+        ));
+        let bound = current(&mut tx, order, attempt)
+            .await
+            .expect("same received attempt authorizes its exact order");
+        assert_eq!(&bound.order.identity.id, order);
+        tx.rollback().await.expect("read-only transaction");
+    }
 }

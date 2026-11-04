@@ -285,6 +285,71 @@ pub(super) async fn healthy_probe(pool: &PgPool, s: &LateAllocation) {
         .expect("leave canonical slot empty for next fault");
 }
 
+#[sqlx::test(migrations = false)]
+async fn late_stock_schema33_upgrade_preserves_native_allocation_clock_bounds(pool: PgPool) {
+    MIGRATOR.run_to(33, &pool).await.expect("schema 33");
+    let f = accepted(&pool, false, true).await;
+    let s = candidate(&pool, &f).await;
+    let before = all_effects(&pool).await;
+    MIGRATOR
+        .run(&pool)
+        .await
+        .expect("upgrade through schema 37");
+    assert_eq!(all_effects(&pool).await, before);
+
+    for (allocated_at, expires_at) in [
+        (1999, 2060),
+        (2060, 2060),
+        (i64::MIN, 2060),
+        (2000, i64::MIN),
+        (9_007_199_254_740_992, 2060),
+        (2000, 9_007_199_254_740_992),
+    ] {
+        let mut invalid = s.clone();
+        invalid.allocated_at = allocated_at;
+        invalid.expires_at = expires_at;
+        let mut tx = pool.begin().await.expect("invalid native clock");
+        prepare(&mut tx, &invalid).await.expect("same fresh source");
+        constraint(
+            &insert(&mut tx, &invalid)
+                .await
+                .expect_err("invalid clock rejected"),
+        );
+        tx.rollback().await.expect("rollback rejected candidate");
+        assert_eq!(all_effects(&pool).await, before);
+        healthy_probe(&pool, &s).await;
+    }
+
+    let mut last = s.clone();
+    last.allocated_at = 2059;
+    healthy_probe(&pool, &last).await;
+    let mut tx = pool
+        .begin()
+        .await
+        .expect("valid upgraded native allocation");
+    prepare(&mut tx, &s).await.expect("fresh source");
+    insert(&mut tx, &s).await.expect("valid receipt");
+    effects(&mut tx, &s, Fault::Healthy).await;
+    event(&mut tx, &s).await.expect("exact event");
+    tx.commit().await.expect("complete allocation commits");
+
+    // Evaluate a copy of the committed receipt so no insert or table constraint
+    // can mask a regression in the historical predicate's window check.
+    for (allocated_at, expires_at, expected) in [
+        (2000, 2060, true),
+        (2059, 2060, true),
+        (1999, 2060, false),
+        (2060, 2060, false),
+        (2000, i64::MIN, false),
+        (2000, 9_007_199_254_740_992, false),
+    ] {
+        let valid: bool = sqlx::query_scalar("SELECT late_stock_allocation_exact(jsonb_populate_record(s, jsonb_build_object('allocated_at',$2::bigint,'expires_at',$3::bigint)),false,false) FROM late_stock_allocations s WHERE s.id=$1")
+            .bind(&s.id).bind(allocated_at).bind(expires_at)
+            .fetch_one(&pool).await.expect("historical clock predicate");
+        assert_eq!(valid, expected, "clock pair ({allocated_at}, {expires_at})");
+    }
+}
+
 #[sqlx::test(migrator = "MIGRATOR")]
 async fn late_stock_native_rr_serializable_and_orphan_claims_fail_with_same_rc_candidate_healthy(
     pool: PgPool,
