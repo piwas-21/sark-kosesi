@@ -8,6 +8,7 @@ use sqlx::{PgPool, Postgres, Transaction};
 use std::time::Duration;
 use zeroize::Zeroizing;
 
+pub(crate) use lifecycle::claim_session;
 pub use lifecycle::{authenticate, logout, rotate};
 pub use login::login;
 
@@ -61,7 +62,7 @@ fn now(clock: &dyn Clock) -> Result<i64, SessionError> {
         .ok_or(SessionError::Unavailable)
 }
 
-async fn begin(pool: &PgPool) -> Result<Transaction<'_, Postgres>, SessionError> {
+pub(crate) async fn begin(pool: &PgPool) -> Result<Transaction<'_, Postgres>, SessionError> {
     let mut tx = tokio::time::timeout(Duration::from_secs(2), pool.begin())
         .await
         .map_err(|_| SessionError::Unavailable)?

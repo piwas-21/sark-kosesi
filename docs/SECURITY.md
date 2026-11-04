@@ -459,4 +459,16 @@ Claim the account before the session, and reject stale credential revisions,
 revoked sessions and expiry after waits. Rotation creates one reciprocal
 successor without extending the original expiry. Flush completion before the
 last clock check. Logout revokes the current bearer. Browser cookies, Origin
-and CSRF controls and protected-write authorization remain separate.
+and CSRF integration remain separate.
+
+## Private guest-order linking
+
+Use distinct proof and customer-session bearers. The issuer checks a live
+guest credential, its CSRF token and the accepted order in the owned basket.
+Redemption holds the current revision-bound customer session through commit.
+It requires the exact proof, order and verified buyer mailbox. Preserve the
+local part and fold only the ASCII domain through the existing normalizer.
+Keep bearer bytes and buyer information out of link records and diagnostics.
+PostgreSQL requires reciprocal consumption and a unique immutable link.
+Wrong scope, expiry or a competing link leaves the proof unspent. The
+private adapter provides no browser route or proof-delivery transport.

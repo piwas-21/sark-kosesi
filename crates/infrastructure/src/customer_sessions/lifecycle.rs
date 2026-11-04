@@ -62,6 +62,31 @@ async fn claim(
     Ok(row)
 }
 
+/// A session claim is valid only while its caller retains the transaction locks.
+pub(crate) struct HeldSession(SessionRow);
+impl HeldSession {
+    pub(crate) fn account_id(&self) -> i64 {
+        self.0.account_id
+    }
+    pub(crate) fn check_at(&self, at: i64) -> Result<(), SessionError> {
+        if self.0.active(at) {
+            Ok(())
+        } else {
+            Err(SessionError::Denied)
+        }
+    }
+}
+
+pub(crate) async fn claim_session(
+    tx: &mut Transaction<'_, Postgres>,
+    token: &CustomerSessionToken,
+    clock: &dyn Clock,
+) -> Result<HeldSession, SessionError> {
+    claim(tx, &token.verifier(), false, clock)
+        .await
+        .map(HeldSession)
+}
+
 /// Returns a detached snapshot, not authority held through a later operation.
 pub async fn authenticate(
     pool: &PgPool,

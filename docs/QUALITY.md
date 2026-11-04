@@ -728,3 +728,13 @@ rotation leaves the prior bearer usable. Use direct SQL controls for detached
 rotation, incorrect revision and mismatched successor. Apply the critical
 95% native line and branch policy to the session adapter. Browser and mailbox
 acceptance require separate evidence.
+
+### Private guest-order links
+
+Use isolated PostgreSQL with actual accepted guest orders and verified
+customer sessions. Check wrong basket, order, CSRF, mailbox, proof purpose
+and session revision, one-use replay and expiry after lock waits. Race two
+valid proofs for one order and prove a single link commits while the losing
+proof remains unspent. Use native negative and positive controls for detached
+consumption and cross-account custody. Assert the original order is
+unchanged. Browser, delivery and linked-order reader acceptance remain open.

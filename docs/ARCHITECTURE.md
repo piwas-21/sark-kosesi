@@ -1558,3 +1558,20 @@ authority in their own transaction. Rotation revokes the old bearer and
 inserts one successor with the original expiry in a single transaction. Native
 same-transaction custody and a deferred check bind both effects. Complete
 secure delivery, blocklist, abuse limits and browser integration separately.
+
+### Private guest-order linking
+
+Issue a 15-minute order-link proof only after checking the live guest basket
+session, its CSRF proof and the exact immutable order in that basket. The
+proof has an independent random bearer and verifier domain. Return it to
+the trusted caller after the issuance transaction commits.
+
+Redemption holds the current customer account and session claims, then
+locks the exact proof and order. Compare the verified account mailbox to the
+normalized buyer mailbox in the immutable order. A matching mailbox is one
+condition of linkage alongside the order-specific bearer. Consume the proof
+and insert one order-to-account link in the same transaction. The native
+transaction identity and reciprocal checks bind both writes. The original
+order remains immutable. Flush completion and recheck proof and session time
+before commit. Later protected order reads will check the link while holding
+live session authority. Browser exposure and verified delivery remain separate.

@@ -18,6 +18,7 @@ pub mod customer_sessions;
 pub mod email_verification;
 pub mod factual_review;
 pub mod guest_baskets;
+pub use guest_baskets::guest_order_links;
 pub mod holds;
 pub mod image_ingestion;
 pub mod image_review;
