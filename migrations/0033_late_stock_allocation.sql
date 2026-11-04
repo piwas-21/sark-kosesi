@@ -53,26 +53,96 @@ CREATE FUNCTION late_stock_review_digest(s late_stock_review_cases) RETURNS text
   'assessed_at',s.assessed_at,'footprint',s.footprint,'fence_key',s.fence_key)::text,'UTF8')),'hex')
 $$;
 
+-- Keep the original settlement source proof, but inspect each bounded hold in
+-- one ordered query rather than issuing separate SPI queries for every line.
+CREATE OR REPLACE FUNCTION order_stock_source(wanted_order text) RETURNS jsonb LANGUAGE plpgsql VOLATILE AS $$
+DECLARE owned checkout_orders%ROWTYPE; g basket_hold_groups%ROWTYPE; h stock_holds%ROWTYPE;
+ m basket_hold_members%ROWTYPE; members jsonb := '[]'; components jsonb; n bigint := 0;
+ lines bigint; actual_lines bigint; effects bigint; terminal text; total bigint := 0; problem text;
+BEGIN
+ SELECT * INTO owned FROM checkout_orders WHERE id=wanted_order;
+ SELECT * INTO g FROM basket_hold_groups WHERE id=owned.stock_group_id;
+ IF owned.id IS NULL OR g.id IS NULL OR NOT g.sealed OR g.owner_id<>owned.id
+  OR g.created_at<>owned.created_at OR g.expires_at<>owned.hold_expires_at
+  OR g.members_count NOT BETWEEN 1 AND 20
+  OR (SELECT count(*) FROM (SELECT 1 FROM basket_hold_members WHERE group_id=g.id LIMIT 21) bounded)<>g.members_count
+  OR (SELECT count(*) FROM (SELECT 1 FROM stock_holds WHERE basket_group_id=g.id LIMIT 21) bounded)<>g.members_count
+  OR jsonb_typeof(owned.snapshot->'quote'->'lines') IS DISTINCT FROM 'array'
+  OR jsonb_array_length(owned.snapshot->'quote'->'lines')<>g.members_count THEN
+  RAISE EXCEPTION 'Settlement requires complete original group' USING ERRCODE='23514'; END IF;
+ FOR m IN SELECT * FROM basket_hold_members WHERE group_id=g.id ORDER BY hold_id LIMIT 21 LOOP
+  n=n+1; SELECT * INTO h FROM stock_holds WHERE id=m.hold_id;
+  IF n>20 OR h.id IS NULL OR h.id !~ '^[a-f0-9]{32}$' OR h.basket_group_id IS DISTINCT FROM g.id
+   OR (h.owner_id,h.sku,h.revision,h.units,h.created_at,h.expires_at)
+     IS DISTINCT FROM (g.owner_id,m.sku,m.revision,m.units,g.created_at,g.expires_at)
+   OR h.units NOT BETWEEN 1 AND 1000 OR h.revision<=0
+   OR h.state NOT IN ('active','released','expired','consumed')
+   OR NOT EXISTS(SELECT 1 FROM jsonb_array_elements(owned.snapshot->'quote'->'lines') q
+     WHERE q->>'sku'=m.sku AND q->'bom_revision'=to_jsonb(m.revision) AND q->'quantity'=to_jsonb(m.units))
+   OR NOT EXISTS(SELECT 1 FROM catalogue_boms WHERE sku=m.sku AND revision=m.revision AND sealed) THEN
+   RAISE EXCEPTION 'Settlement member is not exact original selection' USING ERRCODE='23514'; END IF;
+  SELECT count(*) INTO lines FROM (SELECT 1 FROM catalogue_bom_lines WHERE sku=m.sku AND revision=m.revision LIMIT 65) bounded;
+  IF lines NOT BETWEEN 1 AND 64 OR (SELECT count(*) FROM (SELECT 1 FROM stock_hold_lines WHERE hold_id=h.id LIMIT 65) bounded)<>lines THEN
+   RAISE EXCEPTION 'Settlement requires bounded complete BOM' USING ERRCODE='23514'; END IF;
+  terminal=CASE h.state WHEN 'released' THEN 'release-hold' WHEN 'expired' THEN 'expire-hold' WHEN 'consumed' THEN 'consume-hold' ELSE NULL END;
+  WITH hold_lines AS MATERIALIZED (
+   SELECT *,row_number() OVER (ORDER BY component_code) AS line_number
+   FROM (SELECT * FROM stock_hold_lines WHERE hold_id=h.id ORDER BY component_code LIMIT 65) bounded
+  ), checked AS (
+   SELECT l.component_code,l.quantity,CASE
+    WHEN total+l.line_number>1280 OR p.code IS NULL OR b.quantity::bigint*h.units IS NULL
+     OR l.quantity IS DISTINCT FROM b.quantity::bigint*h.units
+     THEN 'Settlement requires exact original component allocation'
+    WHEN reserve.sequence IS NULL OR reserve.quantity<>l.quantity OR reserve.actor<>owned.id
+     OR reserve.reason<>'sealed BOM hold transition'
+     OR reserve.effect_key<>('hold:'||h.id||':reserve:'||l.component_code)
+     OR (reserve.on_hand_delta,reserve.quarantine_delta,reserve.reserved_delta) IS DISTINCT FROM (0::bigint,0::bigint,l.quantity)
+     OR reserve.on_hand_after<0 OR reserve.quarantine_after<0 OR reserve.reserved_after<l.quantity
+     OR reserve.quarantine_after::numeric+reserve.reserved_after>reserve.on_hand_after
+     THEN 'Settlement requires exact original reserve movement'
+    WHEN terminal IS NOT NULL AND (ending.sequence IS NULL OR ending.sequence<=reserve.sequence OR ending.quantity<>l.quantity
+     OR ending.effect_key<>('hold:'||h.id||':'||terminal||':'||l.component_code)
+     OR ending.reason<>'sealed BOM hold transition' OR btrim(ending.actor)='' OR length(ending.actor)>128
+     OR ending.on_hand_delta IS DISTINCT FROM (CASE WHEN terminal='consume-hold' THEN -l.quantity ELSE 0 END)
+     OR ending.quarantine_delta<>0 OR ending.reserved_delta<>-l.quantity
+     OR ending.on_hand_after<0 OR ending.quarantine_after<0 OR ending.reserved_after<0
+     OR ending.quarantine_after::numeric+ending.reserved_after>ending.on_hand_after)
+     THEN 'Terminal original hold has invalid custody' END AS problem
+   FROM hold_lines l
+   LEFT JOIN catalogue_bom_lines b ON b.sku=h.sku AND b.revision=h.revision AND b.component_code=l.component_code AND b.quantity BETWEEN 1 AND 10000
+   LEFT JOIN physical_components p ON p.code=b.component_code AND p.kind IN ('cover','foam')
+   LEFT JOIN stock_movements reserve ON reserve.hold_id=h.id AND reserve.component_code=l.component_code AND reserve.action='reserve'
+   LEFT JOIN stock_movements ending ON ending.hold_id=h.id AND ending.component_code=l.component_code AND ending.action=terminal
+  )
+  SELECT count(*),jsonb_agg(jsonb_build_object('component_code',component_code,'quantity',quantity) ORDER BY component_code),
+   (array_agg(checked.problem ORDER BY component_code) FILTER (WHERE checked.problem IS NOT NULL))[1]
+   INTO actual_lines,components,problem FROM checked;
+  IF actual_lines<>lines THEN RAISE EXCEPTION 'Settlement requires bounded complete BOM' USING ERRCODE='23514'; END IF;
+  IF problem IS NOT NULL THEN RAISE EXCEPTION '%',problem USING ERRCODE='23514'; END IF;
+  total=total+lines; effects=lines*CASE WHEN terminal IS NULL THEN 1 ELSE 2 END;
+  IF (SELECT count(*) FROM (SELECT 1 FROM stock_movements WHERE hold_id=h.id LIMIT 129) bounded)<>effects THEN
+   RAISE EXCEPTION 'Hold has missing or extra effects' USING ERRCODE='23514'; END IF;
+  members=members||jsonb_build_array(jsonb_build_object('hold_id',h.id,'sku',h.sku,'revision',h.revision,'units',h.units,'components',components));
+ END LOOP;
+ RETURN members;
+END;
+$$;
+
 CREATE FUNCTION late_stock_original(wanted_order text) RETURNS jsonb LANGUAGE plpgsql VOLATILE AS $$
-DECLARE members jsonb; member jsonb; line jsonb; h stock_holds%ROWTYPE;
- reserve stock_movements%ROWTYPE; terminal stock_movements%ROWTYPE; action_name text;
+DECLARE members jsonb; member jsonb; h stock_holds%ROWTYPE; action_name text;
  result jsonb := '[]'; pairs jsonb;
 BEGIN
  members=order_stock_source(wanted_order);
  FOR member IN SELECT value FROM jsonb_array_elements(members) LOOP
   SELECT * INTO h FROM stock_holds WHERE id=member->>'hold_id';
   action_name=CASE h.state WHEN 'expired' THEN 'expire-hold' WHEN 'released' THEN 'release-hold' WHEN 'consumed' THEN 'consume-hold' ELSE NULL END;
-  pairs='[]';
-  FOR line IN SELECT value FROM jsonb_array_elements(member->'components') LOOP
-   SELECT * INTO reserve FROM stock_movements WHERE hold_id=h.id AND component_code=line->>'component_code' AND action='reserve';
-   terminal=NULL;
-   IF action_name IS NOT NULL THEN
-    SELECT * INTO terminal FROM stock_movements WHERE hold_id=h.id AND component_code=line->>'component_code' AND action=action_name;
-   END IF;
-   pairs=pairs||jsonb_build_array(jsonb_build_object('component_code',line->>'component_code',
+  SELECT COALESCE(jsonb_agg(jsonb_build_object('component_code',line->>'component_code',
     'reserve_sequence',reserve.sequence,'reserve_digest',late_stock_movement_digest(reserve),
-    'terminal_sequence',terminal.sequence,'terminal_digest',CASE WHEN action_name IS NULL THEN NULL ELSE late_stock_movement_digest(terminal) END));
-  END LOOP;
+    'terminal_sequence',terminal.sequence,'terminal_digest',CASE WHEN action_name IS NULL THEN NULL ELSE late_stock_movement_digest(terminal) END)
+    ORDER BY line_number),'[]'::jsonb) INTO pairs
+   FROM jsonb_array_elements(member->'components') WITH ORDINALITY AS lines(line,line_number)
+   LEFT JOIN stock_movements reserve ON reserve.hold_id=h.id AND reserve.component_code=line->>'component_code' AND reserve.action='reserve'
+   LEFT JOIN stock_movements terminal ON terminal.hold_id=h.id AND terminal.component_code=line->>'component_code' AND terminal.action=action_name;
   result=result||jsonb_build_array(jsonb_build_object('member',member,'state',h.state,'pairs',pairs));
  END LOOP;
  RETURN result;
@@ -83,9 +153,8 @@ $$;
 -- Its exact reserve references remain; a valid later terminal transition is allowed.
 CREATE FUNCTION late_stock_original_exact(wanted_order text,captured jsonb,allow_later_active boolean)
  RETURNS boolean LANGUAGE plpgsql VOLATILE AS $$
-DECLARE current_members jsonb; cm jsonb; member jsonb; pair jsonb; line jsonb; h stock_holds%ROWTYPE;
- reserve stock_movements%ROWTYPE; terminal stock_movements%ROWTYPE; state_name text; action_name text;
- n integer := 0; k integer; expected_pair jsonb;
+DECLARE current_members jsonb; cm jsonb; member jsonb; h stock_holds%ROWTYPE;
+ state_name text; action_name text; n integer := 0; expected_pairs jsonb;
 BEGIN
  IF jsonb_typeof(captured) IS DISTINCT FROM 'array' OR jsonb_array_length(captured) NOT BETWEEN 1 AND 20
   OR octet_length(captured::text)>2097152 THEN RETURN false; END IF;
@@ -100,19 +169,14 @@ BEGIN
   IF state_name<>'active' AND h.state IS DISTINCT FROM state_name THEN RETURN false; END IF;
   IF state_name='active' AND NOT allow_later_active AND h.state<>'active' THEN RETURN false; END IF;
   action_name=CASE state_name WHEN 'expired' THEN 'expire-hold' WHEN 'released' THEN 'release-hold' WHEN 'consumed' THEN 'consume-hold' ELSE NULL END;
-  k=0;
-  FOR line IN SELECT value FROM jsonb_array_elements(member->'components') LOOP
-   pair=cm->'pairs'->k;k=k+1;
-   SELECT * INTO reserve FROM stock_movements WHERE hold_id=h.id AND component_code=line->>'component_code' AND action='reserve';
-   terminal=NULL;
-   IF action_name IS NOT NULL THEN
-    SELECT * INTO terminal FROM stock_movements WHERE hold_id=h.id AND component_code=line->>'component_code' AND action=action_name;
-   END IF;
-   expected_pair=jsonb_build_object('component_code',line->>'component_code','reserve_sequence',reserve.sequence,
-    'reserve_digest',late_stock_movement_digest(reserve),'terminal_sequence',terminal.sequence,
-    'terminal_digest',CASE WHEN action_name IS NULL THEN NULL ELSE late_stock_movement_digest(terminal) END);
-   IF pair::text IS DISTINCT FROM expected_pair::text THEN RETURN false; END IF;
-  END LOOP;
+  SELECT COALESCE(jsonb_agg(jsonb_build_object('component_code',line->>'component_code',
+    'reserve_sequence',reserve.sequence,'reserve_digest',late_stock_movement_digest(reserve),
+    'terminal_sequence',terminal.sequence,'terminal_digest',CASE WHEN action_name IS NULL THEN NULL ELSE late_stock_movement_digest(terminal) END)
+    ORDER BY line_number),'[]'::jsonb) INTO expected_pairs
+   FROM jsonb_array_elements(member->'components') WITH ORDINALITY AS lines(line,line_number)
+   LEFT JOIN stock_movements reserve ON reserve.hold_id=h.id AND reserve.component_code=line->>'component_code' AND reserve.action='reserve'
+   LEFT JOIN stock_movements terminal ON terminal.hold_id=h.id AND terminal.component_code=line->>'component_code' AND terminal.action=action_name;
+  IF (cm->'pairs')::text IS DISTINCT FROM expected_pairs::text THEN RETURN false; END IF;
   IF cm::text IS DISTINCT FROM jsonb_build_object('member',member,'state',state_name,'pairs',cm->'pairs')::text THEN RETURN false; END IF;
  END LOOP;
  RETURN true;
@@ -144,11 +208,15 @@ DECLARE demand record; c jsonb; b jsonb; expired jsonb; reserved jsonb; final_ba
  p bigint; q bigint; r bigint; n integer := 0; actual stock_balances%ROWTYPE; expected jsonb;
 BEGIN
  IF jsonb_typeof(components) IS DISTINCT FROM 'array' OR jsonb_array_length(components) NOT BETWEEN 1 AND 1280 THEN RETURN false; END IF;
- FOR demand IN SELECT line->>'component_code' AS code,sum((line->>'quantity')::bigint)::bigint AS quantity,
+ FOR demand IN WITH demands AS MATERIALIZED (SELECT line->>'component_code' AS code,sum((line->>'quantity')::bigint)::bigint AS quantity,
    sum(CASE WHEN m->>'state'='active' THEN (line->>'quantity')::bigint ELSE 0 END)::bigint AS active
    FROM jsonb_array_elements(original) m CROSS JOIN LATERAL jsonb_array_elements(m->'member'->'components') line
-   GROUP BY line->>'component_code' ORDER BY line->>'component_code' LOOP
-  c=components->n;n=n+1;b=c->'before';
+   GROUP BY line->>'component_code'),
+  numbered AS (SELECT *,row_number() OVER (ORDER BY code) AS demand_ordinal FROM demands),
+  supplied AS MATERIALIZED (SELECT value,ordinality FROM jsonb_array_elements(components) WITH ORDINALITY)
+  SELECT numbered.code,numbered.quantity,numbered.active,supplied.value AS component
+   FROM numbered LEFT JOIN supplied ON supplied.ordinality=numbered.demand_ordinal ORDER BY numbered.demand_ordinal LOOP
+  c=demand.component;n=n+1;b=c->'before';
   p=(b->>'on_hand')::bigint;q=(b->>'quarantine')::bigint;r=(b->>'reserved')::bigint;
   IF p IS NULL OR q IS NULL OR r IS NULL OR p<0 OR q<0 OR r<demand.active OR q::numeric+r>p
    OR demand.quantity NOT BETWEEN 1 AND 200000000 OR demand.active NOT BETWEEN 0 AND demand.quantity THEN RETURN false; END IF;
@@ -218,44 +286,62 @@ $$;
 
 CREATE FUNCTION late_stock_stage_exact(s late_stock_allocations,stage text)
  RETURNS boolean LANGUAGE plpgsql VOLATILE AS $$
-DECLARE action_name text; actor_name text; violation boolean;
+DECLARE violation boolean; original jsonb := s.footprint->'original'; fresh jsonb := s.footprint->'fresh';
+ component_footprint jsonb := s.footprint->'components';
 BEGIN
- action_name=CASE stage WHEN 'expiry' THEN 'expire-hold' WHEN 'reserve' THEN 'reserve' WHEN 'consume' THEN 'consume-hold' ELSE NULL END;
- actor_name=CASE stage WHEN 'expiry' THEN 'late-payment-expiry' WHEN 'reserve' THEN s.order_id WHEN 'consume' THEN 'payment-settlement' ELSE NULL END;
- IF action_name IS NULL THEN RETURN false; END IF;
- WITH members AS (
-  SELECT CASE WHEN stage='expiry' THEN value->'member' ELSE value END AS member,ordinality AS member_number
-   FROM jsonb_array_elements(CASE WHEN stage='expiry' THEN s.footprint->'original' ELSE s.footprint->'fresh' END) WITH ORDINALITY
-   WHERE stage<>'expiry' OR value->>'state'='active'
- ), pairs AS (
-  SELECT member->>'hold_id' AS hold_id,line->>'component_code' AS code,(line->>'quantity')::bigint AS quantity,
+ IF stage IS NULL OR stage NOT IN ('expiry','reserve','consume','all') THEN RETURN false; END IF;
+ WITH phases AS (
+  SELECT phase,action_name,actor_name FROM (VALUES
+   ('expiry','expire-hold','late-payment-expiry'),
+   ('reserve','reserve',s.order_id),
+   ('consume','consume-hold','payment-settlement')) AS p(phase,action_name,actor_name)
+   WHERE stage='all' OR phase=stage
+ ), members AS (
+  SELECT phases.*,CASE WHEN phase='expiry' THEN value->'member' ELSE value END AS member,ordinality AS member_number
+   FROM phases CROSS JOIN LATERAL jsonb_array_elements(CASE WHEN phase='expiry' THEN original ELSE fresh END) WITH ORDINALITY
+   WHERE phase<>'expiry' OR value->>'state'='active'
+ ), pairs AS MATERIALIZED (
+  SELECT phase,action_name,actor_name,member->>'hold_id' AS hold_id,line->>'component_code' AS code,(line->>'quantity')::bigint AS quantity,
    member_number,line_number
   FROM members CROSS JOIN LATERAL jsonb_array_elements(member->'components') WITH ORDINALITY AS lines(line,line_number)
+ ), hold_ids AS MATERIALIZED (
+  SELECT DISTINCT hold_id FROM pairs
+ ), movements AS MATERIALIZED (
+  -- Parameterized hold lookups avoid scanning unrelated ledger history.
+  SELECT movement.* FROM hold_ids ids CROSS JOIN LATERAL (
+   SELECT m.hold_id,m.component_code,m.action,m.sequence,m.effect_key,m.actor,m.reason,m.quantity,
+    m.on_hand_delta,m.quarantine_delta,m.reserved_delta,m.on_hand_after,m.quarantine_after,m.reserved_after
+   FROM stock_movements m WHERE m.hold_id=ids.hold_id AND m.action IN ('expire-hold','reserve','consume-hold') OFFSET 0
+  ) movement
+ ), pair_codes AS MATERIALIZED (
+  SELECT DISTINCT code FROM pairs
  ), components AS MATERIALIZED (
-  -- Decode the bounded component footprint once per stage, including for the largest basket.
-  SELECT value AS c,value->>'component_code' AS code FROM jsonb_array_elements(s.footprint->'components')
+  -- Decode only referenced component rows, once for all requested stages.
+  SELECT value->>'component_code' AS code,(value->'before'->>'on_hand')::bigint AS p,
+   (value->'before'->>'quarantine')::bigint AS q,(value->'before'->>'reserved')::bigint AS r,
+   (value->>'active')::bigint AS active,(value->>'demand')::bigint AS demand
+  FROM jsonb_array_elements(component_footprint) JOIN pair_codes ON pair_codes.code=value->>'component_code'
  ), measured AS (
   SELECT pairs.*,movement.sequence,movement.effect_key,movement.action,movement.actor,movement.reason,
    movement.quantity AS actual_quantity,movement.on_hand_delta,movement.quarantine_delta,movement.reserved_delta,
    movement.on_hand_after,movement.quarantine_after,movement.reserved_after,
-   sum(pairs.quantity) OVER(PARTITION BY pairs.code ORDER BY member_number,line_number) AS progressed,
-   lag(movement.sequence) OVER(ORDER BY member_number,line_number) AS previous,
-   (c->'before'->>'on_hand')::bigint AS p,(c->'before'->>'quarantine')::bigint AS q,
-   (c->'before'->>'reserved')::bigint AS r,(c->>'active')::bigint AS active,(c->>'demand')::bigint AS demand
-  FROM pairs LEFT JOIN stock_movements movement ON movement.hold_id=pairs.hold_id
-    AND movement.component_code=pairs.code AND movement.action=action_name
+   sum(pairs.quantity) OVER(PARTITION BY pairs.phase,pairs.code ORDER BY member_number,line_number) AS progressed,
+   lag(movement.sequence) OVER(PARTITION BY pairs.phase ORDER BY member_number,line_number) AS previous,
+   component.p,component.q,component.r,component.active,component.demand
+  FROM pairs LEFT JOIN movements movement ON movement.hold_id=pairs.hold_id
+    AND movement.component_code=pairs.code AND movement.action=pairs.action_name
    LEFT JOIN components component ON component.code=pairs.code
  )
  SELECT EXISTS(SELECT 1 FROM measured WHERE sequence IS NULL OR actual_quantity IS DISTINCT FROM quantity
   OR actor IS DISTINCT FROM actor_name OR reason IS DISTINCT FROM 'sealed BOM hold transition'
   OR effect_key IS DISTINCT FROM ('hold:'||hold_id||':'||action_name||':'||code)
   OR (previous IS NOT NULL AND sequence<=previous)
-  OR on_hand_delta IS DISTINCT FROM (CASE WHEN stage='consume' THEN -quantity ELSE 0 END)
+  OR on_hand_delta IS DISTINCT FROM (CASE WHEN phase='consume' THEN -quantity ELSE 0 END)
   OR quarantine_delta IS DISTINCT FROM 0::bigint
-  OR reserved_delta IS DISTINCT FROM (CASE WHEN stage='reserve' THEN quantity ELSE -quantity END)
-  OR on_hand_after IS DISTINCT FROM (CASE WHEN stage='consume' THEN p-progressed ELSE p END)
+  OR reserved_delta IS DISTINCT FROM (CASE WHEN phase='reserve' THEN quantity ELSE -quantity END)
+  OR on_hand_after IS DISTINCT FROM (CASE WHEN phase='consume' THEN p-progressed ELSE p END)
   OR quarantine_after IS DISTINCT FROM q
-  OR reserved_after IS DISTINCT FROM (CASE stage WHEN 'expiry' THEN r-progressed WHEN 'reserve' THEN r-active+progressed ELSE r-active+demand-progressed END)) INTO violation;
+  OR reserved_after IS DISTINCT FROM (CASE phase WHEN 'expiry' THEN r-progressed WHEN 'reserve' THEN r-active+progressed ELSE r-active+demand-progressed END)) INTO violation;
  RETURN NOT violation;
 EXCEPTION WHEN invalid_text_representation OR numeric_value_out_of_range OR invalid_parameter_value OR datatype_mismatch THEN RETURN false;
 END;
@@ -268,7 +354,7 @@ DECLARE owned checkout_orders%ROWTYPE; m jsonb; fresh_ids text[]; active_ids tex
 BEGIN
  IF octet_length(s.footprint::text)>2097152 OR jsonb_typeof(s.footprint) IS DISTINCT FROM 'object' THEN RETURN false; END IF;
  IF s.id IS NULL OR s.actor IS DISTINCT FROM 'late-payment-allocation' OR (s.fence_key IS NULL OR s.fence_key<=0)
-  OR octet_length(s.footprint::text)>2097152 OR jsonb_typeof(s.footprint) IS DISTINCT FROM 'object' OR (s.footprint->'schema_version')::text IS DISTINCT FROM '1'
+  OR (s.footprint->'schema_version')::text IS DISTINCT FROM '1'
   OR s.footprint IS DISTINCT FROM jsonb_build_object('schema_version',1,'original',s.footprint->'original',
     'fresh',s.footprint->'fresh','components',s.footprint->'components') THEN RETURN false; END IF;
  SELECT * INTO owned FROM checkout_orders WHERE id=s.order_id;
@@ -283,7 +369,7 @@ BEGIN
   OR NOT late_stock_components_exact(s.footprint->'original',s.footprint->'components',true,CASE WHEN current_balances THEN 'after' ELSE 'none' END)
   OR NOT EXISTS(SELECT 1 FROM order_stock_allocations a WHERE a.order_id=s.order_id AND a.attempt_id=s.attempt_id AND a.kind='late' AND a.receipt_id=s.id)
   OR EXISTS(SELECT 1 FROM late_stock_review_cases WHERE order_id=s.order_id)
-  OR NOT late_stock_stage_exact(s,'expiry') OR NOT late_stock_stage_exact(s,'reserve') OR NOT late_stock_stage_exact(s,'consume')
+  OR NOT late_stock_stage_exact(s,'all')
  THEN RETURN false; END IF;
  SELECT array_agg(value->>'hold_id') INTO fresh_ids FROM jsonb_array_elements(s.footprint->'fresh');
  SELECT array_agg(value->'member'->>'hold_id') INTO active_ids FROM jsonb_array_elements(s.footprint->'original') WHERE value->>'state'='active';
@@ -427,18 +513,21 @@ CREATE TRIGGER claim_original_order_stock_allocation AFTER INSERT ON order_stock
 CREATE TRIGGER claim_late_order_stock_allocation AFTER INSERT ON late_stock_allocations FOR EACH ROW EXECUTE FUNCTION claim_owning_order_stock_allocation();
 
 CREATE FUNCTION guard_late_stock_allocation() RETURNS trigger LANGUAGE plpgsql VOLATILE AS $$
-DECLARE owned checkout_orders%ROWTYPE;
+DECLARE owned checkout_orders%ROWTYPE; original jsonb;
 BEGIN
  IF TG_OP<>'INSERT' THEN RAISE EXCEPTION 'Late allocations are immutable' USING ERRCODE='23514'; END IF;
  IF octet_length(NEW.footprint::text)>2097152 OR jsonb_typeof(NEW.footprint) IS DISTINCT FROM 'object' THEN
   RAISE EXCEPTION 'Late allocation footprint exceeds closed envelope' USING ERRCODE='23514'; END IF;
+ original=NEW.footprint->'original';
  IF current_setting('transaction_isolation')<>'read committed' THEN RAISE EXCEPTION 'Late allocation requires read committed' USING ERRCODE='23514'; END IF;
  PERFORM 1 FROM payment_attempts WHERE id=NEW.attempt_id FOR UPDATE;
  SELECT * INTO owned FROM checkout_orders WHERE id=NEW.order_id;
  IF owned.id IS NULL OR owned.stock_group_id IS DISTINCT FROM NEW.original_group_id
+  OR NEW.expires_at NOT BETWEEN 1 AND 9007199254740991
+  OR NEW.allocated_at NOT BETWEEN 0 AND 9007199254740991
+  OR NEW.allocated_at<NEW.expires_at-60 OR NEW.allocated_at>=NEW.expires_at
   OR NEW.expires_at-60<owned.hold_expires_at
   OR NOT late_stock_received(NEW.order_id,NEW.attempt_id,NEW.recognition_id,NEW.expires_at-60,true)
-  OR NOT late_stock_received(NEW.order_id,NEW.attempt_id,NEW.recognition_id,NEW.allocated_at,true)
   OR EXISTS(SELECT 1 FROM order_stock_allocations WHERE order_id=NEW.order_id)
   OR EXISTS(SELECT 1 FROM late_stock_review_cases WHERE order_id=NEW.order_id) THEN
   RAISE EXCEPTION 'Late allocation requires current received source and no prior outcome' USING ERRCODE='23514'; END IF;
@@ -448,15 +537,18 @@ BEGIN
  PERFORM 1 FROM stock_holds WHERE basket_group_id=NEW.fresh_group_id ORDER BY id LIMIT 21 FOR UPDATE;
  IF (NEW.footprint->'schema_version')::text IS DISTINCT FROM '1' OR NEW.footprint IS DISTINCT FROM jsonb_build_object('schema_version',1,'original',NEW.footprint->'original',
    'fresh',NEW.footprint->'fresh','components',NEW.footprint->'components')
-  OR (NEW.footprint->'original')::text IS DISTINCT FROM late_stock_original(NEW.order_id)::text
-  OR EXISTS(SELECT 1 FROM jsonb_array_elements(NEW.footprint->'original') WHERE value->>'state' NOT IN ('active','expired'))
+  OR original::text IS DISTINCT FROM late_stock_original(NEW.order_id)::text
+  OR EXISTS(SELECT 1 FROM jsonb_array_elements(original) WHERE value->>'state' NOT IN ('active','expired'))
   OR NOT late_stock_fresh_exact(NEW,true) THEN
   RAISE EXCEPTION 'Late allocation requires exact eligible original and fresh building source' USING ERRCODE='23514'; END IF;
- PERFORM 1 FROM stock_balances WHERE component_code IN (
-  SELECT line->>'component_code' FROM jsonb_array_elements(NEW.footprint->'original') m
-   CROSS JOIN LATERAL jsonb_array_elements(m->'member'->'components') line)
-  ORDER BY component_code LIMIT 1281 FOR UPDATE;
- IF NOT late_stock_components_exact(NEW.footprint->'original',NEW.footprint->'components',true,'before') THEN
+ PERFORM 1 FROM stock_balances b JOIN (
+  WITH wanted_codes AS MATERIALIZED (
+   SELECT DISTINCT line->>'component_code' AS code FROM jsonb_array_elements(original) m
+    CROSS JOIN LATERAL jsonb_array_elements(m->'member'->'components') line)
+  SELECT code FROM wanted_codes
+ ) wanted ON wanted.code=b.component_code
+  ORDER BY b.component_code LIMIT 1281 FOR UPDATE OF b;
+ IF NOT late_stock_components_exact(original,NEW.footprint->'components',true,'before') THEN
   RAISE EXCEPTION 'Late allocation requires actual backed before and complete stage footprint' USING ERRCODE='23514'; END IF;
  RETURN NEW;
 END;
