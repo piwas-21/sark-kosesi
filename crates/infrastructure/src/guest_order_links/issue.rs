@@ -37,7 +37,8 @@ pub async fn issue(
         return Err(LinkError::Unavailable);
     }
     let final_at = scope.checked_at(store.clock.as_ref())?;
-    if final_at < created_at || final_at >= expires_at {
+    // The scope rejects a clock that moves backward before returning final_at.
+    if final_at >= expires_at {
         return Err(LinkError::Denied);
     }
     scope

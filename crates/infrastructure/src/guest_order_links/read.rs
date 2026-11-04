@@ -1,5 +1,8 @@
 use super::*;
 
+#[cfg(test)]
+#[path = "../../tests/support/guest_link_read_shape_unit.rs"]
+mod tests;
 mod titles;
 use commerce_domain::{
     checkout_quotes::{CapturedAmount, MAX_QUOTE_UNIX_SECONDS},
@@ -60,6 +63,33 @@ fn valid_timestamp(value: i64) -> bool {
     (0..=MAX_QUOTE_UNIX_SECONDS).contains(&value)
 }
 
+fn valid_account(email: &str, verified_at: i64) -> bool {
+    valid_timestamp(verified_at) && normalize_email(email).as_deref() == Some(email)
+}
+
+impl LinkRow {
+    fn validate(&self, verified_at: i64, at: i64) -> Result<(&str, i64), LinkError> {
+        let basket_id = self.basket_id.as_deref().ok_or(LinkError::Unavailable)?;
+        let created = self.proof_created_at.ok_or(LinkError::Unavailable)?;
+        let expires = self.proof_expires_at.ok_or(LinkError::Unavailable)?;
+        if !self.reciprocal
+            || !valid_hex(&self.order_id, 32)
+            || !valid_hex(basket_id, 32)
+            || !valid_timestamp(self.linked_at)
+            || !valid_timestamp(created)
+            || !valid_timestamp(expires)
+            || created.checked_add(LIFETIME) != Some(expires)
+            || created > self.linked_at
+            || self.linked_at >= expires
+            || self.linked_at > at
+            || verified_at > self.linked_at
+        {
+            return Err(LinkError::Unavailable);
+        }
+        Ok((basket_id, created))
+    }
+}
+
 async fn account_email(
     tx: &mut Transaction<'_, Postgres>,
     account_id: i64,
@@ -72,7 +102,7 @@ async fn account_email(
     .await
     .map_err(|_| LinkError::Unavailable)?;
     let (email, verified_at) = row.ok_or(LinkError::Unavailable)?;
-    if !valid_timestamp(verified_at) || normalize_email(&email).as_deref() != Some(email.as_str()) {
+    if !valid_account(&email, verified_at) {
         return Err(LinkError::Unavailable);
     }
     Ok((email, verified_at))
@@ -85,25 +115,9 @@ async fn project(
     verified_at: i64,
     at: i64,
 ) -> Result<LinkedOrderView, LinkError> {
-    let basket_id = row.basket_id.ok_or(LinkError::Unavailable)?;
-    let created = row.proof_created_at.ok_or(LinkError::Unavailable)?;
-    let expires = row.proof_expires_at.ok_or(LinkError::Unavailable)?;
-    if !row.reciprocal
-        || !valid_hex(&row.order_id, 32)
-        || !valid_hex(&basket_id, 32)
-        || !valid_timestamp(row.linked_at)
-        || !valid_timestamp(created)
-        || !valid_timestamp(expires)
-        || created.checked_add(LIFETIME) != Some(expires)
-        || created > row.linked_at
-        || row.linked_at >= expires
-        || row.linked_at > at
-        || verified_at > row.linked_at
-    {
-        return Err(LinkError::Unavailable);
-    }
+    let (basket_id, created) = row.validate(verified_at, at)?;
     // A missing order behind an owned link is corruption, not an absent customer order.
-    let snapshot = checkout_orders::snapshot_in_transaction(tx, &basket_id, &row.order_id)
+    let snapshot = checkout_orders::snapshot_in_transaction(tx, basket_id, &row.order_id)
         .await
         .map_err(|_| LinkError::Unavailable)?;
     if snapshot.identity.created_at > created

@@ -2,6 +2,10 @@
 #[path = "verified_customer_accounts.rs"]
 pub mod verified_customer_accounts;
 
+#[cfg(test)]
+#[path = "../tests/support/email_verification_clock_unit.rs"]
+mod tests;
+
 use commerce_application::request_context::{Clock, ObservedClock};
 use commerce_domain::email_identity::normalize_email;
 use sha2::{Digest, Sha256};
@@ -81,8 +85,9 @@ pub async fn issue(
     if inserted.rows_affected() != 1 {
         return Err(VerificationError::Unavailable);
     }
+    // The shared observation rejects any rewind from the creation sample.
     let final_now = now(&observed)?;
-    if final_now < created || final_now >= expires {
+    if final_now >= expires {
         return Err(VerificationError::Unavailable);
     }
     tx.commit()

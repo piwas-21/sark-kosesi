@@ -17,7 +17,7 @@ use sha2::{Digest, Sha256};
 use sqlx::PgPool;
 use std::sync::{
     Arc,
-    atomic::{AtomicU64, Ordering},
+    atomic::{AtomicU64, AtomicUsize, Ordering},
 };
 use std::time::Duration;
 
@@ -800,4 +800,353 @@ async fn logout_rejects_suppressed_and_changed_database_writes(pool: PgPool) {
     )
     .bind(digest(&initial.token)).fetch_one(&pool).await.expect("revoked row");
     assert_eq!(persisted, (Some(1000), Some("logout".to_owned()), true));
+}
+
+struct SequenceClock {
+    values: Vec<u64>,
+    next: AtomicUsize,
+}
+impl SequenceClock {
+    fn new(values: &[u64]) -> Self {
+        Self {
+            values: values.to_vec(),
+            next: AtomicUsize::new(0),
+        }
+    }
+}
+impl Clock for SequenceClock {
+    fn unix_seconds(&self) -> Result<u64, ContextError> {
+        self.values
+            .get(self.next.fetch_add(1, Ordering::SeqCst))
+            .copied()
+            .ok_or(ContextError::ClockUnavailable)
+    }
+}
+
+#[sqlx::test(migrator = "MIGRATOR")]
+async fn expiry_at_each_final_prewrite_observation_denies_without_effects(pool: PgPool) {
+    let time = clock();
+    account(&pool, "boundaries@example.com", &time).await;
+    set_password(
+        &pool,
+        "boundaries@example.com",
+        "first-password-long",
+        &time,
+    )
+    .await;
+    let initial = admitted_login::login(
+        &pool,
+        "boundaries@example.com",
+        "first-password-long",
+        &time,
+    )
+    .await
+    .expect("login");
+
+    // Initial and claim observations succeed; the final authentication read or
+    // the rotation/logout capture sees the exact expiry boundary.
+    for operation in 0..3 {
+        let clock = SequenceClock::new(&[1000, 1000, 44200]);
+        let denied = match operation {
+            0 => matches!(
+                customer_sessions::authenticate(&pool, &initial.token, &clock).await,
+                Err(SessionError::Denied)
+            ),
+            1 => matches!(
+                customer_sessions::rotate(&pool, &initial.token, &clock).await,
+                Err(SessionError::Denied)
+            ),
+            _ => matches!(
+                customer_sessions::logout(&pool, &initial.token, &clock).await,
+                Err(SessionError::Denied)
+            ),
+        };
+        assert!(denied, "operation {operation} must reject expiry");
+        let persisted: (Option<i64>, Option<String>, bool) = sqlx::query_as(
+            "SELECT revoked_at,revocation_kind,revoked_xid IS NULL FROM customer_sessions WHERE verifier=$1",
+        )
+        .bind(digest(&initial.token)).fetch_one(&pool).await.expect("original row");
+        assert_eq!(persisted, (None, None, true));
+        assert_eq!(count(&pool).await, 1);
+    }
+    time.0.store(44199, Ordering::SeqCst);
+    customer_sessions::authenticate(&pool, &initial.token, &time)
+        .await
+        .expect("session remains valid immediately before expiry");
+}
+
+#[sqlx::test(migrator = "MIGRATOR")]
+async fn claims_reject_inconsistent_account_and_credential_evidence(pool: PgPool) {
+    let time = clock();
+    let id = account(&pool, "claim-evidence@example.com", &time).await;
+    set_password(
+        &pool,
+        "claim-evidence@example.com",
+        "first-password-long",
+        &time,
+    )
+    .await;
+    let session = admitted_login::login(
+        &pool,
+        "claim-evidence@example.com",
+        "first-password-long",
+        &time,
+    )
+    .await
+    .expect("login");
+    customer_sessions::authenticate(&pool, &session.token, &time)
+        .await
+        .expect("valid evidence");
+
+    // Deliberately simulate corrupted records in this isolated test database;
+    // normal guards prevent these transitions.
+    sqlx::query(
+        "ALTER TABLE verified_customer_accounts DISABLE TRIGGER guard_verified_customer_account",
+    )
+    .execute(&pool)
+    .await
+    .expect("disable account guard");
+    sqlx::query("UPDATE verified_customer_accounts SET verified_at=1001 WHERE id=$1")
+        .bind(id)
+        .execute(&pool)
+        .await
+        .expect("future verification");
+    assert!(matches!(
+        customer_sessions::authenticate(&pool, &session.token, &time).await,
+        Err(SessionError::Denied)
+    ));
+    sqlx::query("ALTER TABLE verified_customer_accounts DROP CONSTRAINT verified_customer_accounts_verified_at_check")
+        .execute(&pool).await.expect("remove timestamp check in isolated database");
+    sqlx::query("UPDATE verified_customer_accounts SET verified_at=-1 WHERE id=$1")
+        .bind(id)
+        .execute(&pool)
+        .await
+        .expect("corrupt verification time");
+    assert!(matches!(
+        customer_sessions::authenticate(&pool, &session.token, &time).await,
+        Err(SessionError::Denied)
+    ));
+    sqlx::query("UPDATE verified_customer_accounts SET verified_at=1000 WHERE id=$1")
+        .bind(id)
+        .execute(&pool)
+        .await
+        .expect("restore verification");
+    sqlx::query("ALTER TABLE verified_customer_accounts ADD CONSTRAINT verified_customer_accounts_verified_at_check CHECK (verified_at>=0)")
+        .execute(&pool).await.expect("restore timestamp check");
+    sqlx::query(
+        "ALTER TABLE verified_customer_accounts ENABLE TRIGGER guard_verified_customer_account",
+    )
+    .execute(&pool)
+    .await
+    .expect("restore account guard");
+
+    sqlx::query("ALTER TABLE customer_password_credentials DISABLE TRIGGER guard_customer_password_credential")
+        .execute(&pool).await.expect("disable credential guard");
+    sqlx::query("UPDATE customer_password_credentials SET changed_at=1001 WHERE account_id=$1")
+        .bind(id)
+        .execute(&pool)
+        .await
+        .expect("future credential");
+    assert!(matches!(
+        customer_sessions::authenticate(&pool, &session.token, &time).await,
+        Err(SessionError::Denied)
+    ));
+    sqlx::query("ALTER TABLE customer_password_credentials DROP CONSTRAINT customer_password_credentials_changed_at_check")
+        .execute(&pool).await.expect("remove credential timestamp check in isolated database");
+    sqlx::query("UPDATE customer_password_credentials SET changed_at=-1 WHERE account_id=$1")
+        .bind(id)
+        .execute(&pool)
+        .await
+        .expect("corrupt credential time");
+    assert!(matches!(
+        customer_sessions::authenticate(&pool, &session.token, &time).await,
+        Err(SessionError::Denied)
+    ));
+    sqlx::query("UPDATE customer_password_credentials SET changed_at=1000 WHERE account_id=$1")
+        .bind(id)
+        .execute(&pool)
+        .await
+        .expect("restore credential time");
+    sqlx::query("ALTER TABLE customer_password_credentials ADD CONSTRAINT customer_password_credentials_changed_at_check CHECK (changed_at>=0)")
+        .execute(&pool).await.expect("restore credential timestamp check");
+    customer_sessions::authenticate(&pool, &session.token, &time)
+        .await
+        .expect("restored evidence");
+    sqlx::query("DELETE FROM customer_password_credentials WHERE account_id=$1")
+        .bind(id)
+        .execute(&pool)
+        .await
+        .expect("remove credential");
+    assert!(matches!(
+        customer_sessions::authenticate(&pool, &session.token, &time).await,
+        Err(SessionError::Denied)
+    ));
+    assert!(matches!(
+        customer_sessions::rotate(&pool, &session.token, &time).await,
+        Err(SessionError::Denied)
+    ));
+    assert!(matches!(
+        customer_sessions::logout(&pool, &session.token, &time).await,
+        Err(SessionError::Denied)
+    ));
+    assert_eq!(count(&pool).await, 1);
+}
+
+#[sqlx::test(migrator = "MIGRATOR")]
+async fn credential_read_failure_is_unavailable_and_recovers(pool: PgPool) {
+    let time = clock();
+    account(&pool, "read-failure@example.com", &time).await;
+    set_password(
+        &pool,
+        "read-failure@example.com",
+        "first-password-long",
+        &time,
+    )
+    .await;
+    let session = admitted_login::login(
+        &pool,
+        "read-failure@example.com",
+        "first-password-long",
+        &time,
+    )
+    .await
+    .expect("login");
+    customer_sessions::authenticate(&pool, &session.token, &time)
+        .await
+        .expect("healthy claim");
+    sqlx::query(
+        "ALTER TABLE customer_password_credentials RENAME TO unavailable_customer_credentials",
+    )
+    .execute(&pool)
+    .await
+    .expect("make credential table unavailable");
+    assert!(matches!(
+        customer_sessions::authenticate(&pool, &session.token, &time).await,
+        Err(SessionError::Unavailable)
+    ));
+    sqlx::query(
+        "ALTER TABLE unavailable_customer_credentials RENAME TO customer_password_credentials",
+    )
+    .execute(&pool)
+    .await
+    .expect("restore credential table");
+    customer_sessions::authenticate(&pool, &session.token, &time)
+        .await
+        .expect("healthy retry");
+    assert_eq!(count(&pool).await, 1);
+}
+
+#[sqlx::test(migrator = "MIGRATOR")]
+async fn closed_session_pool_returns_unavailable(pool: PgPool) {
+    let time = clock();
+    account(&pool, "closed-pool@example.com", &time).await;
+    set_password(
+        &pool,
+        "closed-pool@example.com",
+        "first-password-long",
+        &time,
+    )
+    .await;
+    let session = admitted_login::login(
+        &pool,
+        "closed-pool@example.com",
+        "first-password-long",
+        &time,
+    )
+    .await
+    .expect("login");
+    customer_sessions::authenticate(&pool, &session.token, &time)
+        .await
+        .expect("healthy claim");
+    pool.close().await;
+    assert!(matches!(
+        customer_sessions::authenticate(&pool, &session.token, &time).await,
+        Err(SessionError::Unavailable)
+    ));
+}
+
+#[sqlx::test(migrator = "MIGRATOR")]
+async fn rotation_rejects_suppressed_and_changed_writes_and_rolls_back(pool: PgPool) {
+    let time = clock();
+    account(&pool, "rotation-write@example.com", &time).await;
+    set_password(
+        &pool,
+        "rotation-write@example.com",
+        "first-password-long",
+        &time,
+    )
+    .await;
+    let initial = admitted_login::login(
+        &pool,
+        "rotation-write@example.com",
+        "first-password-long",
+        &time,
+    )
+    .await
+    .expect("login");
+
+    sqlx::query("CREATE FUNCTION suppress_session_rotation() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN RETURN NULL; END $$")
+        .execute(&pool).await.expect("suppression function");
+    for (name, trigger) in [
+        (
+            "update",
+            "CREATE TRIGGER z_suppress_session_rotation BEFORE UPDATE ON customer_sessions FOR EACH ROW EXECUTE FUNCTION suppress_session_rotation()",
+        ),
+        (
+            "insert",
+            "CREATE TRIGGER z_suppress_session_rotation BEFORE INSERT ON customer_sessions FOR EACH ROW EXECUTE FUNCTION suppress_session_rotation()",
+        ),
+    ] {
+        sqlx::query(trigger)
+            .execute(&pool)
+            .await
+            .expect("suppression trigger");
+        assert!(
+            matches!(
+                customer_sessions::rotate(&pool, &initial.token, &time).await,
+                Err(SessionError::Unavailable)
+            ),
+            "suppressed {name}"
+        );
+        sqlx::query("DROP TRIGGER z_suppress_session_rotation ON customer_sessions")
+            .execute(&pool)
+            .await
+            .expect("remove suppression");
+        let revoked: Option<i64> =
+            sqlx::query_scalar("SELECT revoked_at FROM customer_sessions WHERE verifier=$1")
+                .bind(digest(&initial.token))
+                .fetch_one(&pool)
+                .await
+                .expect("predecessor");
+        assert_eq!(revoked, None);
+        assert_eq!(count(&pool).await, 1);
+    }
+
+    // A later trigger can change a column after the guard has inspected NEW.
+    // Rotation's readback must reject even if its reciprocal constraint passes.
+    sqlx::query("CREATE FUNCTION alter_rotation_xid() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN NEW.created_xid := '1'::xid8; RETURN NEW; END $$")
+        .execute(&pool).await.expect("alteration function");
+    sqlx::query("CREATE TRIGGER z_alter_rotation_xid BEFORE UPDATE ON customer_sessions FOR EACH ROW EXECUTE FUNCTION alter_rotation_xid()")
+        .execute(&pool).await.expect("alteration trigger");
+    assert!(matches!(
+        customer_sessions::rotate(&pool, &initial.token, &time).await,
+        Err(SessionError::Unavailable)
+    ));
+    sqlx::query("DROP TRIGGER z_alter_rotation_xid ON customer_sessions")
+        .execute(&pool)
+        .await
+        .expect("remove alteration");
+    let persisted: (Option<i64>, Option<String>, bool) = sqlx::query_as(
+        "SELECT revoked_at,revocation_kind,revoked_xid IS NULL FROM customer_sessions WHERE verifier=$1",
+    )
+    .bind(digest(&initial.token)).fetch_one(&pool).await.expect("original row");
+    assert_eq!(persisted, (None, None, true));
+    assert_eq!(count(&pool).await, 1);
+    let successor = customer_sessions::rotate(&pool, &initial.token, &time)
+        .await
+        .expect("healthy retry");
+    customer_sessions::authenticate(&pool, &successor.token, &time)
+        .await
+        .expect("successor valid");
+    assert_eq!(count(&pool).await, 2);
 }

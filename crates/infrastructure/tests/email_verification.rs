@@ -451,3 +451,44 @@ async fn suppressed_writes_fail_closed_and_healthy_operations_recover(pool: PgPo
         Err(VerificationError::Denied)
     );
 }
+
+#[sqlx::test(migrator = "MIGRATOR")]
+async fn unavailable_challenge_table_fails_closed_and_recovers(pool: PgPool) {
+    let time = clock(1000);
+    let token = issue(&pool, "owner@example.com", &time)
+        .await
+        .expect("healthy issue");
+    sqlx::query("ALTER TABLE email_verification_challenges RENAME TO unavailable_email_challenges")
+        .execute(&pool)
+        .await
+        .expect("make challenge table unavailable");
+    assert!(matches!(
+        issue(&pool, "other@example.com", &time).await,
+        Err(VerificationError::Unavailable)
+    ));
+    assert_eq!(
+        consume(&pool, "owner@example.com", &token, &time).await,
+        Err(VerificationError::Unavailable)
+    );
+    sqlx::query("ALTER TABLE unavailable_email_challenges RENAME TO email_verification_challenges")
+        .execute(&pool)
+        .await
+        .expect("restore challenge table");
+    let counts: (i64, i64) =
+        sqlx::query_as("SELECT count(*), count(consumed_at) FROM email_verification_challenges")
+            .fetch_one(&pool)
+            .await
+            .expect("proof state");
+    assert_eq!(counts, (1, 0));
+    assert_eq!(
+        consume(&pool, "owner@example.com", &token, &time).await,
+        Ok(())
+    );
+    let fresh = issue(&pool, "other@example.com", &time)
+        .await
+        .expect("healthy issue retry");
+    assert_eq!(
+        consume(&pool, "other@example.com", &fresh, &time).await,
+        Ok(())
+    );
+}

@@ -109,3 +109,7 @@ pub async fn link(
         linked_at,
     })
 }
+
+#[cfg(test)]
+#[path = "../../tests/support/guest_order_link_proof_validation.rs"]
+mod tests;

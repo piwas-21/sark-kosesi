@@ -118,3 +118,7 @@ impl SessionRow {
         }
     }
 }
+
+#[cfg(test)]
+#[path = "../../tests/support/customer_session_shape_unit.rs"]
+mod tests;

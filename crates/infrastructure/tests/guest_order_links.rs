@@ -491,3 +491,390 @@ async fn native_guards_require_matching_same_transaction_pair_and_preserve_healt
     tx.commit().await.expect("commit");
     assert_eq!(counts(&pool).await, (1, 1));
 }
+
+#[sqlx::test(migrator = "MIGRATOR")]
+async fn issuance_rejects_invalid_input_and_suppressed_or_altered_proof_writes(pool: PgPool) {
+    seed(&pool).await;
+    let (store, time) = store(&pool, 1100);
+    let (owner, csrf) = guest(&store).await;
+    let key = GuestCredential::from_session(&owner).expect("owner");
+    let order = accepted_order(&store, &key, &csrf, "issue-controls").await;
+    let (_, session) = account(&pool, "buyer@example.test", &time).await;
+    assert!(matches!(
+        guest_order_links::issue(&store, &key, &csrf, "invalid").await,
+        Err(LinkError::Denied)
+    ));
+
+    sqlx::query("CREATE FUNCTION suppress_test_write() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN RETURN NULL; END $$")
+        .execute(&pool).await.expect("suppression function");
+    sqlx::query("CREATE TRIGGER a_test_suppress BEFORE INSERT ON guest_order_link_proofs FOR EACH ROW EXECUTE FUNCTION suppress_test_write()")
+        .execute(&pool).await.expect("suppress proof insert");
+    assert!(matches!(
+        guest_order_links::issue(&store, &key, &csrf, &order).await,
+        Err(LinkError::Unavailable)
+    ));
+    sqlx::query("DROP TRIGGER a_test_suppress ON guest_order_link_proofs")
+        .execute(&pool)
+        .await
+        .expect("remove suppression");
+
+    // Run after the native guard, retaining the table checks while altering persisted custody.
+    sqlx::query("CREATE FUNCTION alter_test_proof() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN NEW.created_at := NEW.created_at+1; NEW.expires_at := NEW.expires_at+1; RETURN NEW; END $$")
+        .execute(&pool).await.expect("alteration function");
+    sqlx::query("CREATE TRIGGER z_test_alter BEFORE INSERT ON guest_order_link_proofs FOR EACH ROW EXECUTE FUNCTION alter_test_proof()")
+        .execute(&pool).await.expect("alter proof insert");
+    assert!(matches!(
+        guest_order_links::issue(&store, &key, &csrf, &order).await,
+        Err(LinkError::Unavailable)
+    ));
+    sqlx::query("DROP TRIGGER z_test_alter ON guest_order_link_proofs")
+        .execute(&pool)
+        .await
+        .expect("remove alteration");
+    let proofs: i64 = sqlx::query_scalar("SELECT count(*) FROM guest_order_link_proofs")
+        .fetch_one(&pool)
+        .await
+        .expect("proof count");
+    assert_eq!(proofs, 0);
+    let proof = guest_order_links::issue(&store, &key, &csrf, &order)
+        .await
+        .expect("healthy issuance");
+    guest_order_links::link(&pool, &session, &order, &proof, time.as_ref())
+        .await
+        .expect("healthy redemption");
+    assert_eq!(counts(&pool).await, (1, 1));
+}
+
+#[sqlx::test(migrator = "MIGRATOR")]
+async fn redemption_rejects_suppressed_or_altered_writes_without_spending_proof(pool: PgPool) {
+    seed(&pool).await;
+    let (store, time) = store(&pool, 1100);
+    let (owner, csrf) = guest(&store).await;
+    let key = GuestCredential::from_session(&owner).expect("owner");
+    let order = accepted_order(&store, &key, &csrf, "link-controls").await;
+    let (_, session) = account(&pool, "buyer@example.test", &time).await;
+    let proof = guest_order_links::issue(&store, &key, &csrf, &order)
+        .await
+        .expect("proof");
+    assert!(matches!(
+        guest_order_links::link(&pool, &session, "invalid", &proof, time.as_ref()).await,
+        Err(LinkError::Denied)
+    ));
+    sqlx::query("CREATE FUNCTION suppress_test_write() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN RETURN NULL; END $$")
+        .execute(&pool).await.expect("suppression function");
+    for (create, drop) in [
+        (
+            "CREATE TRIGGER a_test_suppress BEFORE UPDATE ON guest_order_link_proofs FOR EACH ROW EXECUTE FUNCTION suppress_test_write()",
+            "DROP TRIGGER a_test_suppress ON guest_order_link_proofs",
+        ),
+        (
+            "CREATE TRIGGER a_test_suppress BEFORE INSERT ON customer_order_links FOR EACH ROW EXECUTE FUNCTION suppress_test_write()",
+            "DROP TRIGGER a_test_suppress ON customer_order_links",
+        ),
+    ] {
+        sqlx::query(create)
+            .execute(&pool)
+            .await
+            .expect("suppress write");
+        assert!(matches!(
+            guest_order_links::link(&pool, &session, &order, &proof, time.as_ref()).await,
+            Err(LinkError::Unavailable)
+        ));
+        sqlx::query(drop)
+            .execute(&pool)
+            .await
+            .expect("remove suppression");
+        assert_eq!(counts(&pool).await, (0, 0));
+    }
+
+    // Simulate a damaged imported pair despite disabled reciprocal constraint triggers.
+    sqlx::query("ALTER TABLE guest_order_link_proofs DISABLE TRIGGER require_guest_order_link")
+        .execute(&pool)
+        .await
+        .expect("disable proof constraint");
+    sqlx::query("ALTER TABLE customer_order_links DISABLE TRIGGER require_guest_order_link")
+        .execute(&pool)
+        .await
+        .expect("disable link constraint");
+    sqlx::query("CREATE FUNCTION alter_test_link() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN NEW.linked_at := NEW.linked_at+1; RETURN NEW; END $$")
+        .execute(&pool).await.expect("alteration function");
+    sqlx::query("CREATE TRIGGER z_test_alter BEFORE INSERT ON customer_order_links FOR EACH ROW EXECUTE FUNCTION alter_test_link()")
+        .execute(&pool).await.expect("alter link insert");
+    assert!(matches!(
+        guest_order_links::link(&pool, &session, &order, &proof, time.as_ref()).await,
+        Err(LinkError::Unavailable)
+    ));
+    sqlx::query("DROP TRIGGER z_test_alter ON customer_order_links")
+        .execute(&pool)
+        .await
+        .expect("remove alteration");
+    sqlx::query("ALTER TABLE guest_order_link_proofs ENABLE TRIGGER require_guest_order_link")
+        .execute(&pool)
+        .await
+        .expect("restore proof constraint");
+    sqlx::query("ALTER TABLE customer_order_links ENABLE TRIGGER require_guest_order_link")
+        .execute(&pool)
+        .await
+        .expect("restore link constraint");
+    assert_eq!(counts(&pool).await, (0, 0));
+    guest_order_links::link(&pool, &session, &order, &proof, time.as_ref())
+        .await
+        .expect("healthy redemption");
+    assert_eq!(counts(&pool).await, (1, 1));
+}
+
+#[sqlx::test(migrator = "MIGRATOR")]
+async fn damaged_proof_and_noncanonical_account_do_not_authorize_link(pool: PgPool) {
+    seed(&pool).await;
+    let (store, time) = store(&pool, 1100);
+    let (owner, csrf) = guest(&store).await;
+    let key = GuestCredential::from_session(&owner).expect("owner");
+    let order = accepted_order(&store, &key, &csrf, "damaged-proof").await;
+    let (account_id, session) = account(&pool, "buyer@example.test", &time).await;
+    let proof = guest_order_links::issue(&store, &key, &csrf, &order)
+        .await
+        .expect("proof");
+    let digest = verifier(&proof);
+    let mut tx = pool.begin().await.expect("isolated corruption");
+    sqlx::query("ALTER TABLE guest_order_link_proofs DISABLE TRIGGER USER")
+        .execute(&mut *tx)
+        .await
+        .expect("disable guard");
+    sqlx::query(
+        "UPDATE guest_order_link_proofs SET created_at=1101,expires_at=2001 WHERE verifier=$1",
+    )
+    .bind(&digest)
+    .execute(&mut *tx)
+    .await
+    .expect("future proof");
+    sqlx::query("ALTER TABLE guest_order_link_proofs ENABLE TRIGGER USER")
+        .execute(&mut *tx)
+        .await
+        .expect("restore guard");
+    tx.commit().await.expect("commit corruption");
+    assert!(matches!(
+        guest_order_links::link(&pool, &session, &order, &proof, time.as_ref()).await,
+        Err(LinkError::Denied)
+    ));
+    assert_eq!(counts(&pool).await, (0, 0));
+    let mut tx = pool.begin().await.expect("repair and corrupt mailbox");
+    sqlx::query("ALTER TABLE guest_order_link_proofs DISABLE TRIGGER USER")
+        .execute(&mut *tx)
+        .await
+        .expect("disable proof guard");
+    sqlx::query(
+        "UPDATE guest_order_link_proofs SET created_at=1100,expires_at=2000 WHERE verifier=$1",
+    )
+    .bind(&digest)
+    .execute(&mut *tx)
+    .await
+    .expect("repair proof");
+    sqlx::query("ALTER TABLE guest_order_link_proofs ENABLE TRIGGER USER")
+        .execute(&mut *tx)
+        .await
+        .expect("restore proof guard");
+    sqlx::query("ALTER TABLE verified_customer_accounts DISABLE TRIGGER USER")
+        .execute(&mut *tx)
+        .await
+        .expect("disable account guard");
+    sqlx::query(
+        "UPDATE verified_customer_accounts SET email_identity='buyer@EXAMPLE.TEST' WHERE id=$1",
+    )
+    .bind(account_id)
+    .execute(&mut *tx)
+    .await
+    .expect("noncanonical mailbox");
+    sqlx::query("ALTER TABLE verified_customer_accounts ENABLE TRIGGER USER")
+        .execute(&mut *tx)
+        .await
+        .expect("restore account guard");
+    tx.commit().await.expect("commit mailbox corruption");
+    assert!(matches!(
+        guest_order_links::link(&pool, &session, &order, &proof, time.as_ref()).await,
+        Err(LinkError::Denied)
+    ));
+    assert_eq!(counts(&pool).await, (0, 0));
+    let mut tx = pool.begin().await.expect("repair mailbox");
+    sqlx::query("ALTER TABLE verified_customer_accounts DISABLE TRIGGER USER")
+        .execute(&mut *tx)
+        .await
+        .expect("disable account guard");
+    sqlx::query(
+        "UPDATE verified_customer_accounts SET email_identity='buyer@example.test' WHERE id=$1",
+    )
+    .bind(account_id)
+    .execute(&mut *tx)
+    .await
+    .expect("repair mailbox");
+    sqlx::query("ALTER TABLE verified_customer_accounts ENABLE TRIGGER USER")
+        .execute(&mut *tx)
+        .await
+        .expect("restore account guard");
+    tx.commit().await.expect("commit repair");
+    guest_order_links::link(&pool, &session, &order, &proof, time.as_ref())
+        .await
+        .expect("healthy redemption");
+    assert_eq!(counts(&pool).await, (1, 1));
+}
+
+#[sqlx::test(migrator = "MIGRATOR")]
+async fn issuance_expiry_after_insert_and_failed_commit_leave_no_proof(pool: PgPool) {
+    seed(&pool).await;
+    let (store, time) = store(&pool, 1100);
+    let (owner, csrf) = guest(&store).await;
+    let key = GuestCredential::from_session(&owner).expect("owner");
+    let order = accepted_order(&store, &key, &csrf, "issue-expiry").await;
+    let (_, session) = account(&pool, "buyer@example.test", &time).await;
+    sqlx::query("CREATE FUNCTION fence_test_issue() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN PERFORM pg_advisory_xact_lock(17543826); RETURN NEW; END $$").execute(&pool).await.expect("fence function");
+    sqlx::query("CREATE TRIGGER fence_test_issue AFTER INSERT ON guest_order_link_proofs FOR EACH ROW EXECUTE FUNCTION fence_test_issue()").execute(&pool).await.expect("fence trigger");
+    let mut blocker = pool.begin().await.expect("blocker");
+    sqlx::query("SELECT pg_advisory_xact_lock(17543826)")
+        .execute(&mut *blocker)
+        .await
+        .expect("hold fence");
+    let worker_store = store.clone();
+    let worker_time = time.clone();
+    let worker_order = order.clone();
+    let worker_csrf = csrf.clone();
+    let task = tokio::spawn(async move {
+        guest_order_links::issue(&worker_store, &key, &worker_csrf, &worker_order).await
+    });
+    wait_for_query_locks(&pool, "INSERT INTO guest_order_link_proofs%", 1).await;
+    worker_time.0.store(2000, Ordering::SeqCst);
+    blocker.rollback().await.expect("release fence");
+    assert!(matches!(
+        task.await.expect("issue task"),
+        Err(LinkError::Denied)
+    ));
+    let proofs: i64 = sqlx::query_scalar("SELECT count(*) FROM guest_order_link_proofs")
+        .fetch_one(&pool)
+        .await
+        .expect("proof count");
+    assert_eq!(proofs, 0);
+    time.0.store(1100, Ordering::SeqCst);
+    let mut blocker = pool.begin().await.expect("rewind blocker");
+    sqlx::query("SELECT pg_advisory_xact_lock(17543826)")
+        .execute(&mut *blocker)
+        .await
+        .expect("hold rewind fence");
+    let worker_store = store.clone();
+    let worker_order = order.clone();
+    let worker_csrf = csrf.clone();
+    let worker_key = GuestCredential::from_session(&owner).expect("owner");
+    let task = tokio::spawn(async move {
+        guest_order_links::issue(&worker_store, &worker_key, &worker_csrf, &worker_order).await
+    });
+    wait_for_query_locks(&pool, "INSERT INTO guest_order_link_proofs%", 1).await;
+    time.0.store(1099, Ordering::SeqCst);
+    blocker.rollback().await.expect("release rewind fence");
+    assert!(matches!(
+        task.await.expect("rewind issue task"),
+        Err(LinkError::Unavailable)
+    ));
+    let proofs: i64 = sqlx::query_scalar("SELECT count(*) FROM guest_order_link_proofs")
+        .fetch_one(&pool)
+        .await
+        .expect("proof count");
+    assert_eq!(proofs, 0);
+    time.0.store(1100, Ordering::SeqCst);
+    sqlx::query("DROP TRIGGER fence_test_issue ON guest_order_link_proofs")
+        .execute(&pool)
+        .await
+        .expect("remove fence");
+    let key = GuestCredential::from_session(&owner).expect("owner");
+    sqlx::query("CREATE FUNCTION fail_test_commit() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN RAISE EXCEPTION 'test commit failure'; END $$").execute(&pool).await.expect("failure function");
+    sqlx::query("CREATE CONSTRAINT TRIGGER fail_test_commit AFTER INSERT ON guest_order_link_proofs DEFERRABLE INITIALLY DEFERRED FOR EACH ROW EXECUTE FUNCTION fail_test_commit()").execute(&pool).await.expect("deferred failure");
+    assert!(matches!(
+        guest_order_links::issue(&store, &key, &csrf, &order).await,
+        Err(LinkError::Unavailable)
+    ));
+    sqlx::query("DROP TRIGGER fail_test_commit ON guest_order_link_proofs")
+        .execute(&pool)
+        .await
+        .expect("remove failure");
+    let proofs: i64 = sqlx::query_scalar("SELECT count(*) FROM guest_order_link_proofs")
+        .fetch_one(&pool)
+        .await
+        .expect("proof count");
+    assert_eq!(proofs, 0);
+    let proof = guest_order_links::issue(&store, &key, &csrf, &order)
+        .await
+        .expect("healthy proof");
+    guest_order_links::link(&pool, &session, &order, &proof, time.as_ref())
+        .await
+        .expect("healthy link");
+    assert_eq!(counts(&pool).await, (1, 1));
+}
+
+#[sqlx::test(migrator = "MIGRATOR")]
+async fn link_expiry_after_order_wait_and_failed_constraint_leave_proof_unspent(pool: PgPool) {
+    seed(&pool).await;
+    let (store, time) = store(&pool, 1100);
+    let (owner, csrf) = guest(&store).await;
+    let key = GuestCredential::from_session(&owner).expect("owner");
+    let order = accepted_order(&store, &key, &csrf, "link-expiry").await;
+    let (_, session) = account(&pool, "buyer@example.test", &time).await;
+    let proof = guest_order_links::issue(&store, &key, &csrf, &order)
+        .await
+        .expect("proof");
+    let mut blocker = pool.begin().await.expect("blocker");
+    sqlx::query("SELECT id FROM checkout_orders WHERE id=$1 FOR UPDATE")
+        .bind(&order)
+        .fetch_one(&mut *blocker)
+        .await
+        .expect("lock order");
+    let worker_pool = pool.clone();
+    let worker_time = time.clone();
+    let worker_order = order.clone();
+    let worker_session = CustomerSessionToken::from_bytes(*session.expose_bytes());
+    let worker_proof = GuestOrderLinkToken::from_bytes(*proof.expose_bytes());
+    let task = tokio::spawn(async move {
+        guest_order_links::link(
+            &worker_pool,
+            &worker_session,
+            &worker_order,
+            &worker_proof,
+            worker_time.as_ref(),
+        )
+        .await
+    });
+    wait_for_query_locks(
+        &pool,
+        "SELECT id FROM checkout_orders WHERE id=$1 AND basket_id=$2 FOR UPDATE%",
+        1,
+    )
+    .await;
+    time.0.store(2000, Ordering::SeqCst);
+    blocker.rollback().await.expect("release order");
+    assert!(matches!(
+        task.await.expect("link task"),
+        Err(LinkError::Denied)
+    ));
+    assert_eq!(counts(&pool).await, (0, 0));
+    time.0.store(1100, Ordering::SeqCst);
+
+    // Damage the consumed proof inside the transaction; its deferred native check must fail.
+    sqlx::query("ALTER TABLE guest_order_link_proofs DISABLE TRIGGER guard_guest_order_link_proof")
+        .execute(&pool)
+        .await
+        .expect("disable immutable guard");
+    sqlx::query("CREATE FUNCTION damage_test_pair() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN UPDATE guest_order_link_proofs SET consumed_at=consumed_at+1 WHERE verifier=NEW.proof_verifier; RETURN NEW; END $$").execute(&pool).await.expect("damage function");
+    sqlx::query("CREATE TRIGGER damage_test_pair AFTER INSERT ON customer_order_links FOR EACH ROW EXECUTE FUNCTION damage_test_pair()").execute(&pool).await.expect("damage trigger");
+    assert!(matches!(
+        guest_order_links::link(&pool, &session, &order, &proof, time.as_ref()).await,
+        Err(LinkError::Unavailable)
+    ));
+    sqlx::query("DROP TRIGGER damage_test_pair ON customer_order_links")
+        .execute(&pool)
+        .await
+        .expect("remove damage");
+    sqlx::query("ALTER TABLE guest_order_link_proofs ENABLE TRIGGER guard_guest_order_link_proof")
+        .execute(&pool)
+        .await
+        .expect("restore immutable guard");
+    assert_eq!(counts(&pool).await, (0, 0));
+    guest_order_links::link(&pool, &session, &order, &proof, time.as_ref())
+        .await
+        .expect("healthy link");
+    assert_eq!(counts(&pool).await, (1, 1));
+}

@@ -17,6 +17,13 @@ struct HistoricalCopy {
     source_payload: Option<String>,
 }
 
+pub(super) fn ensure_count(actual: usize, expected: usize) -> Result<(), LinkError> {
+    if actual != expected {
+        return Err(LinkError::Unavailable);
+    }
+    Ok(())
+}
+
 // The accepted snapshot is already bounded to at most 20 validated products.
 // Resolve exact immutable historical revisions, never current publication state.
 pub(super) async fn validate_titles(
@@ -44,9 +51,7 @@ pub(super) async fn validate_titles(
     .fetch_all(&mut **tx)
     .await
     .map_err(|_| LinkError::Unavailable)?;
-    if rows.len() != snapshot.products.len() {
-        return Err(LinkError::Unavailable);
-    }
+    ensure_count(rows.len(), snapshot.products.len())?;
     let mut copy_revisions = Vec::with_capacity(rows.len());
     let mut review_revisions = Vec::with_capacity(rows.len());
     let mut specifications = Vec::with_capacity(rows.len());
@@ -104,9 +109,7 @@ pub(super) async fn validate_titles(
     .fetch_all(&mut **tx)
     .await
     .map_err(|_| LinkError::Unavailable)?;
-    if copies.len() != snapshot.products.len() {
-        return Err(LinkError::Unavailable);
-    }
+    ensure_count(copies.len(), snapshot.products.len())?;
     for (row, product) in copies.into_iter().zip(&snapshot.products) {
         let payload = row.payload.ok_or(LinkError::Unavailable)?;
         let copy: TranslationDraft =

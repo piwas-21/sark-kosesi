@@ -281,6 +281,15 @@ async fn bounded_keyset_pages_keep_same_time_ties_and_exclude_other_accounts(poo
         guest_order_links::list_linked_orders(&pool, &owner, Some(&bad), 2, time.as_ref()).await,
         Err(LinkError::Denied)
     ));
+    let bad_time = LinkedOrderCursor {
+        linked_at: -1,
+        order_id: "ffffffffffffffffffffffffffffffff".into(),
+    };
+    assert!(matches!(
+        guest_order_links::list_linked_orders(&pool, &owner, Some(&bad_time), 2, time.as_ref())
+            .await,
+        Err(LinkError::Denied)
+    ));
     let mut cursor = None;
     let mut actual = Vec::new();
     for page_number in 0..3 {
@@ -688,4 +697,383 @@ async fn translated_history_requires_its_exact_approved_dutch_source_review(pool
             .await
             .is_ok()
     );
+    let source: String = sqlx::query_scalar("SELECT payload::text FROM catalogue_translation_revisions WHERE sku='SET-FILLED' AND locale='nl' AND revision=1")
+        .fetch_one(&pool)
+        .await
+        .expect("captured Dutch source");
+    let mut invalid_source: serde_json::Value = serde_json::from_str(&source).expect("source JSON");
+    invalid_source["title"] = serde_json::json!("");
+    for malformed in ["{}".to_owned(), invalid_source.to_string()] {
+        set_historical_json(&pool, false, &malformed).await;
+        assert!(matches!(
+            guest_order_links::read_linked_order(&pool, &owner, &id, time.as_ref()).await,
+            Err(LinkError::Unavailable)
+        ));
+        assert!(matches!(
+            guest_order_links::list_linked_orders(&pool, &owner, None, 8, time.as_ref()).await,
+            Err(LinkError::Unavailable)
+        ));
+        set_historical_json(&pool, false, &source).await;
+        let view = guest_order_links::read_linked_order(&pool, &owner, &id, time.as_ref())
+            .await
+            .expect("restored source remains readable");
+        assert_eq!(view.lines[0].title, "Synthetisches Beispielsitzset");
+    }
+}
+
+async fn set_account_identity(pool: &PgPool, account_id: i64, email: &str) {
+    let mut tx = pool.begin().await.expect("identity corruption transaction");
+    sqlx::query("ALTER TABLE verified_customer_accounts DISABLE TRIGGER USER")
+        .execute(&mut *tx)
+        .await
+        .expect("disable account guard");
+    sqlx::query("UPDATE verified_customer_accounts SET email_identity=$1 WHERE id=$2")
+        .bind(email)
+        .bind(account_id)
+        .execute(&mut *tx)
+        .await
+        .expect("change stored identity");
+    sqlx::query("ALTER TABLE verified_customer_accounts ENABLE TRIGGER USER")
+        .execute(&mut *tx)
+        .await
+        .expect("restore account guard");
+    tx.commit()
+        .await
+        .expect("commit isolated identity mutation");
+}
+
+#[sqlx::test(migrator = "MIGRATOR")]
+async fn damaged_account_identity_is_scoped_and_fails_closed(pool: PgPool) {
+    seed(&pool).await;
+    let (store, time) = store(&pool, 1100);
+    let (guest_session, csrf) = guest(&store).await;
+    let key = GuestCredential::from_session(&guest_session).expect("guest key");
+    let (owner_id, owner) = account(&pool, "buyer@example.test", &time).await;
+    let (_, other) = account(&pool, "other@example.test", &time).await;
+    let owned = linked(
+        &store,
+        &pool,
+        &key,
+        &csrf,
+        &owner,
+        &time,
+        ("identity-owner", "buyer@example.test"),
+    )
+    .await;
+    let foreign = linked(
+        &store,
+        &pool,
+        &key,
+        &csrf,
+        &other,
+        &time,
+        ("identity-other", "other@example.test"),
+    )
+    .await;
+
+    assert!(matches!(
+        guest_order_links::read_linked_order(&pool, &owner, "invalid", time.as_ref()).await,
+        Err(LinkError::Denied)
+    ));
+    for email in ["buyer@EXAMPLE.test", "Buyer@example.test"] {
+        set_account_identity(&pool, owner_id, email).await;
+        assert!(matches!(
+            guest_order_links::read_linked_order(&pool, &owner, &owned, time.as_ref()).await,
+            Err(LinkError::Unavailable)
+        ));
+        assert!(matches!(
+            guest_order_links::list_linked_orders(&pool, &owner, None, 8, time.as_ref()).await,
+            Err(LinkError::Unavailable)
+        ));
+        assert!(matches!(
+            guest_order_links::read_linked_order(&pool, &other, &owned, time.as_ref()).await,
+            Err(LinkError::Denied)
+        ));
+        assert_eq!(
+            guest_order_links::read_linked_order(&pool, &other, &foreign, time.as_ref())
+                .await
+                .expect("unrelated account remains readable")
+                .order_id,
+            foreign
+        );
+        set_account_identity(&pool, owner_id, "buyer@example.test").await;
+        assert_eq!(
+            guest_order_links::read_linked_order(&pool, &owner, &owned, time.as_ref())
+                .await
+                .expect("restored identity")
+                .order_id,
+            owned
+        );
+    }
+}
+
+async fn set_historical_json(pool: &PgPool, publication: bool, json: &str) {
+    let mut tx = pool
+        .begin()
+        .await
+        .expect("historical corruption transaction");
+    let (disable, update, enable) = if publication {
+        (
+            "ALTER TABLE catalogue_publication_revisions DISABLE TRIGGER USER",
+            "UPDATE catalogue_publication_revisions SET choice=$1::jsonb WHERE sku='SET-FILLED' AND locale='nl' AND revision=1",
+            "ALTER TABLE catalogue_publication_revisions ENABLE TRIGGER USER",
+        )
+    } else {
+        (
+            "ALTER TABLE catalogue_translation_revisions DISABLE TRIGGER USER",
+            "UPDATE catalogue_translation_revisions SET payload=$1::jsonb WHERE sku='SET-FILLED' AND locale='nl' AND revision=1",
+            "ALTER TABLE catalogue_translation_revisions ENABLE TRIGGER USER",
+        )
+    };
+    sqlx::query(disable)
+        .execute(&mut *tx)
+        .await
+        .expect("disable historical guard");
+    assert_eq!(
+        sqlx::query(update)
+            .bind(json)
+            .execute(&mut *tx)
+            .await
+            .expect("mutate historical record")
+            .rows_affected(),
+        1
+    );
+    sqlx::query(enable)
+        .execute(&mut *tx)
+        .await
+        .expect("restore historical guard");
+    tx.commit()
+        .await
+        .expect("commit isolated historical mutation");
+}
+
+#[sqlx::test(migrator = "MIGRATOR")]
+async fn malformed_exact_historical_publication_and_copy_fail_closed(pool: PgPool) {
+    seed(&pool).await;
+    let (store, time) = store(&pool, 1100);
+    let (guest_session, csrf) = guest(&store).await;
+    let key = GuestCredential::from_session(&guest_session).expect("guest key");
+    let (_, owner) = account(&pool, "buyer@example.test", &time).await;
+    let id = linked(
+        &store,
+        &pool,
+        &key,
+        &csrf,
+        &owner,
+        &time,
+        ("historical-records", "buyer@example.test"),
+    )
+    .await;
+    let publication: String = sqlx::query_scalar("SELECT choice::text FROM catalogue_publication_revisions WHERE sku='SET-FILLED' AND locale='nl' AND revision=1").fetch_one(&pool).await.expect("original publication");
+    let copy: String = sqlx::query_scalar("SELECT payload::text FROM catalogue_translation_revisions WHERE sku='SET-FILLED' AND locale='nl' AND revision=1").fetch_one(&pool).await.expect("original copy");
+    let mut invalid_selection: serde_json::Value =
+        serde_json::from_str(&publication).expect("publication JSON");
+    invalid_selection["selection"]["family_slug"] = serde_json::json!("");
+    let mut wrong_bom: serde_json::Value =
+        serde_json::from_str(&publication).expect("publication JSON");
+    wrong_bom["selection"]["facts"]["bom_revision"] = serde_json::json!(2);
+    wrong_bom["selection"]["image"]["bom_revision"] = serde_json::json!(2);
+    let mut wrong_locale_source: serde_json::Value =
+        serde_json::from_str(&publication).expect("publication JSON");
+    wrong_locale_source["selection"]["source_review_revision"] = serde_json::json!(1);
+    let mut invalid_copy: serde_json::Value = serde_json::from_str(&copy).expect("copy JSON");
+    invalid_copy["title"] = serde_json::json!("");
+
+    for (is_publication, damaged, original) in [
+        (true, "{}".to_owned(), &publication),
+        (true, invalid_selection.to_string(), &publication),
+        (true, r#"{"action":"withdraw"}"#.to_owned(), &publication),
+        (true, wrong_bom.to_string(), &publication),
+        (true, wrong_locale_source.to_string(), &publication),
+        (false, "{}".to_owned(), &copy),
+        (false, invalid_copy.to_string(), &copy),
+    ] {
+        set_historical_json(&pool, is_publication, &damaged).await;
+        assert!(
+            matches!(
+                guest_order_links::read_linked_order(&pool, &owner, &id, time.as_ref()).await,
+                Err(LinkError::Unavailable)
+            ),
+            "damaged historical record: {damaged}"
+        );
+        assert!(matches!(
+            guest_order_links::list_linked_orders(&pool, &owner, None, 8, time.as_ref()).await,
+            Err(LinkError::Unavailable)
+        ));
+        set_historical_json(&pool, is_publication, original).await;
+        let view = guest_order_links::read_linked_order(&pool, &owner, &id, time.as_ref())
+            .await
+            .expect("restored historical record");
+        assert_eq!(view.lines[0].title, "Isolated acceptance sample");
+    }
+}
+
+#[sqlx::test(migrator = "MIGRATOR")]
+async fn storage_failures_do_not_return_partial_order_history(pool: PgPool) {
+    seed(&pool).await;
+    let (store, time) = store(&pool, 1100);
+    let (guest_session, csrf) = guest(&store).await;
+    let key = GuestCredential::from_session(&guest_session).expect("guest key");
+    let (_, owner) = account(&pool, "buyer@example.test", &time).await;
+    let id = linked(
+        &store,
+        &pool,
+        &key,
+        &csrf,
+        &owner,
+        &time,
+        ("storage-failure", "buyer@example.test"),
+    )
+    .await;
+    let cursor = LinkedOrderCursor {
+        linked_at: 1101,
+        order_id: "ffffffffffffffffffffffffffffffff".into(),
+    };
+    for (disable, restore) in [
+        (
+            "ALTER TABLE verified_customer_accounts RENAME COLUMN email_identity TO unavailable_email_identity",
+            "ALTER TABLE verified_customer_accounts RENAME COLUMN unavailable_email_identity TO email_identity",
+        ),
+        (
+            "ALTER TABLE customer_order_links RENAME TO unavailable_customer_order_links",
+            "ALTER TABLE unavailable_customer_order_links RENAME TO customer_order_links",
+        ),
+        (
+            "ALTER TABLE checkout_orders RENAME TO unavailable_checkout_orders",
+            "ALTER TABLE unavailable_checkout_orders RENAME TO checkout_orders",
+        ),
+        (
+            "ALTER TABLE catalogue_publication_revisions RENAME TO unavailable_publications",
+            "ALTER TABLE unavailable_publications RENAME TO catalogue_publication_revisions",
+        ),
+        (
+            "ALTER TABLE catalogue_translation_revisions RENAME TO unavailable_translations",
+            "ALTER TABLE unavailable_translations RENAME TO catalogue_translation_revisions",
+        ),
+    ] {
+        // Each sqlx::test owns its database; restore the table before the healthy control.
+        sqlx::query(disable)
+            .execute(&pool)
+            .await
+            .expect("simulate unavailable relation");
+        assert!(matches!(
+            guest_order_links::read_linked_order(&pool, &owner, &id, time.as_ref()).await,
+            Err(LinkError::Unavailable)
+        ));
+        assert!(matches!(
+            guest_order_links::list_linked_orders(&pool, &owner, None, 8, time.as_ref()).await,
+            Err(LinkError::Unavailable)
+        ));
+        assert!(matches!(
+            guest_order_links::list_linked_orders(&pool, &owner, Some(&cursor), 8, time.as_ref())
+                .await,
+            Err(LinkError::Unavailable)
+        ));
+        sqlx::query(restore)
+            .execute(&pool)
+            .await
+            .expect("restore relation");
+        assert_eq!(
+            guest_order_links::read_linked_order(&pool, &owner, &id, time.as_ref())
+                .await
+                .expect("restored read")
+                .lines[0]
+                .title,
+            "Isolated acceptance sample"
+        );
+    }
+}
+
+#[sqlx::test(migrator = "MIGRATOR")]
+async fn inconsistent_historical_times_fail_closed_and_restore(pool: PgPool) {
+    seed(&pool).await;
+    let (store, time) = store(&pool, 1100);
+    let (guest_session, csrf) = guest(&store).await;
+    let key = GuestCredential::from_session(&guest_session).expect("guest key");
+    let (_, owner) = account(&pool, "buyer@example.test", &time).await;
+    let id = linked(
+        &store,
+        &pool,
+        &key,
+        &csrf,
+        &owner,
+        &time,
+        ("historical-time", "buyer@example.test"),
+    )
+    .await;
+
+    let mut tx = pool.begin().await.expect("isolated proof mutation");
+    sqlx::query("ALTER TABLE guest_order_link_proofs DISABLE TRIGGER USER")
+        .execute(&mut *tx)
+        .await
+        .expect("disable proof guard");
+    sqlx::query(
+        "UPDATE guest_order_link_proofs SET created_at=1099,expires_at=1999 WHERE order_id=$1",
+    )
+    .bind(&id)
+    .execute(&mut *tx)
+    .await
+    .expect("put proof before order");
+    sqlx::query("ALTER TABLE guest_order_link_proofs ENABLE TRIGGER USER")
+        .execute(&mut *tx)
+        .await
+        .expect("restore proof guard");
+    tx.commit().await.expect("commit proof mutation");
+    assert!(matches!(
+        guest_order_links::read_linked_order(&pool, &owner, &id, time.as_ref()).await,
+        Err(LinkError::Unavailable)
+    ));
+    let mut tx = pool.begin().await.expect("restore proof transaction");
+    sqlx::query("ALTER TABLE guest_order_link_proofs DISABLE TRIGGER USER")
+        .execute(&mut *tx)
+        .await
+        .expect("disable proof guard");
+    sqlx::query(
+        "UPDATE guest_order_link_proofs SET created_at=1100,expires_at=2000 WHERE order_id=$1",
+    )
+    .bind(&id)
+    .execute(&mut *tx)
+    .await
+    .expect("restore proof times");
+    sqlx::query("ALTER TABLE guest_order_link_proofs ENABLE TRIGGER USER")
+        .execute(&mut *tx)
+        .await
+        .expect("restore proof guard");
+    tx.commit().await.expect("commit restored proof");
+    assert!(
+        guest_order_links::read_linked_order(&pool, &owner, &id, time.as_ref())
+            .await
+            .is_ok()
+    );
+
+    let original: i64 = sqlx::query_scalar("SELECT evaluated_at FROM catalogue_publication_revisions WHERE sku='SET-FILLED' AND locale='nl' AND revision=1").fetch_one(&pool).await.expect("original evaluation time");
+    for (at, expect_valid) in [(9_007_199_254_740_992_i64, false), (original, true)] {
+        let mut tx = pool
+            .begin()
+            .await
+            .expect("isolated publication time mutation");
+        sqlx::query("ALTER TABLE catalogue_publication_revisions DISABLE TRIGGER USER")
+            .execute(&mut *tx)
+            .await
+            .expect("disable publication guard");
+        sqlx::query("UPDATE catalogue_publication_revisions SET evaluated_at=$1 WHERE sku='SET-FILLED' AND locale='nl' AND revision=1").bind(at).execute(&mut *tx).await.expect("set publication time");
+        sqlx::query("ALTER TABLE catalogue_publication_revisions ENABLE TRIGGER USER")
+            .execute(&mut *tx)
+            .await
+            .expect("restore publication guard");
+        tx.commit().await.expect("commit publication time mutation");
+        let result = guest_order_links::read_linked_order(&pool, &owner, &id, time.as_ref()).await;
+        if expect_valid {
+            assert_eq!(
+                result.expect("restored evaluation time").lines[0].title,
+                "Isolated acceptance sample"
+            );
+        } else {
+            assert!(matches!(result, Err(LinkError::Unavailable)));
+            assert!(matches!(
+                guest_order_links::list_linked_orders(&pool, &owner, None, 8, time.as_ref()).await,
+                Err(LinkError::Unavailable)
+            ));
+        }
+    }
 }

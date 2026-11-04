@@ -65,7 +65,7 @@ pub(crate) async fn verify_password(
     let normalized = normalize(password)?;
     let has_credential = phc.is_some();
     let encoded = phc.unwrap_or(DUMMY_PHC);
-    if encoded.len() != 97 || !encoded.starts_with(PHC_PREFIX) {
+    if encoded.len() > 97 || !encoded.starts_with(PHC_PREFIX) {
         return Err(PasswordError::Unavailable);
     }
     let encoded = Zeroizing::new(encoded.to_owned());

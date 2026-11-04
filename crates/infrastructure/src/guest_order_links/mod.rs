@@ -109,3 +109,7 @@ async fn require_unlinked_order(
     }
     Ok(())
 }
+
+#[cfg(test)]
+#[path = "../../tests/support/guest_order_link_errors.rs"]
+mod tests;
