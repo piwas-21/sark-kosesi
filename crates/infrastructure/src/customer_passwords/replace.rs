@@ -46,6 +46,29 @@ struct Stored {
     proof_xid_matches: bool,
 }
 
+impl Stored {
+    fn matches(
+        &self,
+        proof: &Proof,
+        next: i32,
+        password_hash: &str,
+        verifier: &[u8],
+        captured: i64,
+    ) -> bool {
+        self.revision == next
+            && self.password_hash == password_hash
+            && self.changed_at == captured
+            && self.challenge_verifier.as_slice() == verifier
+            && self.credential_xid_matches
+            && self.account_id == proof.account_id
+            && self.expected_revision == proof.expected_revision
+            && self.created_at == proof.created_at
+            && self.expires_at == proof.expires_at
+            && self.consumed_at == Some(captured)
+            && self.proof_xid_matches
+    }
+}
+
 /// Consumes exact proof and changes the credential atomically; it grants no session.
 pub async fn replace(
     pool: &PgPool,
@@ -121,18 +144,7 @@ pub async fn replace(
         "SELECT c.revision,c.password_hash,c.changed_at,c.challenge_verifier,c.changed_xid=pg_current_xact_id() AS credential_xid_matches,p.account_id,p.expected_revision,p.created_at,p.expires_at,p.consumed_at,p.consumed_xid=pg_current_xact_id() AS proof_xid_matches FROM customer_password_credentials c JOIN customer_password_challenges p ON p.verifier=c.challenge_verifier AND p.account_id=c.account_id WHERE c.account_id=$1"
     ).bind(initial.account_id).fetch_optional(&mut *tx).await.map_err(|_| PasswordError::Unavailable)?;
     let stored = stored.ok_or(PasswordError::Unavailable)?;
-    if stored.revision != next
-        || stored.password_hash != password_hash
-        || stored.changed_at != captured
-        || stored.challenge_verifier != verifier
-        || !stored.credential_xid_matches
-        || stored.account_id != proof.account_id
-        || stored.expected_revision != proof.expected_revision
-        || stored.created_at != proof.created_at
-        || stored.expires_at != proof.expires_at
-        || stored.consumed_at != Some(captured)
-        || !stored.proof_xid_matches
-    {
+    if !stored.matches(&proof, next, &password_hash, &verifier, captured) {
         return Err(PasswordError::Unavailable);
     }
     if now(&observed)? >= proof.expires_at {
@@ -141,3 +153,7 @@ pub async fn replace(
     tx.commit().await.map_err(|_| PasswordError::Unavailable)?;
     Ok(next)
 }
+
+#[cfg(test)]
+#[path = "../../tests/support/customer_password_replace_unit.rs"]
+mod tests;

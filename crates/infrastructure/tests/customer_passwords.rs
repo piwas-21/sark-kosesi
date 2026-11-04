@@ -624,3 +624,8 @@ async fn expiry_after_credential_insert_rolls_back_both_writes(pool: PgPool) {
     );
     assert_eq!(counts(&pool).await, (1, 1));
 }
+
+#[path = "support/customer_password_issue_unit.rs"]
+mod customer_password_issue_unit;
+#[path = "support/customer_password_upgrade.rs"]
+mod customer_password_upgrade;

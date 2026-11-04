@@ -78,3 +78,7 @@ async fn current_revision(
         Some(_) => Err(PasswordError::Unavailable),
     }
 }
+
+#[cfg(test)]
+#[path = "../../tests/support/customer_password_boundary_unit.rs"]
+mod boundary_tests;
