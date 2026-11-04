@@ -234,8 +234,8 @@ supervision or live provider activation follows from deploying the empty preview
    accounting with order transactions and verified customer limits. A guest cookie
    cannot establish a per-person allowance. Version 1 indicative fixed/percentage quote and captured
    refund arithmetic is implemented; an order-scoped allocator applies it to explicit
-   SKU and shipping balances from accepted quotes. It installs no promotion or
-   refund authority; durable refund history and payment capture checks remain open.
+   SKU and shipping balances from accepted quotes. The private refund reservation
+   command below derives the prior balances from immutable reservation history.
    One promotion per quote, exact eligibility, UTC windows and immutable cent/tax
    allocations must remain consistent through checkout, payment and credit records.
    No customer coupon is accepted and no customer policy may grant readiness.
@@ -349,7 +349,13 @@ supervision or live provider activation follows from deploying the empty preview
    scarcity case revision and one bounded generation. It atomically records an
    allocation or fresh still-scarce assessment. Keep release/consumption cases
    stopped and require fresh confirmation for every new scarcity generation.
-   Complete independent order/fulfilment/refund lifecycle and invoices/credit
+   A private recent-MFA `refund.prepare` command records a confirmed, bounded
+   reservation against the original order's current received EUR recognition.
+   It serializes the original attempt and cumulative SKU/shipping gross, net and
+   VAT custody, with a reciprocal outbox event and historical exact replay.
+   Complete provider-side refund/chargeback reconciliation, execution custody
+   and reservation disposition before moving funds. Complete independent
+   order/fulfilment/refund lifecycle and invoices/credit
    documents, bounded audited refunds and independent restock actions. Prove
    sandbox outcomes, concurrency, cent allocations and crash recovery without
    duplicate effects.

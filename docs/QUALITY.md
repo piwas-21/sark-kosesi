@@ -680,3 +680,18 @@ including an early constraint flush, transaction failure or lock wait.
 Maintain the maximum-basket and component conservation checks from the
 underlying late-stock path. Tests and private decisions supply no provider,
 shipment or production acceptance evidence.
+
+### Private refund reservations
+
+Use real isolated PostgreSQL with an accepted immutable quote and authenticated
+received evidence. Verify literal cumulative SKU and shipping gross/net/VAT
+across multiple reservations, including the captured remainder. Race competing
+requests for the final available amount and same-key requests for the same
+intent. Exercise rejected changed intent, changed actor, stale or ambiguous
+recognition, and staff expiry after waiting. Use native negative and healthy
+paired controls for incorrect amounts, a detached event, incomplete custody and
+attempted same-transaction evidence changes after early deferred evaluation.
+Confirm the order's stock journal and all provider-side state stay outside
+this transaction. Local tests provide source evidence for reservation custody.
+The order refund allocator and reservation modules use the existing 95% native
+line and branch thresholds for critical financial code.

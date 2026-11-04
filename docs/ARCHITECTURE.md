@@ -442,10 +442,33 @@ stable provider attempt. Accountant/market acceptance remains a separate gate.
 A pure order-scoped allocation composes that arithmetic over the validated accepted
 order quote. It requires one explicit prior gross and requested gross for every SKU
 and shipping, rejects duplicate, unknown, missing and excessive allocations, and
-returns line, shipping and total gross/net/VAT deltas. Caller-supplied prior amounts
-are not evidence of refunds: a future finance use case must derive and serialize them
-from durable payment/refund history. The accepted quote does not yet capture a
-promotion; no discounted checkout or fiscal acceptance follows from this primitive.
+returns line, shipping and total gross/net/VAT deltas. The accepted quote does not
+yet capture a promotion.
+
+### Private refund reservations
+
+An explicitly confirmed reservation binds an accepted order, the expected
+current received recognition, the requested gross for every accepted SKU and
+shipping, the staff account, reason and a global effect key. Zero line amounts
+are valid when the total request is positive. Staff requests use the unseeded
+`refund.prepare` capability and recent MFA. The transaction claims the original
+payment attempt in READ COMMITTED and verifies the received evidence against the
+accepted EUR amount after the claim. Recheck staff time after waits and writes.
+
+The attempt claim serializes each order's immutable reservation history. Retain
+at most 16 reservations per order. Revalidate previous custody before deriving
+cumulative reserved gross and computing each net/VAT delta from the captured
+snapshot. PostgreSQL independently enforces the same cumulative bounds and
+cent allocation. Commit the reservation and a reciprocal minimal event in the
+same transaction. An exact replay under current staff authority returns the
+original reservation and checks its historical recognition. New evidence can
+block a new reservation without changing an existing receipt.
+
+Reservations encumber refundable amounts. Before execution, reconcile
+provider-side refunds and chargebacks, define uncertain and failed attempt
+dispositions and use stable provider idempotency and credit-document links.
+No inventory movement is part of the reservation. Accountant, market and
+provider acceptance remain separate gates.
 
 ### Reviewed promotion configuration
 

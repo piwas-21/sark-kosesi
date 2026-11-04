@@ -117,6 +117,43 @@ fn requests_are_explicit_and_zero_shipping_does_not_require_a_refund() {
 }
 
 #[test]
+fn consecutive_cents_straddle_the_exact_vat_boundary_at_the_capture_ceiling() {
+    let mut order = fixture::snapshot();
+    let captured = CapturedAmount {
+        gross_minor: 9_007_199_254_740_991,
+        net_minor: 7_443_966_326_232_224,
+        vat_minor: 1_563_232_928_508_767,
+    };
+    order.quote.lines[0].quantity = 1;
+    order.quote.lines[0].unit_gross_minor = captured.gross_minor;
+    order.quote.lines[0].amounts = captured.clone();
+    order.quote.total = captured;
+    order.quote.shipping = CapturedAmount {
+        gross_minor: 0,
+        net_minor: 0,
+        vat_minor: 0,
+    };
+    order.market.shipping.gross = eur(0);
+
+    // The first cumulative VAT numerator leaves a remainder of gross minus one.
+    // The next cent alone crosses the exact rounding boundary.
+    let before = allocate_order_refund(
+        &order,
+        &[line("SET-FILLED", 1_125_899_906_842_638, 1)],
+        &amounts(0, 0),
+    )
+    .expect("cent before VAT boundary");
+    let after = allocate_order_refund(
+        &order,
+        &[line("SET-FILLED", 1_125_899_906_842_639, 1)],
+        &amounts(0, 0),
+    )
+    .expect("cent crossing VAT boundary");
+    assert_amount(&before.total, 1, 1, 0);
+    assert_amount(&after.total, 1, 0, 1);
+}
+
+#[test]
 fn incomplete_duplicate_unknown_and_excess_balances_fail_closed() {
     let order = mixed_order();
     let bad = [
