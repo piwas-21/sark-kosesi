@@ -51,3 +51,24 @@ available. Keep these inputs pending; fixture data cannot fill them.
 Create the market matrix from evidence for AT, BE, BG, HR, CY, CZ, DK, EE, FI, FR, DE, GR, HU, IE, IT, LV, LT, LU, MT, NL, PL, PT, RO, SK, SI, ES, SE. Every row is pending/blocked/ready; missing prices or rules fail closed. Special territories/postcodes require explicit handling. Language support does not imply delivery readiness. Unready destinations cannot take payment; resolving them remains a blocker against EU-wide launch intent.
 
 Obtain qualified current review of applicable legal/tax requirements. Ordinary size/foam choices are not automatically a withdrawal-rights exception. Do not invent certifications, testimonials, origin claims or shipping promises to fill missing inputs.
+
+## Room-fit calculation boundary
+
+The local calculation accepts a rectangular room and caller-measured rectangular
+items in a single unit (mm, cm or inches), with up to three decimal places. It
+uses exact integer nanometres, limits each measurement to 100 m, and accepts at
+most 50 items and 20 clearance rectangles. Item positions are nonnegative offsets
+from the room's top-left; 90/270-degree turns swap width and depth while keeping
+that top-left fixed. Door clearances are user-supplied reserved rectangles, not
+inferred door swing. Empty clearances explicitly mean none; unknown clearances
+cannot produce a fit result.
+
+One supplied tolerance is applied independently to each side: the room shrinks
+and each item and clearance rectangle expands. Exact edge contact is permitted;
+positive-area overlaps are reported. Invalid measurements are rejected, while
+missing items, unknown clearances or a tolerance consuming the room are uncertain.
+A detected conflict is reported even when door clearances are unknown. These are
+approximate two-dimensional checks, not a guarantee of access, installation or
+physical fit. Angled walls, vertical obstacles, door swing, transport routes and
+measurement errors beyond the provided tolerance require separate assessment.
+This calculation has no catalogue data, UI, storage or photo upload.
