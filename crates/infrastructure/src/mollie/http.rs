@@ -73,6 +73,19 @@ impl Http {
         }
         self.get_url(url).await
     }
+    pub(super) async fn reversal_page(
+        &self,
+        payment_id: &str,
+        collection: &str,
+        from: Option<&str>,
+    ) -> Result<Vec<u8>, MollieError> {
+        let mut url = self.path(&["payments", payment_id, collection])?;
+        url.query_pairs_mut().append_pair("limit", "10");
+        if let Some(from) = from {
+            url.query_pairs_mut().append_pair("from", from);
+        }
+        self.get_url(url).await
+    }
     async fn get_url(&self, url: Url) -> Result<Vec<u8>, MollieError> {
         let response = self
             .client

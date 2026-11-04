@@ -97,7 +97,9 @@ fn nullable_timestamp<'de, D: serde::Deserializer<'de>>(
 ) -> Result<Option<Option<String>>, D::Error> {
     Option::<String>::deserialize(d).map(Some)
 }
-fn optional_mode<'de, D: serde::Deserializer<'de>>(d: D) -> Result<Option<PaymentMode>, D::Error> {
+pub(super) fn optional_mode<'de, D: serde::Deserializer<'de>>(
+    d: D,
+) -> Result<Option<PaymentMode>, D::Error> {
     PaymentMode::deserialize(d).map(Some)
 }
 fn timestamp(value: &str) -> Result<OffsetDateTime, MollieError> {
@@ -106,7 +108,7 @@ fn timestamp(value: &str) -> Result<OffsetDateTime, MollieError> {
     }
     OffsetDateTime::parse(value, &Rfc3339).map_err(|_| MollieError::InvalidResponse)
 }
-fn child_id(id: &str, prefix: &str) -> bool {
+pub(super) fn child_id(id: &str, prefix: &str) -> bool {
     id.starts_with(prefix)
         && id.len() > prefix.len()
         && id.len() <= 256

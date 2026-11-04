@@ -116,9 +116,10 @@ gross/net/VAT deltas. A private, confirmed finance reservation claims these
 amounts once against the accepted order and current received evidence, with
 immutable cumulative accounting and a minimal outbox event. Private test-key
 exact-item refund and chargeback GETs now verify the paid original and return
-minimal bounded observations. Durable observation custody, paginated provider
-discovery, reconciliation, reservation disposition and execution custody remain
-open. A 404 leaves the exact child unresolved. Customer coupon routes and budget
+minimal bounded observations. Payment-specific test-profile list pages now yield
+only bounded reversal identity hints and scoped continuations after verifying the
+paid original. Durable discovery journal and orchestration, observation custody,
+reconciliation, reservation disposition and execution custody remain open. A 404 leaves the exact child unresolved. Customer coupon routes and budget
 claims remain pending.
 Private promotion drafts and independent exact-revision reviews now persist
 canonical eligibility/discount terms and explicit lifetime budget/redemption limits.

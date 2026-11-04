@@ -354,9 +354,12 @@ supervision or live provider activation follows from deploying the empty preview
    It serializes the original attempt and cumulative SKU/shipping gross, net and
    VAT custody, with a reciprocal outbox event and historical exact replay.
    Private test-key exact-item refund and chargeback GETs now require a matched
-   paid original and retain minimal bounded observations only. Implement durable
-   observation custody and bounded paginated discovery; an exact GET or 404 cannot
-   establish the provider's full history or net balance. Complete provider-side
+   paid original and retain minimal bounded observations only. One private,
+   payment-specific test-profile list page now provides bounded reversal identity
+   hints and a scoped continuation after verifying the same paid original. Implement
+   durable discovery journal and orchestration and observation custody; an exact
+   GET, 404, empty page, ended scan or capped scan cannot establish the provider
+   history or net balance. Complete provider-side
    refund/chargeback reconciliation, execution custody
    and reservation disposition before moving funds. Complete independent
    order/fulfilment/refund lifecycle and invoices/credit

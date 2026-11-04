@@ -477,8 +477,16 @@ and [chargeback GET](https://docs.mollie.com/reference/get-chargeback) contracts
 Authenticated amounts above the original remain visible for review. Some methods
 allow additional reimbursement, such as return shipping. [Mollie payment reference](https://docs.mollie.com/reference/get-payment)
 
-Durable observation custody, paginated discovery and reservation disposition
-remain separate work. Financial and inventory transitions are outside this read path.
+A private list operation verifies that same paid parent before each bounded GET
+of its refund or chargeback collection. It returns only exact candidate identities;
+item status has no authority. The continuation is an in-memory capability bound to
+the entire frozen attempt, payment, collection and actual test-key fingerprint.
+Only a validated Mollie next-link offset is used to reconstruct the fixed endpoint;
+the returned URL is never followed. Empty, ended, malformed or capped scans do not
+establish absence or a net balance. The contracts are the [refund list](https://docs.mollie.com/reference/list-refunds)
+and [payment chargeback list](https://docs.mollie.com/reference/list-payment-chargebacks).
+Durable discovery journal and orchestration, observation custody and reservation
+disposition remain separate work. Financial and inventory transitions are outside this read path.
 
 Reservations encumber refundable amounts. Before execution, reconcile
 provider-side refunds and chargebacks, define uncertain and failed attempt

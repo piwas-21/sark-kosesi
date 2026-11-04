@@ -1004,3 +1004,6 @@ mod refund_reservations_cases;
 
 #[path = "mollie_reversals.rs"]
 mod reversal_cases;
+
+#[path = "mollie_reversal_discovery.rs"]
+mod reversal_discovery_cases;
