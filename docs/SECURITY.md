@@ -393,5 +393,7 @@ server time is checked after lock waits and again after the update. An invalid,
 mismatched, expired or consumed challenge has the same denial. This primitive is
 not a public endpoint, a verified account or a durable sending system. No bearer is
 placed in an outbox, logs or storage. Secure delivery custody, rate limits,
-anti-enumeration behavior, account binding in the same transaction, token
-transport, mailbox delivery and recovery remain separate requirements.
+anti-enumeration behavior, token transport, mailbox delivery and recovery remain
+separate requirements. A future durable account effect must compose consumption
+in the same transaction; this separately committing primitive cannot safely bridge
+a crash before a later account write and does not replay consumption as success.

@@ -363,9 +363,10 @@ and consumes it once under purpose, identity and fresh-clock checks. Its fixed
 15-minute expiry is checked after lock waits and again before commit; raw bearer
 bytes are returned to the trusted caller only. The schema and scope are specified
 in [security](SECURITY.md#private-email-verification-challenge-custody). This is
-not registration, delivery or guest linking. A future account flow must compose
-verified identity and challenge consumption atomically and establish safe delivery,
-anti-enumeration and abuse controls. Migration 0034 must land after the separately
+not registration, delivery or guest linking. A future durable account operation
+must compose consumption and its account effect within its own transaction: calling
+the separately committing primitive first leaves a crash gap, and replay is denial.
+Safe delivery, anti-enumeration and abuse controls also remain required. Migration 0034 must land after the separately
 reserved 0033 late-stock migration; no deployed migration state is implied.
 
 ## Next session prompt

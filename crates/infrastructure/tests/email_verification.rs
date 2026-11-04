@@ -291,3 +291,52 @@ async fn clock_failure_or_reversal_never_creates_or_consumes_a_challenge(pool: P
             .expect("row");
     assert!(consumed.is_none());
 }
+
+#[sqlx::test(migrator = "MIGRATOR")]
+async fn suppressed_writes_fail_closed_and_healthy_operations_recover(pool: PgPool) {
+    sqlx::query("CREATE FUNCTION suppress_verification_write() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN RETURN NULL; END $$")
+        .execute(&pool).await.expect("fault function");
+    sqlx::query("CREATE TRIGGER suppress_verification_insert BEFORE INSERT ON email_verification_challenges FOR EACH ROW EXECUTE FUNCTION suppress_verification_write()")
+        .execute(&pool).await.expect("insert fault");
+    let clock = clock(1000);
+    assert!(matches!(
+        issue(&pool, "a@example.com", &clock).await,
+        Err(VerificationError::Unavailable)
+    ));
+    let count: i64 = sqlx::query_scalar("SELECT count(*) FROM email_verification_challenges")
+        .fetch_one(&pool)
+        .await
+        .expect("count");
+    assert_eq!(count, 0);
+    sqlx::query("DROP TRIGGER suppress_verification_insert ON email_verification_challenges")
+        .execute(&pool)
+        .await
+        .expect("remove insert fault");
+    let token = issue(&pool, "a@example.com", &clock)
+        .await
+        .expect("healthy issue");
+    sqlx::query("CREATE TRIGGER suppress_verification_update BEFORE UPDATE ON email_verification_challenges FOR EACH ROW EXECUTE FUNCTION suppress_verification_write()")
+        .execute(&pool).await.expect("update fault");
+    assert_eq!(
+        consume(&pool, "a@example.com", &token, &clock).await,
+        Err(VerificationError::Unavailable)
+    );
+    let consumed: Option<i64> =
+        sqlx::query_scalar("SELECT consumed_at FROM email_verification_challenges")
+            .fetch_one(&pool)
+            .await
+            .expect("row");
+    assert!(consumed.is_none());
+    sqlx::query("DROP TRIGGER suppress_verification_update ON email_verification_challenges")
+        .execute(&pool)
+        .await
+        .expect("remove update fault");
+    assert_eq!(
+        consume(&pool, "a@example.com", &token, &clock).await,
+        Ok(())
+    );
+    assert_eq!(
+        consume(&pool, "a@example.com", &token, &clock).await,
+        Err(VerificationError::Denied)
+    );
+}

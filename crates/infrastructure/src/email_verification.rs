@@ -69,9 +69,12 @@ pub async fn issue(
     let expires = created
         .checked_add(LIFETIME)
         .ok_or(VerificationError::Unavailable)?;
-    sqlx::query("INSERT INTO email_verification_challenges(verifier,purpose,email_identity,created_at,expires_at) VALUES ($1,$2,$3,$4,$5)")
+    let inserted = sqlx::query("INSERT INTO email_verification_challenges(verifier,purpose,email_identity,created_at,expires_at) VALUES ($1,$2,$3,$4,$5)")
         .bind(token.verifier().as_slice()).bind(PURPOSE).bind(identity).bind(created).bind(expires)
         .execute(&mut *tx).await.map_err(|_| VerificationError::Unavailable)?;
+    if inserted.rows_affected() != 1 {
+        return Err(VerificationError::Unavailable);
+    }
     let final_now = now(clock)?;
     if final_now < created || final_now >= expires {
         return Err(VerificationError::Unavailable);
@@ -118,12 +121,16 @@ pub async fn consume(
     if captured < created || captured >= expires || consumed.is_some() {
         return Err(VerificationError::Denied);
     }
-    sqlx::query("UPDATE email_verification_challenges SET consumed_at=$2 WHERE verifier=$1")
-        .bind(verifier.as_slice())
-        .bind(captured)
-        .execute(&mut *tx)
-        .await
-        .map_err(|_| VerificationError::Unavailable)?;
+    let updated =
+        sqlx::query("UPDATE email_verification_challenges SET consumed_at=$2 WHERE verifier=$1")
+            .bind(verifier.as_slice())
+            .bind(captured)
+            .execute(&mut *tx)
+            .await
+            .map_err(|_| VerificationError::Unavailable)?;
+    if updated.rows_affected() != 1 {
+        return Err(VerificationError::Unavailable);
+    }
     let final_now = now(clock)?;
     if final_now < captured {
         return Err(VerificationError::Unavailable);
