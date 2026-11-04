@@ -143,8 +143,6 @@
   color: var(--accent);
 }
 .issues {
-  max-block-size: 13rem;
-  overflow: auto;
   list-style: disc;
   padding-inline-start: 1.25rem;
 }
@@ -152,7 +150,7 @@
   .workbench {
     grid-template-columns: minmax(0, 1.25fr) minmax(0, 1fr);
   }
-  .sheet {
+  .sheet:not(:has(.result[data-state="conflict"])) {
     position: sticky;
     inset-block-start: 1rem;
   }

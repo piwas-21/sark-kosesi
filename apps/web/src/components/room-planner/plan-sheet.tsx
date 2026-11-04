@@ -57,7 +57,7 @@ function FitSummary({
       return (
         <>
           <p>{copy.conflict}</p>
-          <ul className={styles.issues} tabIndex={0} aria-label={copy.conflict}>
+          <ul className={styles.issues} aria-label={copy.conflict}>
             {result.issues.map((issue) => (
               <li key={JSON.stringify(issue)}>
                 {copy.piece} {issue.item + 1}{" "}

@@ -340,6 +340,63 @@ test("@journey room planner checks rotation and clearance locally", async ({
   await expect(page.locator("#plan-room-width")).toHaveValue("");
 });
 
+test("@a11y long room planner conflicts remain reachable by page scrolling", async ({
+  page,
+  browserName,
+}) => {
+  await page.setViewportSize({ width: 1280, height: 500 });
+  await page.goto("/en/room-planner");
+  const room = page.getByRole("region", { name: "Room", exact: true });
+  await room.getByLabel("Width (cm)").fill("400");
+  await room.getByLabel("Depth (cm)").fill("300");
+  for (let number = 1; number <= 8; number++) {
+    if (number > 1)
+      await page.getByRole("button", { name: "Add a piece" }).click();
+    const piece = page.getByRole("group", { name: `Piece ${number}` });
+    await piece.getByLabel("Width (cm)").fill("100");
+    await piece.getByLabel("Depth (cm)").fill("100");
+  }
+  await page.getByLabel("What space needs to stay clear?").selectOption("none");
+  await page.getByRole("button", { name: "Check the layout" }).click();
+
+  const list = page.getByRole("list", { name: "Adjust this layout." });
+  const issues = list.getByRole("listitem");
+  await expect(issues).toHaveCount(28);
+  await expect(issues.last()).toHaveText("Piece 8 overlaps Piece 7.");
+  await expect(list).not.toHaveAttribute("tabindex");
+  expect(
+    await list.evaluate(
+      (element) => element.scrollHeight <= element.clientHeight,
+    ),
+  ).toBe(true);
+  await page.getByRole("button", { name: "Clear measurements" }).focus();
+  await page.keyboard.press(
+    browserName === "webkit" && process.platform === "darwin"
+      ? "Alt+Tab"
+      : "Tab",
+  );
+  await expect(list).not.toBeFocused();
+
+  // Start at the page top, then use only native keyboard scrolling to reach the end.
+  await page.evaluate(() => {
+    document.body.tabIndex = -1;
+    document.body.focus();
+    document.body.removeAttribute("tabindex");
+    window.scrollTo(0, 0);
+  });
+  for (let count = 0; count < 30; count++) {
+    const inViewport = await issues.last().evaluate((element) => {
+      const bounds = element.getBoundingClientRect();
+      return bounds.top >= 0 && bounds.bottom <= window.innerHeight;
+    });
+    if (inViewport) break;
+    await page.keyboard.press("PageDown");
+    await page.waitForTimeout(100);
+  }
+  await expect(issues.last()).toBeInViewport({ ratio: 1 });
+  expect(await page.evaluate(() => window.scrollY)).toBeGreaterThan(0);
+});
+
 for (const locale of ["nl", "ar"])
   for (const theme of ["light", "dark"]) {
     test(`@a11y room planner ${locale} ${theme} narrow layout`, async ({
