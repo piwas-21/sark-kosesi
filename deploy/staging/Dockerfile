@@ -12,6 +12,7 @@ COPY package.json package-lock.json .npmrc ./
 COPY apps/web/package.json ./apps/web/package.json
 COPY packages/design/package.json ./packages/design/package.json
 COPY packages/contracts/package.json ./packages/contracts/package.json
+COPY packages/room-fit/package.json ./packages/room-fit/package.json
 RUN npm ci --ignore-scripts
 COPY apps/web ./apps/web
 COPY packages ./packages

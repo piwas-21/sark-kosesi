@@ -1,6 +1,7 @@
 import { test, expect } from "@playwright/test";
 import AxeBuilder from "@axe-core/playwright";
 import { visualContext, themeReady } from "./visual-context.mjs";
+import { fillPlannerPreview } from "./planner-fixture.mjs";
 const locales = ["nl", "de", "fr", "en", "ar", "tr", "ku"];
 async function assertGalleryTabOrder(page, browserName) {
   const forward =
@@ -107,6 +108,7 @@ for (const viewport of [
     test.use(visualContext(viewport));
     for (const surface of [
       { name: "courtyard", path: "", locales: ["nl", "ar"] },
+      { name: "planner", path: "/room-planner", locales: ["nl", "ar"] },
       { name: "gallery", path: "/gallery", locales },
       { name: "collection", path: "/collection", locales: ["nl", "ar"] },
       {
@@ -137,6 +139,7 @@ for (const viewport of [
             await page.getByLabel("Theme").selectOption(theme);
             if (surface.name === "gallery")
               await page.getByLabel("Room width (cm)").focus();
+            if (surface.name === "planner") await fillPlannerPreview(page);
             await themeReady(page, theme);
             await expect(page).toHaveScreenshot(
               `${surface.name}-${locale}-${theme}-${viewport.width}.png`,
@@ -283,3 +286,77 @@ test("@journey default family selection survives locale-specific family slugs", 
     "SET-COVERS",
   );
 });
+
+test("@journey room planner checks rotation and clearance locally", async ({
+  page,
+}) => {
+  await page.goto("/en/room-planner");
+  const room = page.getByRole("region", { name: "Room", exact: true });
+  const piece = page.getByRole("group", { name: "Piece 1" });
+  const status = page.getByRole("status");
+  const check = page.getByRole("button", { name: "Check the layout" });
+  const writes = [];
+  page.on("request", (request) => {
+    if (!["GET", "HEAD"].includes(request.method()))
+      writes.push(request.method());
+  });
+  await room.getByLabel("Width (cm)").fill("400");
+  await room.getByLabel("Depth (cm)").fill("300");
+  await piece.getByLabel("Width (cm)").fill("150");
+  await piece.getByLabel("Depth (cm)").fill("70");
+  await piece.getByLabel("From the left (cm)").fill("280");
+  await expect(page.getByLabel("Unit of measurement")).toBeDisabled();
+  await check.focus();
+  await page.keyboard.press("Enter");
+  await expect(status).toContainText("Piece 1 extends beyond the room.");
+
+  await piece.getByLabel("Rotation").selectOption("90");
+  await check.click();
+  await expect(status).toContainText("Confirm the door clearance");
+  const clearance = page.getByLabel("What space needs to stay clear?");
+  await clearance.selectOption("none");
+  await check.click();
+  await expect(status).toContainText("The shapes fit within your measurements");
+
+  await clearance.selectOption("measured");
+  const door = page.getByRole("group", { name: "Clearance zone 1" });
+  await door.getByLabel("Width (cm)").fill("20");
+  await door.getByLabel("Depth (cm)").fill("30");
+  await door.getByLabel("From the left (cm)").fill("280");
+  await check.click();
+  await expect(status).toContainText("Piece 1 blocks Clearance zone 1.");
+  await page.getByRole("button", { name: "Add a piece" }).click();
+  await expect(
+    page.getByRole("group", { name: "Piece 2" }).getByLabel("Width (cm)"),
+  ).toBeFocused();
+  await expect(page).toHaveURL(/\/en\/room-planner$/);
+  expect(writes).toEqual([]);
+  await page.reload();
+  await expect(room.getByLabel("Width (cm)")).toHaveValue("");
+  await expect(page.getByLabel("Unit of measurement")).toBeEnabled();
+});
+
+for (const locale of ["nl", "ar"])
+  for (const theme of ["light", "dark"]) {
+    test(`@a11y room planner ${locale} ${theme} narrow layout`, async ({
+      page,
+    }) => {
+      await page.setViewportSize({ width: 320, height: 700 });
+      const response = await page.goto(`/${locale}/room-planner`);
+      expect(response?.headers()["x-robots-tag"]).toContain("noindex");
+      await page.getByLabel("Theme").selectOption(theme);
+      await expect(page.locator("html")).toHaveAttribute(
+        "dir",
+        locale === "ar" ? "rtl" : "ltr",
+      );
+      const result = await new AxeBuilder({ page })
+        .withTags(["wcag2a", "wcag2aa", "wcag21aa", "wcag22aa"])
+        .analyze();
+      expect(result.violations).toEqual([]);
+      expect(
+        await page.evaluate(
+          () => document.documentElement.scrollWidth <= innerWidth,
+        ),
+      ).toBe(true);
+    });
+  }

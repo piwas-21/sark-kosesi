@@ -16,6 +16,7 @@ class VisualApproval(unittest.TestCase):
         for name in (
             "tests/application/browser.spec.mjs",
             "tests/application/capture.mjs",
+            "tests/application/planner-fixture.mjs",
             "tests/application/visual-context.mjs",
             "tests/application/serve.mjs",
             "crates/infrastructure/tests/seed_preview.rs",
@@ -72,6 +73,7 @@ class VisualApproval(unittest.TestCase):
         for name in (
             "tests/application/browser.spec.mjs",
             "tests/application/capture.mjs",
+            "tests/application/planner-fixture.mjs",
             "tests/application/visual-context.mjs",
             "tests/application/serve.mjs",
             "crates/infrastructure/tests/seed_preview.rs",
@@ -88,9 +90,10 @@ class VisualApproval(unittest.TestCase):
 
     def test_expanded_journey_inventory_cannot_drop_configuration_empty_or_missing_states(self):
         names = expected_images()
-        self.assertEqual(len(names), 228)
+        self.assertEqual(len(names), 252)
         for browser in ("chromium", "firefox", "webkit"):
             for state in (
+                "planner-ar-dark-390",
                 "covers-ar-dark-390",
                 "filled-nl-light-1280",
                 "empty-ku-dark-390",

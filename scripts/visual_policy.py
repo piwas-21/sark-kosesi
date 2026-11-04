@@ -6,13 +6,19 @@ from datetime import UTC, datetime
 
 def source_digest(root):
     paths = []
-    for directory in ("apps/web/src", "apps/web/public", "packages/design/src"):
+    for directory in (
+        "apps/web/src",
+        "apps/web/public",
+        "packages/design/src",
+        "packages/room-fit/src",
+    ):
         paths.extend(path for path in (root / directory).rglob("*") if path.is_file())
     paths.extend(
         root / name
         for name in (
             "tests/application/browser.spec.mjs",
             "tests/application/capture.mjs",
+            "tests/application/planner-fixture.mjs",
             "tests/application/visual-context.mjs",
             "tests/application/serve.mjs",
             "crates/infrastructure/tests/seed_preview.rs",
@@ -33,6 +39,7 @@ def expected_images():
         for browser in ("chromium", "firefox", "webkit")
         for surface in (
             "courtyard",
+            "planner",
             "gallery",
             "collection",
             "covers",

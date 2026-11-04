@@ -4,7 +4,9 @@ const locale = `(?:${locales.join("|")})`;
 const publicRoutes = [
   /^\/$/,
   /^\/(?:robots\.txt|sitemap\.xml)$/,
-  new RegExp(`^/${locale}(?:/(?:gallery|collection|catalogue\\.xml))?$`),
+  new RegExp(
+    `^/${locale}(?:/(?:gallery|collection|room-planner|catalogue\\.xml))?$`,
+  ),
   new RegExp(`^/${locale}/(?:products|collection)/[a-z0-9]+(?:-[a-z0-9]+)*$`),
   new RegExp(`^/api/catalogue/${locale}$`),
   new RegExp(

@@ -358,10 +358,11 @@ The standalone browser-safe room-fit package implements the measured rectangle
 contract in [product](PRODUCT.md#room-fit-calculation-boundary). Exact integer
 units, bounded input, quarter-turns, conservative tolerance, overlap and
 user-supplied door clearance yield invalid, uncertain, conflict or fit results.
-Independently calculated fixtures cover boundaries. No page, persistence, photo
-upload or catalogue facts are connected. Next, build an accessible keyboard/form
-planner using reviewed measurements and clearly communicate approximation limits.
-Original content, reviewed locales and visual/device acceptance remain P5 work.
+Independently calculated fixtures cover boundaries. The non-selling preview page
+uses a keyboard form, local drawing and text status. Clearing the draft allows a
+unit change without reinterpreting existing measurements. Use real approved
+measurements for any future catalogue integration. Persistence, photo placement,
+original help content, reviewed locales and visual/device acceptance remain P5 work.
 
 ## Next session prompt
 

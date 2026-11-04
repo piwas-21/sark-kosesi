@@ -195,9 +195,11 @@ credentials never enter evidence. TypeScript boundaries reject private/unknown
 fields, malformed cursor/product identities and unbounded image streams. Money
 formatting checks the maximum exact public integer without dividing a float.
 
-Visual inventory now includes collection, covers/filled details, empty EN/Kurmanji
-collections and missing products, in addition to the existing home/gallery set:
-228 images across three browsers, two themes and phone/desktop widths. UI changes
+The visual inventory covers collection, covers/filled details, empty EN/Kurmanji
+collections, missing products, home, gallery and the room planner. The planner
+adds a filled Dutch and Arabic case in each browser, theme and viewport for 252
+expected images. The room-fit source and planner fixture are part of the digest.
+UI changes
 still require actual human approval bound to all image/source hashes. A failed
 browser job captures a separate candidate gallery for review while the normal
 required gate remains failed; captures never update baselines or grant approval.

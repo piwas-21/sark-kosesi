@@ -71,4 +71,9 @@ A detected conflict is reported even when door clearances are unknown. These are
 approximate two-dimensional checks, not a guarantee of access, installation or
 physical fit. Angled walls, vertical obstacles, door swing, transport routes and
 measurement errors beyond the provided tolerance require separate assessment.
-This calculation has no catalogue data, UI, storage or photo upload.
+The localized non-selling room-planner preview draws the entered footprint and
+offers keyboard form controls for every measurement, clearance and rotation.
+Changing units requires clearing an existing measurement draft. Measurements
+remain in page memory. The preview uses draft copy and caller measurements.
+Catalogue dimensions, persistent plans, photo placement and native-language
+approval require separate evidence.

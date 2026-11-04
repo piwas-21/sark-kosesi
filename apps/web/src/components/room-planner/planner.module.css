@@ -1,0 +1,159 @@
+.heading {
+  padding-block: clamp(1.5rem, 5vw, 4rem) clamp(1.5rem, 4vw, 3rem);
+  border-block-end: 1px solid var(--line);
+}
+.heading h1 {
+  max-inline-size: 100%;
+  margin-block: 0 1rem;
+  font-size: clamp(2.75rem, 7vw, 6.5rem);
+}
+.heading > p:first-of-type {
+  font-size: clamp(1rem, 2.4vw, 1.35rem);
+}
+.heading p + p {
+  margin-block-start: 0.7rem;
+}
+.workbench {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: clamp(1.5rem, 5vw, 4rem);
+  margin-block-start: 1.5rem;
+}
+.section {
+  margin-block: 0;
+  padding-block: 1.25rem;
+  border-block-end: 1px solid var(--line);
+}
+.section h2,
+.sheet h2 {
+  font-size: 1.65rem;
+  margin-block-end: 0.65rem;
+}
+.note {
+  color: var(--muted);
+  font-size: 0.95rem;
+}
+.fields {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 9rem), 1fr));
+  gap: 0 0.85rem;
+}
+.fields > :global(.field) {
+  min-inline-size: 0;
+  margin-block: 0.75rem;
+}
+.fields :global(input) {
+  inline-size: 100%;
+  min-inline-size: 0;
+}
+.control {
+  display: grid;
+  inline-size: fit-content;
+  max-inline-size: 100%;
+  gap: 0.4rem;
+  margin-block: 0.5rem;
+}
+.control select {
+  min-inline-size: 0;
+}
+.zone {
+  margin-block: 1rem;
+  padding-inline-start: 0.9rem;
+  border-inline-start: 2px solid var(--line);
+  min-inline-size: 0;
+}
+.zone legend {
+  margin-inline-start: 0.85rem;
+  font-weight: 700;
+}
+.textAction {
+  inline-size: fit-content;
+  color: var(--ink);
+  text-decoration: underline;
+  text-underline-offset: 0.25em;
+}
+.actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.6rem 1.25rem;
+  padding-block-start: 1.25rem;
+}
+.sheet {
+  align-self: start;
+  min-inline-size: 0;
+  padding: clamp(1rem, 3vw, 2rem);
+  border: 1px solid var(--line);
+  background: var(--surface);
+}
+.board {
+  display: grid;
+  place-items: center;
+  min-block-size: 12rem;
+  padding: 1rem;
+  text-align: center;
+  background-color: var(--paper);
+  background-image:
+    linear-gradient(
+      to right,
+      color-mix(in srgb, var(--line), transparent 55%) 1px,
+      transparent 1px
+    ),
+    linear-gradient(
+      to bottom,
+      color-mix(in srgb, var(--line), transparent 55%) 1px,
+      transparent 1px
+    );
+  background-size: 1rem 1rem;
+}
+.board p {
+  padding: 0.65rem;
+  background: var(--surface);
+}
+.plan {
+  direction: ltr;
+  display: block;
+  overflow: hidden;
+  max-inline-size: 100%;
+  max-block-size: 25rem;
+  inline-size: 100%;
+  outline: 2px solid var(--ink);
+}
+.piece {
+  stroke: var(--button-ink);
+  stroke-width: 2;
+  fill: var(--button);
+}
+.plan text {
+  fill: var(--button-ink);
+  font-size: 11px;
+}
+.clearance {
+  stroke: var(--accent);
+  stroke-dasharray: 4 3;
+  stroke-width: 2;
+  fill: var(--surface);
+}
+.result {
+  border-block-start: 1px solid var(--line);
+  margin-block: 1.2rem 0.65rem;
+  padding-block-start: 0.8rem;
+}
+.result[data-state="conflict"],
+.result[data-state="invalid"] {
+  color: var(--accent);
+}
+.issues {
+  max-block-size: 13rem;
+  overflow: auto;
+  list-style: disc;
+  padding-inline-start: 1.25rem;
+}
+@media (min-width: 56rem) {
+  .workbench {
+    grid-template-columns: minmax(0, 1.25fr) minmax(0, 1fr);
+  }
+  .sheet {
+    position: sticky;
+    inset-block-start: 1rem;
+  }
+}
