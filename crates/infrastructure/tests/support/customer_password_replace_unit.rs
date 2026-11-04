@@ -1,6 +1,81 @@
 use super::*;
-use crate::{MIGRATOR, customer_passwords, email_verification, verified_customer_accounts};
+use crate::{
+    MIGRATOR,
+    customer_credential_admission::{AdmissionKey, AdmissionLimits},
+};
 use commerce_application::request_context::ContextError;
+
+fn admission_key() -> AdmissionKey {
+    AdmissionKey::new(1, [7; 32]).expect("synthetic admission key")
+}
+fn admission_limits() -> AdmissionLimits {
+    AdmissionLimits::new(1000, 100).expect("fixture admission limits")
+}
+mod email_verification {
+    use super::*;
+    pub async fn issue(
+        pool: &PgPool,
+        email: &str,
+        clock: &dyn Clock,
+    ) -> Result<
+        crate::email_verification::VerificationToken,
+        crate::email_verification::VerificationError,
+    > {
+        crate::email_verification::issue(pool, email, clock, &admission_key(), admission_limits())
+            .await
+    }
+}
+mod verified_customer_accounts {
+    use super::*;
+    pub async fn establish(
+        pool: &PgPool,
+        email: &str,
+        token: &crate::email_verification::VerificationToken,
+        clock: &dyn Clock,
+    ) -> Result<
+        crate::verified_customer_accounts::VerifiedCustomerAccountId,
+        crate::email_verification::VerificationError,
+    > {
+        crate::verified_customer_accounts::establish(
+            pool,
+            email,
+            token,
+            clock,
+            &admission_key(),
+            admission_limits(),
+        )
+        .await
+    }
+}
+mod customer_passwords {
+    use super::*;
+    pub async fn issue(
+        pool: &PgPool,
+        email: &str,
+        clock: &dyn Clock,
+    ) -> Result<PasswordChangeToken, PasswordError> {
+        crate::customer_passwords::issue(pool, email, clock, &admission_key(), admission_limits())
+            .await
+    }
+    pub async fn replace(
+        pool: &PgPool,
+        email: &str,
+        token: &PasswordChangeToken,
+        password: &str,
+        clock: &dyn Clock,
+    ) -> Result<i32, PasswordError> {
+        crate::customer_passwords::replace(
+            pool,
+            email,
+            token,
+            password,
+            clock,
+            &admission_key(),
+            admission_limits(),
+        )
+        .await
+    }
+}
 
 fn proof() -> Proof {
     Proof {

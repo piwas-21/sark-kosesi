@@ -326,7 +326,7 @@ async fn clock_boundaries_fail_closed_and_leave_valid_proof_usable(pool: PgPool)
         ));
     }
     let expired_before_commit = SequenceClock {
-        values: std::sync::Mutex::new([1000, 1900].into()),
+        values: std::sync::Mutex::new([1000, 1000, 1000, 1000, 1000, 1900].into()),
     };
     assert!(matches!(
         issue(&pool, "a@example.com", &expired_before_commit).await,
@@ -346,7 +346,7 @@ async fn clock_boundaries_fail_closed_and_leave_valid_proof_usable(pool: PgPool)
         Err(VerificationError::Denied)
     );
     let reversed_after_update = SequenceClock {
-        values: std::sync::Mutex::new([1000, 1001, 1000].into()),
+        values: std::sync::Mutex::new([1000, 1000, 1000, 1000, 1000, 1001, 1000].into()),
     };
     assert_eq!(
         consume(&pool, "a@example.com", &token, &reversed_after_update).await,
