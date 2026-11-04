@@ -340,7 +340,10 @@ supervision or live provider activation follows from deploying the empty preview
    atomically expires/reserves/consumes the full frozen demand for intact expired
    originals. Released, consumed or scarce originals retain immutable review
    stops; changed availability after rollback creates no permanent scarcity case.
-   No automatic retry or disposition authority is installed. Complete authorized
+   A private recent-MFA `stock.review` inbox validates each bounded historical
+   case before returning a minimal summary; no grant or HTTP route is seeded.
+   Live keyset traversal requires a refresh to see earlier insertions. No automatic
+   retry or disposition authority is installed. Complete authorized
    stock-review dispositions, independent order/fulfilment/refund lifecycle and invoices/credit documents,
    bounded audited refunds and independent restock actions. Prove sandbox outcomes,
    concurrency, cent allocations and crash recovery without duplicate effects.

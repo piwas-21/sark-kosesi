@@ -155,6 +155,8 @@ mod claimed_expiry;
 mod corruption;
 #[path = "late_stock_history.rs"]
 mod history;
+#[path = "late_stock_inbox.rs"]
+mod inbox;
 #[path = "late_stock_native.rs"]
 mod native;
 #[path = "late_stock_states.rs"]

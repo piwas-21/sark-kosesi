@@ -7,6 +7,7 @@ use sqlx::{Acquire, PgPool, Postgres, Transaction};
 mod decode;
 mod engine;
 mod history;
+pub mod inbox;
 mod rows;
 mod source;
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
