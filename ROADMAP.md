@@ -216,8 +216,11 @@ originals using the same single allocation identity and frozen component demand.
 Released or consumed originals and persistent scarcity retain durable review stops;
 restock cannot silently restart them. Historical replay preserves original custody.
 An unseeded dedicated recent-MFA capability permits private bounded, validated
-case summaries; the live cursor requires a refresh for earlier insertions.
-Complete authorized stock-review dispositions, actual proxy/resource-limit/no-bypass
-and TLS/provider acceptance before public activation, remaining operator dispositions and separate
-order/fulfilment/refund/invoice transitions. A pure domain
+case summaries. The live cursor requires a refresh for earlier insertions.
+A separate private recent-MFA command allows an explicitly confirmed retry of
+one scarcity case generation. It retains the original review case and records a
+digest-bound allocation or a fresh still-scarce assessment. Release and prior
+consumption cases stay stopped. Complete actual proxy/resource-limit/no-bypass
+and TLS/provider acceptance before public activation, remaining operator
+dispositions and separate order/fulfilment/refund/invoice transitions. A pure domain
 plan or matched synthetic response is not dispatch or payment authority.

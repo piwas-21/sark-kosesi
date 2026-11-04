@@ -39,10 +39,20 @@ async fn stock_review_inbox_authority_bounded_paging_filter_and_damaged_custody(
     let page = read(None, None, 1)
         .await
         .expect("authorized complete custody");
+    let case_digest: String = sqlx::query_scalar(
+        "SELECT late_stock_review_digest(c) FROM late_stock_review_cases c WHERE id=$1",
+    )
+    .bind(&case.id)
+    .fetch_one(&pool)
+    .await
+    .expect("exact review digest");
     assert_eq!(
         page.cases,
         vec![inbox::Summary {
             case_id: case.id.clone(),
+            case_digest,
+            status: inbox::CaseStatus::Open,
+            next_generation: None,
             order_id: case.order_id.clone(),
             assessed_at: 2000,
             reason: ReviewReason::ReleaseIntentUnresolved
@@ -131,6 +141,24 @@ async fn stock_review_inbox_authority_bounded_paging_filter_and_damaged_custody(
         read(None, None, MAX_CANDIDATES)
             .await
             .expect("healthy read after restoring the table")
+            .cases[0]
+            .case_id,
+        case.id
+    );
+    pool.execute("ALTER TABLE payment_attempts RENAME TO unavailable_review_attempts")
+        .await
+        .expect("interrupt the candidate attempt lock");
+    assert!(matches!(
+        read(None, None, MAX_CANDIDATES).await,
+        Err(InboxError::Custody(LateStockError::Database))
+    ));
+    pool.execute("ALTER TABLE unavailable_review_attempts RENAME TO payment_attempts")
+        .await
+        .expect("restore the candidate attempt lock");
+    assert_eq!(
+        read(None, None, MAX_CANDIDATES)
+            .await
+            .expect("healthy read after restoring the attempt lock")
             .cases[0]
             .case_id,
         case.id

@@ -342,11 +342,15 @@ supervision or live provider activation follows from deploying the empty preview
    stops; changed availability after rollback creates no permanent scarcity case.
    A private recent-MFA `stock.review` inbox validates each bounded historical
    case before returning a minimal summary; no grant or HTTP route is seeded.
-   Live keyset traversal requires a refresh to see earlier insertions. No automatic
-   retry or disposition authority is installed. Complete authorized
-   stock-review dispositions, independent order/fulfilment/refund lifecycle and invoices/credit documents,
-   bounded audited refunds and independent restock actions. Prove sandbox outcomes,
-   concurrency, cent allocations and crash recovery without duplicate effects.
+   Live keyset traversal requires a refresh to see earlier insertions. A separate
+   private recent-MFA `stock.recover` command accepts an explicitly confirmed
+   scarcity case revision and one bounded generation. It atomically records an
+   allocation or fresh still-scarce assessment. Keep release/consumption cases
+   stopped and require fresh confirmation for every new scarcity generation.
+   Complete independent order/fulfilment/refund lifecycle and invoices/credit
+   documents, bounded audited refunds and independent restock actions. Prove
+   sandbox outcomes, concurrency, cent allocations and crash recovery without
+   duplicate effects.
 
 Trusted whole-basket reservation primitives now provide immutable manifests,
 exact fresh child bindings and aggregated component claims in one transaction.

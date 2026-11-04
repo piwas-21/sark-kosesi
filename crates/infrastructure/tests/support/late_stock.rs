@@ -153,6 +153,8 @@ mod bounds;
 mod claimed_expiry;
 #[path = "late_stock_corruption.rs"]
 mod corruption;
+#[path = "late_stock_disposition.rs"]
+mod disposition;
 #[path = "late_stock_history.rs"]
 mod history;
 #[path = "late_stock_inbox.rs"]

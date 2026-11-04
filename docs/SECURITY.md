@@ -377,6 +377,17 @@ and no secret is stored in routing labels. Its nonsensitive overwritten inflight
 group is only a resource bucket. Source tests cannot establish the actual proxy's
 read timeout, network identity or provider delivery.
 
+## Private stock scarcity retry
+
+The private scarcity retry requires an unseeded `stock.recover` grant and recent
+MFA. Explicit confirmation binds the exact case revision, next generation and
+effect key. The transaction retains the authority and payment attempt locks
+through the decision and its final time checks. A still-scarce decision cannot
+restart automatically. Native custody binds the actor account, exact historical
+review, fresh received evidence and reciprocal decision, claim and effects.
+Database write-role restrictions still apply. The outbox projection carries
+only the decision and order identities and a digest, with no operator reason.
+
 ## Private email verification challenge custody
 
 The private challenge primitive accepts only ASCII dot-atom local parts and ASCII

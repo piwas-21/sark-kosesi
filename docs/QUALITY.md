@@ -667,3 +667,16 @@ All new late-stock modules, nested allocation adapters and modified reservation
 sources retain positive native 95% line/branch gates without counter rewriting.
 These checks establish private source custody, not runtime stock, provider,
 shipping, field performance or production acceptance.
+
+### Authorized stock scarcity retry
+
+Use isolated PostgreSQL to verify actual paid scarcity, explicit authority,
+a still-scarce attempt, restock and successful retry with the original case
+and movement custody preserved. Exercise exact replay, conflicting intent,
+generation exhaustion, unsupported case reasons, a changed original state
+and denied staff or stale MFA. Check raw SQL cannot admit a detached decision
+or allocate against another case. Verify deferred reciprocity and rollback,
+including an early constraint flush, transaction failure or lock wait.
+Maintain the maximum-basket and component conservation checks from the
+underlying late-stock path. Tests and private decisions supply no provider,
+shipment or production acceptance evidence.
