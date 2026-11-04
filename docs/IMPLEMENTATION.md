@@ -368,8 +368,10 @@ supervision or live provider activation follows from deploying the empty preview
    supervisor enrolls from an exact paid observation, commits a single-use
    start, and checks the matching page receipt before restoring a checkpoint.
    Expired starts without evidence go to review. Returned transport failures
-   use bounded retries. Supervise exact candidate reads and add operator
-   review and scheduling before provider acceptance. An exact GET,
+   use bounded retries. Explicit local/test worker commands enroll, run one
+   bounded pass and inspect a scan without exposing provider identifiers.
+   Supervise exact candidate reads and add operator review and scheduling before
+   provider acceptance. An exact GET,
    404, empty page, ended scan or capped scan
    leaves the provider history and net balance unresolved. Complete provider-side
    refund/chargeback reconciliation, execution custody

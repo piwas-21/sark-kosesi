@@ -90,6 +90,29 @@ callbacks, financial transitions, late-paid stock recovery and provider acceptan
 have separate evidence. Unit/loopback PostgreSQL tests are source evidence, not an
 actual Mollie sandbox payment or deployed/physical acceptance.
 
+## Private reversal-page supervision
+
+In an isolated local/test environment, `commerce-worker --enroll-reversal-scan
+<attempt-id> <paid-observation-id> <refund|chargeback> <effect-key>` verifies the
+configured dedicated test profile, then enrolls an authenticated paid observation.
+The two IDs are internal 32-character lowercase hexadecimal identifiers; the
+stable effect key is 1–128 ASCII letters, digits or hyphens. Reuse the same key
+only for the same intent. The command prints the internal job ID for follow-up.
+It does not run the scan itself.
+
+`commerce-worker --reconcile-reversal-pages` verifies the profile once and runs
+one bounded pass; `REVERSAL_PAGE_BATCH` defaults to 10 and accepts 1–25 steps.
+Both commands require the same dedicated `MOLLIE_TEST_API_KEY` and
+`MOLLIE_TEST_PROFILE_ID` as payment reconciliation. Production and live keys are
+rejected. `commerce-worker --inspect-reversal-scan <job-id>` needs no provider
+credentials or network; it reports validated state, generation, failure count and
+review reason. Batch output reports processed steps only: an idle or successful
+pass does not establish that previous jobs have no review stops or retries.
+Inspect the enrolled job and its private evidence. An ended or capped scan does
+not resolve provider history. No automatic review restart, scheduler, financial
+or inventory transition is installed. Provider sandbox acceptance and deployment
+remain separate gates.
+
 ## Private callback supervision
 
 `cargo run --locked -p commerce-worker -- --reconcile-callbacks` runs one bounded

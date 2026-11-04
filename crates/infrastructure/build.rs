@@ -10,9 +10,8 @@ fn main() -> io::Result<()> {
     // This fixed workspace source is compiled by both the worker binary and the
     // authenticated loopback fixture. Canonical identity keeps native coverage
     // attributable to one physical source file; no counters are transformed.
-    let worker = PathBuf::from(manifest)
-        .join("../worker/src/callbacks.rs")
-        .canonicalize()?;
+    let manifest = PathBuf::from(manifest);
+    let worker = manifest.join("../worker/src/callbacks.rs").canonicalize()?;
     let worker = worker
         .to_str()
         .ok_or_else(|| io::Error::other("Worker source path must be UTF-8"))?;
@@ -20,9 +19,23 @@ fn main() -> io::Result<()> {
         "#[allow(dead_code)]\n#[path = {worker:?}]\npub(crate) mod callback_worker_fixture;\n"
     );
     fs::write(
-        PathBuf::from(output).join("callback_worker_fixture.rs"),
+        PathBuf::from(&output).join("callback_worker_fixture.rs"),
         declaration,
     )?;
+    let reversal_worker = manifest
+        .join("../worker/src/reversal_pages.rs")
+        .canonicalize()?;
+    let reversal_worker = reversal_worker
+        .to_str()
+        .ok_or_else(|| io::Error::other("Worker source path must be UTF-8"))?;
+    let declaration = format!(
+        "#[allow(dead_code)]\n#[path = {reversal_worker:?}]\npub(crate) mod reversal_worker_fixture;\n"
+    );
+    fs::write(
+        PathBuf::from(output).join("reversal_worker_fixture.rs"),
+        declaration,
+    )?;
+    println!("cargo:rerun-if-changed=../worker/src/reversal_pages.rs");
     println!("cargo:rerun-if-changed=build.rs");
     println!("cargo:rerun-if-changed=../worker/src/callbacks.rs");
     Ok(())

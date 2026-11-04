@@ -12,6 +12,8 @@ use std::sync::{
 const PAYMENT: &str = "tr_SYNTHETIC_NotARealPayment";
 #[path = "mollie_reversal_supervision_enrollment.rs"]
 mod enrollment_cases;
+#[path = "mollie_reversal_worker_entry.rs"]
+mod worker_entry;
 
 pub(crate) async fn fixture(
     pool: &PgPool,
