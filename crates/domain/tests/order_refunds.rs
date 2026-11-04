@@ -198,3 +198,37 @@ fn incomplete_duplicate_unknown_and_excess_balances_fail_closed() {
         Err(RefundAllocationError::InvalidOrder)
     );
 }
+
+#[test]
+fn captured_snapshot_must_have_unique_skus_and_exact_component_total() {
+    let order = mixed_order();
+    let full = allocate_order_refund(
+        &order,
+        &[line("SET-OTHER", 0, 200), line("SET-FILLED", 0, 300)],
+        &amounts(0, 900),
+    )
+    .expect("all captured components can be refunded exactly once");
+    assert_amount(&full.total, 1400, 1175, 225);
+
+    let mut duplicate = order.clone();
+    duplicate.quote.lines[1].sku = duplicate.quote.lines[0].sku.clone();
+    assert_eq!(
+        allocate_order_refund(
+            &duplicate,
+            &[line("SET-FILLED", 0, 300), line("SET-OTHER", 0, 200)],
+            &amounts(0, 900),
+        ),
+        Err(RefundAllocationError::InvalidOrder)
+    );
+    let mut forged_total = order;
+    forged_total.quote.total.gross_minor += 1;
+    forged_total.quote.total.net_minor += 1;
+    assert_eq!(
+        allocate_order_refund(
+            &forged_total,
+            &[line("SET-FILLED", 0, 300), line("SET-OTHER", 0, 200)],
+            &amounts(0, 900),
+        ),
+        Err(RefundAllocationError::InvalidOrder)
+    );
+}

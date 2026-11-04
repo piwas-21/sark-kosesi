@@ -7,7 +7,7 @@ use commerce_application::{
     request_context::{Clock, Identifiers, ObservedClock},
     staff_access::Capability,
 };
-use commerce_domain::{Currency, checkout_orders::OrderSnapshot};
+use commerce_domain::{Currency, checkout_orders::OrderSnapshot, payment_attempts::AttemptBinding};
 use sqlx::{PgPool, Postgres, Transaction};
 mod allocation;
 mod store;
@@ -122,20 +122,63 @@ async fn source(
         crate::checkout_orders::snapshot_in_transaction(tx, &binding.basket_id, &binding.order_id)
             .await
             .map_err(|_| RefundError::InvalidStoredData)?;
+    validate_capture(&order, binding, &received, attempt)?;
+    Ok((order, received))
+}
+
+fn validate_capture(
+    order: &OrderSnapshot,
+    binding: &AttemptBinding,
+    received: &recognition::Recognition,
+    attempt: &str,
+) -> Result<(), RefundError> {
+    // A new currency requires an explicit decision about refund support.
+    let (Currency::EUR, Currency::EUR) = (received.currency, binding.currency);
     let totals = order
         .quote
         .totals()
         .map_err(|_| RefundError::InvalidStoredData)?;
     if received.order_id != order.identity.id
         || received.attempt_id != attempt
-        || received.currency != Currency::EUR
         || received.amount_minor != totals.total.gross.minor_units()
         || binding.amount_minor != received.amount_minor
-        || binding.currency != Currency::EUR
     {
         return Err(RefundError::InvalidStoredData);
     }
-    Ok((order, received))
+    Ok(())
+}
+fn validate_current_intent(
+    order: &OrderSnapshot,
+    received: &recognition::Recognition,
+    request: &RefundRequest<'_>,
+) -> Result<(), RefundError> {
+    if order.identity.id != request.order_id || received.id != request.expected_recognition_id {
+        return Err(RefundError::Conflict);
+    }
+    Ok(())
+}
+fn validate_reservation_time(
+    at: i64,
+    order: &OrderSnapshot,
+    received: &recognition::Recognition,
+    history: &[RefundReceipt],
+) -> Result<(), RefundError> {
+    if at < received.recorded_at
+        || at < order.identity.created_at
+        || history.last().is_some_and(|r| at < r.reserved_at)
+    {
+        return Err(RefundError::ClockUnavailable);
+    }
+    Ok(())
+}
+fn validate_written(
+    written: &[RefundReceipt],
+    expected: &RefundReceipt,
+) -> Result<(), RefundError> {
+    if written.last() != Some(expected) {
+        return Err(RefundError::InvalidStoredData);
+    }
+    Ok(())
 }
 
 pub async fn reserve(
@@ -196,9 +239,7 @@ pub async fn reserve(
         return Ok(receipt);
     }
     let (order, received) = source(&mut access.tx, &attempt, None).await?;
-    if order.identity.id != request.order_id || received.id != request.expected_recognition_id {
-        return Err(RefundError::Conflict);
-    }
+    validate_current_intent(&order, &received, &request)?;
     store::require_exact_history(&mut access.tx, request.order_id).await?;
     let history = store::history(&mut access.tx, request.order_id).await?;
     allocation::validate_history(&order, &attempt, &history)?;
@@ -207,12 +248,7 @@ pub async fn reserve(
     }
     let allocation = allocation::calculate(&order, &history, &request)?;
     let at = access.authorized_at(&observed).map_err(staff)?;
-    if at < received.recorded_at
-        || at < order.identity.created_at
-        || history.last().is_some_and(|r| at < r.reserved_at)
-    {
-        return Err(RefundError::ClockUnavailable);
-    }
+    validate_reservation_time(at, &order, &received, &history)?;
     let receipt = RefundReceipt {
         id: fresh(ids)?,
         order_id: request.order_id.into(),
@@ -234,10 +270,15 @@ pub async fn reserve(
         .await?;
     let written = store::history(&mut access.tx, request.order_id).await?;
     allocation::validate_history(&order, &receipt.attempt_id, &written)?;
-    if written.last() != Some(&receipt) {
-        return Err(RefundError::InvalidStoredData);
-    }
+    validate_written(&written, &receipt)?;
     access.check_time(&observed).map_err(staff)?;
     access.tx.commit().await?;
     Ok(receipt)
 }
+
+#[cfg(test)]
+#[path = "../../tests/support/refund_command_unit.rs"]
+mod command_unit;
+#[cfg(test)]
+#[path = "../../tests/support/refund_source_faults.rs"]
+mod source_faults;

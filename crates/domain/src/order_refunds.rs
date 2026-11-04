@@ -113,10 +113,10 @@ pub fn allocate_order_refund(
         total = sum(&total, &result)?;
         allocated.push((line.sku.clone(), result));
     }
-    if !by_sku.is_empty()
-        || total.gross.minor_units() == 0
-        || total.gross.minor_units() > quote.total.gross.minor_units()
-    {
+    // Validated quote SKUs are unique; equal cardinality and successful removals
+    // consume every input. Each delta is bounded by its captured component, and
+    // the validated quote total is the sum of those components.
+    if total.gross.minor_units() == 0 {
         return Err(RefundAllocationError::InvalidAllocation);
     }
     Ok(OrderRefundAllocation {

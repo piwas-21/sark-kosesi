@@ -154,3 +154,7 @@ pub(super) fn validate_history(
     }
     Ok(())
 }
+
+#[cfg(test)]
+#[path = "../../tests/support/refund_allocation_unit.rs"]
+mod tests;

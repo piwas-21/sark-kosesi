@@ -123,3 +123,7 @@ pub(super) async fn insert(
     }
     Ok(())
 }
+
+#[cfg(test)]
+#[path = "../../tests/support/refund_reservation_store.rs"]
+mod tests;

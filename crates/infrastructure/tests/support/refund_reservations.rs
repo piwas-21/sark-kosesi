@@ -631,3 +631,6 @@ async fn mfa_expiring_during_real_final_fence_wait_rolls_back_reservation(pool: 
     .expect("fresh authority permits exact retry");
     assert_eq!(counts(&pool).await, (1, 1));
 }
+
+#[path = "refund_reservation_commands.rs"]
+mod commands;

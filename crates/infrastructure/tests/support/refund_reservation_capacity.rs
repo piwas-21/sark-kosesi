@@ -7,6 +7,88 @@ use crate::payment_attempts::{
     recognition::{State, recognize},
 };
 
+#[sqlx::test(migrations = false)]
+async fn refund_schema38_upgrade_preserves_existing_custody_and_accepts_both_effect_kinds(
+    pool: PgPool,
+) {
+    crate::MIGRATOR.run_to(37, &pool).await.expect("schema 37");
+    let fixture = accepted(&pool, false, true).await;
+    let order = &fixture.order.identity.id;
+    let received = recognition(&pool, order).await;
+    let source = super::super::order_stock_cases::fixture::unchanged(&pool).await;
+    let original_stock = footprint(&pool).await;
+    let original_events: Vec<serde_json::Value> =
+        sqlx::query_scalar("SELECT to_jsonb(e) FROM commerce_outbox e ORDER BY id")
+            .fetch_all(&pool)
+            .await
+            .expect("pre-upgrade events");
+
+    crate::MIGRATOR.run_to(38, &pool).await.expect("schema 38");
+    assert_eq!(footprint(&pool).await, original_stock);
+    assert_eq!(
+        super::super::order_stock_cases::fixture::unchanged(&pool).await,
+        source
+    );
+    assert_eq!(
+        sqlx::query_scalar::<_, serde_json::Value>(
+            "SELECT to_jsonb(e) FROM commerce_outbox e ORDER BY id"
+        )
+        .fetch_all(&pool)
+        .await
+        .expect("preserved events"),
+        original_events,
+    );
+    let token = staff(&pool, "refund-upgrade", 90).await;
+
+    fixture
+        .time
+        .0
+        .store(2000, std::sync::atomic::Ordering::SeqCst);
+    let recovery =
+        crate::late_stock::recover(&pool, fixture.time.as_ref(), fixture.ids.as_ref(), order)
+            .await
+            .expect("previous late-allocation outbox guard still admits an exact event");
+    assert!(matches!(
+        recovery.outcome,
+        crate::late_stock::Outcome::Late(_)
+    ));
+    let stock_after_recovery = footprint(&pool).await;
+    let lines = [
+        RefundLine {
+            sku: "SET-COVERS",
+            gross_minor: 121,
+        },
+        RefundLine {
+            sku: "SET-FILLED",
+            gross_minor: 0,
+        },
+    ];
+    let reservation = reserve(
+        &pool,
+        &token,
+        fixture.time.as_ref(),
+        fixture.ids.as_ref(),
+        request(order, &received, "refund-upgrade-first", &lines, 0),
+    )
+    .await
+    .expect("existing received order supports its first reservation");
+    assert_eq!(
+        (
+            reservation.generation,
+            reservation.allocation.total.gross_minor
+        ),
+        (1, 121)
+    );
+    assert_eq!(counts(&pool).await, (1, 1));
+    assert_eq!(footprint(&pool).await, stock_after_recovery);
+    let kinds: Vec<String> = sqlx::query_scalar("SELECT kind FROM commerce_outbox WHERE aggregate_id=$1 AND kind IN ('order.stock_late_allocated.v1','order.refund_reserved.v1') ORDER BY kind")
+        .bind(order).fetch_all(&pool).await.expect("both reciprocal events");
+    assert_eq!(
+        kinds,
+        ["order.refund_reserved.v1", "order.stock_late_allocated.v1"]
+    );
+}
+
 #[sqlx::test(migrator = "MIGRATOR")]
 async fn sixteen_distinct_received_proofs_at_maximum_observation_prefix_remain_usable(
     pool: PgPool,
