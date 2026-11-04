@@ -1005,6 +1005,16 @@ stock-recovery authority, fresh persisted staff/MFA/confirmation and exact revie
 revision are required for any disposition; finance reconciliation authority alone
 never implies warehouse authority. This slice installs no such retry or grant.
 
+A private staff inbox requires the dedicated persisted `stock.review` grant, an
+enabled session and recent MFA, rechecked after reading while authority rows remain
+locked. No grants, login or HTTP route are installed. Each live C-collated keyset
+page scans at most four candidate case IDs and validates each complete historical
+custody proof before applying an optional closed reason filter. Invalid custody
+fails the entire page; the result contains only case/order IDs, assessment time
+and reason. A cursor advances across scanned candidates even on an empty filtered
+page. This is not a snapshot: inserts at or before the cursor require refreshing
+from the beginning. The read grants no retry, disposition or financial/stock effect.
+
 Historical review validates captured immutable identities and exact per-pair
 reserve/terminal sequence references and semantic-row digests, their closed
 captured states and original recognition. Digests cover identity, actor, reason,

@@ -209,6 +209,8 @@ and atomic order event. Private late allocation now recovers intact expired
 originals using the same single allocation identity and frozen component demand.
 Released or consumed originals and persistent scarcity retain durable review stops;
 restock cannot silently restart them. Historical replay preserves original custody.
+An unseeded dedicated recent-MFA capability permits private bounded, validated
+case summaries; the live cursor requires a refresh for earlier insertions.
 Complete authorized stock-review dispositions, actual proxy/resource-limit/no-bypass
 and TLS/provider acceptance before public activation, remaining operator dispositions and separate
 order/fulfilment/refund/invoice transitions. A pure domain
