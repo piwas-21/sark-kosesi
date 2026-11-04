@@ -324,9 +324,36 @@ async fn suppressed_credential_write_rolls_back_consumption(pool: PgPool) {
     );
 }
 
+async fn wait_for_password_lock(
+    pool: &PgPool,
+    blocker_pid: i32,
+    query_prefix: &str,
+    task: &mut tokio::task::JoinHandle<Result<i32, PasswordError>>,
+) {
+    let deadline = tokio::time::Instant::now() + std::time::Duration::from_secs(15);
+    loop {
+        if task.is_finished() {
+            panic!(
+                "password worker completed before its lock wait: {:?}",
+                task.await
+            );
+        }
+        let waiting: bool = sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM pg_stat_activity WHERE datname=current_database() AND wait_event_type='Lock' AND $1=ANY(pg_blocking_pids(pid)) AND starts_with(query,$2))")
+            .bind(blocker_pid).bind(query_prefix).fetch_one(pool).await.expect("inspect exact password wait");
+        if waiting {
+            return;
+        }
+        assert!(
+            tokio::time::Instant::now() < deadline,
+            "worker never waited on the test's blocker"
+        );
+        tokio::time::sleep(std::time::Duration::from_millis(10)).await;
+    }
+}
+
 #[sqlx::test(migrator = "MIGRATOR")]
 async fn waiting_for_challenge_lock_does_not_extend_expiry(pool: PgPool) {
-    use std::{sync::Arc, time::Duration};
+    use std::sync::Arc;
     let time = Arc::new(clock());
     account(&pool, "a@example.com", &time).await;
     let proof = customer_passwords::issue(&pool, "a@example.com", time.as_ref())
@@ -340,6 +367,10 @@ async fn waiting_for_challenge_lock_does_not_extend_expiry(pool: PgPool) {
             .await
             .expect("expiry");
     let mut blocker = pool.begin().await.expect("transaction");
+    let blocker_pid = sqlx::query_scalar("SELECT pg_backend_pid()")
+        .fetch_one(&mut *blocker)
+        .await
+        .expect("blocker backend");
     sqlx::query("SELECT verifier FROM customer_password_challenges WHERE verifier=$1 FOR UPDATE")
         .bind(&digest)
         .fetch_one(&mut *blocker)
@@ -347,7 +378,7 @@ async fn waiting_for_challenge_lock_does_not_extend_expiry(pool: PgPool) {
         .expect("lock");
     let worker_pool = pool.clone();
     let worker_time = time.clone();
-    let task = tokio::spawn(async move {
+    let mut task = tokio::spawn(async move {
         customer_passwords::replace(
             &worker_pool,
             "a@example.com",
@@ -357,16 +388,11 @@ async fn waiting_for_challenge_lock_does_not_extend_expiry(pool: PgPool) {
         )
         .await
     });
-    let mut waiting = false;
-    for _ in 0..300 {
-        let count: i64 = sqlx::query_scalar("SELECT count(*) FROM pg_locks WHERE locktype='transactionid' AND NOT granted AND pid<>pg_backend_pid()").fetch_one(&pool).await.expect("locks");
-        if count > 0 {
-            waiting = true;
-            break;
-        }
-        tokio::time::sleep(Duration::from_millis(10)).await;
-    }
-    assert!(waiting && !task.is_finished());
+    wait_for_password_lock(
+        &pool, blocker_pid,
+        "SELECT account_id,expected_revision,created_at,expires_at,consumed_at,consumed_xid IS NULL AS xid_empty FROM customer_password_challenges WHERE verifier=$1 AND account_id=$2 FOR UPDATE",
+        &mut task,
+    ).await;
     time.0.store(expires as u64, Ordering::SeqCst);
     blocker.commit().await.expect("release");
     assert!(matches!(
@@ -556,7 +582,7 @@ async fn password_nfc_preserves_spaces_and_bounds_both_input_and_normalized_byte
 
 #[sqlx::test(migrator = "MIGRATOR")]
 async fn expiry_after_credential_insert_rolls_back_both_writes(pool: PgPool) {
-    use std::{sync::Arc, time::Duration};
+    use std::sync::Arc;
     let time = Arc::new(clock());
     account(&pool, "fenced@example.com", &time).await;
     let proof = customer_passwords::issue(&pool, "fenced@example.com", time.as_ref())
@@ -571,6 +597,10 @@ async fn expiry_after_credential_insert_rolls_back_both_writes(pool: PgPool) {
     sqlx::query("CREATE FUNCTION fence_password_insert() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN PERFORM pg_advisory_xact_lock(17543821); RETURN NEW; END $$").execute(&pool).await.expect("fence function");
     sqlx::query("CREATE TRIGGER fence_password_insert AFTER INSERT ON customer_password_credentials FOR EACH ROW EXECUTE FUNCTION fence_password_insert()").execute(&pool).await.expect("fence trigger");
     let mut blocker = pool.begin().await.expect("blocker");
+    let blocker_pid = sqlx::query_scalar("SELECT pg_backend_pid()")
+        .fetch_one(&mut *blocker)
+        .await
+        .expect("blocker backend");
     sqlx::query("SELECT pg_advisory_xact_lock(17543821)")
         .execute(&mut *blocker)
         .await
@@ -578,7 +608,7 @@ async fn expiry_after_credential_insert_rolls_back_both_writes(pool: PgPool) {
     let worker_pool = pool.clone();
     let worker_time = time.clone();
     let worker_proof = PasswordChangeToken::from_bytes(*proof.expose_bytes());
-    let task = tokio::spawn(async move {
+    let mut task = tokio::spawn(async move {
         customer_passwords::replace(
             &worker_pool,
             "fenced@example.com",
@@ -588,16 +618,13 @@ async fn expiry_after_credential_insert_rolls_back_both_writes(pool: PgPool) {
         )
         .await
     });
-    let mut waiting = false;
-    for _ in 0..300 {
-        let count: i64 = sqlx::query_scalar("SELECT count(*) FROM pg_locks WHERE locktype='advisory' AND classid=0 AND objid=17543821 AND NOT granted AND pid<>pg_backend_pid()").fetch_one(&pool).await.expect("fence waits");
-        if count > 0 {
-            waiting = true;
-            break;
-        }
-        tokio::time::sleep(Duration::from_millis(10)).await;
-    }
-    assert!(waiting && !task.is_finished());
+    wait_for_password_lock(
+        &pool,
+        blocker_pid,
+        "INSERT INTO customer_password_credentials",
+        &mut task,
+    )
+    .await;
     time.0.store(expires as u64, Ordering::SeqCst);
     blocker.commit().await.expect("release fence");
     assert!(matches!(
