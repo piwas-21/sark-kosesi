@@ -439,6 +439,14 @@ executes refunds. The later finance use case must serialize and persist already
 refunded gross, enforce captured/refunded bounds, issue credit documents and use a
 stable provider attempt. Accountant/market acceptance remains a separate gate.
 
+A pure order-scoped allocation composes that arithmetic over the validated accepted
+order quote. It requires one explicit prior gross and requested gross for every SKU
+and shipping, rejects duplicate, unknown, missing and excessive allocations, and
+returns line, shipping and total gross/net/VAT deltas. Caller-supplied prior amounts
+are not evidence of refunds: a future finance use case must derive and serialize them
+from durable payment/refund history. The accepted quote does not yet capture a
+promotion; no discounted checkout or fiscal acceptance follows from this primitive.
+
 ### Reviewed promotion configuration
 
 Private promotion policy storage uses separate unseeded `promotion.manage` and

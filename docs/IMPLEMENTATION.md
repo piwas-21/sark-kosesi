@@ -233,7 +233,9 @@ supervision or live provider activation follows from deploying the empty preview
    no coupon route or spending claim. Integrate atomic lifetime budget/redemption
    accounting with order transactions and verified customer limits. A guest cookie
    cannot establish a per-person allowance. Version 1 indicative fixed/percentage quote and captured
-   refund arithmetic is implemented; it installs no promotion or refund authority.
+   refund arithmetic is implemented; an order-scoped allocator applies it to explicit
+   SKU and shipping balances from accepted quotes. It installs no promotion or
+   refund authority; durable refund history and payment capture checks remain open.
    One promotion per quote, exact eligibility, UTC windows and immutable cent/tax
    allocations must remain consistent through checkout, payment and credit records.
    No customer coupon is accepted and no customer policy may grant readiness.
