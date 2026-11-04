@@ -203,6 +203,8 @@ UI changes
 still require actual human approval bound to all image/source hashes. A failed
 browser job captures a separate candidate gallery for review while the normal
 required gate remains failed; captures never update baselines or grant approval.
+If the visual check already completed the gallery, CI uploads that capture.
+The fallback runs only after a browser failure without a completed capture.
 
 Visual cases start with their declared native device theme before navigation,
 then verify the explicit theme and inherited text colour after fonts and paint
