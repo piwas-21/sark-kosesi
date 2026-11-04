@@ -666,3 +666,296 @@ async fn stalled_commit_crossing_window_denies_but_retains_debit(pool: PgPool) {
         .fetch_one(&pool).await.expect("committed window");
     assert_eq!(stored, (960, 1019));
 }
+
+// Each sample describes one observation by the command; None simulates clock failure.
+struct FailingClock(std::sync::Mutex<std::collections::VecDeque<Option<u64>>>);
+impl Clock for FailingClock {
+    fn unix_seconds(&self) -> Result<u64, ContextError> {
+        let mut samples = self.0.lock().map_err(|_| ContextError::ClockUnavailable)?;
+        let sample = if samples.len() > 1 {
+            samples.pop_front()
+        } else {
+            samples.front().copied()
+        };
+        sample.flatten().ok_or(ContextError::ClockUnavailable)
+    }
+}
+
+#[sqlx::test(migrator = "MIGRATOR")]
+async fn clock_observations_fail_closed_and_only_post_commit_failures_keep_the_debit(pool: PgPool) {
+    // started, locked, written, optional high-water recheck, committed
+    type ClockCase<'a> = (&'a str, &'a [Option<u64>], (i32, i64, i64), bool);
+    let cases: &[ClockCase<'_>] = &[
+        ("invalid initial time", &[Some(u64::MAX)], (0, 0, 0), false),
+        (
+            "rewind after lock",
+            &[Some(1001), Some(1000)],
+            (0, 0, 0),
+            false,
+        ),
+        (
+            "rewind after write",
+            &[Some(1000), Some(1000), Some(999)],
+            (0, 0, 0),
+            false,
+        ),
+        (
+            "window after write",
+            &[Some(1000), Some(1000), Some(1020)],
+            (0, 0, 0),
+            false,
+        ),
+        (
+            "rewind after high water",
+            &[Some(1000), Some(1000), Some(1001), Some(1000)],
+            (0, 0, 0),
+            false,
+        ),
+        (
+            "window after high water",
+            &[Some(1000), Some(1000), Some(1001), Some(1020)],
+            (0, 0, 0),
+            false,
+        ),
+        (
+            "rewind after commit",
+            &[Some(1000), Some(1000), Some(1001), Some(1002), Some(1001)],
+            (1, 1, 1),
+            false,
+        ),
+        (
+            "window after commit",
+            &[Some(1000), Some(1000), Some(1000), Some(1020)],
+            (1, 1, 1),
+            false,
+        ),
+        (
+            "clock unavailable after commit",
+            &[Some(1000), Some(1000), Some(1000), None],
+            (1, 1, 1),
+            false,
+        ),
+        (
+            "advancing time succeeds",
+            &[Some(1000), Some(1000), Some(1001), Some(1002), Some(1003)],
+            (1, 1, 1),
+            true,
+        ),
+    ];
+    for (label, samples, expected, succeeds) in cases {
+        sqlx::query("DELETE FROM customer_credential_admission_targets WHERE purpose=1")
+            .execute(&pool)
+            .await
+            .expect("reset targets");
+        sqlx::query("UPDATE customer_credential_admission_scopes SET window_start=NULL,last_seen_at=NULL,key_version=NULL,key_check=NULL,global_limit=NULL,target_limit=NULL,admitted=0 WHERE purpose=1")
+            .execute(&pool).await.expect("reset scope");
+        let clock = FailingClock(std::sync::Mutex::new(samples.iter().copied().collect()));
+        let outcome = admit(
+            &pool,
+            CredentialPurpose::Login,
+            "clock@example.com",
+            &key(1, 7),
+            limits(2, 1),
+            &clock,
+        )
+        .await;
+        if *succeeds {
+            assert_eq!(outcome, Ok(()), "{label}");
+        } else {
+            assert_eq!(outcome, Err(AdmissionError::Unavailable), "{label}");
+        }
+        assert_eq!(count(&pool, 1).await, *expected, "{label}");
+        if expected.0 == 1 {
+            assert_eq!(
+                admit(
+                    &pool,
+                    CredentialPurpose::Login,
+                    "clock@example.com",
+                    &key(1, 7),
+                    limits(2, 1),
+                    &clock_for_retry()
+                )
+                .await,
+                Err(AdmissionError::Limited),
+                "{label}: committed debit must constrain retry"
+            );
+        }
+    }
+}
+
+fn clock_for_retry() -> TestClock {
+    clock(1010)
+}
+
+#[sqlx::test(migrator = "MIGRATOR")]
+async fn damaged_persisted_target_counts_are_denied_without_changes(pool: PgPool) {
+    let k = key(1, 7);
+    let cap = limits(10, 3);
+    let time = clock(1000);
+    admit(
+        &pool,
+        CredentialPurpose::Login,
+        "target@example.com",
+        &k,
+        cap,
+        &time,
+    )
+    .await
+    .expect("healthy target");
+    admit(
+        &pool,
+        CredentialPurpose::Login,
+        "other@example.com",
+        &k,
+        cap,
+        &time,
+    )
+    .await
+    .expect("healthy independent target");
+    // Allow the test to model imported or otherwise damaged data; the normal
+    // constraint is separately covered by the positive/negative SQL controls.
+    sqlx::query("ALTER TABLE customer_credential_admission_targets DROP CONSTRAINT customer_credential_admission_targets_admitted_check")
+        .execute(&pool).await.expect("permit damaged fixture");
+    // Identify the actual target deterministically from its known healthy increment.
+    admit(
+        &pool,
+        CredentialPurpose::Login,
+        "target@example.com",
+        &k,
+        cap,
+        &time,
+    )
+    .await
+    .expect("healthy increment");
+    let digest: Vec<u8> = sqlx::query_scalar("SELECT target_digest FROM customer_credential_admission_targets WHERE purpose=1 AND admitted=2")
+        .fetch_one(&pool).await.expect("target digest");
+    for broken in [0, 4] {
+        sqlx::query("UPDATE customer_credential_admission_targets SET admitted=$1 WHERE purpose=1 AND target_digest=$2")
+            .bind(broken).bind(&digest).execute(&pool).await.expect("damage target");
+        let before = count(&pool, 1).await;
+        assert_eq!(
+            admit(
+                &pool,
+                CredentialPurpose::Login,
+                "target@example.com",
+                &k,
+                cap,
+                &time
+            )
+            .await,
+            Err(AdmissionError::Unavailable),
+            "damaged target {broken}"
+        );
+        assert_eq!(
+            count(&pool, 1).await,
+            before,
+            "damaged target is not changed"
+        );
+    }
+    // A count within the target limit can still exceed the scope total.
+    sqlx::query("UPDATE customer_credential_admission_targets SET admitted=2 WHERE purpose=1 AND target_digest=$1")
+        .bind(&digest).execute(&pool).await.expect("restore target");
+    sqlx::query("UPDATE customer_credential_admission_scopes SET admitted=1 WHERE purpose=1")
+        .execute(&pool)
+        .await
+        .expect("damage total");
+    let before = count(&pool, 1).await;
+    assert_eq!(
+        admit(
+            &pool,
+            CredentialPurpose::Login,
+            "target@example.com",
+            &k,
+            cap,
+            &time
+        )
+        .await,
+        Err(AdmissionError::Unavailable)
+    );
+    assert_eq!(count(&pool, 1).await, before);
+    sqlx::query("UPDATE customer_credential_admission_scopes SET admitted=3 WHERE purpose=1")
+        .execute(&pool)
+        .await
+        .expect("restore total");
+    admit(
+        &pool,
+        CredentialPurpose::Login,
+        "target@example.com",
+        &k,
+        cap,
+        &time,
+    )
+    .await
+    .expect("repaired target can be admitted");
+    assert_eq!(count(&pool, 1).await, (4, 2, 4));
+}
+
+#[sqlx::test(migrator = "MIGRATOR")]
+async fn terminal_storage_errors_roll_back_both_scope_and_target_writes(pool: PgPool) {
+    let k = key(1, 7);
+    let cap = limits(3, 2);
+    let time = clock(1000);
+    admit(
+        &pool,
+        CredentialPurpose::Login,
+        "first@example.com",
+        &k,
+        cap,
+        &time,
+    )
+    .await
+    .expect("healthy initial admission");
+    sqlx::query("CREATE FUNCTION fail_admission_test() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN RAISE EXCEPTION 'test failure'; END $$")
+        .execute(&pool).await.expect("failure injector");
+    for (create, drop_trigger) in [
+        (
+            "CREATE TRIGGER fail_admission_test BEFORE INSERT OR UPDATE ON customer_credential_admission_targets FOR EACH ROW EXECUTE FUNCTION fail_admission_test()",
+            "DROP TRIGGER fail_admission_test ON customer_credential_admission_targets",
+        ),
+        (
+            "CREATE TRIGGER fail_admission_test BEFORE UPDATE ON customer_credential_admission_scopes FOR EACH ROW EXECUTE FUNCTION fail_admission_test()",
+            "DROP TRIGGER fail_admission_test ON customer_credential_admission_scopes",
+        ),
+        (
+            "CREATE CONSTRAINT TRIGGER fail_admission_test AFTER UPDATE ON customer_credential_admission_scopes DEFERRABLE INITIALLY DEFERRED FOR EACH ROW EXECUTE FUNCTION fail_admission_test()",
+            "DROP TRIGGER fail_admission_test ON customer_credential_admission_scopes",
+        ),
+    ] {
+        sqlx::query(create)
+            .execute(&pool)
+            .await
+            .expect("install failure injector");
+        assert_eq!(
+            admit(
+                &pool,
+                CredentialPurpose::Login,
+                "second@example.com",
+                &k,
+                cap,
+                &time
+            )
+            .await,
+            Err(AdmissionError::Unavailable)
+        );
+        assert_eq!(
+            count(&pool, 1).await,
+            (1, 1, 1),
+            "failed transaction leaves original claim only"
+        );
+        sqlx::query(drop_trigger)
+            .execute(&pool)
+            .await
+            .expect("remove failure injector");
+    }
+    admit(
+        &pool,
+        CredentialPurpose::Login,
+        "second@example.com",
+        &k,
+        cap,
+        &time,
+    )
+    .await
+    .expect("admission succeeds after storage recovers");
+    assert_eq!(count(&pool, 1).await, (2, 2, 2));
+}

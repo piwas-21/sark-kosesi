@@ -643,3 +643,161 @@ async fn password_reset_wins_against_rotation_waiting_for_account(pool: PgPool) 
         (id, 2)
     );
 }
+
+#[sqlx::test(migrator = "MIGRATOR")]
+async fn logout_late_clock_failures_roll_back_revocation(pool: PgPool) {
+    let time = Arc::new(clock());
+    account(&pool, "logout-clock@example.com", &time).await;
+    set_password(
+        &pool,
+        "logout-clock@example.com",
+        "first-password-long",
+        &time,
+    )
+    .await;
+    let initial = admitted_login::login(
+        &pool,
+        "logout-clock@example.com",
+        "first-password-long",
+        time.as_ref(),
+    )
+    .await
+    .expect("login");
+    sqlx::query("CREATE FUNCTION fence_session_logout() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN IF NEW.revocation_kind='logout' THEN PERFORM pg_advisory_xact_lock(17543823); END IF; RETURN NEW; END $$")
+        .execute(&pool).await.expect("fence function");
+    sqlx::query("CREATE TRIGGER fence_session_logout AFTER UPDATE ON customer_sessions FOR EACH ROW EXECUTE FUNCTION fence_session_logout()")
+        .execute(&pool).await.expect("fence trigger");
+
+    for (late_time, backward) in [(initial.identity.expires_at as u64, false), (999, true)] {
+        time.0.store(1000, Ordering::SeqCst);
+        let mut blocker = pool.begin().await.expect("fence blocker");
+        sqlx::query("SELECT pg_advisory_xact_lock(17543823)")
+            .execute(&mut *blocker)
+            .await
+            .expect("hold fence");
+        let worker_pool = pool.clone();
+        let worker_time = time.clone();
+        let token = CustomerSessionToken::from_bytes(*initial.token.expose_bytes());
+        let task = tokio::spawn(async move {
+            customer_sessions::logout(&worker_pool, &token, worker_time.as_ref()).await
+        });
+        let mut waiting = false;
+        for _ in 0..300 {
+            let n: i64 = sqlx::query_scalar("SELECT count(*) FROM pg_locks WHERE locktype='advisory' AND classid=0 AND objid=17543823 AND NOT granted AND pid<>pg_backend_pid()")
+                .fetch_one(&pool).await.expect("fence waits");
+            if n > 0 {
+                waiting = true;
+                break;
+            }
+            tokio::time::sleep(Duration::from_millis(10)).await;
+        }
+        assert!(waiting && !task.is_finished(), "logout reached its write");
+        time.0.store(late_time, Ordering::SeqCst);
+        blocker.commit().await.expect("release fence");
+        let result = task.await.expect("join");
+        if backward {
+            assert!(matches!(result, Err(SessionError::Unavailable)));
+        } else {
+            assert!(matches!(result, Err(SessionError::Denied)));
+        }
+        let persisted: (Option<i64>, Option<String>, bool) = sqlx::query_as(
+            "SELECT revoked_at,revocation_kind,revoked_xid IS NULL FROM customer_sessions WHERE verifier=$1",
+        )
+        .bind(digest(&initial.token)).fetch_one(&pool).await.expect("original row");
+        assert_eq!(persisted, (None, None, true), "revocation rolled back");
+        assert_eq!(count(&pool).await, 1);
+    }
+    sqlx::query("DROP TRIGGER fence_session_logout ON customer_sessions")
+        .execute(&pool)
+        .await
+        .expect("remove fence");
+    time.0.store(1000, Ordering::SeqCst);
+    customer_sessions::authenticate(&pool, &initial.token, time.as_ref())
+        .await
+        .expect("original remains active");
+    customer_sessions::logout(&pool, &initial.token, time.as_ref())
+        .await
+        .expect("healthy logout");
+    assert!(matches!(
+        customer_sessions::authenticate(&pool, &initial.token, time.as_ref()).await,
+        Err(SessionError::Denied)
+    ));
+    let persisted: (Option<i64>, Option<String>, bool) = sqlx::query_as(
+        "SELECT revoked_at,revocation_kind,revoked_xid IS NOT NULL FROM customer_sessions WHERE verifier=$1",
+    )
+    .bind(digest(&initial.token)).fetch_one(&pool).await.expect("revoked row");
+    assert_eq!(persisted, (Some(1000), Some("logout".to_owned()), true));
+}
+
+#[sqlx::test(migrator = "MIGRATOR")]
+async fn logout_rejects_suppressed_and_changed_database_writes(pool: PgPool) {
+    let time = clock();
+    account(&pool, "logout-write@example.com", &time).await;
+    set_password(
+        &pool,
+        "logout-write@example.com",
+        "first-password-long",
+        &time,
+    )
+    .await;
+    let initial = admitted_login::login(
+        &pool,
+        "logout-write@example.com",
+        "first-password-long",
+        &time,
+    )
+    .await
+    .expect("login");
+    sqlx::query("CREATE FUNCTION suppress_session_logout() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN RETURN NULL; END $$")
+        .execute(&pool).await.expect("suppression function");
+    sqlx::query("CREATE TRIGGER z_suppress_session_logout BEFORE UPDATE ON customer_sessions FOR EACH ROW EXECUTE FUNCTION suppress_session_logout()")
+        .execute(&pool).await.expect("suppression trigger");
+    assert!(matches!(
+        customer_sessions::logout(&pool, &initial.token, &time).await,
+        Err(SessionError::Unavailable)
+    ));
+    sqlx::query("DROP TRIGGER z_suppress_session_logout ON customer_sessions")
+        .execute(&pool)
+        .await
+        .expect("remove suppression");
+
+    // This trigger runs after the custody guard and models a write altered by
+    // the database. The application must check the persisted transition.
+    sqlx::query("CREATE FUNCTION change_session_logout() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN NEW.revoked_at := NEW.revoked_at + 1; RETURN NEW; END $$")
+        .execute(&pool).await.expect("alteration function");
+    sqlx::query("CREATE TRIGGER z_change_session_logout BEFORE UPDATE ON customer_sessions FOR EACH ROW EXECUTE FUNCTION change_session_logout()")
+        .execute(&pool).await.expect("alteration trigger");
+    assert!(matches!(
+        customer_sessions::logout(&pool, &initial.token, &time).await,
+        Err(SessionError::Unavailable)
+    ));
+    let persisted: (Option<i64>, Option<String>, bool) = sqlx::query_as(
+        "SELECT revoked_at,revocation_kind,revoked_xid IS NULL FROM customer_sessions WHERE verifier=$1",
+    )
+    .bind(digest(&initial.token)).fetch_one(&pool).await.expect("original row");
+    assert_eq!(
+        persisted,
+        (None, None, true),
+        "both failed writes rolled back"
+    );
+    assert_eq!(count(&pool).await, 1);
+    sqlx::query("DROP TRIGGER z_change_session_logout ON customer_sessions")
+        .execute(&pool)
+        .await
+        .expect("remove alteration");
+    customer_sessions::authenticate(&pool, &initial.token, &time)
+        .await
+        .expect("original active");
+    customer_sessions::logout(&pool, &initial.token, &time)
+        .await
+        .expect("healthy logout");
+    assert!(matches!(
+        customer_sessions::authenticate(&pool, &initial.token, &time).await,
+        Err(SessionError::Denied)
+    ));
+    let persisted: (Option<i64>, Option<String>, bool) = sqlx::query_as(
+        "SELECT revoked_at,revocation_kind,revoked_xid IS NOT NULL FROM customer_sessions WHERE verifier=$1",
+    )
+    .bind(digest(&initial.token)).fetch_one(&pool).await.expect("revoked row");
+    assert_eq!(persisted, (Some(1000), Some("logout".to_owned()), true));
+}

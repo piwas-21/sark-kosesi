@@ -56,3 +56,7 @@ impl Scope {
         }
     }
 }
+
+#[cfg(test)]
+#[path = "../../tests/support/customer_credential_admission_state_unit.rs"]
+mod tests;
