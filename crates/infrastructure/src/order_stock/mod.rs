@@ -7,8 +7,8 @@ pub use commerce_domain::order_stock::{
 use commerce_domain::{checkout_orders::OrderSnapshot, order_stock::*};
 use sqlx::{PgPool, Postgres, Transaction};
 mod effects;
-mod rows;
-mod source;
+pub(crate) mod rows;
+pub(crate) mod source;
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum SettlementError {
     InvalidRequest,
@@ -62,22 +62,16 @@ pub async fn settle(
     validate(order_id)?;
     let mut tx = pool.begin().await?;
     limits(&mut tx).await?;
-    if let Some(settlement) = rows::load(&mut tx, order_id).await? {
+    if let Some(receipt) = cross_path(&mut tx, order_id).await? {
         tx.rollback().await?;
-        return Ok(SettlementReceipt {
-            settlement,
-            replayed: true,
-        });
+        return Ok(receipt);
     }
     let attempt = source::attempt(&mut tx, order_id).await?;
     source::claim_attempt(&mut tx, &attempt).await?;
     // Recheck canonical identity before financial eligibility after the wait.
-    if let Some(settlement) = rows::load(&mut tx, order_id).await? {
+    if let Some(receipt) = cross_path(&mut tx, order_id).await? {
         tx.rollback().await?;
-        return Ok(SettlementReceipt {
-            settlement,
-            replayed: true,
-        });
+        return Ok(receipt);
     }
     let (frozen, received) = recognition::current_in_transaction(&mut tx, &attempt).await?;
     let received = received
@@ -187,4 +181,32 @@ fn fresh(ids: &dyn Identifiers) -> Result<String, SettlementError> {
     ids.next()
         .map(|id| format!("{:032x}", u128::from_be_bytes(id)))
         .map_err(|_| SettlementError::EntropyUnavailable)
+}
+
+/// Same caller-owned RC transaction; historical receipt validation keeps its claim.
+pub(crate) async fn read_in_transaction(
+    tx: &mut Transaction<'_, Postgres>,
+    order: &str,
+) -> Result<Option<Settlement>, SettlementError> {
+    rows::load(tx, order).await
+}
+
+async fn cross_path(
+    tx: &mut Transaction<'_, Postgres>,
+    order: &str,
+) -> Result<Option<SettlementReceipt>, SettlementError> {
+    let recorded = crate::late_stock::read_in_transaction(tx, order)
+        .await
+        .map_err(|error| match error {
+            crate::late_stock::LateStockError::Database => SettlementError::Database,
+            _ => SettlementError::InvalidStoredData,
+        })?;
+    match recorded {
+        Some(crate::late_stock::Outcome::Original(settlement)) => Ok(Some(SettlementReceipt {
+            settlement,
+            replayed: true,
+        })),
+        Some(_) => Err(SettlementError::Unavailable),
+        None => Ok(None),
+    }
 }

@@ -335,9 +335,16 @@ supervision or live provider activation follows from deploying the empty preview
    digest-bound order event retain exact member/component effects. Native final
    proof and a transaction completion seal prevent partial effects or later
    same-transaction changes after early constraint evaluation. Historical replay
-   revalidates original custody without repeating consumption; expired or released
-   originals require separate recovery. Complete late-paid atomic reallocation,
-   independent order/fulfilment/refund lifecycle and invoices/credit documents,
+   revalidates original custody without repeating consumption. Private late
+   allocation now shares one canonical allocation with original settlement and
+   atomically expires/reserves/consumes the full frozen demand for intact expired
+   originals. Released, consumed or scarce originals retain immutable review
+   stops; changed availability after rollback creates no permanent scarcity case.
+   A private recent-MFA `stock.review` inbox validates each bounded historical
+   case before returning a minimal summary; no grant or HTTP route is seeded.
+   Live keyset traversal requires a refresh to see earlier insertions. No automatic
+   retry or disposition authority is installed. Complete authorized
+   stock-review dispositions, independent order/fulfilment/refund lifecycle and invoices/credit documents,
    bounded audited refunds and independent restock actions. Prove sandbox outcomes,
    concurrency, cent allocations and crash recovery without duplicate effects.
 
@@ -352,6 +359,24 @@ No public guest checkout route, provider calls, payment acceptance or production
 activation follows from these private primitives. Preserve
 all nine CI gates and the approved courtyard visual source/baselines.
 
+## P4 email verification foundation
+
+Private SQLx custody issues a random challenge for a narrowly normalized mailbox
+and consumes it once under purpose, identity and fresh-clock checks. Its fixed
+15-minute expiry is checked after lock waits and again before commit; raw bearer
+bytes are returned to the trusted caller only. The schema and scope are specified
+in [security](SECURITY.md#private-email-verification-challenge-custody). This is
+no public registration, delivery or guest linking. A private account operation now
+locks and consumes that exact proof and inserts one unique immutable normalized
+identity in the same transaction; the database binds consumption and insertion to
+the same transaction, with legacy consumed proofs ineligible. Rust verifies bearer
+possession; the database write role remains trusted. Replay and duplicate identities deny without
+consuming another proof. A final fresh-clock check follows all writes and waits.
+The identifier grants no login, session, guest-order or other authority. Secure
+delivery, anti-enumeration and abuse controls remain required. Migrations 0034
+and 0035 must land after the separately reserved 0033 late-stock migration; no
+deployed migration state is implied.
+
 ## P5 room-fit foundation
 
 The standalone browser-safe room-fit package implements the measured rectangle
@@ -362,7 +387,9 @@ Independently calculated fixtures cover boundaries. The non-selling preview page
 uses a keyboard form, local drawing and text status. Clearing the draft allows a
 unit change without reinterpreting existing measurements. Use real approved
 measurements for any future catalogue integration. Persistence, photo placement,
-original help content, reviewed locales and visual/device acceptance remain P5 work.
+original help content and reviewed locales remain P5 work. Owner approval
+binds the 252 Linux visual baselines to the exact preview source. Hosted
+comparison and native browser/device acceptance remain separate evidence.
 
 ## Next session prompt
 

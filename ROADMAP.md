@@ -134,11 +134,17 @@ and HTTP admin writes remain unimplemented. Catalogue publication already uses
 the same persisted authority guard.
 Do not restart stack comparisons or redesign the accepted courtyard direction.
 
+Private P4 email-verification challenge custody now provides exact normalized
+identity binding, random bearer verifiers and single-use expiry under database
+locking. A private account primitive now consumes the exact challenge and inserts a unique
+immutable verified identity atomically. It creates no login or session; secure token
+transport, durable send custody, abuse controls and guest linking remain P4 work.
+
 The local room-planner preview combines the rectangle calculator with keyboard
 measurement and rotation controls, a drawn footprint, and text clearance and fit
 results. Caller measurements stay on the page. The copy is drafted for all seven
-locales. Human visual review, native-language acceptance, verified product
-dimensions and physical-fit acceptance remain open.
+locales. The owner approved the 252 Linux preview baselines. Native-language
+acceptance, verified product dimensions and physical-fit acceptance remain open.
 
 Remaining delivery sequence: P0 business inputs in parallel → P2 inventory/catalogue → P3 checkout/payments → P4 customer/admin operations → P5 room planning and content → P6 acceptance → P7 controlled launch. Each phase has explicit exit evidence in the plan.
 
@@ -205,9 +211,13 @@ expiry. New observations make earlier current decisions explicitly stale. Journa
 exact source digest and minimal order event commit atomically. Private original
 reservation settlement now consumes a still-intact paid order's complete shared
 component allocation once, with a native exact physical proof, immutable receipt
-and atomic order event. Historical replay preserves original custody; expired or
-released reservations require separate recovery. Complete late-paid atomic
-reallocation, actual proxy/resource-limit/no-bypass and TLS/provider acceptance
-before public activation, remaining operator dispositions and separate
+and atomic order event. Private late allocation now recovers intact expired
+originals using the same single allocation identity and frozen component demand.
+Released or consumed originals and persistent scarcity retain durable review stops;
+restock cannot silently restart them. Historical replay preserves original custody.
+An unseeded dedicated recent-MFA capability permits private bounded, validated
+case summaries; the live cursor requires a refresh for earlier insertions.
+Complete authorized stock-review dispositions, actual proxy/resource-limit/no-bypass
+and TLS/provider acceptance before public activation, remaining operator dispositions and separate
 order/fulfilment/refund/invoice transitions. A pure domain
 plan or matched synthetic response is not dispatch or payment authority.

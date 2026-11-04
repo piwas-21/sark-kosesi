@@ -7,8 +7,8 @@ mod expiry;
 mod transition;
 pub use create::reserve_bom;
 pub use expiry::{ExpiryBatch, expire_due_holds};
-pub(crate) use transition::consume_claimed;
 pub use transition::transition_hold;
+pub(crate) use transition::{consume_claimed, expire_claimed};
 
 use commerce_domain::{
     holds::{HoldAction, HoldError, HoldState},

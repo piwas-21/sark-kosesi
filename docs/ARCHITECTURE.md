@@ -887,6 +887,148 @@ No route, worker command, scheduler, provider call, runtime credential or deploy
 is added by this primitive. Late-paid reallocation, durable review dispositions
 and actual fulfilment remain separate requirements before operational acceptance.
 
+### Late paid stock allocation and review
+
+The next private stock path recovers only the frozen paid order's complete original
+component demand. It never reprices the order, changes its money/attempt/address,
+substitutes components or derives a new BOM from current catalogue selection.
+No route, worker, credential, provider request, refund or dispatch is installed.
+
+A single immutable allocation claim per actual order spans original settlement and
+successful late allocation. It binds the unique original attempt, allocation kind
+and exact owning receipt. Native reciprocal receipt/event custody rejects orphan,
+changed or duplicate claims. Claim the order allocation before physical effects,
+under the same READ COMMITTED attempt UPDATE claim used by financial recognition.
+Backfill existing original settlements from their validated historical received
+recognition, source/effects and digest-bound event; never require their old prefix
+still to be current or rewrite their original receipt, event, timestamp or digest.
+Both original and late readers must validate this shared allocation ownership.
+
+Read validated canonical allocation or outstanding review history before fresh
+clock/entropy, then repeat after obtaining the original attempt claim. An invalid
+claim or contradictory history fails closed, without falling through to another
+allocation. New work requires current exact `received` recognition retained in the
+same transaction. Its full prefix, resolution, ownership and event proof remain
+locked through commit; detached payment data grants no stock authority.
+
+Revalidate the complete original order/group, sealed BOM and reserve/terminal
+movement custody before classification. Retain every member's actual state.
+`RecoveryRequired` from original settlement is a broad return, never admission
+permission. An original containing any consumed member without canonical
+allocation requires durable `prior_consumption_without_allocation` review. Any
+released member requires `release_intent_unresolved` review: generic release
+history cannot distinguish cancellation from permission to allocate again.
+Corruption is `InvalidStoredData`, never a normal review or scarcity outcome.
+
+Automatic late allocation admits only intact ACTIVE/EXPIRED originals at or after
+their original deadline, with no consumed or released member. All-active originals
+still within their window are not applicable to this path. New time must be no
+earlier than the order or bound recognition and must remain nondecreasing.
+
+Retain lock order: attempt, original sealed group SHARE, all original holds UPDATE
+in database hold-ID order, fresh group/building children, then every union balance
+UPDATE in the existing database component-code order. No preliminary hold
+SHARE-to-UPDATE upgrades or alternative collation are permitted. Fresh group and
+child IDs are generated server-side and inserted fresh; collision cannot adopt a
+legacy group through reservation replay. Freeze the planned fresh membership/BOM
+before effects and require complete sealed membership after reservation.
+
+For each component, before balance `(P,Q,R)`, full frozen demand `D` and original
+active demand `A`, require valid stock, `R >= A` and `P - Q - R + A >= D` using
+checked integer arithmetic. Claim and check all components before changing any.
+Missing or invalid balances are corruption. Other orders' reservations remain
+untouched; cover/foam are kinds and multiple physical codes remain separate.
+
+Insert the successful receipt and canonical allocation claim before effects.
+Expire only remaining active original members, then reserve the full demand on
+fresh children and consume every fresh child, all in the same transaction.
+Already expired members get no repeated effect; original identities and windows
+never reactivate. The fresh server window is exactly 60 seconds, within the
+existing hold policy, and is an engineering bound rather than a customer promise.
+Prepare the fresh window before component waits; `expires_at` is checked
+`prepared_at + 60`. Sample `allocated_at` after all claims and require
+`prepared_at <= allocated_at < expires_at`, with final time still before expiry.
+Waiting cannot extend the window. Final balances must be exactly
+`(P - D,Q,R - A)` with quarantine unchanged.
+Reservation retains its existing order-derived audit actor; expiry and consumption
+use fixed server actors validated by their native proofs, never caller claims.
+
+Factor narrow fresh-manifest preparation and claimed reservation phases from the
+existing basket primitive. Preserve its public replay/transaction behavior.
+All fresh building children precede component claims; reservation then publishes
+exact hold lines/members and seals the group. Do not duplicate basket policy or
+acquire contended original/fresh hold claims after component effects.
+
+Fresh construction, any pending allocation/receipt and its component claims live
+inside a savepoint; retain attempt/original group/hold claims outside it. If stock
+is scarce, roll back that savepoint so no fresh rows, allocation or physical effects
+remain. This also releases its component locks. Reclaim balances in database order
+and refresh financial/source/time proof. Persist `component_scarcity` review only
+if the new locked snapshot is still scarce. If availability changed, return a
+retryable `StateChanged`/unavailable result without a case or reconstruction loop.
+Never reset the observed clock across rollback; entropy/sequence use is not a
+physical business effect.
+
+A successful bounded footprint binds original states and exact source movements,
+fresh identities/window/planned membership, aggregate active/full demand and each
+component's real before, expiry, reserve and consume stages. Bounds remain
+20 members and 64 BOM lines per group, up to 2,560 original/fresh pairs and 1,280
+union component codes. Read at most the complete 5,120 reserve/terminal movements
+plus a sentinel. The late/review encoded envelope is capped at two MiB; test the
+largest closed source fixture and reject oversize before JSON/digest evaluation,
+including the entire event/digest subquery. No truncation or guessed two-code limit.
+
+Native BEFORE and deferred completeness independently require RC, current received
+proof, the common claim, complete original/fresh binding, exact stage movement sets
+and member-order intermediate balances, real final parity and the digest-bound
+order event. Each stage projects the bounded component footprint once and joins
+it by component code before verifying the ordered movement ledger. Sample final
+observed time after all actual writes and reject rewind
+or fresh-window expiry with full rollback. Early constraint flush acquires a
+transaction completion seal only after the full proof. Extend scoped mutation
+guards across original/fresh groups and holds, affected components and financial
+sources. A manually acquired advisory lock cannot skip proof; savepoint rollback
+must restore pending proof while releasing its child seal. Later transactions may
+perform legitimate financial or warehouse work.
+
+Review cases are immutable initial stops, not physical allocation claims. Bind the
+actual order/attempt, original historical received receipt, closed reason,
+assessment time, bounded source footprint and a digest-bound minimal order event.
+Review admission proves that snapshot under current source/financial claims; its
+commit proof requires immutable case/event custody. It deliberately has no
+completion seal or guarantee of current scarcity after later same-transaction
+changes. Successful original/late allocations retain the full final-current proof
+and seal above. A case and successful allocation cannot be newly admitted together; native guards
+serialize both on the original attempt. A recorded stop blocks automatic retry,
+including after restock, process restart or a new caller key. Separate future
+stock-recovery authority, fresh persisted staff/MFA/confirmation and exact review
+revision are required for any disposition; finance reconciliation authority alone
+never implies warehouse authority. This slice installs no such retry or grant.
+
+A private staff inbox requires the dedicated persisted `stock.review` grant, an
+enabled session and recent MFA, rechecked after reading while authority rows remain
+locked. No grants, login or HTTP route are installed. Each live C-collated keyset
+page scans at most four candidate case IDs and validates each complete historical
+custody proof before applying an optional closed reason filter. Invalid custody
+fails the entire page; the result contains only case/order IDs, assessment time
+and reason. A cursor advances across scanned candidates even on an empty filtered
+page. This is not a snapshot: inserts at or before the cursor require refreshing
+from the beginning. The read grants no retry, disposition or financial/stock effect.
+
+Historical review validates captured immutable identities and exact per-pair
+reserve/terminal sequence references and semantic-row digests, their closed
+captured states and original recognition. Digests cover identity, actor, reason,
+quantities and balance effects; audit timestamps must not make them depend on
+session time zone.
+It is an admission-validated assessment, not proof of current availability or
+permission. A captured active member may later have a valid terminal transition;
+claim original holds SHARE in database order before coherent multi-query history
+reads. Do not require captured states to equal current states, use a global stock
+sequence as commit chronology, or compare current balances with old snapshots.
+Captured terminal references must remain exact. Successful history validates all
+original/fresh effects and claim custody without requiring current recognition or
+warehouse balances. Every replay returns history without new clock, IDs or effects.
+
 ### Supervised test-payment recovery
 
 The explicit local/test recovery command uses a separate authenticated GET-only
@@ -1288,3 +1430,15 @@ Initial orders require a positive payable total and accept no coupon. Promotion
 budget accounting, order/payment/fulfilment transitions, retained-data operations,
 public HTTP/UI/edge controls, outbox processing and actual provider transport remain
 separate work. Private test attempts and initial dispatch custody are described above. No transaction performs provider/network I/O or sends a customer message.
+
+### Private verified customer identity
+
+A private PostgreSQL operation locks and consumes an exact email challenge while
+inserting a unique immutable customer identity and its verification reference in
+one transaction. A database-assigned transaction ID on the consumption must match
+the account insert transaction; legacy consumed challenges cannot be adopted. This
+database check attests transaction custody, while Rust verifies token possession;
+the database write role is trusted and must not be exposed to untrusted clients.
+The final freshness check follows the insert and any uniqueness wait. The public standalone challenge consumer commits independently and cannot
+be used to establish an account later. No password, session, guest-order link,
+delivery, endpoint or production authority follows from this identity record.

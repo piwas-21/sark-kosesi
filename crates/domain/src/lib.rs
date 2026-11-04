@@ -6,6 +6,7 @@ use serde::{Deserialize, Serialize};
 pub mod catalogue_authoring;
 pub mod checkout_orders;
 pub mod checkout_quotes;
+pub mod email_identity;
 pub mod factual_review;
 pub mod guest_baskets;
 pub mod holds;
@@ -111,3 +112,5 @@ pub struct BillOfMaterials {
     pub revision: i32,
     pub components: Vec<BomComponent>,
 }
+
+pub mod late_stock;

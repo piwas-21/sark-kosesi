@@ -13,7 +13,7 @@ use std::sync::{
     atomic::{AtomicU64, Ordering},
 };
 #[path = "order_stock_fixture.rs"]
-mod fixture;
+pub(crate) mod fixture;
 use fixture::*;
 
 #[sqlx::test(migrator = "MIGRATOR")]
@@ -156,7 +156,7 @@ mod states;
 mod waits;
 
 #[path = "order_stock_native.rs"]
-mod native;
+pub(crate) mod native;
 
 #[path = "order_stock_corruption.rs"]
 mod corruption;
