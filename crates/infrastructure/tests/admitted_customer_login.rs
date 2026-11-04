@@ -1,11 +1,14 @@
 //! Login admission is committed before credential lookup or password work.
+
+#[allow(dead_code)]
+#[path = "support/admitted_proofs.rs"]
+mod admitted_proofs;
+use admitted_proofs::{customer_passwords, email_verification, verified_customer_accounts};
 use commerce_application::request_context::{Clock, ContextError};
 use commerce_infrastructure::{
     MIGRATOR,
     customer_credential_admission::{AdmissionKey, AdmissionLimits},
-    customer_passwords,
     customer_sessions::{self, SessionError},
-    email_verification, verified_customer_accounts,
 };
 use sqlx::PgPool;
 use std::{

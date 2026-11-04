@@ -2,7 +2,10 @@ use commerce_application::request_context::{Clock, ObservedClock};
 use commerce_domain::email_identity::normalize_email;
 use sqlx::PgPool;
 
-use super::{LIFETIME, PasswordChangeToken, PasswordError, begin, current_revision, hash, now};
+use super::{
+    AdmissionKey, AdmissionLimits, CredentialPurpose, LIFETIME, PasswordChangeToken, PasswordError,
+    admit_password, begin, current_revision, hash, now,
+};
 
 #[derive(sqlx::FromRow)]
 struct Proof {
@@ -76,10 +79,21 @@ pub async fn replace(
     token: &PasswordChangeToken,
     password: &str,
     clock: &dyn Clock,
+    key: &AdmissionKey,
+    limits: AdmissionLimits,
 ) -> Result<i32, PasswordError> {
+    let observed = ObservedClock::new(clock, 0);
+    admit_password(
+        pool,
+        CredentialPurpose::PasswordReplace,
+        email,
+        key,
+        limits,
+        &observed,
+    )
+    .await?;
     let identity = normalize_email(email).ok_or(PasswordError::Denied)?;
     let verifier = token.verifier();
-    let observed = ObservedClock::new(clock, 0);
     now(&observed)?;
     // The cheap precheck rejects absent, consumed, expired and stale proof before Argon2.
     let mut precheck = begin(pool).await?;

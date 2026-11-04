@@ -1,8 +1,13 @@
+#[allow(dead_code)]
+#[path = "support/admitted_proofs.rs"]
+mod admitted_proofs;
+
+use admitted_proofs::email_verification::{consume, issue};
 use commerce_application::request_context::{Clock, ContextError};
 use commerce_domain::email_identity::normalize_email;
 use commerce_infrastructure::{
     MIGRATOR,
-    email_verification::{VerificationError, VerificationToken, consume, issue},
+    email_verification::{VerificationError, VerificationToken},
 };
 use sha2::{Digest, Sha256};
 use sqlx::PgPool;
@@ -250,7 +255,8 @@ async fn expiry_after_update_rolls_back_and_last_valid_second_can_succeed(pool: 
         .await
         .expect("issue");
     let sequence = SequenceClock {
-        values: std::sync::Mutex::new([1899, 1899, 1900].into()),
+        // Four equal samples commit admission before the original proof clock sequence.
+        values: std::sync::Mutex::new([1899, 1899, 1899, 1899, 1899, 1899, 1900].into()),
     };
     assert_eq!(
         consume(&pool, "first@example.com", &first, &sequence).await,
@@ -275,7 +281,7 @@ async fn expiry_after_update_rolls_back_and_last_valid_second_can_succeed(pool: 
 #[sqlx::test(migrator = "MIGRATOR")]
 async fn clock_failure_or_reversal_never_creates_or_consumes_a_challenge(pool: PgPool) {
     let reversed = SequenceClock {
-        values: std::sync::Mutex::new([1000, 999].into()),
+        values: std::sync::Mutex::new([1000, 1000, 1000, 1000, 1000, 999].into()),
     };
     assert!(matches!(
         issue(&pool, "a@example.com", &reversed).await,
@@ -290,14 +296,14 @@ async fn clock_failure_or_reversal_never_creates_or_consumes_a_challenge(pool: P
         .await
         .expect("issue");
     let failed = SequenceClock {
-        values: std::sync::Mutex::new([1001].into()),
+        values: std::sync::Mutex::new([1001, 1001, 1001, 1001, 1001].into()),
     };
     assert_eq!(
         consume(&pool, "a@example.com", &token, &failed).await,
         Err(VerificationError::Unavailable)
     );
     let reversed = SequenceClock {
-        values: std::sync::Mutex::new([1001, 1000].into()),
+        values: std::sync::Mutex::new([1001, 1001, 1001, 1001, 1001, 1000].into()),
     };
     assert_eq!(
         consume(&pool, "a@example.com", &token, &reversed).await,

@@ -1,20 +1,24 @@
 //! Private linked-order reads over real accepted orders and live customer sessions.
 
+#[allow(dead_code)]
+#[path = "support/admitted_proofs.rs"]
+mod admitted_proofs;
+
 #[path = "support/admitted_login.rs"]
 mod admitted_login;
+use admitted_proofs::{
+    customer_passwords, email_verification, verified_customer_accounts::establish,
+};
 use commerce_application::Locale;
 use commerce_domain::{checkout_quotes::CapturedAmount, publication::PublicationChoice};
 use commerce_infrastructure::{
     MIGRATOR,
     checkout_orders::create_order,
     checkout_quotes::issue_quote,
-    customer_passwords,
     customer_sessions::{self, CustomerSessionToken},
-    email_verification,
     guest_baskets::{GuestCredential, GuestSessionStore},
     guest_order_links::{self, LinkError, LinkedOrderCursor},
     publication::{PublicationRequest, record_publication},
-    verified_customer_accounts::establish,
 };
 use sqlx::PgPool;
 use std::{sync::atomic::Ordering, time::Duration};

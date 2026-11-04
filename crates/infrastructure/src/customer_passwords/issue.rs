@@ -2,7 +2,10 @@ use commerce_application::request_context::{Clock, ObservedClock};
 use commerce_domain::email_identity::normalize_email;
 use sqlx::PgPool;
 
-use super::{LIFETIME, PasswordChangeToken, PasswordError, begin, current_revision, now};
+use super::{
+    AdmissionKey, AdmissionLimits, CredentialPurpose, LIFETIME, PasswordChangeToken, PasswordError,
+    admit_password, begin, current_revision, now,
+};
 
 #[derive(sqlx::FromRow)]
 struct Issued {
@@ -20,9 +23,20 @@ pub async fn issue(
     pool: &PgPool,
     email: &str,
     clock: &dyn Clock,
+    key: &AdmissionKey,
+    limits: AdmissionLimits,
 ) -> Result<PasswordChangeToken, PasswordError> {
-    let identity = normalize_email(email).ok_or(PasswordError::Denied)?;
     let observed = ObservedClock::new(clock, 0);
+    admit_password(
+        pool,
+        CredentialPurpose::PasswordProofIssue,
+        email,
+        key,
+        limits,
+        &observed,
+    )
+    .await?;
+    let identity = normalize_email(email).ok_or(PasswordError::Denied)?;
     now(&observed)?;
     let mut tx = begin(pool).await?;
     let account: Option<i64> = sqlx::query_scalar(

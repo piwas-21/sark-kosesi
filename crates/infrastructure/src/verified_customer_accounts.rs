@@ -1,8 +1,9 @@
 //! Private verified identity establishment. This grants no session or order authority.
-use commerce_application::request_context::Clock;
+use commerce_application::request_context::{Clock, ObservedClock};
 use sqlx::PgPool;
 
 use super::{self as email_verification, VerificationError, VerificationToken};
+use crate::customer_credential_admission::{AdmissionKey, AdmissionLimits, CredentialPurpose};
 
 /// Identifies a committed private account. It grants no authentication authority.
 pub struct VerifiedCustomerAccountId(i64);
@@ -26,9 +27,22 @@ pub async fn establish(
     email: &str,
     token: &VerificationToken,
     clock: &dyn Clock,
+    key: &AdmissionKey,
+    limits: AdmissionLimits,
 ) -> Result<VerifiedCustomerAccountId, VerificationError> {
+    let observed = ObservedClock::new(clock, 0);
+    email_verification::admit_verification(
+        pool,
+        email,
+        key,
+        limits,
+        &observed,
+        CredentialPurpose::EmailVerificationConsume,
+    )
+    .await?;
     let mut tx = email_verification::begin(pool).await?;
-    let proof = email_verification::consume_in_transaction(&mut tx, email, token, clock).await?;
+    let proof =
+        email_verification::consume_in_transaction(&mut tx, email, token, &observed).await?;
     let result = sqlx::query_as::<_, CreatedAccountRow>(
         "INSERT INTO verified_customer_accounts(email_identity,verification_verifier,verified_at) VALUES ($1,$2,$3) RETURNING id,email_identity,verification_verifier,verified_at"
     ).bind(&proof.identity).bind(proof.verifier.as_slice()).bind(proof.captured)
@@ -49,7 +63,7 @@ pub async fn establish(
     {
         return Err(VerificationError::Unavailable);
     }
-    proof.check(clock)?;
+    proof.check(&observed)?;
     tx.commit()
         .await
         .map_err(|_| VerificationError::Unavailable)?;

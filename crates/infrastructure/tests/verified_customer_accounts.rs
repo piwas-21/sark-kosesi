@@ -1,8 +1,12 @@
+#[allow(dead_code)]
+#[path = "support/admitted_proofs.rs"]
+mod admitted_proofs;
+
+use admitted_proofs::{email_verification::issue, verified_customer_accounts::establish};
 use commerce_application::request_context::{Clock, ContextError};
 use commerce_infrastructure::{
     MIGRATOR,
-    email_verification::{VerificationError, VerificationToken, issue},
-    verified_customer_accounts::establish,
+    email_verification::{VerificationError, VerificationToken},
 };
 use sqlx::PgPool;
 use std::sync::atomic::{AtomicU64, Ordering};
@@ -106,11 +110,16 @@ impl Clock for SequenceClock {
 async fn expiry_after_account_insert_and_suppressed_writes_roll_back_both_effects(pool: PgPool) {
     let time = clock();
     let token = issue(&pool, "a@example.com", &time).await.expect("issue");
-    let expires = SequenceClock(std::sync::Mutex::new([1899, 1899, 1900].into()));
+    // Admission consumes four equal readings before the original proof sequence.
+    let expires = SequenceClock(std::sync::Mutex::new(
+        [1899, 1899, 1899, 1899, 1899, 1899, 1900].into(),
+    ));
     assert!(matches!(
         establish(&pool, "a@example.com", &token, &expires).await,
         Err(VerificationError::Denied)
     ));
+    // The admission debit retains 1899, so retries cannot rewind to 1000.
+    time.0.store(1899, Ordering::SeqCst);
     sqlx::query("CREATE FUNCTION suppress_account_write() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN RETURN NULL; END $$").execute(&pool).await.expect("fault");
     sqlx::query("CREATE TRIGGER suppress_account_insert BEFORE INSERT ON verified_customer_accounts FOR EACH ROW EXECUTE FUNCTION suppress_account_write()").execute(&pool).await.expect("fault");
     assert!(matches!(
@@ -233,7 +242,7 @@ async fn concurrent_same_proof_and_suppressed_consumption_cannot_create_detached
 async fn standalone_consumption_cannot_be_replayed_to_establish_account(pool: PgPool) {
     let time = clock();
     let token = issue(&pool, "a@example.com", &time).await.expect("issue");
-    commerce_infrastructure::email_verification::consume(&pool, "a@example.com", &token, &time)
+    admitted_proofs::email_verification::consume(&pool, "a@example.com", &token, &time)
         .await
         .expect("consume");
     assert!(matches!(
@@ -341,7 +350,7 @@ async fn database_requires_native_same_transaction_consumption_and_rejects_prefi
     let standalone = issue(&pool, "standalone@example.com", &time)
         .await
         .expect("issue");
-    commerce_infrastructure::email_verification::consume(
+    admitted_proofs::email_verification::consume(
         &pool,
         "standalone@example.com",
         &standalone,
@@ -371,18 +380,27 @@ async fn database_requires_native_same_transaction_consumption_and_rejects_prefi
 
 #[sqlx::test(migrations = false)]
 async fn upgrade_preserves_but_cannot_adopt_preexisting_consumption(pool: PgPool) {
+    use sha2::{Digest, Sha256};
     use sqlx::Executor;
     MIGRATOR.run_to(34, &pool).await.expect("challenge schema");
     let time = clock();
-    let used = issue(&pool, "legacy@example.com", &time)
-        .await
-        .expect("legacy issue");
-    commerce_infrastructure::email_verification::consume(&pool, "legacy@example.com", &used, &time)
-        .await
-        .expect("legacy committed consumption");
-    let fresh = issue(&pool, "fresh@example.com", &time)
-        .await
-        .expect("unconsumed legacy challenge");
+    // Build pre-admission history through the schema that originally owned it.
+    let fresh_bytes = [28; 32];
+    for (email, bytes) in [
+        ("legacy@example.com", [27; 32]),
+        ("fresh@example.com", fresh_bytes),
+    ] {
+        let digest: [u8; 32] = Sha256::new()
+            .chain_update(b"piwas:email-verification:verifier:v1\0")
+            .chain_update(bytes)
+            .finalize()
+            .into();
+        sqlx::query("INSERT INTO email_verification_challenges(verifier,purpose,email_identity,created_at,expires_at) VALUES($1,'email-verification-v1',$2,1000,1900)")
+            .bind(digest.as_slice()).bind(email).execute(&pool).await.expect("legacy challenge");
+    }
+    sqlx::query("UPDATE email_verification_challenges SET consumed_at=1000 WHERE email_identity='legacy@example.com'")
+        .execute(&pool).await.expect("legacy committed consumption");
+    let fresh = VerificationToken::from_bytes(fresh_bytes);
     MIGRATOR.run(&pool).await.expect("upgrade account schema");
     let legacy: (Option<i64>, bool) = sqlx::query_as("SELECT consumed_at, consumed_xid IS NULL FROM email_verification_challenges WHERE email_identity='legacy@example.com'").fetch_one(&pool).await.expect("preserved row");
     assert_eq!(legacy, (Some(1000), true));

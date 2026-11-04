@@ -8,6 +8,10 @@ use sha2::{Digest, Sha256};
 use sqlx::{PgPool, Postgres, Transaction};
 use zeroize::Zeroizing;
 
+use crate::customer_credential_admission::{
+    AdmissionError, AdmissionKey, AdmissionLimits, CredentialPurpose, admit,
+};
+
 pub use issue::issue;
 pub use replace::replace;
 
@@ -40,6 +44,22 @@ impl PasswordChangeToken {
 pub enum PasswordError {
     Denied,
     Unavailable,
+}
+
+async fn admit_password(
+    pool: &PgPool,
+    purpose: CredentialPurpose,
+    email: &str,
+    key: &AdmissionKey,
+    limits: AdmissionLimits,
+    clock: &dyn Clock,
+) -> Result<(), PasswordError> {
+    admit(pool, purpose, email, key, limits, clock)
+        .await
+        .map_err(|error| match error {
+            AdmissionError::Limited => PasswordError::Denied,
+            AdmissionError::Unavailable => PasswordError::Unavailable,
+        })
 }
 
 fn now(clock: &dyn Clock) -> Result<i64, PasswordError> {

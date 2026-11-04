@@ -757,3 +757,9 @@ account and a wrong password. Make the credential lookup unavailable in an
 isolated database and verify that exhausted admission still returns denial.
 Check that admitted lookup failures retain their debit and correct credentials
 still require working admission storage.
+
+Test proof admission at its trusted entry points. Interrupt proof storage in
+an isolated database and distinguish a saturated target from admitted lookup
+failure. Verify shared consumption and enrolment capacity, independent password
+issuance and replacement quotas, and successful rollover with the exact
+unspent proof.

@@ -1,18 +1,22 @@
 //! Guest order custody uses real accepted orders and verified customer sessions.
 
+#[allow(dead_code)]
+#[path = "support/admitted_proofs.rs"]
+mod admitted_proofs;
+
 #[path = "support/admitted_login.rs"]
 mod admitted_login;
+use admitted_proofs::{
+    customer_passwords, email_verification, verified_customer_accounts::establish,
+};
 use commerce_application::Locale;
 use commerce_infrastructure::{
     MIGRATOR,
     checkout_orders::create_order,
     checkout_quotes::issue_quote,
-    customer_passwords,
     customer_sessions::{self, CustomerSessionToken},
-    email_verification,
     guest_baskets::{GuestCredential, GuestSessionStore},
     guest_order_links::{self, GuestOrderLinkToken, LinkError},
-    verified_customer_accounts::establish,
 };
 use sha2::{Digest, Sha256};
 use sqlx::PgPool;

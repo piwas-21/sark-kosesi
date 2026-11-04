@@ -149,10 +149,10 @@ original expiry. A private guest-order link requires an order-specific proof
 issued to the guest basket owner and a current customer session for the verified
 buyer mailbox. Private detail and bounded history reads return the linked
 order's captured items and amounts under live customer authority. Private
-credential admission provides shared purpose and mailbox quotas. Login commits
-both debits before reading credentials or hashing a password. Admission for
-proof entry points, secure delivery, neutral browser responses and measured
-overload behavior remain P4 work.
+credential admission provides shared purpose and mailbox quotas. Login,
+email verification, enrolment and password proof operations commit both
+debits before credential work. Secure delivery, neutral browser responses and
+measured overload behavior remain P4 work.
 
 The local room-planner preview combines the rectangle calculator with keyboard
 measurement and rotation controls, a drawn footprint, and text clearance and fit

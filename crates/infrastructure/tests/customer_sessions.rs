@@ -1,12 +1,17 @@
+#[allow(dead_code)]
+#[path = "support/admitted_proofs.rs"]
+mod admitted_proofs;
+
 #[path = "support/admitted_login.rs"]
 mod admitted_login;
 
+use admitted_proofs::{
+    customer_passwords, email_verification, verified_customer_accounts::establish,
+};
 use commerce_application::request_context::{Clock, ContextError};
 use commerce_infrastructure::{
-    MIGRATOR, customer_passwords,
+    MIGRATOR,
     customer_sessions::{self, CustomerSessionToken, SessionError},
-    email_verification,
-    verified_customer_accounts::establish,
 };
 use sha2::{Digest, Sha256};
 use sqlx::PgPool;

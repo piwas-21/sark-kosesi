@@ -400,8 +400,10 @@ revision. Session claims require the same current credential revision. Rotation
 consumes the old bearer and issues one replacement within the original 12-hour
 window. Logout revokes the current bearer. The private login entry point commits
 its purpose and target quota debit before lookup or hashing and carries the same
-observed clock through issuance. Wire admission into the proof entry points.
-Complete secure delivery, password blocklist, trusted ingress, timing and
+observed clock through issuance. Verification and password proof operations also
+commit admission before accessing proof or credential state. Standalone proof
+consumption and verified account establishment share one target budget, with one
+debit per request. Complete secure delivery, password blocklist, trusted ingress, timing and
 browser controls before exposing the flow.
 
 Private guest-order linking requires a live guest basket credential and CSRF

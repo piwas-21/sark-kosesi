@@ -491,6 +491,12 @@ work. Exhausted quotas, unknown identities and incorrect passwords use the
 same denial. An admission storage or clock failure prevents login. This
 classification does not establish equivalent response timing.
 
+Email proof issuance and consumption, account establishment, password proof
+issuance and password replacement each require a committed debit before proof
+work. Standalone email proof consumption and account establishment use the
+same budget. A failed request retains its debit while the proof and any
+account or credential writes remain governed by their own transaction.
+
 Run all instances with the same trusted key version and limits. The active
 60-second window pins both. Switch configuration at a window boundary and
 coordinate key version changes across instances. Each purpose rejects a
