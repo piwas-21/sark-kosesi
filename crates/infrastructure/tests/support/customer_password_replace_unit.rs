@@ -189,7 +189,7 @@ async fn setup_account(pool: &PgPool) -> (i64, PasswordChangeToken) {
 
 #[sqlx::test(migrator = "MIGRATOR")]
 async fn suppressed_proof_consumption_leaves_it_usable(pool: PgPool) {
-    let _fixture = customer_passwords::TEST_HASH_FIXTURE.lock().await;
+    let _fixture = crate::customer_passwords::TEST_HASH_FIXTURE.lock().await;
     let (id, token) = setup_account(&pool).await;
     sqlx::query("CREATE FUNCTION suppress_password_consumption() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN RETURN NULL; END $$")
         .execute(&pool).await.expect("fault function");
@@ -228,7 +228,7 @@ async fn suppressed_proof_consumption_leaves_it_usable(pool: PgPool) {
 
 #[sqlx::test(migrator = "MIGRATOR")]
 async fn suppressed_reset_rolls_back_consumption_and_preserves_exact_old_credential(pool: PgPool) {
-    let _fixture = customer_passwords::TEST_HASH_FIXTURE.lock().await;
+    let _fixture = crate::customer_passwords::TEST_HASH_FIXTURE.lock().await;
     let (id, first) = setup_account(&pool).await;
     assert_eq!(
         customer_passwords::replace(
@@ -319,7 +319,7 @@ const CANONICAL_TEST_HASH: &str = "$argon2id$v=19$m=19456,t=2,p=1$AAAAAAAAAAAAAA
 
 #[sqlx::test(migrator = "MIGRATOR")]
 async fn competing_distinct_proof_cannot_replace_a_newer_revision_after_hashing(pool: PgPool) {
-    let _fixture = customer_passwords::TEST_HASH_FIXTURE.lock().await;
+    let _fixture = crate::customer_passwords::TEST_HASH_FIXTURE.lock().await;
     let (id, losing) = setup_account(&pool).await;
     let winning = customer_passwords::issue(&pool, "replacement-control@example.com", &TestClock)
         .await
@@ -370,7 +370,7 @@ async fn competing_distinct_proof_cannot_replace_a_newer_revision_after_hashing(
 
 #[sqlx::test(migrator = "MIGRATOR")]
 async fn substituted_canonical_hash_fails_final_check_and_rolls_back(pool: PgPool) {
-    let _fixture = customer_passwords::TEST_HASH_FIXTURE.lock().await;
+    let _fixture = crate::customer_passwords::TEST_HASH_FIXTURE.lock().await;
     let (id, token) = setup_account(&pool).await;
     // The trigger sorts after the native guard and changes only a valid PHC value.
     sqlx::query("CREATE FUNCTION substitute_password_hash() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN NEW.password_hash := '$argon2id$v=19$m=19456,t=2,p=1$AAAAAAAAAAAAAAAAAAAAAA$AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA'; RETURN NEW; END $$")
@@ -410,7 +410,7 @@ async fn substituted_canonical_hash_fails_final_check_and_rolls_back(pool: PgPoo
 
 #[sqlx::test(migrator = "MIGRATOR")]
 async fn source_drift_after_precheck_is_denied_without_consuming_proof(pool: PgPool) {
-    let _fixture = customer_passwords::TEST_HASH_FIXTURE.lock().await;
+    let _fixture = crate::customer_passwords::TEST_HASH_FIXTURE.lock().await;
     let (id, token) = setup_account(&pool).await;
     let digest = token.verifier();
     let mut blocker = pool.begin().await.expect("transaction");
@@ -463,7 +463,7 @@ async fn source_drift_after_precheck_is_denied_without_consuming_proof(pool: PgP
 
 #[sqlx::test(migrator = "MIGRATOR")]
 async fn account_identity_drift_after_precheck_is_denied(pool: PgPool) {
-    let _fixture = customer_passwords::TEST_HASH_FIXTURE.lock().await;
+    let _fixture = crate::customer_passwords::TEST_HASH_FIXTURE.lock().await;
     let (id, token) = setup_account(&pool).await;
     let digest = token.verifier();
     // Privileged fault injection simulates identity corruption despite native immutability.
@@ -520,7 +520,7 @@ impl Clock for ExpiresBeforeCommit {
 
 #[sqlx::test(migrator = "MIGRATOR")]
 async fn replacement_requires_the_native_fence_and_fresh_time_at_commit(pool: PgPool) {
-    let _fixture = customer_passwords::TEST_HASH_FIXTURE.lock().await;
+    let _fixture = crate::customer_passwords::TEST_HASH_FIXTURE.lock().await;
     let (id, token) = setup_account(&pool).await;
     let email = "replacement-control@example.com";
     let password = "long enough password";

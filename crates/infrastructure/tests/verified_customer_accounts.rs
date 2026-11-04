@@ -21,6 +21,36 @@ fn clock() -> TestClock {
     TestClock(AtomicU64::new(1000))
 }
 
+async fn wait_for_account_blocker(
+    pool: &PgPool,
+    blocker_pid: i32,
+    query_prefix: &str,
+    task: &tokio::task::JoinHandle<
+        Result<
+            commerce_infrastructure::verified_customer_accounts::VerifiedCustomerAccountId,
+            VerificationError,
+        >,
+    >,
+) {
+    let deadline = tokio::time::Instant::now() + std::time::Duration::from_secs(15);
+    loop {
+        assert!(
+            !task.is_finished(),
+            "account worker completed before its lock wait"
+        );
+        let waiting: bool = sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM pg_stat_activity WHERE datname=current_database() AND wait_event_type='Lock' AND $1=ANY(pg_blocking_pids(pid)) AND starts_with(query,$2))")
+            .bind(blocker_pid).bind(query_prefix).fetch_one(pool).await.expect("inspect exact account wait");
+        if waiting {
+            return;
+        }
+        assert!(
+            tokio::time::Instant::now() < deadline,
+            "worker never waited on the test's blocker"
+        );
+        tokio::time::sleep(std::time::Duration::from_millis(10)).await;
+    }
+}
+
 #[sqlx::test(migrator = "MIGRATOR")]
 async fn exact_proof_creates_immutable_unique_account_and_denials_preserve_proof(pool: PgPool) {
     let time = clock();
@@ -258,12 +288,16 @@ async fn standalone_consumption_cannot_be_replayed_to_establish_account(pool: Pg
 
 #[sqlx::test(migrator = "MIGRATOR")]
 async fn waiting_for_challenge_lock_does_not_extend_expiry(pool: PgPool) {
-    use std::{sync::Arc, time::Duration};
+    use std::sync::Arc;
     let time = Arc::new(clock());
     let token = issue(&pool, "a@example.com", time.as_ref())
         .await
         .expect("issue");
     let mut blocker = pool.begin().await.expect("transaction");
+    let blocker_pid = sqlx::query_scalar("SELECT pg_backend_pid()")
+        .fetch_one(&mut *blocker)
+        .await
+        .expect("blocker backend");
     sqlx::query("SELECT verifier FROM email_verification_challenges FOR UPDATE")
         .fetch_one(&mut *blocker)
         .await
@@ -273,16 +307,9 @@ async fn waiting_for_challenge_lock_does_not_extend_expiry(pool: PgPool) {
     let task = tokio::spawn(async move {
         establish(&worker_pool, "a@example.com", &token, worker_time.as_ref()).await
     });
-    let mut waiting = false;
-    for _ in 0..50 {
-        let count: i64 = sqlx::query_scalar("SELECT count(*) FROM pg_locks WHERE locktype='transactionid' AND NOT granted AND pid<>pg_backend_pid()").fetch_one(&pool).await.expect("locks");
-        if count > 0 {
-            waiting = true;
-            break;
-        }
-        tokio::time::sleep(Duration::from_millis(10)).await;
-    }
-    assert!(waiting && !task.is_finished());
+    wait_for_account_blocker(&pool, blocker_pid,
+        "SELECT created_at,expires_at,consumed_at FROM email_verification_challenges WHERE verifier=$1 AND purpose=$2 AND email_identity=$3 FOR UPDATE",
+        &task).await;
     time.0.store(1900, Ordering::SeqCst);
     blocker.commit().await.expect("release");
     assert!(matches!(
@@ -296,7 +323,7 @@ async fn waiting_for_challenge_lock_does_not_extend_expiry(pool: PgPool) {
 #[sqlx::test(migrator = "MIGRATOR")]
 async fn waiting_for_unique_email_does_not_extend_expiry(pool: PgPool) {
     use sha2::{Digest, Sha256};
-    use std::{sync::Arc, time::Duration};
+    use std::sync::Arc;
     let time = Arc::new(clock());
     let blocker_token = issue(&pool, "a@example.com", time.as_ref())
         .await
@@ -310,6 +337,10 @@ async fn waiting_for_unique_email_does_not_extend_expiry(pool: PgPool) {
         .finalize()
         .to_vec();
     let mut blocker = pool.begin().await.expect("transaction");
+    let blocker_pid = sqlx::query_scalar("SELECT pg_backend_pid()")
+        .fetch_one(&mut *blocker)
+        .await
+        .expect("blocker backend");
     sqlx::query("UPDATE email_verification_challenges SET consumed_at=1000 WHERE verifier=$1")
         .bind(&verifier)
         .execute(&mut *blocker)
@@ -321,22 +352,21 @@ async fn waiting_for_unique_email_does_not_extend_expiry(pool: PgPool) {
     let task = tokio::spawn(async move {
         establish(&worker_pool, "a@example.com", &token, worker_time.as_ref()).await
     });
-    let mut waiting = false;
-    for _ in 0..50 {
-        let count: i64 = sqlx::query_scalar("SELECT count(*) FROM pg_locks WHERE locktype='transactionid' AND NOT granted AND pid<>pg_backend_pid()").fetch_one(&pool).await.expect("locks");
-        if count > 0 {
-            waiting = true;
-            break;
-        }
-        tokio::time::sleep(Duration::from_millis(10)).await;
-    }
-    assert!(waiting && !task.is_finished());
+    wait_for_account_blocker(
+        &pool,
+        blocker_pid,
+        "INSERT INTO verified_customer_accounts",
+        &task,
+    )
+    .await;
     time.0.store(1900, Ordering::SeqCst);
     blocker.rollback().await.expect("release without account");
-    assert!(matches!(
-        task.await.expect("task"),
-        Err(VerificationError::Denied)
-    ));
+    let result = task.await.expect("task");
+    assert!(
+        matches!(&result, Err(VerificationError::Denied)),
+        "unexpected worker result: {:?}",
+        result.err()
+    );
     let counts: (i64,i64) = sqlx::query_as("SELECT (SELECT count(*) FROM verified_customer_accounts), (SELECT count(*) FROM email_verification_challenges WHERE consumed_at IS NOT NULL)").fetch_one(&pool).await.expect("counts");
     assert_eq!(counts, (0, 0));
 }
