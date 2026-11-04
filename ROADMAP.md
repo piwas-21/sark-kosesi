@@ -134,6 +134,12 @@ and HTTP admin writes remain unimplemented. Catalogue publication already uses
 the same persisted authority guard.
 Do not restart stack comparisons or redesign the accepted courtyard direction.
 
+Private P4 email-verification challenge custody now provides exact normalized
+identity binding, random bearer verifiers and single-use expiry under database
+locking. A private account primitive now consumes the exact challenge and inserts a unique
+immutable verified identity atomically. It creates no login or session; secure token
+transport, durable send custody, abuse controls and guest linking remain P4 work.
+
 Remaining delivery sequence: P0 business inputs in parallel → P2 inventory/catalogue → P3 checkout/payments → P4 customer/admin operations → P5 room planning and content → P6 acceptance → P7 controlled launch. Each phase has explicit exit evidence in the plan.
 
 External blockers: final brand/domain, real product specification/media, market/carrier/tax readiness, Mollie retail website approval, translated legal/product content, email delivery and recovery evidence. EU-wide intent is unchanged; an unready country cannot take payment.

@@ -356,6 +356,24 @@ No public guest checkout route, provider calls, payment acceptance or production
 activation follows from these private primitives. Preserve
 all nine CI gates and the approved courtyard visual source/baselines.
 
+## P4 email verification foundation
+
+Private SQLx custody issues a random challenge for a narrowly normalized mailbox
+and consumes it once under purpose, identity and fresh-clock checks. Its fixed
+15-minute expiry is checked after lock waits and again before commit; raw bearer
+bytes are returned to the trusted caller only. The schema and scope are specified
+in [security](SECURITY.md#private-email-verification-challenge-custody). This is
+no public registration, delivery or guest linking. A private account operation now
+locks and consumes that exact proof and inserts one unique immutable normalized
+identity in the same transaction; the database binds consumption and insertion to
+the same transaction, with legacy consumed proofs ineligible. Rust verifies bearer
+possession; the database write role remains trusted. Replay and duplicate identities deny without
+consuming another proof. A final fresh-clock check follows all writes and waits.
+The identifier grants no login, session, guest-order or other authority. Secure
+delivery, anti-enumeration and abuse controls remain required. Migrations 0034
+and 0035 must land after the separately reserved 0033 late-stock migration; no
+deployed migration state is implied.
+
 ## Next session prompt
 
 > Read AGENTS.md and ROADMAP.md, then docs/IMPLEMENTATION.md and its linked requirements. Continue P3 in small independently reviewed PRs to develop. Complete the country/territory readiness matrix and promotions, then durable guest checkout, atomic basket holds and immutable orders. Keep missing P0 facts and unready destinations blocked. Mollie work is sandbox-only; preserve stable payment attempts, reconcile unknown outcomes, fetch/verify notifications and recover late paid stock explicitly. Retain exact money/refund allocations, all real CI/review/merge gates, the approved courtyard design and disabled production. Report source/CI, provider, deployment and fulfilment evidence separately.

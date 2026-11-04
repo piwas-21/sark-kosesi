@@ -376,3 +376,31 @@ optional Traefik route and process are off by default, production remains reject
 and no secret is stored in routing labels. Its nonsensitive overwritten inflight
 group is only a resource bucket. Source tests cannot establish the actual proxy's
 read timeout, network identity or provider delivery.
+
+## Private email verification challenge custody
+
+The private challenge primitive accepts only ASCII dot-atom local parts and ASCII
+DNS domains. It preserves the local part's case, dots and plus tags exactly; only
+ASCII domain case is folded. It rejects Unicode, quoted local parts, address
+literals, single-label domains and malformed/oversized input. This deliberately
+narrow identity policy does not infer provider-specific aliases or prove delivery.
+
+The server generates 256 random bits and returns the bearer only to the trusted
+caller. PostgreSQL stores only its SHA-256 verifier, with a distinct versioned
+purpose domain, alongside the normalized identity and fixed 15-minute lifetime.
+Consumption serializes on the verifier and requires the same purpose and identity;
+server time is checked after lock waits and again after the update. An invalid,
+mismatched, expired or consumed challenge has the same denial. This primitive is
+not a public endpoint or a durable sending system. No bearer is
+placed in an outbox, logs or storage. Secure delivery custody, rate limits,
+anti-enumeration behavior, token transport, mailbox delivery and recovery remain
+separate requirements. Private verified account establishment composes the exact
+challenge consumption and a unique immutable normalized identity in one transaction.
+The database assigns the consumption transaction ID and requires the account insert
+to match; legacy or separately committed consumption cannot be adopted. This attests
+transaction custody, not possession: Rust verifies the bearer, and the database write
+role must remain trusted and inaccessible to untrusted clients.
+A duplicate identity or invalid proof denies and rolls back; suppressed writes,
+clock failures and expiry after a lock wait also cannot create detached success.
+The separately committing consume primitive cannot bridge a later account write.
+An account identifier grants no login, session, guest-order or production authority.
