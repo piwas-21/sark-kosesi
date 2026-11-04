@@ -7,5 +7,6 @@ test-results/
 playwright-report/
 
 packages/contracts/generated.ts
+packages/contracts/models.gen.ts
 packages/contracts/openapi.json
 **/.next/

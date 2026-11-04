@@ -13,6 +13,7 @@ export default tseslint.config(
       "**/.next/**",
       "target/**",
       "packages/contracts/generated.ts",
+      "packages/contracts/models.gen.ts",
       "apps/web/next-env.d.ts",
     ],
   },

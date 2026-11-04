@@ -17,7 +17,7 @@
     "hooks:install": "python3 scripts/install_hooks.py",
     "release:check": "python3 scripts/release_readiness.py",
     "gate:merge": "python3 scripts/merge_gate.py",
-    "lint": "ruff check scripts tests/tooling && eslint . && python3 scripts/check_application.py",
+    "lint": "ruff check scripts tests/tooling && node scripts/lint.mjs && python3 scripts/check_application.py",
     "format:check": "ruff format --check scripts tests/tooling && prettier --check \"*.{md,json,mjs,mts}\" \"docs/**/*.md\" \"config/*.json\" \".github/**/*.{yml,md}\" \"tests/**/*.{mjs,js,ts}\" \"apps/**/*.{ts,tsx,css,json,mjs}\" \"packages/**/*.{ts,tsx,css,json}\" \"design/*.md\"",
     "test:tooling": "PYTHONPATH=scripts python3 -m coverage run -m unittest discover -s tests/tooling -v && python3 -m coverage report && python3 -m coverage xml",
     "check:rust": "mkdir -p coverage && cargo fmt --all -- --check && cargo clippy --workspace --all-targets --all-features --locked --message-format=json -- -D warnings > coverage/clippy.json",
@@ -57,13 +57,18 @@
     "@testing-library/react": "16.3.3",
     "@testing-library/jest-dom": "7.0.1",
     "jsdom": "30.1.3",
-    "openapi-typescript": "7.13.0",
     "lighthouse": "13.5.0",
-    "server-only": "0.0.1"
+    "server-only": "0.0.1",
+    "@hey-api/openapi-ts": "0.97.3"
   },
   "workspaces": [
     "apps/web",
     "packages/design",
     "packages/contracts"
-  ]
+  ],
+  "overrides": {
+    "@hey-api/json-schema-ref-parser": {
+      "js-yaml": "4.3.2"
+    }
+  }
 }
