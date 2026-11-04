@@ -1,4 +1,7 @@
 //! Private linked-order reads over real accepted orders and live customer sessions.
+
+#[path = "support/admitted_login.rs"]
+mod admitted_login;
 use commerce_application::Locale;
 use commerce_domain::{checkout_quotes::CapturedAmount, publication::PublicationChoice};
 use commerce_infrastructure::{
@@ -46,7 +49,7 @@ async fn account(
     customer_passwords::replace(pool, email, &proof, "correct horse battery staple", time)
         .await
         .expect("password setup");
-    let token = customer_sessions::login(pool, email, "correct horse battery staple", time)
+    let token = admitted_login::login(pool, email, "correct horse battery staple", time)
         .await
         .expect("login")
         .token;
@@ -200,7 +203,7 @@ async fn owner_reads_only_the_captured_customer_projection_and_live_authority(po
         guest_order_links::read_linked_order(&pool, &owner, &id, time.as_ref()).await,
         Err(LinkError::Denied)
     ));
-    let current = customer_sessions::login(
+    let current = admitted_login::login(
         &pool,
         "buyer@example.test",
         "new correct horse battery staple",

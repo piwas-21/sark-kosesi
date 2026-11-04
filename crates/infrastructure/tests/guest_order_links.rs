@@ -1,4 +1,7 @@
 //! Guest order custody uses real accepted orders and verified customer sessions.
+
+#[path = "support/admitted_login.rs"]
+mod admitted_login;
 use commerce_application::Locale;
 use commerce_infrastructure::{
     MIGRATOR,
@@ -71,7 +74,7 @@ async fn account(
     customer_passwords::replace(pool, email, &proof, "correct horse battery staple", time)
         .await
         .expect("password setup");
-    let session = customer_sessions::login(pool, email, "correct horse battery staple", time)
+    let session = admitted_login::login(pool, email, "correct horse battery staple", time)
         .await
         .expect("session");
     (id, session.token)
@@ -289,7 +292,7 @@ async fn wrong_guest_csrf_account_order_token_and_stale_session_never_spend_proo
         Err(LinkError::Denied)
     ));
     assert_eq!(counts(&pool).await, (0, 0));
-    let current = customer_sessions::login(
+    let current = admitted_login::login(
         &pool,
         "buyer@example.test",
         "new correct horse battery staple",
@@ -427,7 +430,7 @@ async fn expiry_after_link_write_rolls_back_proof_and_link(pool: PgPool) {
     assert!(matches!(task.await.expect("join"), Err(LinkError::Denied)));
     assert_eq!(counts(&pool).await, (0, 0));
     time.0.store(1100, Ordering::SeqCst);
-    let current = customer_sessions::login(
+    let current = admitted_login::login(
         &pool,
         "buyer@example.test",
         "correct horse battery staple",

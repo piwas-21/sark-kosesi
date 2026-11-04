@@ -1,3 +1,6 @@
+#[path = "support/admitted_login.rs"]
+mod admitted_login;
+
 use commerce_application::request_context::{Clock, ContextError};
 use commerce_infrastructure::{
     MIGRATOR, customer_passwords,
@@ -73,12 +76,12 @@ async fn login_checks_identity_password_normalization_and_domain_separation(pool
         ("Case+tag@example.com", "café phrase longer"),
     ] {
         assert!(matches!(
-            customer_sessions::login(&pool, email, password, &time).await,
+            admitted_login::login(&pool, email, password, &time).await,
             Err(SessionError::Denied)
         ));
     }
     assert_eq!(count(&pool).await, 0);
-    let session = customer_sessions::login(
+    let session = admitted_login::login(
         &pool,
         "Case+tag@EXAMPLE.com",
         "  café phrase longer  ",
@@ -138,10 +141,9 @@ async fn password_reset_invalidates_existing_sessions_and_requires_new_password(
         set_password(&pool, "reset@example.com", "first-password-long", &time).await,
         1
     );
-    let session =
-        customer_sessions::login(&pool, "reset@example.com", "first-password-long", &time)
-            .await
-            .expect("first login");
+    let session = admitted_login::login(&pool, "reset@example.com", "first-password-long", &time)
+        .await
+        .expect("first login");
     assert_eq!(
         set_password(&pool, "reset@example.com", "second-password-long", &time).await,
         2
@@ -159,10 +161,10 @@ async fn password_reset_invalidates_existing_sessions_and_requires_new_password(
         Err(SessionError::Denied)
     ));
     assert!(matches!(
-        customer_sessions::login(&pool, "reset@example.com", "first-password-long", &time).await,
+        admitted_login::login(&pool, "reset@example.com", "first-password-long", &time).await,
         Err(SessionError::Denied)
     ));
-    let fresh = customer_sessions::login(&pool, "reset@example.com", "second-password-long", &time)
+    let fresh = admitted_login::login(&pool, "reset@example.com", "second-password-long", &time)
         .await
         .expect("new login");
     assert_eq!(
@@ -180,10 +182,9 @@ async fn rotation_preserves_deadline_and_logout_revokes_successor(pool: PgPool) 
     let time = clock();
     account(&pool, "rotate@example.com", &time).await;
     set_password(&pool, "rotate@example.com", "first-password-long", &time).await;
-    let initial =
-        customer_sessions::login(&pool, "rotate@example.com", "first-password-long", &time)
-            .await
-            .expect("login");
+    let initial = admitted_login::login(&pool, "rotate@example.com", "first-password-long", &time)
+        .await
+        .expect("login");
     time.0.store(2000, Ordering::SeqCst);
     let next = customer_sessions::rotate(&pool, &initial.token, &time)
         .await
@@ -238,7 +239,7 @@ async fn simultaneous_rotation_has_exactly_one_successor(pool: PgPool) {
         &time,
     )
     .await;
-    let initial = customer_sessions::login(
+    let initial = admitted_login::login(
         &pool,
         "concurrent@example.com",
         "first-password-long",
@@ -265,7 +266,7 @@ async fn expiry_while_waiting_for_session_lock_denies_and_preserves_row(pool: Pg
     let time = Arc::new(clock());
     account(&pool, "wait@example.com", &time).await;
     set_password(&pool, "wait@example.com", "first-password-long", &time).await;
-    let initial = customer_sessions::login(
+    let initial = admitted_login::login(
         &pool,
         "wait@example.com",
         "first-password-long",
@@ -321,10 +322,9 @@ async fn native_sql_rejects_orphan_detached_and_wrong_revision_rotation(pool: Pg
     let time = clock();
     let id = account(&pool, "native@example.com", &time).await;
     set_password(&pool, "native@example.com", "first-password-long", &time).await;
-    let initial =
-        customer_sessions::login(&pool, "native@example.com", "first-password-long", &time)
-            .await
-            .expect("login");
+    let initial = admitted_login::login(&pool, "native@example.com", "first-password-long", &time)
+        .await
+        .expect("login");
     let prior = digest(&initial.token);
     let orphan = vec![31u8; 32];
     assert!(sqlx::query("INSERT INTO customer_sessions(verifier,account_id,credential_revision,created_at,expires_at,rotated_from) VALUES ($1,$2,1,1001,44200,$3)")
@@ -400,7 +400,7 @@ async fn login_verified_before_password_reset_cannot_issue_after_reset(pool: PgP
     let worker_pool = pool.clone();
     let worker_time = time.clone();
     let task = tokio::spawn(async move {
-        customer_sessions::login(
+        admitted_login::login(
             &worker_pool,
             "race@example.com",
             "first-password-long",
@@ -437,7 +437,7 @@ async fn login_verified_before_password_reset_cannot_issue_after_reset(pool: PgP
         Err(SessionError::Denied)
     ));
     assert_eq!(count(&pool).await, 0);
-    let fresh = customer_sessions::login(
+    let fresh = admitted_login::login(
         &pool,
         "race@example.com",
         "second-password-long",
@@ -465,7 +465,7 @@ async fn late_clock_failures_roll_back_both_rotation_writes(pool: PgPool) {
         &time,
     )
     .await;
-    let initial = customer_sessions::login(
+    let initial = admitted_login::login(
         &pool,
         "late-clock@example.com",
         "first-password-long",
@@ -546,7 +546,7 @@ async fn password_reset_wins_against_rotation_waiting_for_account(pool: PgPool) 
         &time,
     )
     .await;
-    let initial = customer_sessions::login(
+    let initial = admitted_login::login(
         &pool,
         "rotation-race@example.com",
         "first-password-long",
@@ -622,7 +622,7 @@ async fn password_reset_wins_against_rotation_waiting_for_account(pool: PgPool) 
         customer_sessions::authenticate(&pool, &initial.token, time.as_ref()).await,
         Err(SessionError::Denied)
     ));
-    let fresh = customer_sessions::login(
+    let fresh = admitted_login::login(
         &pool,
         "rotation-race@example.com",
         "second-password-long",

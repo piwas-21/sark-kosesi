@@ -486,6 +486,11 @@ input shares a dedicated target bucket. Apply the policy before account
 lookup so unknown and known mailboxes consume the same budgets. Counters
 contain neither plaintext mailboxes nor the key.
 
+The login operation requires admission before any credential lookup or Argon2
+work. Exhausted quotas, unknown identities and incorrect passwords use the
+same denial. An admission storage or clock failure prevents login. This
+classification does not establish equivalent response timing.
+
 Run all instances with the same trusted key version and limits. The active
 60-second window pins both. Switch configuration at a window boundary and
 coordinate key version changes across instances. Each purpose rejects a

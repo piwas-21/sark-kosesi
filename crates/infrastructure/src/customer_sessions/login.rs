@@ -5,14 +5,28 @@ use sqlx::PgPool;
 use super::{
     CustomerIdentity, CustomerSessionToken, IssuedSession, LIFETIME, SessionError, begin, now,
 };
-use crate::customer_passwords::{PasswordError, hash::verify_password};
+use crate::{
+    customer_credential_admission::{
+        AdmissionError, AdmissionKey, AdmissionLimits, CredentialPurpose, admit,
+    },
+    customer_passwords::{PasswordError, hash::verify_password},
+};
 
-#[derive(sqlx::FromRow)]
+#[derive(sqlx::FromRow, PartialEq, Eq)]
 struct Credential {
     account_id: i64,
     revision: i32,
     password_hash: String,
     changed_at: i64,
+}
+
+impl Credential {
+    fn can_issue(&self, initial: &Self, verified_at: i64, issued_at: i64) -> bool {
+        verified_at.min(self.changed_at) >= 0
+            && verified_at.max(self.changed_at) <= issued_at
+            && self.revision > 0
+            && self == initial
+    }
 }
 
 /// Verify outside a transaction, then issue only against the same locked credential.
@@ -21,9 +35,23 @@ pub async fn login(
     email: &str,
     password: &str,
     clock: &dyn Clock,
+    key: &AdmissionKey,
+    limits: AdmissionLimits,
 ) -> Result<IssuedSession, SessionError> {
     let observed = ObservedClock::new(clock, 0);
-    now(&observed)?;
+    admit(
+        pool,
+        CredentialPurpose::Login,
+        email,
+        key,
+        limits,
+        &observed,
+    )
+    .await
+    .map_err(|error| match error {
+        AdmissionError::Limited => SessionError::Denied,
+        AdmissionError::Unavailable => SessionError::Unavailable,
+    })?;
     let identity = normalize_email(email);
     let mut lookup = begin(pool).await?;
     let initial: Option<Credential> = sqlx::query_as("SELECT a.id AS account_id,c.revision,left(c.password_hash,98) AS password_hash,c.changed_at FROM verified_customer_accounts a JOIN customer_password_credentials c ON c.account_id=a.id WHERE a.email_identity=$1")
@@ -56,15 +84,7 @@ pub async fn login(
         .bind(initial.account_id).fetch_optional(&mut *tx).await.map_err(|_| SessionError::Unavailable)?;
     let current = current.ok_or(SessionError::Denied)?;
     let created = now(&observed)?;
-    if verified_at < 0
-        || verified_at > created
-        || current.revision <= 0
-        || current.changed_at < 0
-        || current.changed_at > created
-        || current.revision != initial.revision
-        || current.password_hash != initial.password_hash
-        || current.changed_at != initial.changed_at
-    {
+    if !current.can_issue(&initial, verified_at, created) {
         return Err(SessionError::Denied);
     }
     let expires = created
@@ -96,4 +116,34 @@ pub async fn login(
             expires_at: expires,
         },
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::Credential;
+
+    #[test]
+    fn issuance_requires_current_exact_credential_and_valid_chronology() {
+        let verified = Credential {
+            account_id: 7,
+            revision: 2,
+            password_hash: "verified fixture hash".into(),
+            changed_at: 100,
+        };
+        assert!(verified.can_issue(&verified, 90, 100));
+        assert!(!verified.can_issue(&verified, -1, 100));
+        assert!(!verified.can_issue(&verified, 90, 99));
+        let invalid_revision = Credential {
+            account_id: 7,
+            revision: 0,
+            password_hash: verified.password_hash.clone(),
+            changed_at: 100,
+        };
+        assert!(!invalid_revision.can_issue(&invalid_revision, 90, 100));
+        let replaced = Credential {
+            password_hash: "replaced fixture hash".into(),
+            ..verified
+        };
+        assert!(!replaced.can_issue(&verified, 90, 100));
+    }
 }

@@ -1597,3 +1597,7 @@ A later failure or cancellation of the credential operation leaves the debit
 in place. A successful window rollover removes the expired counters for that
 purpose and starts fresh counts in the same transaction. Never perform Argon2
 or network work while holding quota locks.
+
+Private login accepts an explicit trusted admission key and limits. After the
+admission transaction commits, login uses the same observed clock for its
+credential lookup and revision-bound session issuance.

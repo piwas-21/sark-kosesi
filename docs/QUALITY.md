@@ -751,3 +751,9 @@ selection after a real lock wait. Test native constraints, backwards or
 unavailable time, stale key versions and inconsistent active configuration.
 Inspect target rows for fixed-length digests and bounded rollover. Public
 enumeration, timing and overload acceptance remain separate.
+
+At the actual login entry point, compare denial and quota debits for an unknown
+account and a wrong password. Make the credential lookup unavailable in an
+isolated database and verify that exhausted admission still returns denial.
+Check that admitted lookup failures retain their debit and correct credentials
+still require working admission storage.
