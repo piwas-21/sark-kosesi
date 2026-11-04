@@ -41,6 +41,11 @@ describe("local room planner", () => {
       "aria-invalid",
       "true",
     );
+    change(room().getByLabelText("Width (cm)"), "10001");
+    click(copy.check);
+    expect(room().getByLabelText("Width (cm)")).toHaveAccessibleDescription(
+      expect.stringContaining("at most 100 m"),
+    );
     change(room().getByLabelText("Width (cm)"), "400");
     expect(room().getByLabelText("Width (cm)")).toHaveAttribute(
       "aria-invalid",

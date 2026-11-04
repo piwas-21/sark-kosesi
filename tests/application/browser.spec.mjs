@@ -334,6 +334,10 @@ test("@journey room planner checks rotation and clearance locally", async ({
   await page.reload();
   await expect(room.getByLabel("Width (cm)")).toHaveValue("");
   await expect(page.getByLabel("Unit of measurement")).toBeEnabled();
+  await room.getByLabel("Width (cm)").fill("400");
+  await page.getByLabel("Language").selectOption("ar");
+  await expect(page).toHaveURL(/\/ar\/room-planner$/);
+  await expect(page.locator("#plan-room-width")).toHaveValue("");
 });
 
 for (const locale of ["nl", "ar"])
