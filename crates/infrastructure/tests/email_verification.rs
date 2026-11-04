@@ -99,7 +99,8 @@ async fn issued_verifier_is_domain_separated_and_never_stores_the_bearer(pool: P
             "email_identity",
             "created_at",
             "expires_at",
-            "consumed_at"
+            "consumed_at",
+            "consumed_xid"
         ]
     );
     assert!(

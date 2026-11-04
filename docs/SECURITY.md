@@ -396,6 +396,10 @@ placed in an outbox, logs or storage. Secure delivery custody, rate limits,
 anti-enumeration behavior, token transport, mailbox delivery and recovery remain
 separate requirements. Private verified account establishment composes the exact
 challenge consumption and a unique immutable normalized identity in one transaction.
+The database assigns the consumption transaction ID and requires the account insert
+to match; legacy or separately committed consumption cannot be adopted. This attests
+transaction custody, not possession: Rust verifies the bearer, and the database write
+role must remain trusted and inaccessible to untrusted clients.
 A duplicate identity or invalid proof denies and rolls back; suppressed writes,
 clock failures and expiry after a lock wait also cannot create detached success.
 The separately committing consume primitive cannot bridge a later account write.

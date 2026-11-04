@@ -264,3 +264,66 @@ async fn waiting_for_unique_email_does_not_extend_expiry(pool: PgPool) {
     let counts: (i64,i64) = sqlx::query_as("SELECT (SELECT count(*) FROM verified_customer_accounts), (SELECT count(*) FROM email_verification_challenges WHERE consumed_at IS NOT NULL)").fetch_one(&pool).await.expect("counts");
     assert_eq!(counts, (0, 0));
 }
+
+#[sqlx::test(migrator = "MIGRATOR")]
+async fn database_requires_native_same_transaction_consumption_and_rejects_prefilled_custody(
+    pool: PgPool,
+) {
+    use sqlx::Executor;
+    let time = clock();
+    let standalone = issue(&pool, "standalone@example.com", &time)
+        .await
+        .expect("issue");
+    commerce_infrastructure::email_verification::consume(
+        &pool,
+        "standalone@example.com",
+        &standalone,
+        &time,
+    )
+    .await
+    .expect("consume and commit");
+    assert!(pool.execute("INSERT INTO verified_customer_accounts(email_identity,verification_verifier,verified_at) SELECT email_identity,verifier,consumed_at FROM email_verification_challenges WHERE email_identity='standalone@example.com'").await.is_err(), "committed consumption is not adoptable");
+    assert!(pool.execute("INSERT INTO email_verification_challenges(verifier,purpose,email_identity,created_at,expires_at,consumed_at,consumed_xid) VALUES (decode(repeat('ab',32),'hex'),'email-verification-v1','prefill@example.com',1000,1900,1000,pg_current_xact_id())").await.is_err(), "caller cannot prefill consumption");
+    assert!(pool.execute("INSERT INTO email_verification_challenges(verifier,purpose,email_identity,created_at,expires_at,consumed_xid) VALUES (decode(repeat('ac',32),'hex'),'email-verification-v1','prefill@example.com',1000,1900,pg_current_xact_id())").await.is_err(), "caller cannot prefill xid alone");
+    let _token = issue(&pool, "native@example.com", &time)
+        .await
+        .expect("issue");
+    assert!(pool.execute("UPDATE email_verification_challenges SET consumed_at=1000,consumed_xid=pg_current_xact_id() WHERE email_identity='native@example.com'").await.is_err(), "caller cannot choose consumption xid");
+    let mut tx = pool.begin().await.expect("transaction");
+    sqlx::query("UPDATE email_verification_challenges SET consumed_at=1000 WHERE email_identity='native@example.com'").execute(&mut *tx).await.expect("native consumption");
+    let inserted = sqlx::query("INSERT INTO verified_customer_accounts(email_identity,verification_verifier,verified_at) SELECT email_identity,verifier,consumed_at FROM email_verification_challenges WHERE email_identity='native@example.com'").execute(&mut *tx).await.expect("same transaction evidence");
+    assert_eq!(inserted.rows_affected(), 1);
+    tx.commit().await.expect("commit");
+    assert!(pool.execute("UPDATE email_verification_challenges SET consumed_xid=pg_current_xact_id() WHERE email_identity='native@example.com'").await.is_err(), "consumed custody is immutable");
+    let count: i64 = sqlx::query_scalar("SELECT count(*) FROM verified_customer_accounts")
+        .fetch_one(&pool)
+        .await
+        .expect("count");
+    assert_eq!(count, 1);
+}
+
+#[sqlx::test(migrations = false)]
+async fn upgrade_preserves_but_cannot_adopt_preexisting_consumption(pool: PgPool) {
+    use sqlx::Executor;
+    MIGRATOR.run_to(34, &pool).await.expect("challenge schema");
+    let time = clock();
+    let used = issue(&pool, "legacy@example.com", &time)
+        .await
+        .expect("legacy issue");
+    commerce_infrastructure::email_verification::consume(&pool, "legacy@example.com", &used, &time)
+        .await
+        .expect("legacy committed consumption");
+    let fresh = issue(&pool, "fresh@example.com", &time)
+        .await
+        .expect("unconsumed legacy challenge");
+    MIGRATOR.run(&pool).await.expect("upgrade account schema");
+    let legacy: (Option<i64>, bool) = sqlx::query_as("SELECT consumed_at, consumed_xid IS NULL FROM email_verification_challenges WHERE email_identity='legacy@example.com'").fetch_one(&pool).await.expect("preserved row");
+    assert_eq!(legacy, (Some(1000), true));
+    assert!(pool.execute("INSERT INTO verified_customer_accounts(email_identity,verification_verifier,verified_at) SELECT email_identity,verifier,consumed_at FROM email_verification_challenges WHERE email_identity='legacy@example.com'").await.is_err(), "legacy consumed proof cannot be adopted");
+    assert!(
+        establish(&pool, "fresh@example.com", &fresh, &time)
+            .await
+            .is_ok(),
+        "unconsumed legacy proof remains usable"
+    );
+}

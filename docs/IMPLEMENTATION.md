@@ -365,7 +365,9 @@ bytes are returned to the trusted caller only. The schema and scope are specifie
 in [security](SECURITY.md#private-email-verification-challenge-custody). This is
 no public registration, delivery or guest linking. A private account operation now
 locks and consumes that exact proof and inserts one unique immutable normalized
-identity in the same transaction; replay and duplicate identities deny without
+identity in the same transaction; the database binds consumption and insertion to
+the same transaction, with legacy consumed proofs ineligible. Rust verifies bearer
+possession; the database write role remains trusted. Replay and duplicate identities deny without
 consuming another proof. A final fresh-clock check follows all writes and waits.
 The identifier grants no login, session, guest-order or other authority. Secure
 delivery, anti-enumeration and abuse controls remain required. Migrations 0034

@@ -1425,7 +1425,10 @@ separate work. Private test attempts and initial dispatch custody are described 
 
 A private PostgreSQL operation locks and consumes an exact email challenge while
 inserting a unique immutable customer identity and its verification reference in
-one transaction. The final freshness check follows the insert and any uniqueness
-wait. The public standalone challenge consumer commits independently and cannot
+one transaction. A database-assigned transaction ID on the consumption must match
+the account insert transaction; legacy consumed challenges cannot be adopted. This
+database check attests transaction custody, while Rust verifies token possession;
+the database write role is trusted and must not be exposed to untrusted clients.
+The final freshness check follows the insert and any uniqueness wait. The public standalone challenge consumer commits independently and cannot
 be used to establish an account later. No password, session, guest-order link,
 delivery, endpoint or production authority follows from this identity record.
