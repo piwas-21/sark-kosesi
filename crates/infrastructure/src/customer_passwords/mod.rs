@@ -14,6 +14,10 @@ pub use replace::replace;
 const DOMAIN: &[u8] = b"piwas:customer-password-change:verifier:v1\0";
 const LIFETIME: i64 = 900;
 
+// Keep independent unit fixtures from exhausting the production hash admission limit.
+#[cfg(test)]
+static TEST_HASH_FIXTURE: tokio::sync::Mutex<()> = tokio::sync::Mutex::const_new(());
+
 /// Secret bearer for trusted delivery only. It is never stored or logged.
 pub struct PasswordChangeToken(Zeroizing<[u8; 32]>);
 impl PasswordChangeToken {

@@ -114,6 +114,7 @@ async fn setup_account(pool: &PgPool) -> (i64, PasswordChangeToken) {
 
 #[sqlx::test(migrator = "MIGRATOR")]
 async fn suppressed_proof_consumption_leaves_it_usable(pool: PgPool) {
+    let _fixture = customer_passwords::TEST_HASH_FIXTURE.lock().await;
     let (id, token) = setup_account(&pool).await;
     sqlx::query("CREATE FUNCTION suppress_password_consumption() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN RETURN NULL; END $$")
         .execute(&pool).await.expect("fault function");
@@ -152,6 +153,7 @@ async fn suppressed_proof_consumption_leaves_it_usable(pool: PgPool) {
 
 #[sqlx::test(migrator = "MIGRATOR")]
 async fn suppressed_reset_rolls_back_consumption_and_preserves_exact_old_credential(pool: PgPool) {
+    let _fixture = customer_passwords::TEST_HASH_FIXTURE.lock().await;
     let (id, first) = setup_account(&pool).await;
     assert_eq!(
         customer_passwords::replace(
@@ -212,34 +214,53 @@ async fn suppressed_reset_rolls_back_consumption_and_preserves_exact_old_credent
     );
 }
 
-async fn wait_for_account_lock(pool: &PgPool) {
-    for _ in 0..80 {
-        let waiting: bool = sqlx::query_scalar("SELECT EXISTS (SELECT 1 FROM pg_stat_activity WHERE datname=current_database() AND pid<>pg_backend_pid() AND wait_event_type='Lock' AND query='SELECT id FROM verified_customer_accounts WHERE id=$1 AND email_identity=$2 FOR UPDATE')")
-            .fetch_one(pool).await.expect("lock status");
+async fn wait_for_account_lock(
+    pool: &PgPool,
+    blocker_pid: i32,
+    worker: &mut tokio::task::JoinHandle<Result<i32, PasswordError>>,
+) {
+    let deadline = tokio::time::Instant::now() + std::time::Duration::from_secs(15);
+    loop {
+        if worker.is_finished() {
+            panic!(
+                "replacement finished before waiting on the account lock: {:?}",
+                worker.await
+            );
+        }
+        let waiting: bool = sqlx::query_scalar("SELECT EXISTS (SELECT 1 FROM pg_stat_activity WHERE datname=current_database() AND $1=ANY(pg_blocking_pids(pid)) AND wait_event_type='Lock' AND query='SELECT id FROM verified_customer_accounts WHERE id=$1 AND email_identity=$2 FOR UPDATE')")
+            .bind(blocker_pid).fetch_one(pool).await.expect("lock status");
         if waiting {
             return;
         }
+        assert!(
+            tokio::time::Instant::now() < deadline,
+            "replacement did not reach the account lock held by the test transaction"
+        );
         tokio::time::sleep(std::time::Duration::from_millis(10)).await;
     }
-    panic!("replacement did not reach the account lock");
 }
 
 const CANONICAL_TEST_HASH: &str = "$argon2id$v=19$m=19456,t=2,p=1$AAAAAAAAAAAAAAAAAAAAAA$AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA";
 
 #[sqlx::test(migrator = "MIGRATOR")]
 async fn competing_distinct_proof_cannot_replace_a_newer_revision_after_hashing(pool: PgPool) {
+    let _fixture = customer_passwords::TEST_HASH_FIXTURE.lock().await;
     let (id, losing) = setup_account(&pool).await;
     let winning = customer_passwords::issue(&pool, "replacement-control@example.com", &TestClock)
         .await
         .expect("competing proof");
     let mut blocker = pool.begin().await.expect("transaction");
+    let blocker_pid: i32 = sqlx::query_scalar("SELECT pg_backend_pid()")
+        .fetch_one(&mut *blocker)
+        .await
+        .expect("blocker pid");
     sqlx::query("SELECT id FROM verified_customer_accounts WHERE id=$1 FOR UPDATE")
         .bind(id)
         .fetch_one(&mut *blocker)
         .await
         .expect("hold account");
     let worker_pool = pool.clone();
-    let worker = tokio::spawn(async move {
+    let mut worker = tokio::spawn(async move {
         customer_passwords::replace(
             &worker_pool,
             "replacement-control@example.com",
@@ -249,7 +270,7 @@ async fn competing_distinct_proof_cannot_replace_a_newer_revision_after_hashing(
         )
         .await
     });
-    wait_for_account_lock(&pool).await;
+    wait_for_account_lock(&pool, blocker_pid, &mut worker).await;
     sqlx::query("UPDATE customer_password_challenges SET consumed_at=1000 WHERE verifier=$1")
         .bind(winning.verifier().as_slice())
         .execute(&mut *blocker)
@@ -274,6 +295,7 @@ async fn competing_distinct_proof_cannot_replace_a_newer_revision_after_hashing(
 
 #[sqlx::test(migrator = "MIGRATOR")]
 async fn substituted_canonical_hash_fails_final_check_and_rolls_back(pool: PgPool) {
+    let _fixture = customer_passwords::TEST_HASH_FIXTURE.lock().await;
     let (id, token) = setup_account(&pool).await;
     // The trigger sorts after the native guard and changes only a valid PHC value.
     sqlx::query("CREATE FUNCTION substitute_password_hash() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN NEW.password_hash := '$argon2id$v=19$m=19456,t=2,p=1$AAAAAAAAAAAAAAAAAAAAAA$AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA'; RETURN NEW; END $$")
@@ -313,16 +335,21 @@ async fn substituted_canonical_hash_fails_final_check_and_rolls_back(pool: PgPoo
 
 #[sqlx::test(migrator = "MIGRATOR")]
 async fn source_drift_after_precheck_is_denied_without_consuming_proof(pool: PgPool) {
+    let _fixture = customer_passwords::TEST_HASH_FIXTURE.lock().await;
     let (id, token) = setup_account(&pool).await;
     let digest = token.verifier();
     let mut blocker = pool.begin().await.expect("transaction");
+    let blocker_pid: i32 = sqlx::query_scalar("SELECT pg_backend_pid()")
+        .fetch_one(&mut *blocker)
+        .await
+        .expect("blocker pid");
     sqlx::query("SELECT id FROM verified_customer_accounts WHERE id=$1 FOR UPDATE")
         .bind(id)
         .fetch_one(&mut *blocker)
         .await
         .expect("hold account");
     let worker_pool = pool.clone();
-    let worker = tokio::spawn(async move {
+    let mut worker = tokio::spawn(async move {
         customer_passwords::replace(
             &worker_pool,
             "replacement-control@example.com",
@@ -332,7 +359,7 @@ async fn source_drift_after_precheck_is_denied_without_consuming_proof(pool: PgP
         )
         .await
     });
-    wait_for_account_lock(&pool).await;
+    wait_for_account_lock(&pool, blocker_pid, &mut worker).await;
     // Privileged fault injection simulates changed source despite the native immutability guard.
     sqlx::query("ALTER TABLE customer_password_challenges DISABLE TRIGGER guard_customer_password_challenge").execute(&mut *blocker).await.expect("inject source drift");
     sqlx::query(
@@ -361,6 +388,7 @@ async fn source_drift_after_precheck_is_denied_without_consuming_proof(pool: PgP
 
 #[sqlx::test(migrator = "MIGRATOR")]
 async fn account_identity_drift_after_precheck_is_denied(pool: PgPool) {
+    let _fixture = customer_passwords::TEST_HASH_FIXTURE.lock().await;
     let (id, token) = setup_account(&pool).await;
     let digest = token.verifier();
     // Privileged fault injection simulates identity corruption despite native immutability.
@@ -371,13 +399,17 @@ async fn account_identity_drift_after_precheck_is_denied(pool: PgPool) {
     .await
     .expect("inject identity drift");
     let mut blocker = pool.begin().await.expect("transaction");
+    let blocker_pid: i32 = sqlx::query_scalar("SELECT pg_backend_pid()")
+        .fetch_one(&mut *blocker)
+        .await
+        .expect("blocker pid");
     sqlx::query("SELECT id FROM verified_customer_accounts WHERE id=$1 FOR UPDATE")
         .bind(id)
         .fetch_one(&mut *blocker)
         .await
         .expect("hold account");
     let worker_pool = pool.clone();
-    let worker = tokio::spawn(async move {
+    let mut worker = tokio::spawn(async move {
         customer_passwords::replace(
             &worker_pool,
             "replacement-control@example.com",
@@ -387,7 +419,7 @@ async fn account_identity_drift_after_precheck_is_denied(pool: PgPool) {
         )
         .await
     });
-    wait_for_account_lock(&pool).await;
+    wait_for_account_lock(&pool, blocker_pid, &mut worker).await;
     sqlx::query("UPDATE verified_customer_accounts SET email_identity='changed-control@example.com' WHERE id=$1").bind(id).execute(&mut *blocker).await.expect("alter identity");
     blocker.commit().await.expect("release account");
     assert_eq!(worker.await.expect("worker"), Err(PasswordError::Denied));
@@ -412,6 +444,7 @@ impl Clock for ExpiresBeforeCommit {
 
 #[sqlx::test(migrator = "MIGRATOR")]
 async fn replacement_requires_the_native_fence_and_fresh_time_at_commit(pool: PgPool) {
+    let _fixture = customer_passwords::TEST_HASH_FIXTURE.lock().await;
     let (id, token) = setup_account(&pool).await;
     let email = "replacement-control@example.com";
     let password = "long enough password";

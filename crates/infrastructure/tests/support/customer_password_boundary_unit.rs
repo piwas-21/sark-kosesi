@@ -35,6 +35,7 @@ fn clock_and_token_boundary_fail_closed() {
 
 #[tokio::test]
 async fn password_boundary_checks_normalized_length_and_argon2_parameters() {
+    let _fixture = TEST_HASH_FIXTURE.lock().await;
     for rejected in [
         "abcdefghijklmn".to_owned(),
         "e\u{301}".repeat(14),
