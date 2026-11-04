@@ -13,6 +13,7 @@ pub enum ReversalPhase {
     RefundRefunded,
     RefundFailed,
     RefundCanceled,
+    ChargebackReversalUnknown,
     ChargebackReceived,
     ChargebackReversed,
 }
@@ -87,12 +88,14 @@ struct Chargeback {
     mode: Option<PaymentMode>,
     amount: wire::Amount,
     created_at: String,
-    // `deserialize_with` prevents Serde treating a missing field as null.
-    #[serde(deserialize_with = "required_nullable")]
-    reversed_at: Option<String>,
+    // The schema permits omission. Only explicit null records an unreversed observation.
+    #[serde(default, deserialize_with = "nullable_timestamp")]
+    reversed_at: Option<Option<String>>,
 }
-fn required_nullable<'de, D: serde::Deserializer<'de>>(d: D) -> Result<Option<String>, D::Error> {
-    Option::<String>::deserialize(d)
+fn nullable_timestamp<'de, D: serde::Deserializer<'de>>(
+    d: D,
+) -> Result<Option<Option<String>>, D::Error> {
+    Option::<String>::deserialize(d).map(Some)
 }
 fn optional_mode<'de, D: serde::Deserializer<'de>>(d: D) -> Result<Option<PaymentMode>, D::Error> {
     PaymentMode::deserialize(d).map(Some)
@@ -110,10 +113,10 @@ fn child_id(id: &str, prefix: &str) -> bool {
         && id.trim() == id
         && !id.chars().any(char::is_control)
 }
-fn amount(value: wire::Amount, maximum: i64) -> Result<i64, MollieError> {
+fn amount(value: wire::Amount) -> Result<i64, MollieError> {
     let commerce_domain::Currency::EUR = value.currency;
     let minor = wire::minor(&value.value)?;
-    if minor <= 0 || minor > maximum {
+    if minor <= 0 {
         return Err(MollieError::PaymentMismatch);
     }
     Ok(minor)
@@ -182,20 +185,18 @@ impl VerifiedReconciliationClient {
                 return Err(MollieError::PaymentMismatch);
             }
             let created = timestamp(&item.created_at)?;
-            let reversed = item.reversed_at.as_deref().map(timestamp).transpose()?;
-            if reversed.is_some_and(|at| at < created) {
-                return Err(MollieError::InvalidResponse);
-            }
-            (
-                if reversed.is_some() {
-                    ReversalPhase::ChargebackReversed
-                } else {
-                    ReversalPhase::ChargebackReceived
-                },
-                amount(item.amount, payment.payment.amount_minor)?,
-                created,
-                reversed,
-            )
+            let (phase, reversed) = match item.reversed_at {
+                None => (ReversalPhase::ChargebackReversalUnknown, None),
+                Some(None) => (ReversalPhase::ChargebackReceived, None),
+                Some(Some(value)) => {
+                    let reversed = timestamp(&value)?;
+                    if reversed < created {
+                        return Err(MollieError::InvalidResponse);
+                    }
+                    (ReversalPhase::ChargebackReversed, Some(reversed))
+                }
+            };
+            (phase, amount(item.amount)?, created, reversed)
         } else {
             let item: Refund =
                 serde_json::from_slice(&body).map_err(|_| MollieError::InvalidResponse)?;
@@ -216,7 +217,7 @@ impl VerifiedReconciliationClient {
             };
             (
                 phase,
-                amount(item.amount, payment.payment.amount_minor)?,
+                amount(item.amount)?,
                 timestamp(&item.created_at)?,
                 None,
             )

@@ -87,6 +87,15 @@ async fn exact_observation_retains_minimal_bound_provenance_and_all_documented_p
         .expect("chargeback");
     assert_eq!(result.phase(), ReversalPhase::ChargebackReceived);
     let mut item = chargeback();
+    item["mode"] = "test".into();
+    item.as_object_mut().expect("object").remove("reversedAt");
+    let result = run(Reply::Json(200, item), true)
+        .await
+        .expect("authentic chargeback with unspecified reversal status");
+    assert_eq!(result.phase(), ReversalPhase::ChargebackReversalUnknown);
+    assert_eq!(result.amount_minor(), 1234);
+    assert!(result.reversed_at().is_none());
+    let mut item = chargeback();
     item["reversedAt"] = "2024-03-21T09:13:37+00:00".into();
     let result = run(Reply::Json(200, item), true).await.expect("reversed");
     assert_eq!(result.phase(), ReversalPhase::ChargebackReversed);
@@ -96,6 +105,19 @@ async fn exact_observation_retains_minimal_bound_provenance_and_all_documented_p
     );
 }
 #[tokio::test]
+async fn a_refund_above_the_paid_amount_remains_visible_as_provider_evidence() {
+    let mut item = refund();
+    item["amount"]["value"] = "395.00".into();
+    item["status"] = "refunded".into();
+    let observation = run(Reply::Json(200, item), false)
+        .await
+        .expect("preserve an externally observed refund amount");
+    assert_eq!(observation.attempt().binding.amount_minor, 38245);
+    assert_eq!(observation.amount_minor(), 39500);
+    assert_eq!(observation.phase(), ReversalPhase::RefundRefunded);
+}
+
+#[tokio::test]
 async fn child_identity_money_mode_phase_and_timestamps_fail_closed() {
     for (pointer, value) in [
         ("/resource", json!("chargeback")),
@@ -104,12 +126,13 @@ async fn child_identity_money_mode_phase_and_timestamps_fail_closed() {
         ("/mode", json!("live")),
         ("/amount/currency", json!("USD")),
         ("/amount/value", json!("0.00")),
-        ("/amount/value", json!("382.46")),
+        ("/amount/value", json!("90071992547409.92")),
         ("/amount/value", json!("01.00")),
         ("/amount/value", json!(12.34)),
         ("/amount", json!(["EUR", "12.34"])),
         ("/status", json!("unknown")),
         ("/createdAt", json!("2024-02-30T09:13:37Z")),
+        ("/createdAt", json!("x".repeat(65))),
     ] {
         let mut item = refund();
         *item.pointer_mut(pointer).expect("field") = value;
@@ -122,7 +145,7 @@ async fn child_identity_money_mode_phase_and_timestamps_fail_closed() {
         ("/resource", json!("refund")),
         ("/id", json!("chb_OTHER")),
         ("/paymentId", json!("tr_OTHER")),
-        ("/amount/value", json!("382.46")),
+        ("/amount/value", json!("90071992547409.92")),
         ("/reversedAt", json!(false)),
         ("/reversedAt", json!("2024-02-30T00:00:00Z")),
         ("/reversedAt", json!("not a time")),
@@ -152,9 +175,6 @@ async fn child_identity_money_mode_phase_and_timestamps_fail_closed() {
         .await,
         Err(MollieError::InvalidResponse)
     ));
-    let mut item = chargeback();
-    item.as_object_mut().expect("object").remove("reversedAt");
-    assert!(run(Reply::Json(200, item), true).await.is_err());
     assert!(matches!(
         run(Reply::Json(404, json!({})), false).await,
         Err(MollieError::Unavailable)

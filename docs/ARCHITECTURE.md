@@ -470,9 +470,13 @@ the frozen order, attempt, profile and amount. The bounded child read validates
 its identity, parent, positive EUR amount, documented refund phase or typed
 chargeback reversal timestamp, and retains only minimal in-memory provenance.
 The chargeback schema has no required mode. Test scope derives from the verified
-parent and test credential. Unknown responses and 404 leave the child unresolved.
+parent and test credential. An omitted reversal timestamp leaves reversal status
+unknown. Unknown responses and 404 leave the child unresolved.
 The project follows Mollie's [refund GET](https://docs.mollie.com/reference/get-refund)
 and [chargeback GET](https://docs.mollie.com/reference/get-chargeback) contracts.
+Authenticated amounts above the original remain visible for review. Some methods
+allow additional reimbursement, such as return shipping. [Mollie payment reference](https://docs.mollie.com/reference/get-payment)
+
 Durable observation custody, paginated discovery and reservation disposition
 remain separate work. Financial and inventory transitions are outside this read path.
 
