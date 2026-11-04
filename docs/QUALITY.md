@@ -717,3 +717,14 @@ exercise detached consumption, cross-account proof and revision jumps.
 Measure proof freshness after an actual lock wait. Check that only the current
 hash remains and that the stored challenge verifier differs from the bearer
 and registration verifier. These checks establish private credential custody.
+
+### Private customer sessions
+
+Use isolated PostgreSQL with real verified accounts and current password
+hashes. Check wrong or missing credentials, verifier domains, reset racing
+login, stale sessions after reset, fixed expiry, logout and concurrent
+rotation. Verify a real database wait cannot extend authority and failed
+rotation leaves the prior bearer usable. Use direct SQL controls for detached
+rotation, incorrect revision and mismatched successor. Apply the critical
+95% native line and branch policy to the session adapter. Browser and mailbox
+acceptance require separate evidence.

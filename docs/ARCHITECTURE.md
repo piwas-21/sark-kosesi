@@ -1539,7 +1539,22 @@ the revision and time, and commits the consumed proof with the new current
 password hash. A database-assigned transaction identity and reciprocal deferred
 check bind both writes. The caller flushes that check before the final clock
 check. Historical challenges retain their consumed status, with only the current
-hash in the credential table. A future login must recheck the credential
-revision under the account claim before issuing authority and invalidate
-sessions tied to earlier revisions. Secure delivery, blocklist, abuse limits,
-browser access and session issuance remain separate.
+hash in the credential table.
+
+### Private customer sessions
+
+Private password login reads the bounded current credential, releases the
+database transaction and verifies it using the same bounded Argon2id worker
+as replacement. An absent credential gets a dummy verification for valid
+password input. Before issuing authority, claim the account and recheck the
+exact hash and revision. Store only a domain-separated verifier for the
+random bearer and return the bearer only after commit.
+
+A session lasts at most 12 hours. A password reset invalidates prior sessions
+by advancing the credential revision. Current reads claim the account and
+session before checking revision, revocation and fresh time. The returned
+identity is a detached snapshot. Future protected writes must hold live session
+authority in their own transaction. Rotation revokes the old bearer and
+inserts one successor with the original expiry in a single transaction. Native
+same-transaction custody and a deferred check bind both effects. Complete
+secure delivery, blocklist, abuse limits and browser integration separately.

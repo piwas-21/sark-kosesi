@@ -445,3 +445,18 @@ Only the current hash remains in the live credential table. Backup retention
 and deletion still require the release privacy policy. A public recovery flow
 also requires a reviewed compromised-password check, uniform responses and
 timing, safe transport and distributed abuse controls.
+
+## Private customer sessions
+
+Issue 256-bit random bearers after verifying the exact current credential.
+Use a SHA-256 verifier domain distinct from password proof and staff or guest
+tokens. Never log or persist bearer bytes. Hash verification runs outside the
+database transaction and only accepts the reviewed Argon2id profile. A dummy
+hash covers absent credentials with otherwise valid inputs. Public
+anti-enumeration behavior and ingress rate controls require separate checks.
+
+Claim the account before the session, and reject stale credential revisions,
+revoked sessions and expiry after waits. Rotation creates one reciprocal
+successor without extending the original expiry. Flush completion before the
+last clock check. Logout revokes the current bearer. Browser cookies, Origin
+and CSRF controls and protected-write authorization remain separate.

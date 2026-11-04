@@ -394,10 +394,12 @@ verified identity and current credential revision. Hash the proposed password
 outside the transaction, then lock the account and recheck the exact proof.
 Consume the challenge and replace the current Argon2id hash atomically. Flush
 the deferred completeness check before the final clock check. Older challenges
-cannot overwrite a newer credential. Login must bind rotating sessions to the
-current credential revision so reset invalidates earlier authority. Complete
-secure delivery, password blocklist, rate limiting and browser controls before
-exposing the flow.
+cannot overwrite a newer credential. Private login verifies the password outside
+the transaction and claims the account before rechecking the exact hash and
+revision. Session claims require the same current credential revision. Rotation
+consumes the old bearer and issues one replacement within the original 12-hour
+window. Logout revokes the current bearer. Complete secure delivery, password
+blocklist, rate limiting and browser controls before exposing the flow.
 
 ## P5 room-fit foundation
 

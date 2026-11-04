@@ -1,5 +1,5 @@
 //! Private password change custody. This module creates no session or login authority.
-mod hash;
+pub(crate) mod hash;
 mod issue;
 mod replace;
 

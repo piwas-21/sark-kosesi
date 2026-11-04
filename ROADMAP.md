@@ -143,9 +143,10 @@ Private P4 email-verification challenge custody now provides exact normalized
 identity binding, random bearer verifiers and single-use expiry under database
 locking. A private account primitive now consumes the exact challenge and inserts a unique
 immutable verified identity atomically. A separate revision-bound password proof
-now supports initial setup and replacement of the current Argon2id hash. Login,
-rotating sessions, secure token delivery, abuse controls and guest linking remain
-P4 work.
+now supports initial setup and replacement of the current Argon2id hash. Private
+password login issues revocable, revision-bound sessions. Rotation preserves the
+original expiry. Secure token delivery, browser integration, abuse controls and
+guest linking remain P4 work.
 
 The local room-planner preview combines the rectangle calculator with keyboard
 measurement and rotation controls, a drawn footprint, and text clearance and fit
