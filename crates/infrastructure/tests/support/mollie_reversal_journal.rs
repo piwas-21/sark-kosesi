@@ -474,7 +474,7 @@ async fn per_attempt_capacity_denies_new_facts_but_retains_historical_replay(poo
         .await
         .expect("source positive");
     let mut tx = pool.begin().await.expect("bounded native fixture");
-    for i in 0..127_u128 {
+    for i in 0..126_u128 {
         let id = format!("{:032x}", 1_000_000_u128 + i);
         let event_id = format!("{:032x}", 2_000_000_u128 + i);
         let effect = format!("capacity-{i}");
@@ -485,6 +485,40 @@ async fn per_attempt_capacity_denies_new_facts_but_retains_historical_replay(poo
             .expect("exact paired fixture event");
     }
     tx.commit().await.expect("bounded fixture commits");
+    let mut blocker = pool.begin().await.expect("hold the last-slot claim");
+    sqlx::query("SELECT id FROM payment_attempts WHERE id=$1 FOR UPDATE")
+        .bind(&first.attempt_id)
+        .fetch_one(&mut *blocker)
+        .await
+        .expect("claim before both requests");
+    let release_when_both_wait = async {
+        let mut waiting = 0;
+        for _ in 0..70 {
+            waiting = sqlx::query_scalar::<_, i64>(
+                "SELECT count(*) FROM pg_stat_activity WHERE datname=current_database()
+                 AND pid<>pg_backend_pid() AND wait_event_type='Lock'
+                 AND query='SELECT left(basket_id,33) FROM payment_attempts WHERE id=$1 FOR UPDATE'",
+            )
+            .fetch_one(&pool)
+            .await
+            .expect("attempt claim waiters");
+            if waiting == 2 {
+                break;
+            }
+            tokio::time::sleep(Duration::from_millis(10)).await;
+        }
+        assert_eq!(waiting, 2, "both requests must contend for the last slot");
+        blocker.commit().await.expect("release the claim");
+    };
+    let (a, b, ()) = tokio::join!(
+        record(&pool, time.as_ref(), &ids, "capacity-race-a", &fact),
+        record(&pool, time.as_ref(), &ids, "capacity-race-b", &fact),
+        release_when_both_wait,
+    );
+    assert!(matches!(
+        (a, b),
+        (Ok(_), Err(PaymentStoreError::Unavailable)) | (Err(PaymentStoreError::Unavailable), Ok(_))
+    ));
     assert!(matches!(
         record(&pool, time.as_ref(), &ids, "capacity-exceeded", &fact).await,
         Err(PaymentStoreError::Unavailable)
