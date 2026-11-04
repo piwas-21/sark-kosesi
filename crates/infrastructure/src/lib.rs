@@ -103,3 +103,5 @@ pub mod payment_attempts;
 pub mod order_stock;
 
 pub mod late_stock;
+
+pub use email_verification::verified_customer_accounts;

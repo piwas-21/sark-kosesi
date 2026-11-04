@@ -391,9 +391,12 @@ purpose domain, alongside the normalized identity and fixed 15-minute lifetime.
 Consumption serializes on the verifier and requires the same purpose and identity;
 server time is checked after lock waits and again after the update. An invalid,
 mismatched, expired or consumed challenge has the same denial. This primitive is
-not a public endpoint, a verified account or a durable sending system. No bearer is
+not a public endpoint or a durable sending system. No bearer is
 placed in an outbox, logs or storage. Secure delivery custody, rate limits,
 anti-enumeration behavior, token transport, mailbox delivery and recovery remain
-separate requirements. A future durable account effect must compose consumption
-in the same transaction; this separately committing primitive cannot safely bridge
-a crash before a later account write and does not replay consumption as success.
+separate requirements. Private verified account establishment composes the exact
+challenge consumption and a unique immutable normalized identity in one transaction.
+A duplicate identity or invalid proof denies and rolls back; suppressed writes,
+clock failures and expiry after a lock wait also cannot create detached success.
+The separately committing consume primitive cannot bridge a later account write.
+An account identifier grants no login, session, guest-order or production authority.

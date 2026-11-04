@@ -1,8 +1,11 @@
 //! Private challenge custody. Possession alone grants no account or order authority.
+#[path = "verified_customer_accounts.rs"]
+pub mod verified_customer_accounts;
+
 use commerce_application::request_context::Clock;
 use commerce_domain::email_identity::normalize_email;
 use sha2::{Digest, Sha256};
-use sqlx::PgPool;
+use sqlx::{PgPool, Postgres, Transaction};
 
 const PURPOSE: &str = "email-verification-v1";
 const DOMAIN: &[u8] = b"piwas:email-verification:verifier:v1\0";
@@ -92,8 +95,16 @@ pub async fn consume(
     token: &VerificationToken,
     clock: &dyn Clock,
 ) -> Result<(), VerificationError> {
-    let identity = normalize_email(email).ok_or(VerificationError::Denied)?;
-    let started = now(clock)?;
+    let mut tx = begin(pool).await?;
+    let guard = consume_in_transaction(&mut tx, email, token, clock).await?;
+    guard.check(clock)?;
+    tx.commit()
+        .await
+        .map_err(|_| VerificationError::Unavailable)?;
+    Ok(())
+}
+
+async fn begin(pool: &PgPool) -> Result<Transaction<'_, Postgres>, VerificationError> {
     let mut tx = pool
         .begin()
         .await
@@ -108,9 +119,41 @@ pub async fn consume(
     .execute(&mut *tx)
     .await
     .map_err(|_| VerificationError::Unavailable)?;
+    Ok(tx)
+}
+
+// The guard is private to this module and its account child. The caller must check it
+// after all dependent writes, immediately before committing the transaction.
+struct Consumption {
+    identity: String,
+    verifier: [u8; 32],
+    captured: i64,
+    expires: i64,
+}
+impl Consumption {
+    fn check(&self, clock: &dyn Clock) -> Result<(), VerificationError> {
+        let final_now = now(clock)?;
+        if final_now < self.captured {
+            return Err(VerificationError::Unavailable);
+        }
+        if final_now >= self.expires {
+            return Err(VerificationError::Denied);
+        }
+        Ok(())
+    }
+}
+
+async fn consume_in_transaction(
+    tx: &mut Transaction<'_, Postgres>,
+    email: &str,
+    token: &VerificationToken,
+    clock: &dyn Clock,
+) -> Result<Consumption, VerificationError> {
+    let identity = normalize_email(email).ok_or(VerificationError::Denied)?;
+    let started = now(clock)?;
     let verifier = token.verifier();
     let row: Option<(i64, i64, Option<i64>)> = sqlx::query_as("SELECT created_at,expires_at,consumed_at FROM email_verification_challenges WHERE verifier=$1 AND purpose=$2 AND email_identity=$3 FOR UPDATE")
-        .bind(verifier.as_slice()).bind(PURPOSE).bind(identity).fetch_optional(&mut *tx).await.map_err(|_| VerificationError::Unavailable)?;
+        .bind(verifier.as_slice()).bind(PURPOSE).bind(&identity).fetch_optional(&mut **tx).await.map_err(|_| VerificationError::Unavailable)?;
     let Some((created, expires, consumed)) = row else {
         return Err(VerificationError::Denied);
     };
@@ -125,21 +168,16 @@ pub async fn consume(
         sqlx::query("UPDATE email_verification_challenges SET consumed_at=$2 WHERE verifier=$1")
             .bind(verifier.as_slice())
             .bind(captured)
-            .execute(&mut *tx)
+            .execute(&mut **tx)
             .await
             .map_err(|_| VerificationError::Unavailable)?;
     if updated.rows_affected() != 1 {
         return Err(VerificationError::Unavailable);
     }
-    let final_now = now(clock)?;
-    if final_now < captured {
-        return Err(VerificationError::Unavailable);
-    }
-    if final_now >= expires {
-        return Err(VerificationError::Denied);
-    }
-    tx.commit()
-        .await
-        .map_err(|_| VerificationError::Unavailable)?;
-    Ok(())
+    Ok(Consumption {
+        identity,
+        verifier,
+        captured,
+        expires,
+    })
 }

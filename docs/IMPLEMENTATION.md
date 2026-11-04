@@ -363,11 +363,14 @@ and consumes it once under purpose, identity and fresh-clock checks. Its fixed
 15-minute expiry is checked after lock waits and again before commit; raw bearer
 bytes are returned to the trusted caller only. The schema and scope are specified
 in [security](SECURITY.md#private-email-verification-challenge-custody). This is
-not registration, delivery or guest linking. A future durable account operation
-must compose consumption and its account effect within its own transaction: calling
-the separately committing primitive first leaves a crash gap, and replay is denial.
-Safe delivery, anti-enumeration and abuse controls also remain required. Migration 0034 must land after the separately
-reserved 0033 late-stock migration; no deployed migration state is implied.
+no public registration, delivery or guest linking. A private account operation now
+locks and consumes that exact proof and inserts one unique immutable normalized
+identity in the same transaction; replay and duplicate identities deny without
+consuming another proof. A final fresh-clock check follows all writes and waits.
+The identifier grants no login, session, guest-order or other authority. Secure
+delivery, anti-enumeration and abuse controls remain required. Migrations 0034
+and 0035 must land after the separately reserved 0033 late-stock migration; no
+deployed migration state is implied.
 
 ## Next session prompt
 

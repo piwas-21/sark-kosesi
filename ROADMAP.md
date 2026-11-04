@@ -136,8 +136,9 @@ Do not restart stack comparisons or redesign the accepted courtyard direction.
 
 Private P4 email-verification challenge custody now provides exact normalized
 identity binding, random bearer verifiers and single-use expiry under database
-locking. It creates no account or delivery; secure token transport, durable send
-custody, abuse controls and account-bound consumption remain future P4 work.
+locking. A private account primitive now consumes the exact challenge and inserts a unique
+immutable verified identity atomically. It creates no login or session; secure token
+transport, durable send custody, abuse controls and guest linking remain P4 work.
 
 Remaining delivery sequence: P0 business inputs in parallel → P2 inventory/catalogue → P3 checkout/payments → P4 customer/admin operations → P5 room planning and content → P6 acceptance → P7 controlled launch. Each phase has explicit exit evidence in the plan.
 
