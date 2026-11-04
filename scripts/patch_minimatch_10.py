@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
-"""Prototype only: apply the upstream minimatch 10.2.6 backport to an owned install.
+"""Apply the upstream minimatch 10.2.6 backport to an owned install.
 
-Not wired into installation or CI. This does not address minimatch 5 or audit status.
+The lint launcher applies this before loading ESLint. npm audit remains unchanged.
 The edits port isaacs/minimatch commit 77a0f5c4b80bdc641c3c930a1d9edf5ad2db57f8
 to the published 10.2.6 JavaScript distributions. A partial write fails closed on
 the next invocation; reinstall the original package rather than repairing it here.
@@ -119,7 +119,7 @@ def main():
         check(args.project, args.apply)
     except (OSError, ValueError) as error:
         parser.exit(1, f"Minimatch backport rejected: {error}\n")
-    print("Minimatch 10.2.6 backport verified; v5 and npm audit remain unresolved")
+    print("Minimatch 10.2.6 backport verified; npm audit remains unchanged")
 
 
 if __name__ == "__main__":

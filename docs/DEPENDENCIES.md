@@ -76,7 +76,7 @@ execute the same worker configuration, verified GET orchestration and redacted
 reporting code. No package version, production dependency or provider-origin
 configuration changes; the existing MIT/Apache-2.0 review applies.
 
-## Temporary development tooling exception
+## Development minimatch advisory
 
 `GHSA-g3hv-75wg-m249` is a moderate resource-exhaustion advisory affecting the
 locked `minimatch` 10.2.6 and 5.1.9 copies in ESLint, typescript-eslint and the
@@ -86,16 +86,22 @@ The advisory's fix is 11.0.1, outside the installed parents' declared major rang
 Current compatible parent metadata still selects those older major ranges.
 See the [reviewed advisory](https://github.com/advisories/GHSA-g3hv-75wg-m249).
 
-Exception owner: Piwas engineering. Recorded 2026-10-31; expires at 2026-11-03T00:00:00Z.
-Scope: private, non-production development and CI only. Patterns and generated
-contract inputs remain repository-controlled, and existing CI job timeouts remain
-active. No remote customer pattern input is accepted by this tooling. Keep the
-finding visible in audit evidence; no audit/check suppression or forced major
-transitive override is approved. Ownership, payment, high/critical findings and
-production dependency changes receive no exception. Before expiry, adopt and
-validate compatible upstream fixes or replace the affected development tools;
-otherwise this exception ceases to permit the affected work. Production release
-requires a fresh dependency/image review and an unexpired disposition of findings.
+The prior development-only exception expired at 2026-11-03T00:00:00Z; it does not authorize continued affected work. No replacement exception is recorded.
+The lint entrypoint applies a development-only backport of upstream minimatch
+[commit 77a0f5c](https://github.com/isaacs/minimatch/commit/77a0f5c4b80bdc641c3c930a1d9edf5ad2db57f8)
+to the locked 10.2.6 CommonJS and ESM distributions before loading ESLint. It
+checks original and patched SHA-256 digests, package metadata, both file states
+and the installed consumers' resolution; unknown bytes, mixed states, symlinks
+or unexpected consumers fail the lint gate. An interrupted patch requires a
+fresh `npm ci --ignore-scripts`. The normal tooling tests exercise both module
+formats, bounded expansion, healthy matching and rejection controls. This alters
+only the local installed package and does not change npm's lock or audit result.
+
+The separate 5.1.9 generator dependency remains unresolved until removed or
+fixed. The backport does not change its code or suppress the audit finding; no
+forced-major override or audit waiver is approved. Patterns and contract inputs
+remain repository-controlled, with CI timeouts in effect. Production release
+still requires a fresh dependency/image review and disposition of findings.
 
 The payment-request application now directly uses the already locked `serde`,
 `serde_json` 1.0.154, `sha2` 0.10.9 and `url` 2.5.8 packages. Their existing

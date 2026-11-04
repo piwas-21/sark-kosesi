@@ -1,4 +1,4 @@
-"""Isolated prototype controls; requires a pristine local npm install as input."""
+"""Isolated controls for the locked package, launcher and consumer resolution."""
 
 import importlib.util
 import json
@@ -37,8 +37,9 @@ console.log(JSON.stringify({
 
 class MinimatchBackport(unittest.TestCase):
     def setUp(self):
-        source = Path(os.environ["SARK_MINIMATCH_SOURCE_DIR"])
-        self.node = os.environ["SARK_NODE"]
+        source = ROOT / "node_modules"
+        self.node = shutil.which("node")
+        self.assertIsNotNone(self.node)
         self.assertEqual(
             subprocess.check_output([self.node, "--version"], text=True).strip(), "v24.22.1"
         )
@@ -50,6 +51,17 @@ class MinimatchBackport(unittest.TestCase):
         for name in ("minimatch", "brace-expansion", "balanced-match"):
             shutil.copytree(source / name, modules / name)
         self.package = modules / "minimatch"
+        # The normal lint entrypoint may already have patched the owned install.
+        # Reconstruct an independently hash-checked pristine fixture in either state.
+        for relative, (original, patched) in PATCH.FILES.items():
+            path = self.package / relative
+            data = path.read_bytes()
+            if PATCH.digest(data) == patched:
+                for before, after in PATCH.REPLACEMENTS:
+                    self.assertEqual(data.count(after), 1)
+                    data = data.replace(after, before)
+                path.write_bytes(data)
+            self.assertEqual(PATCH.digest(data), original)
 
     def probe(self, mode):
         path = self.package / "dist" / mode / "index.js"
@@ -110,7 +122,7 @@ class MinimatchBackport(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "metadata"):
             PATCH.check(self.project, apply=True)
         shutil.rmtree(self.project / "node_modules")
-        (self.project / "node_modules").symlink_to(Path(os.environ["SARK_MINIMATCH_SOURCE_DIR"]))
+        (self.project / "node_modules").symlink_to(ROOT / "node_modules")
         with self.assertRaisesRegex(ValueError, "Symlink"):
             PATCH.check(self.project, apply=True)
 
@@ -142,6 +154,61 @@ class MinimatchBackport(unittest.TestCase):
         self.assertNotEqual(subprocess.run(command, capture_output=True).returncode, 0)
         self.assertEqual(subprocess.run([*command, "--apply"], capture_output=True).returncode, 0)
         self.assertEqual(subprocess.run(command, capture_output=True).returncode, 0)
+
+    def prepare_consumers(self):
+        shutil.copy(ROOT / "package-lock.json", self.project / "package-lock.json")
+        for name in ("eslint", "@eslint/config-array", "@typescript-eslint/typescript-estree"):
+            target = self.project / "node_modules" / name
+            target.mkdir(parents=True, exist_ok=True)
+            shutil.copy(ROOT / "node_modules" / name / "package.json", target / "package.json")
+        scripts = self.project / "scripts"
+        scripts.mkdir()
+        for name in ("lint.mjs", "check_minimatch_consumers.mjs", "patch_minimatch_10.py"):
+            shutil.copy(ROOT / "scripts" / name, scripts / name)
+        eslint = self.project / "node_modules/eslint/bin/eslint.js"
+        eslint.parent.mkdir()
+        eslint.write_text("require('node:fs').writeFileSync('eslint-ran', 'yes');")
+
+    def test_launcher_applies_patch_and_stops_before_eslint_on_unknown_resolution(self):
+        self.prepare_consumers()
+        command = [self.node, str(self.project / "scripts/lint.mjs")]
+        self.assertEqual(subprocess.run(command, capture_output=True).returncode, 0)
+        self.assertTrue((self.project / "eslint-ran").is_file())
+        PATCH.check(self.project)
+        (self.project / "eslint-ran").unlink()
+        shadow = self.project / "node_modules/@eslint/config-array/node_modules/minimatch"
+        shadow.mkdir(parents=True)
+        (shadow / "package.json").write_text('{"main":"index.js"}')
+        (shadow / "index.js").write_text("module.exports = {};")
+        result = subprocess.run(command, capture_output=True, text=True)
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("Unexpected minimatch resolution", result.stderr)
+        self.assertFalse((self.project / "eslint-ran").exists())
+
+    def test_launcher_stops_before_eslint_on_tampering_and_changed_graph(self):
+        self.prepare_consumers()
+        command = [self.node, str(self.project / "scripts/lint.mjs")]
+        target = self.package / "dist/commonjs/index.js"
+        target.write_bytes(target.read_bytes() + b"tamper")
+        result = subprocess.run(command, capture_output=True, text=True)
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("Unknown minimatch source", result.stderr)
+        self.assertFalse((self.project / "eslint-ran").exists())
+        lock_path = self.project / "package-lock.json"
+        lock = json.loads(lock_path.read_text())
+        lock["packages"]["node_modules/extra"] = {"dependencies": {"minimatch": "^10.2.4"}}
+        lock_path.write_text(json.dumps(lock))
+        result = subprocess.run(
+            [
+                self.node,
+                str(self.project / "scripts/check_minimatch_consumers.mjs"),
+                str(self.project),
+            ],
+            capture_output=True,
+            text=True,
+        )
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("Unexpected minimatch 10 consumer graph", result.stderr)
 
 
 if __name__ == "__main__":
