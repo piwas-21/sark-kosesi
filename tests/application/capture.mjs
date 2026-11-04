@@ -4,6 +4,7 @@ import { mkdir, writeFile, readFile } from "node:fs/promises";
 import { createHash } from "node:crypto";
 import { execFileSync } from "node:child_process";
 import { visualContext, themeReady } from "./visual-context.mjs";
+import { fillPlannerPreview } from "./planner-fixture.mjs";
 const base = process.env.WEB_BASE_URL;
 const token = process.env.PREVIEW_TOKEN;
 if (!base || !token) throw new Error("Owned app fixture required");
@@ -35,6 +36,7 @@ for (const [name, type] of Object.entries({ chromium, firefox, webkit })) {
     for (const width of [1280, 390])
       for (const surface of [
         { name: "courtyard", path: "", locales: ["nl", "ar"] },
+        { name: "planner", path: "/room-planner", locales: ["nl", "ar"] },
         {
           name: "gallery",
           path: "/gallery",
@@ -72,6 +74,7 @@ for (const [name, type] of Object.entries({ chromium, firefox, webkit })) {
             await page.getByLabel("Theme").selectOption(theme);
             if (surface.name === "gallery")
               await page.getByLabel("Room width (cm)").focus();
+            if (surface.name === "planner") await fillPlannerPreview(page);
             await themeReady(page, theme);
             const file = `${name}-${surface.name}-${locale}-${theme}-${width}.png`;
             await page.screenshot({
@@ -88,7 +91,7 @@ for (const [name, type] of Object.entries({ chromium, firefox, webkit })) {
 }
 await writeFile(
   `${directory}/index.html`,
-  `<!doctype html><meta charset="utf-8"><title>P2 visual review candidates</title><style>body{font:16px system-ui;margin:2rem}main{display:grid;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));gap:2rem}img{width:100%;height:400px;object-fit:contain;object-position:top;border:1px solid}a{color:inherit}</style><h1>P2 visual review candidates</h1><p>Private, non-selling application. Draft locales, invented fixtures. These are candidates, not approved screenshot baselines. All three browsers, desktop/phone, NL/Arabic home, collection, covers/filled configurations, missing products, seven-locale gallery and empty English/Kurmanji collection, light/dark.</p><main>${entries.map((file) => `<figure><a href="${file}"><img src="${file}" alt="${file}" loading="lazy"></a><figcaption>${file}</figcaption></figure>`).join("")}</main>`,
+  `<!doctype html><meta charset="utf-8"><title>Storefront visual review candidates</title><style>body{font:16px system-ui;margin:2rem}main{display:grid;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));gap:2rem}img{width:100%;height:400px;object-fit:contain;object-position:top;border:1px solid}a{color:inherit}</style><h1>Storefront visual review candidates</h1><p>Private, non-selling application. Draft locales, invented fixtures. These are candidates, not approved screenshot baselines. All three browsers, desktop/phone, NL/Arabic home, planner, collection, covers/filled configurations, missing products, seven-locale gallery and empty English/Kurmanji collection, light/dark.</p><main>${entries.map((file) => `<figure><a href="${file}"><img src="${file}" alt="${file}" loading="lazy"></a><figcaption>${file}</figcaption></figure>`).join("")}</main>`,
 );
 console.log(
   "Initial visual candidates captured; normal visual tests still require approved baselines.",

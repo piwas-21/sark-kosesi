@@ -3,6 +3,7 @@ import { notFound } from "next/navigation";
 import { CourtyardMark, Status } from "@piwas/design";
 import { isLocale, titles } from "../../lib/locale";
 import { loadCatalogue } from "../../lib/load-catalogue";
+import { plannerCopy } from "../../components/room-planner/copy";
 import styles from "../../components/courtyard.module.css";
 export default async function Home({
   params,
@@ -27,6 +28,12 @@ export default async function Home({
               Explore the preview
             </a>
           </div>
+          <Link
+            className="mt-4 inline-block underline"
+            href={`/${locale}/room-planner`}
+          >
+            {plannerCopy[locale].title}
+          </Link>
         </div>
         <div className={styles.arch} aria-hidden="true">
           <CourtyardMark />

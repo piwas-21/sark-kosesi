@@ -64,7 +64,8 @@
   "workspaces": [
     "apps/web",
     "packages/design",
-    "packages/contracts"
+    "packages/contracts",
+    "packages/room-fit"
   ],
   "overrides": {
     "@hey-api/json-schema-ref-parser": {

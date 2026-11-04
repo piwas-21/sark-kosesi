@@ -1,6 +1,7 @@
 import { test, expect } from "@playwright/test";
 import AxeBuilder from "@axe-core/playwright";
 import { visualContext, themeReady } from "./visual-context.mjs";
+import { fillPlannerPreview } from "./planner-fixture.mjs";
 const locales = ["nl", "de", "fr", "en", "ar", "tr", "ku"];
 async function assertGalleryTabOrder(page, browserName) {
   const forward =
@@ -107,6 +108,7 @@ for (const viewport of [
     test.use(visualContext(viewport));
     for (const surface of [
       { name: "courtyard", path: "", locales: ["nl", "ar"] },
+      { name: "planner", path: "/room-planner", locales: ["nl", "ar"] },
       { name: "gallery", path: "/gallery", locales },
       { name: "collection", path: "/collection", locales: ["nl", "ar"] },
       {
@@ -137,6 +139,7 @@ for (const viewport of [
             await page.getByLabel("Theme").selectOption(theme);
             if (surface.name === "gallery")
               await page.getByLabel("Room width (cm)").focus();
+            if (surface.name === "planner") await fillPlannerPreview(page);
             await themeReady(page, theme);
             await expect(page).toHaveScreenshot(
               `${surface.name}-${locale}-${theme}-${viewport.width}.png`,
@@ -283,3 +286,138 @@ test("@journey default family selection survives locale-specific family slugs", 
     "SET-COVERS",
   );
 });
+
+test("@journey room planner checks rotation and clearance locally", async ({
+  page,
+}) => {
+  await page.goto("/en/room-planner");
+  const room = page.getByRole("region", { name: "Room", exact: true });
+  const piece = page.getByRole("group", { name: "Piece 1" });
+  const status = page.getByRole("status");
+  const check = page.getByRole("button", { name: "Check the layout" });
+  const writes = [];
+  page.on("request", (request) => {
+    if (!["GET", "HEAD"].includes(request.method()))
+      writes.push(request.method());
+  });
+  await room.getByLabel("Width (cm)").fill("400");
+  await room.getByLabel("Depth (cm)").fill("300");
+  await piece.getByLabel("Width (cm)").fill("150");
+  await piece.getByLabel("Depth (cm)").fill("70");
+  await piece.getByLabel("From the left (cm)").fill("280");
+  await expect(page.getByLabel("Unit of measurement")).toBeDisabled();
+  await check.focus();
+  await page.keyboard.press("Enter");
+  await expect(status).toContainText("Piece 1 extends beyond the room.");
+
+  await piece.getByLabel("Rotation").selectOption("90");
+  await check.click();
+  await expect(status).toContainText("Confirm the door clearance");
+  const clearance = page.getByLabel("What space needs to stay clear?");
+  await clearance.selectOption("none");
+  await check.click();
+  await expect(status).toContainText("The shapes fit within your measurements");
+
+  await clearance.selectOption("measured");
+  const door = page.getByRole("group", { name: "Clearance zone 1" });
+  await door.getByLabel("Width (cm)").fill("20");
+  await door.getByLabel("Depth (cm)").fill("30");
+  await door.getByLabel("From the left (cm)").fill("280");
+  await check.click();
+  await expect(status).toContainText("Piece 1 blocks Clearance zone 1.");
+  await page.getByRole("button", { name: "Add a piece" }).click();
+  await expect(
+    page.getByRole("group", { name: "Piece 2" }).getByLabel("Width (cm)"),
+  ).toBeFocused();
+  await expect(page).toHaveURL(/\/en\/room-planner$/);
+  expect(writes).toEqual([]);
+  await page.reload();
+  await expect(room.getByLabel("Width (cm)")).toHaveValue("");
+  await expect(page.getByLabel("Unit of measurement")).toBeEnabled();
+  await room.getByLabel("Width (cm)").fill("400");
+  await page.getByLabel("Language").selectOption("ar");
+  await expect(page).toHaveURL(/\/ar\/room-planner$/);
+  await expect(page.locator("#plan-room-width")).toHaveValue("");
+});
+
+test("@a11y long room planner conflicts remain reachable by page scrolling", async ({
+  page,
+  browserName,
+}) => {
+  await page.setViewportSize({ width: 1280, height: 500 });
+  await page.goto("/en/room-planner");
+  const room = page.getByRole("region", { name: "Room", exact: true });
+  await room.getByLabel("Width (cm)").fill("400");
+  await room.getByLabel("Depth (cm)").fill("300");
+  for (let number = 1; number <= 8; number++) {
+    if (number > 1)
+      await page.getByRole("button", { name: "Add a piece" }).click();
+    const piece = page.getByRole("group", { name: `Piece ${number}` });
+    await piece.getByLabel("Width (cm)").fill("100");
+    await piece.getByLabel("Depth (cm)").fill("100");
+  }
+  await page.getByLabel("What space needs to stay clear?").selectOption("none");
+  await page.getByRole("button", { name: "Check the layout" }).click();
+
+  const list = page.getByRole("list", { name: "Adjust this layout." });
+  const issues = list.getByRole("listitem");
+  await expect(issues).toHaveCount(28);
+  await expect(issues.last()).toHaveText("Piece 8 overlaps Piece 7.");
+  await expect(list).not.toHaveAttribute("tabindex");
+  expect(
+    await list.evaluate(
+      (element) => element.scrollHeight <= element.clientHeight,
+    ),
+  ).toBe(true);
+  await page.getByRole("button", { name: "Clear measurements" }).focus();
+  await page.keyboard.press(
+    browserName === "webkit" && process.platform === "darwin"
+      ? "Alt+Tab"
+      : "Tab",
+  );
+  await expect(list).not.toBeFocused();
+
+  // Start at the page top, then use only native keyboard scrolling to reach the end.
+  await page.evaluate(() => {
+    document.body.tabIndex = -1;
+    document.body.focus();
+    document.body.removeAttribute("tabindex");
+    window.scrollTo(0, 0);
+  });
+  for (let count = 0; count < 30; count++) {
+    const inViewport = await issues.last().evaluate((element) => {
+      const bounds = element.getBoundingClientRect();
+      return bounds.top >= 0 && bounds.bottom <= window.innerHeight;
+    });
+    if (inViewport) break;
+    await page.keyboard.press("PageDown");
+    await page.waitForTimeout(100);
+  }
+  await expect(issues.last()).toBeInViewport({ ratio: 1 });
+  expect(await page.evaluate(() => window.scrollY)).toBeGreaterThan(0);
+});
+
+for (const locale of ["nl", "ar"])
+  for (const theme of ["light", "dark"]) {
+    test(`@a11y room planner ${locale} ${theme} narrow layout`, async ({
+      page,
+    }) => {
+      await page.setViewportSize({ width: 320, height: 700 });
+      const response = await page.goto(`/${locale}/room-planner`);
+      expect(response?.headers()["x-robots-tag"]).toContain("noindex");
+      await page.getByLabel("Theme").selectOption(theme);
+      await expect(page.locator("html")).toHaveAttribute(
+        "dir",
+        locale === "ar" ? "rtl" : "ltr",
+      );
+      const result = await new AxeBuilder({ page })
+        .withTags(["wcag2a", "wcag2aa", "wcag21aa", "wcag22aa"])
+        .analyze();
+      expect(result.violations).toEqual([]);
+      expect(
+        await page.evaluate(
+          () => document.documentElement.scrollWidth <= innerWidth,
+        ),
+      ).toBe(true);
+    });
+  }

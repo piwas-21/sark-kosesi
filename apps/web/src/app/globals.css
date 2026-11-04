@@ -89,13 +89,13 @@ select {
   position: fixed;
   inset-block-start: 0;
   inset-inline-start: 1rem;
-  transform: translateY(-150%);
+  clip-path: inset(50%);
   z-index: 10;
   background: var(--surface);
   padding: 0.75rem;
 }
 .skip:focus {
-  transform: translateY(0);
+  clip-path: none;
 }
 .shell {
   padding-inline: clamp(1rem, 5vw, 5rem);

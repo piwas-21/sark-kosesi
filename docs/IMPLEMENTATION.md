@@ -381,6 +381,20 @@ delivery, anti-enumeration and abuse controls remain required. Migrations 0034
 and 0035 must land after the separately reserved 0033 late-stock migration; no
 deployed migration state is implied.
 
+## P5 room-fit foundation
+
+The standalone browser-safe room-fit package implements the measured rectangle
+contract in [product](PRODUCT.md#room-fit-calculation-boundary). Exact integer
+units, bounded input, quarter-turns, conservative tolerance, overlap and
+user-supplied door clearance yield invalid, uncertain, conflict or fit results.
+Independently calculated fixtures cover boundaries. The non-selling preview page
+uses a keyboard form, local drawing and text status. Clearing the draft allows a
+unit change without reinterpreting existing measurements. Use real approved
+measurements for any future catalogue integration. Persistence, photo placement,
+original help content and reviewed locales remain P5 work. Owner approval
+binds the 252 Linux visual baselines to the exact preview source. Hosted
+comparison and native browser/device acceptance remain separate evidence.
+
 ## Next session prompt
 
 > Read AGENTS.md and ROADMAP.md, then docs/IMPLEMENTATION.md and its linked requirements. Continue P3 in small independently reviewed PRs to develop. Complete the country/territory readiness matrix and promotions, then durable guest checkout, atomic basket holds and immutable orders. Keep missing P0 facts and unready destinations blocked. Mollie work is sandbox-only; preserve stable payment attempts, reconcile unknown outcomes, fetch/verify notifications and recover late paid stock explicitly. Retain exact money/refund allocations, all real CI/review/merge gates, the approved courtyard design and disabled production. Report source/CI, provider, deployment and fulfilment evidence separately.
