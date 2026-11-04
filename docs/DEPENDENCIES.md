@@ -149,3 +149,8 @@ package version or dependency closure. Pagination follows the provider's
 [list contract](https://docs.mollie.com/reference/list-payments) and
 [cursor convention](https://docs.mollie.com/reference/pagination), with stricter
 owned request/response budgets and no automatic URL following.
+
+The private reversal observation parser directly pins the already locked `time`
+0.3.55 (MIT/Apache-2.0) with its parsing feature for typed RFC 3339 timestamps.
+It changes no package version or dependency closure; its licence remains covered
+by the Rust source/licence allowlist.

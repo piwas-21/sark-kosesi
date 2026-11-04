@@ -353,7 +353,11 @@ supervision or live provider activation follows from deploying the empty preview
    reservation against the original order's current received EUR recognition.
    It serializes the original attempt and cumulative SKU/shipping gross, net and
    VAT custody, with a reciprocal outbox event and historical exact replay.
-   Complete provider-side refund/chargeback reconciliation, execution custody
+   Private test-key exact-item refund and chargeback GETs now require a matched
+   paid original and retain minimal bounded observations only. Implement durable
+   observation custody and bounded paginated discovery; an exact GET or 404 cannot
+   establish the provider's full history or net balance. Complete provider-side
+   refund/chargeback reconciliation, execution custody
    and reservation disposition before moving funds. Complete independent
    order/fulfilment/refund lifecycle and invoices/credit
    documents, bounded audited refunds and independent restock actions. Prove

@@ -41,6 +41,7 @@ hyper = { version = "=1.12.0", default-features = false, features = ["server", "
 hyper-util = { version = "=0.1.21", default-features = false, features = ["tokio"] }
 http-body-util = "=0.1.5"
 bytes = "=1.12.1"
+time = { version = "=0.3.55", features = ["parsing"] }
 
 [workspace.lints.rust]
 unsafe_code = "forbid"

@@ -10,6 +10,8 @@ mod client;
 mod credential;
 mod http;
 mod reconciliation;
+mod reversal;
+pub use reversal::{ReversalPhase, VerifiedReversal};
 mod search;
 pub use reconciliation::{ReconciliationClient, VerifiedReconciliationClient};
 mod wire;

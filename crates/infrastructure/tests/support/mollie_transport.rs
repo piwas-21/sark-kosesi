@@ -1001,3 +1001,6 @@ mod late_stock_cases;
 
 #[path = "refund_reservations.rs"]
 mod refund_reservations_cases;
+
+#[path = "mollie_reversals.rs"]
+mod reversal_cases;

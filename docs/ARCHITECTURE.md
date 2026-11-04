@@ -464,6 +464,18 @@ same transaction. An exact replay under current staff authority returns the
 original reservation and checks its historical recognition. New evidence can
 block a new reservation without changing an existing receipt.
 
+A private test-key reconciliation client can fetch one exact refund or chargeback
+only after an authenticated GET matches its original paid Test/EUR payment to
+the frozen order, attempt, profile and amount. The bounded child read validates
+its identity, parent, positive EUR amount, documented refund phase or typed
+chargeback reversal timestamp, and retains only minimal in-memory provenance.
+The chargeback schema has no required mode. Test scope derives from the verified
+parent and test credential. Unknown responses and 404 leave the child unresolved.
+The project follows Mollie's [refund GET](https://docs.mollie.com/reference/get-refund)
+and [chargeback GET](https://docs.mollie.com/reference/get-chargeback) contracts.
+Durable observation custody, paginated discovery and reservation disposition
+remain separate work. Financial and inventory transitions are outside this read path.
+
 Reservations encumber refundable amounts. Before execution, reconcile
 provider-side refunds and chargebacks, define uncertain and failed attempt
 dispositions and use stable provider idempotency and credit-document links.
