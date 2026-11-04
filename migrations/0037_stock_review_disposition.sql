@@ -98,7 +98,7 @@ DECLARE owned checkout_orders%ROWTYPE; m jsonb; fresh_ids text[]; active_ids tex
 BEGIN
  IF octet_length(s.footprint::text)>2097152 OR jsonb_typeof(s.footprint) IS DISTINCT FROM 'object' THEN RETURN false; END IF;
  IF s.id IS NULL OR s.actor IS DISTINCT FROM 'late-payment-allocation' OR (s.fence_key IS NULL OR s.fence_key<=0)
-  OR octet_length(s.footprint::text)>2097152 OR jsonb_typeof(s.footprint) IS DISTINCT FROM 'object' OR (s.footprint->'schema_version')::text IS DISTINCT FROM '1'
+  OR (s.footprint->'schema_version')::text IS DISTINCT FROM '1'
   OR s.footprint IS DISTINCT FROM jsonb_build_object('schema_version',1,'original',s.footprint->'original',
     'fresh',s.footprint->'fresh','components',s.footprint->'components') THEN RETURN false; END IF;
  SELECT * INTO owned FROM checkout_orders WHERE id=s.order_id;
@@ -113,7 +113,7 @@ BEGIN
   OR NOT late_stock_components_exact(s.footprint->'original',s.footprint->'components',true,CASE WHEN current_balances THEN 'after' ELSE 'none' END)
   OR NOT EXISTS(SELECT 1 FROM order_stock_allocations a WHERE a.order_id=s.order_id AND a.attempt_id=s.attempt_id AND a.kind='late' AND a.receipt_id=s.id)
   OR EXISTS(SELECT 1 FROM late_stock_review_cases WHERE order_id=s.order_id AND NOT late_stock_disposition_linked(s.order_id,s.id))
-  OR NOT late_stock_stage_exact(s,'expiry') OR NOT late_stock_stage_exact(s,'reserve') OR NOT late_stock_stage_exact(s,'consume')
+  OR NOT late_stock_stage_exact(s,'all')
  THEN RETURN false; END IF;
  SELECT array_agg(value->>'hold_id') INTO fresh_ids FROM jsonb_array_elements(s.footprint->'fresh');
  SELECT array_agg(value->'member'->>'hold_id') INTO active_ids FROM jsonb_array_elements(s.footprint->'original') WHERE value->>'state'='active';
@@ -161,11 +161,12 @@ BEGIN
 END;
 $$;
 CREATE OR REPLACE FUNCTION guard_late_stock_allocation() RETURNS trigger LANGUAGE plpgsql VOLATILE AS $$
-DECLARE owned checkout_orders%ROWTYPE; decision late_stock_dispositions%ROWTYPE;
+DECLARE owned checkout_orders%ROWTYPE; original jsonb; decision late_stock_dispositions%ROWTYPE;
 BEGIN
  IF TG_OP<>'INSERT' THEN RAISE EXCEPTION 'Late allocations are immutable' USING ERRCODE='23514'; END IF;
  IF octet_length(NEW.footprint::text)>2097152 OR jsonb_typeof(NEW.footprint) IS DISTINCT FROM 'object' THEN
   RAISE EXCEPTION 'Late allocation footprint exceeds closed envelope' USING ERRCODE='23514'; END IF;
+ original=NEW.footprint->'original';
  IF current_setting('transaction_isolation')<>'read committed' THEN RAISE EXCEPTION 'Late allocation requires read committed' USING ERRCODE='23514'; END IF;
  PERFORM 1 FROM payment_attempts WHERE id=NEW.attempt_id FOR UPDATE;
  SELECT * INTO decision FROM late_stock_dispositions WHERE allocation_id=NEW.id AND outcome='allocated';
@@ -180,6 +181,9 @@ BEGIN
  END IF;
  SELECT * INTO owned FROM checkout_orders WHERE id=NEW.order_id;
  IF owned.id IS NULL OR owned.stock_group_id IS DISTINCT FROM NEW.original_group_id
+  OR NEW.expires_at NOT BETWEEN 1 AND 9007199254740991
+  OR NEW.allocated_at NOT BETWEEN 0 AND 9007199254740991
+  OR NEW.allocated_at<NEW.expires_at-60 OR NEW.allocated_at>=NEW.expires_at
   OR NEW.expires_at-60<owned.hold_expires_at
   OR NOT late_stock_received(NEW.order_id,NEW.attempt_id,NEW.recognition_id,NEW.expires_at-60,true)
   OR NOT late_stock_received(NEW.order_id,NEW.attempt_id,NEW.recognition_id,NEW.allocated_at,true)
@@ -194,15 +198,18 @@ BEGIN
  PERFORM 1 FROM stock_holds WHERE basket_group_id=NEW.fresh_group_id ORDER BY id LIMIT 21 FOR UPDATE;
  IF (NEW.footprint->'schema_version')::text IS DISTINCT FROM '1' OR NEW.footprint IS DISTINCT FROM jsonb_build_object('schema_version',1,'original',NEW.footprint->'original',
    'fresh',NEW.footprint->'fresh','components',NEW.footprint->'components')
-  OR (NEW.footprint->'original')::text IS DISTINCT FROM late_stock_original(NEW.order_id)::text
-  OR EXISTS(SELECT 1 FROM jsonb_array_elements(NEW.footprint->'original') WHERE value->>'state' NOT IN ('active','expired'))
+  OR original::text IS DISTINCT FROM late_stock_original(NEW.order_id)::text
+  OR EXISTS(SELECT 1 FROM jsonb_array_elements(original) WHERE value->>'state' NOT IN ('active','expired'))
   OR NOT late_stock_fresh_exact(NEW,true) THEN
   RAISE EXCEPTION 'Late allocation requires exact eligible original and fresh building source' USING ERRCODE='23514'; END IF;
- PERFORM 1 FROM stock_balances WHERE component_code IN (
-  SELECT line->>'component_code' FROM jsonb_array_elements(NEW.footprint->'original') m
-   CROSS JOIN LATERAL jsonb_array_elements(m->'member'->'components') line)
-  ORDER BY component_code LIMIT 1281 FOR UPDATE;
- IF NOT late_stock_components_exact(NEW.footprint->'original',NEW.footprint->'components',true,'before') THEN
+ PERFORM 1 FROM stock_balances b JOIN (
+  WITH wanted_codes AS MATERIALIZED (
+   SELECT DISTINCT line->>'component_code' AS code FROM jsonb_array_elements(original) m
+    CROSS JOIN LATERAL jsonb_array_elements(m->'member'->'components') line)
+  SELECT code FROM wanted_codes
+ ) wanted ON wanted.code=b.component_code
+  ORDER BY b.component_code LIMIT 1281 FOR UPDATE OF b;
+ IF NOT late_stock_components_exact(original,NEW.footprint->'components',true,'before') THEN
   RAISE EXCEPTION 'Late allocation requires actual backed before and complete stage footprint' USING ERRCODE='23514'; END IF;
  RETURN NEW;
 END;
