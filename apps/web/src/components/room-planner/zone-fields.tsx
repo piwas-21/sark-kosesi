@@ -119,3 +119,66 @@ export function ZoneFields({
     </fieldset>
   );
 }
+
+const roomFields = ["width", "depth", "tolerance"] as const;
+type RoomField = (typeof roomFields)[number];
+
+export function RoomFields({
+  copy,
+  unit,
+  locked,
+  room,
+  showErrors,
+  onUnit,
+  onMeasurement,
+}: {
+  copy: PlannerCopy;
+  unit: MeasurementUnit;
+  locked: boolean;
+  room: Record<RoomField, string>;
+  showErrors: boolean;
+  onUnit: (unit: MeasurementUnit) => void;
+  onMeasurement: (key: RoomField, value: string) => void;
+}) {
+  return (
+    <section className={styles.section} aria-labelledby="plan-room">
+      <h2 id="plan-room">{copy.room}</h2>
+      <label className={styles.control}>
+        {copy.unit}
+        <select
+          id="plan-unit"
+          value={unit}
+          disabled={locked}
+          aria-describedby="plan-unit-help"
+          onChange={(event) => {
+            const value = event.target.value;
+            if (value === "mm" || value === "cm" || value === "in")
+              onUnit(value);
+          }}
+        >
+          <option value="mm">{copy.millimetres}</option>
+          <option value="cm">{copy.centimetres}</option>
+          <option value="in">{copy.inches}</option>
+        </select>
+      </label>
+      <p id="plan-unit-help" className={styles.note}>
+        {copy.unitHelp}
+      </p>
+      <div className={styles.fields}>
+        {roomFields.map((key) => (
+          <MeasurementField
+            key={key}
+            id={`plan-room-${key}`}
+            label={copy[key]}
+            value={room[key]}
+            unit={unit}
+            positive={key !== "tolerance"}
+            error={showErrors ? copy.invalid : null}
+            onChange={(value) => onMeasurement(key, value)}
+          />
+        ))}
+      </div>
+      <p className={styles.note}>{copy.toleranceHelp}</p>
+    </section>
+  );
+}

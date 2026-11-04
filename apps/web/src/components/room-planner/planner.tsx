@@ -16,11 +16,10 @@ import {
   type ZoneDraft,
 } from "./draft";
 import { PlanSheet } from "./plan-sheet";
-import { MeasurementField, ZoneFields } from "./zone-fields";
+import { RoomFields, ZoneFields } from "./zone-fields";
 import styles from "./planner.module.css";
 
 type DoorState = "unknown" | "none" | "measured";
-const roomFields = ["width", "depth", "tolerance"] as const;
 
 export function RoomPlanner({ copy }: { copy: PlannerCopy }) {
   const [unit, setUnit] = useState<MeasurementUnit>("cm");
@@ -38,7 +37,7 @@ export function RoomPlanner({ copy }: { copy: PlannerCopy }) {
     doors.some(hasMeasurements),
   );
   const activeDoors = doorState === "measured" ? doors : [];
-  const showErrors = result?.status === "invalid";
+  const [showErrors, setShowErrors] = useState(false);
 
   function changeZone(
     collection: "items" | "doors",
@@ -72,6 +71,7 @@ export function RoomPlanner({ copy }: { copy: PlannerCopy }) {
     setItems([emptyZone(nextId.current++)]);
     setDoors([emptyZone(nextId.current++)]);
     setDoorState("unknown");
+    setShowErrors(false);
     setResult(null);
     requestAnimationFrame(() => document.getElementById("plan-unit")?.focus());
   }
@@ -89,6 +89,7 @@ export function RoomPlanner({ copy }: { copy: PlannerCopy }) {
           onChange={() => setResult(null)}
           onSubmit={(event) => {
             event.preventDefault();
+            setShowErrors(true);
             setResult(
               assessRoomFit({
                 unit,
@@ -104,45 +105,15 @@ export function RoomPlanner({ copy }: { copy: PlannerCopy }) {
             );
           }}
         >
-          <section className={styles.section} aria-labelledby="plan-room">
-            <h2 id="plan-room">{copy.room}</h2>
-            <label className={styles.control}>
-              {copy.unit}
-              <select
-                id="plan-unit"
-                value={unit}
-                disabled={locked}
-                aria-describedby="plan-unit-help"
-                onChange={(event) => {
-                  const value = event.target.value;
-                  if (value === "mm" || value === "cm" || value === "in")
-                    setUnit(value);
-                }}
-              >
-                <option value="mm">{copy.millimetres}</option>
-                <option value="cm">{copy.centimetres}</option>
-                <option value="in">{copy.inches}</option>
-              </select>
-            </label>
-            <p id="plan-unit-help" className={styles.note}>
-              {copy.unitHelp}
-            </p>
-            <div className={styles.fields}>
-              {roomFields.map((key) => (
-                <MeasurementField
-                  key={key}
-                  id={`plan-room-${key}`}
-                  label={copy[key]}
-                  value={room[key]}
-                  unit={unit}
-                  positive={key !== "tolerance"}
-                  error={showErrors ? copy.invalid : null}
-                  onChange={(value) => setRoom({ ...room, [key]: value })}
-                />
-              ))}
-            </div>
-            <p className={styles.note}>{copy.toleranceHelp}</p>
-          </section>
+          <RoomFields
+            copy={copy}
+            unit={unit}
+            locked={locked}
+            room={room}
+            showErrors={showErrors}
+            onUnit={setUnit}
+            onMeasurement={(key, value) => setRoom({ ...room, [key]: value })}
+          />
 
           <section className={styles.section} aria-labelledby="plan-furniture">
             <h2 id="plan-furniture">{copy.pieces}</h2>

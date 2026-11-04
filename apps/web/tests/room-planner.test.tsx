@@ -41,7 +41,20 @@ describe("local room planner", () => {
       "aria-invalid",
       "true",
     );
-    fillRoom();
+    change(room().getByLabelText("Width (cm)"), "400");
+    expect(room().getByLabelText("Width (cm)")).toHaveAttribute(
+      "aria-invalid",
+      "false",
+    );
+    expect(room().getByLabelText("Depth (cm)")).toHaveAttribute(
+      "aria-invalid",
+      "true",
+    );
+    expect(group("Piece 1").getByLabelText("Width (cm)")).toHaveAttribute(
+      "aria-invalid",
+      "true",
+    );
+    change(room().getByLabelText("Depth (cm)"), "300");
     const unit = screen.getByLabelText(copy.unit);
     expect(unit).toBeDisabled();
     click(copy.clear);
