@@ -1573,5 +1573,16 @@ condition of linkage alongside the order-specific bearer. Consume the proof
 and insert one order-to-account link in the same transaction. The native
 transaction identity and reciprocal checks bind both writes. The original
 order remains immutable. Flush completion and recheck proof and session time
-before commit. Later protected order reads will check the link while holding
-live session authority. Browser exposure and verified delivery remain separate.
+before commit.
+
+Private order detail and history hold the same live account and session
+claims through the read. They revalidate the reciprocal proof and link,
+accepted order and verified buyer mailbox. The projection contains the order
+identity and dates, item titles, quantities and captured amounts. It excludes
+contact, address, payment and fulfilment data. Validate titles against the
+exact approved publication and translation revisions used at checkout,
+including the selected Dutch source approval for non-Dutch copy. Later
+catalogue changes leave accepted titles intact. History seeks up to eight
+entries in descending link time and order identity. The cursor is a live
+position. Refresh from the beginning to include newer links. Browser
+exposure and verified delivery remain separate.

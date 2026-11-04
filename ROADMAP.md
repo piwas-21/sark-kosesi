@@ -147,8 +147,9 @@ now supports initial setup and replacement of the current Argon2id hash. Private
 password login issues revocable, revision-bound sessions. Rotation preserves the
 original expiry. A private guest-order link requires an order-specific proof
 issued to the guest basket owner and a current customer session for the verified
-buyer mailbox. Browser integration, safe proof delivery and abuse controls remain
-P4 work.
+buyer mailbox. Private detail and bounded history reads return the linked
+order's captured items and amounts under live customer authority. Browser
+integration, safe proof delivery and abuse controls remain P4 work.
 
 The local room-planner preview combines the rectangle calculator with keyboard
 measurement and rotation controls, a drawn footprint, and text clearance and fit

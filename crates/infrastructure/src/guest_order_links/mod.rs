@@ -12,8 +12,13 @@ use crate::{
 
 mod issue;
 mod link;
+mod read;
 pub use issue::issue;
 pub use link::link;
+pub use read::{
+    LinkedOrderCursor, LinkedOrderLine, LinkedOrderPage, LinkedOrderView, list_linked_orders,
+    read_linked_order,
+};
 
 const DOMAIN: &[u8] = b"piwas:guest-order-link:verifier:v1\0";
 const LIFETIME: i64 = 900;

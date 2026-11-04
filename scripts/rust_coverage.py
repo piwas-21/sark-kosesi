@@ -76,7 +76,7 @@ def validate(document, root, branches=True):
             "crates/infrastructure/src/verified_customer_accounts.rs",
             "crates/infrastructure/src/customer_passwords/*.rs",
             "crates/infrastructure/src/customer_sessions/*.rs",
-            "crates/infrastructure/src/guest_order_links/*.rs",
+            "crates/infrastructure/src/guest_order_links/**/*.rs",
             "crates/*/src/staff_operations.rs",
             "crates/*/src/catalogue_prices.rs",
             "crates/*/src/catalogue_authoring.rs",

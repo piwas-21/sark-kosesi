@@ -404,9 +404,11 @@ blocklist, rate limiting and browser controls before exposing the flow.
 Private guest-order linking requires a live guest basket credential and CSRF
 proof to issue a one-use challenge for that exact accepted order. A current
 customer session for the verified buyer mailbox consumes it and records the
-immutable link in one transaction. Future customer order reads must enforce
-the stored link under live session authority. Cookie and Origin checks, safe
-proof delivery, rate limits and public order journeys remain separate work.
+immutable link in one transaction. Private detail and history reads hold
+the live session claim while validating the reciprocal link and the original
+order. Return captured items and amounts through a minimal projection.
+Cookie and Origin checks, safe proof delivery, rate limits and public order
+journeys remain separate work.
 
 ## P5 room-fit foundation
 

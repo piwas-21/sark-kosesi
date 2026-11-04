@@ -737,4 +737,9 @@ and session revision, one-use replay and expiry after lock waits. Race two
 valid proofs for one order and prove a single link commits while the losing
 proof remains unspent. Use native negative and positive controls for detached
 consumption and cross-account custody. Assert the original order is
-unchanged. Browser, delivery and linked-order reader acceptance remain open.
+unchanged. Test the private reader against wrong owners, stale sessions,
+damaged reciprocal custody and same-time cursor ties. Inspect the projection
+for exact captured totals and absence of buyer details. Assert that later
+withdrawal and newer Dutch source copy preserve accepted titles, while altered
+captured titles and missing, mismatched or rejected source reviews fail closed.
+Browser and delivery acceptance remain open.

@@ -472,3 +472,7 @@ Keep bearer bytes and buyer information out of link records and diagnostics.
 PostgreSQL requires reciprocal consumption and a unique immutable link.
 Wrong scope, expiry or a competing link leaves the proof unspent. The
 private adapter provides no browser route or proof-delivery transport.
+Read linked orders only under live account and session claims. Filter the
+link by the session account, validate its exact consumed proof and accepted
+order, and check session time again before returning. Keep buyer, delivery
+address, payment and fulfilment details out of the history projection.
