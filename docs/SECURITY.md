@@ -237,10 +237,11 @@ and rollback leaves no quote or successful-issuance charge. Historical receipts
 cannot refresh expiry or bypass current order readiness. Public bridge abuse
 controls, retention operations and complete order/payment authority remain required.
 
-The time-bounded development-only minimatch advisory disposition is recorded in
-[dependency review](DEPENDENCIES.md#temporary-development-tooling-exception).
-It expires at 2026-11-03T00:00:00Z, preserves visible moderate audit findings and existing
-CI timeouts, and grants no ownership/payment, high/critical or production waiver.
+The development-only minimatch exception expired on 2026-11-03. The
+[dependency review](DEPENDENCIES.md#development-minimatch-advisory) documents
+the verified lint backport and removal of the separate OpenAPI dependency.
+The npm audit remains visible. CI timeouts and production security gates still
+apply.
 
 Private order creation accepts intent only through a trusted infrastructure entry.
 Fresh guest ownership/CSRF and current reviewed sources protect an atomic order,

@@ -13,7 +13,7 @@ ROOT = Path(__file__).resolve().parents[2]
 
 class ContractDriftTests(unittest.TestCase):
     def test_generation_passes_and_three_drift_boundaries_fail(self):
-        with tempfile.TemporaryDirectory(dir=ROOT / ".local") as temporary:
+        with tempfile.TemporaryDirectory(prefix="sark-contract-drift-") as temporary:
             root = Path(temporary)
             target = root / "packages/contracts"
             target.mkdir(parents=True)

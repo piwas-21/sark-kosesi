@@ -57,6 +57,20 @@ class ContractAdapterTests(unittest.TestCase):
             ].update({"schema": {"type": "string"}}),
             lambda d: d["paths"]["/api/guest/basket"]["get"]["responses"].update({"default": {}}),
         ]
+        changes.extend(
+            [
+                lambda d: d["paths"]["/api/guest/basket"]["put"].update({"requestBody": None}),
+                lambda d: d["paths"]["/api/published/{locale}"]["get"]["parameters"][0].update(
+                    {"name": "other"}
+                ),
+                lambda d: d["paths"]["/api/published/{locale}"]["get"]["parameters"][0].update(
+                    {"required": False}
+                ),
+                lambda d: d["paths"]["/api/published/{locale}"]["get"]["parameters"].extend(
+                    d["paths"]["/api/published/{locale}"]["get"]["parameters"]
+                ),
+            ]
+        )
         for change in changes:
             with self.subTest(change=change):
                 changed = copy.deepcopy(self.document)

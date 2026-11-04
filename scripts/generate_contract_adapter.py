@@ -11,6 +11,7 @@ from pathlib import Path
 
 NAME = re.compile(r"[A-Z][A-Za-z0-9]*\Z")
 OPERATION = re.compile(r"[a-z][a-z0-9]*(?:_[a-z0-9]+)*\Z")
+PATH_PARAMETER = re.compile(r"\{([^{}]+)\}")
 METHODS = {"get", "put", "post", "delete", "options", "head", "patch", "trace"}
 
 
@@ -41,28 +42,10 @@ def content_types(content, names):
     return " ".join(result)
 
 
-def generate(document):
-    keys(document, {"openapi", "info", "paths", "components"}, "document")
-    if document.get("openapi") != "3.1.0":
-        raise ValueError("Expected OpenAPI 3.1.0")
-    components = document.get("components")
-    keys(components, {"schemas", "securitySchemes"}, "components")
-    schemas = components.get("schemas")
-    if not isinstance(schemas, dict) or any(not NAME.fullmatch(k) for k in schemas):
-        raise ValueError("Unsupported schema name")
-    names = set(schemas)
-    lines = [
-        "// Generated from Rust OpenAPI and Hey API types. Do not edit.",
-        'import type * as Model from "./models.gen";',
-        "",
-        "export interface components {",
-        "  schemas: {",
-    ]
-    lines.extend(f"    {name}: Model.{name};" for name in schemas)
-    lines.extend(["  };", "}", "", "export interface paths {"])
-    paths = document.get("paths")
+def path_operations(paths):
     if not isinstance(paths, dict) or not paths:
         raise ValueError("Expected nonempty paths")
+    lines = ["export interface paths {"]
     operations = []
     seen = set()
     for path, methods in paths.items():
@@ -92,66 +75,118 @@ def generate(document):
             seen.add(op)
             typename = "".join(word.capitalize() for word in op.split("_"))
             lines.append(f"    {method}: operations[{json.dumps(op)}];")
-            operations.append((op, typename, operation))
+            operations.append((op, typename, path, operation))
         lines.append("  };")
-    lines.extend(["}", "", "export interface operations {"])
-    for op, typename, operation in operations:
-        lines.extend([f"  {json.dumps(op)}: {{", "    parameters: {"])
-        grouped = {k: [] for k in ("query", "header", "path", "cookie")}
-        parameters = operation.get("parameters", [])
-        if not isinstance(parameters, list):
-            raise ValueError("Unsupported parameters")
-        for parameter in parameters:
-            keys(parameter, {"name", "in", "required", "schema", "description"}, "parameter")
-            location = parameter.get("in")
-            if location not in ("query", "header", "path"):
-                raise ValueError("Unsupported parameter location")
-            if (
-                not isinstance(parameter.get("name"), str)
-                or not isinstance(parameter.get("required"), bool)
-                or "schema" not in parameter
-            ):
-                raise ValueError("Invalid parameter")
-            grouped[location].append(parameter)
-        for location, entries in grouped.items():
-            if entries:
-                field = "headers" if location == "header" else location
-                required = any(p["required"] for p in entries)
-                lines.append(
-                    f"      {location}{'' if required else '?'}: NonNullable<Model.{typename}Data[{json.dumps(field)}]>;"
-                )
-            else:
-                lines.append(f"      {location}?: never;")
-        lines.append("    };")
-        body = operation.get("requestBody")
-        if body is None:
-            lines.append("    requestBody?: never;")
-        else:
-            keys(body, {"content", "required", "description"}, "request body")
-            if not isinstance(body.get("required"), bool):
-                raise ValueError("Request body requires an explicit required flag")
-            content = content_types(body.get("content"), names)
+    lines.append("}")
+    return lines, operations
+
+
+def group_parameters(path, parameters):
+    grouped = {k: [] for k in ("query", "header", "path", "cookie")}
+    if not isinstance(parameters, list):
+        raise ValueError("Unsupported parameters")
+    identities = set()
+    for parameter in parameters:
+        keys(parameter, {"name", "in", "required", "schema", "description"}, "parameter")
+        location = parameter.get("in")
+        if location not in ("query", "header", "path"):
+            raise ValueError("Unsupported parameter location")
+        if (
+            not isinstance(parameter.get("name"), str)
+            or not isinstance(parameter.get("required"), bool)
+            or "schema" not in parameter
+        ):
+            raise ValueError("Invalid parameter")
+        name = parameter["name"]
+        identity = (location, name.lower() if location == "header" else name)
+        if not name or identity in identities:
+            raise ValueError("Duplicate or empty parameter name")
+        identities.add(identity)
+        grouped[location].append(parameter)
+    if set(PATH_PARAMETER.findall(path)) != {p["name"] for p in grouped["path"]} or any(
+        not p["required"] for p in grouped["path"]
+    ):
+        raise ValueError("Path parameters must bind every template name and be required")
+    return grouped
+
+
+def parameter_fields(path, typename, parameters):
+    grouped = group_parameters(path, parameters)
+    lines = ["    parameters: {"]
+    for location, entries in grouped.items():
+        if entries:
+            field = "headers" if location == "header" else location
+            required = any(p["required"] for p in entries)
             lines.append(
-                f"    requestBody{'' if body['required'] else '?'}: {{ content: {{ {content} }} }};"
+                f"      {location}{'' if required else '?'}: NonNullable<Model.{typename}Data[{json.dumps(field)}]>;"
             )
-        responses = operation.get("responses")
-        if not isinstance(responses, dict) or not responses:
-            raise ValueError("Expected responses")
-        lines.append("    responses: {")
-        for status, response in responses.items():
-            if not re.fullmatch(r"[1-5][0-9]{2}", status):
-                raise ValueError("Unsupported response status")
-            keys(response, {"description", "content"}, "response")
-            if "content" in response:
-                content = content_types(response["content"], names)
-                lines.append(
-                    f"      {status}: {{ headers: {{ [name: string]: unknown }}; content: {{ {content} }} }};"
-                )
-            else:
-                lines.append(
-                    f"      {status}: {{ headers: {{ [name: string]: unknown }}; content?: never }};"
-                )
-        lines.extend(["    };", "  };"])
+        else:
+            lines.append(f"      {location}?: never;")
+    lines.append("    };")
+    return lines
+
+
+def request_body_field(operation, names):
+    if "requestBody" not in operation:
+        return "    requestBody?: never;"
+    body = operation["requestBody"]
+    keys(body, {"content", "required", "description"}, "request body")
+    if not isinstance(body.get("required"), bool):
+        raise ValueError("Request body requires an explicit required flag")
+    content = content_types(body.get("content"), names)
+    optional = "" if body["required"] else "?"
+    return f"    requestBody{optional}: {{ content: {{ {content} }} }};"
+
+
+def response_fields(responses, names):
+    if not isinstance(responses, dict) or not responses:
+        raise ValueError("Expected responses")
+    lines = ["    responses: {"]
+    for status, response in responses.items():
+        if not re.fullmatch(r"[1-5][0-9]{2}", status):
+            raise ValueError("Unsupported response status")
+        keys(response, {"description", "content"}, "response")
+        if "content" in response:
+            content = content_types(response["content"], names)
+            lines.append(
+                f"      {status}: {{ headers: {{ [name: string]: unknown }}; content: {{ {content} }} }};"
+            )
+        else:
+            lines.append(
+                f"      {status}: {{ headers: {{ [name: string]: unknown }}; content?: never }};"
+            )
+    lines.append("    };")
+    return lines
+
+
+def generate(document):
+    keys(document, {"openapi", "info", "paths", "components"}, "document")
+    if document.get("openapi") != "3.1.0":
+        raise ValueError("Expected OpenAPI 3.1.0")
+    components = document.get("components")
+    keys(components, {"schemas", "securitySchemes"}, "components")
+    schemas = components.get("schemas")
+    if not isinstance(schemas, dict) or any(not NAME.fullmatch(k) for k in schemas):
+        raise ValueError("Unsupported schema name")
+    names = set(schemas)
+    lines = [
+        "// Generated from Rust OpenAPI and Hey API types. Do not edit.",
+        'import type * as Model from "./models.gen";',
+        "",
+        "export interface components {",
+        "  schemas: {",
+    ]
+    lines.extend(f"    {name}: Model.{name};" for name in schemas)
+    lines.extend(["  };", "}", ""])
+    path_lines, operations = path_operations(document.get("paths"))
+    lines.extend(path_lines)
+    lines.extend(["", "export interface operations {"])
+    for op, typename, path, operation in operations:
+        lines.append(f"  {json.dumps(op)}: {{")
+        lines.extend(parameter_fields(path, typename, operation.get("parameters", [])))
+        lines.append(request_body_field(operation, names))
+        lines.extend(response_fields(operation.get("responses"), names))
+        lines.append("  };")
     lines.extend(["}", ""])
     return "\n".join(lines)
 

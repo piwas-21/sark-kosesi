@@ -61,7 +61,7 @@ def regular_file(root, relative):
     return path
 
 
-def check(project, apply=False):
+def read_installation(project):
     if project.is_symlink() or not project.is_dir():
         raise ValueError("Project directory must exist and not be a symlink")
     root = project.resolve()
@@ -79,13 +79,10 @@ def check(project, apply=False):
     states = {value[2] for value in found.values()}
     if len(states) != 1:
         raise ValueError("Partial patch detected; reinstall the original package")
-    state = states.pop()
-    if not apply:
-        if state != 1:
-            raise ValueError("Minimatch backport is not installed")
-        return
-    if state == 1:
-        return
+    return found, states.pop()
+
+
+def patched_files(found):
     replacements = {}
     for relative, (path, data, _) in found.items():
         for old, new in REPLACEMENTS:
@@ -95,6 +92,10 @@ def check(project, apply=False):
         if digest(data) != FILES[relative][1]:
             raise ValueError(f"Patched digest mismatch: {relative}")
         replacements[path] = data
+    return replacements
+
+
+def install_files(replacements):
     staged = []
     try:
         for path, data in replacements.items():
@@ -107,6 +108,17 @@ def check(project, apply=False):
     finally:
         for temporary, _ in staged:
             temporary.unlink(missing_ok=True)
+
+
+def check(project, apply=False):
+    found, state = read_installation(project)
+    if not apply:
+        if state != 1:
+            raise ValueError("Minimatch backport is not installed")
+        return
+    if state == 1:
+        return
+    install_files(patched_files(found))
     check(project)
 
 

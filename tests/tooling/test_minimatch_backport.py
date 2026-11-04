@@ -210,6 +210,26 @@ class MinimatchBackport(unittest.TestCase):
         self.assertNotEqual(result.returncode, 0)
         self.assertIn("Unexpected minimatch 10 consumer graph", result.stderr)
 
+    def test_locked_nested_minimatch_is_rejected(self):
+        self.prepare_consumers()
+        lock_path = self.project / "package-lock.json"
+        lock = json.loads(lock_path.read_text())
+        lock["packages"]["node_modules/@redocly/openapi-core/node_modules/minimatch"] = {
+            "version": "5.1.9"
+        }
+        lock_path.write_text(json.dumps(lock))
+        result = subprocess.run(
+            [
+                self.node,
+                str(self.project / "scripts/check_minimatch_consumers.mjs"),
+                str(self.project),
+            ],
+            capture_output=True,
+            text=True,
+        )
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("Unexpected locked minimatch installation", result.stderr)
+
 
 if __name__ == "__main__":
     unittest.main()

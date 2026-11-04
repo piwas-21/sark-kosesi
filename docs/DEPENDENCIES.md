@@ -80,8 +80,8 @@ configuration changes; the existing MIT/Apache-2.0 review applies.
 
 `GHSA-g3hv-75wg-m249` is a moderate resource-exhaustion advisory affecting the
 locked `minimatch` 10.2.6 copy in ESLint and typescript-eslint. The replacement
-OpenAPI generator removes Redocly and its 5.1.9 copy. This does not resolve the
-remaining lint closure or reinstate the expired exception.
+OpenAPI generator removes Redocly and its 5.1.9 copy. The exact installed lint
+backport below addresses the advisory in the maintained lint entrypoint.
 The advisory's fix is 11.0.1, outside the installed parents' declared major ranges.
 Current compatible parent metadata still selects those older major ranges.
 See the [reviewed advisory](https://github.com/advisories/GHSA-g3hv-75wg-m249).
@@ -91,17 +91,19 @@ The lint entrypoint applies a development-only backport of upstream minimatch
 [commit 77a0f5c](https://github.com/isaacs/minimatch/commit/77a0f5c4b80bdc641c3c930a1d9edf5ad2db57f8)
 to the locked 10.2.6 CommonJS and ESM distributions before loading ESLint. It
 checks original and patched SHA-256 digests, package metadata, both file states
-and the installed consumers' resolution; unknown bytes, mixed states, symlinks
+and the current lint consumers' CommonJS resolution; unknown bytes, mixed states, symlinks
 or unexpected consumers fail the lint gate. An interrupted patch requires a
 fresh `npm ci --ignore-scripts`. The normal tooling tests exercise both module
 formats, bounded expansion, healthy matching and rejection controls. This alters
 only the local installed package and does not change npm's lock or audit result.
 
-The separate 5.1.9 generator dependency remains unresolved until removed or
-fixed. The backport does not change its code or suppress the audit finding; no
-forced-major override or audit waiver is approved. Patterns and contract inputs
-remain repository-controlled, with CI timeouts in effect. Production release
-still requires a fresh dependency/image review and disposition of findings.
+The normal npm audit still reports 11 propagated moderate findings against the
+registry version. The lock and audit retain those findings. No audit waiver or
+forced-major override is used. The maintained lint command rejects additional
+locked minimatch copies or consumers and requires the verified backport before
+loading ESLint. Re-evaluate the patch and dependency closure when a compatible
+upstream release lands. Production release requires a fresh dependency and image
+review.
 
 The contract generator uses `@hey-api/openapi-ts` 0.97.3 (MIT) for schema and
 parameter types. The upstream parser 1.4.2 exact-pins vulnerable `js-yaml` 4.1.1;

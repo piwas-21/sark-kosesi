@@ -16,14 +16,18 @@ const expectedConsumers = [
   "node_modules/@typescript-eslint/typescript-estree",
   "node_modules/eslint",
 ];
+const installedPaths = Object.keys(lock.packages).filter((name) =>
+  /(?:^|\/)node_modules\/minimatch$/.test(name),
+);
+if (
+  installedPaths.length !== 1 ||
+  installedPaths[0] !== "node_modules/minimatch" ||
+  lock.packages[installedPaths[0]].version !== "10.2.6"
+) {
+  throw new Error("Unexpected locked minimatch installation");
+}
 const consumers = Object.entries(lock.packages)
   .filter(([, info]) => info.dependencies?.minimatch)
-  // The separate generator migration removes this known v5 edge.
-  .filter(
-    ([name, info]) =>
-      name !== "node_modules/@redocly/openapi-core" ||
-      info.dependencies.minimatch !== "5.1.9",
-  )
   .map(([name]) => name)
   .sort();
 if (JSON.stringify(consumers) !== JSON.stringify(expectedConsumers)) {
