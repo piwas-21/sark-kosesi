@@ -8,6 +8,13 @@ use commerce_infrastructure::{
     email_verification, verified_customer_accounts,
 };
 use sqlx::PgPool;
+use std::{
+    sync::{
+        Arc,
+        atomic::{AtomicU64, Ordering},
+    },
+    time::Duration,
+};
 
 struct TestClock;
 impl Clock for TestClock {
@@ -359,23 +366,81 @@ async fn suppressed_or_modified_session_insert_rolls_back_without_refunding_admi
     assert_eq!(sessions(&pool).await, 1);
 }
 
-struct MutableClock(std::sync::atomic::AtomicU64);
+struct MutableClock(AtomicU64);
 impl Clock for MutableClock {
     fn unix_seconds(&self) -> Result<u64, ContextError> {
-        Ok(self.0.load(std::sync::atomic::Ordering::SeqCst))
+        Ok(self.0.load(Ordering::SeqCst))
     }
 }
 
 #[sqlx::test(migrator = "MIGRATOR")]
-async fn expiry_after_session_insert_rolls_back_without_refunding_admission(pool: PgPool) {
-    use std::{
-        sync::{
-            Arc,
-            atomic::{AtomicU64, Ordering},
-        },
-        time::Duration,
-    };
+async fn clock_rewind_after_admission_preserves_debit_and_denies_issuance(pool: PgPool) {
+    let id = account(&pool, "rewind@example.com", "correct-password-long").await;
+    let mut blocker = pool.begin().await.expect("account blocker");
+    sqlx::query("SELECT id FROM verified_customer_accounts WHERE id=$1 FOR UPDATE")
+        .bind(id)
+        .fetch_one(&mut *blocker)
+        .await
+        .expect("hold account lock");
+    let time = Arc::new(MutableClock(AtomicU64::new(1010)));
+    let worker_time = time.clone();
+    let worker_pool = pool.clone();
+    let task = tokio::spawn(async move {
+        customer_sessions::login(
+            &worker_pool,
+            "rewind@example.com",
+            "correct-password-long",
+            worker_time.as_ref(),
+            &key(),
+            limits(3, 3),
+        )
+        .await
+    });
+    tokio::time::timeout(Duration::from_secs(5), async {
+        loop {
+            let waiting: bool = sqlx::query_scalar(
+                "SELECT EXISTS(SELECT 1 FROM pg_stat_activity WHERE datname=current_database()
+                 AND wait_event_type='Lock' AND query LIKE 'SELECT verified_at FROM verified_customer_accounts%FOR UPDATE')",
+            )
+            .fetch_one(&pool)
+            .await
+            .expect("observe exact login account wait");
+            if waiting {
+                break;
+            }
+            tokio::time::sleep(Duration::from_millis(5)).await;
+        }
+    })
+    .await
+    .expect("login reached account lock after admission");
+    assert_eq!(counts(&pool).await, (1, vec![1]));
+    // This is still later than the account and credential timestamps at 1000.
+    time.0.store(1009, Ordering::SeqCst);
+    blocker.commit().await.expect("release account lock");
+    assert!(matches!(
+        task.await.expect("join"),
+        Err(SessionError::Unavailable)
+    ));
+    assert_eq!(counts(&pool).await, (1, vec![1]));
+    assert_eq!(sessions(&pool).await, 0);
+    time.0.store(1010, Ordering::SeqCst);
+    let session = customer_sessions::login(
+        &pool,
+        "rewind@example.com",
+        "correct-password-long",
+        time.as_ref(),
+        &key(),
+        limits(3, 3),
+    )
+    .await
+    .expect("non-regressing login succeeds");
+    assert_eq!(session.identity.expires_at, 44210);
+    assert_eq!(counts(&pool).await, (2, vec![2]));
+    assert_eq!(sessions(&pool).await, 1);
+}
 
+#[sqlx::test(migrator = "MIGRATOR")]
+async fn expiry_after_session_insert_rolls_back_without_refunding_admission(pool: PgPool) {
     account(&pool, "late@example.com", "correct-password-long").await;
     sqlx::query("CREATE FUNCTION hold_login_insert() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN PERFORM pg_advisory_xact_lock(274912); RETURN NEW; END $$")
         .execute(&pool).await.expect("fence function");
