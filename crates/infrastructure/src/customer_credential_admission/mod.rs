@@ -1,5 +1,6 @@
 //! Private, durable fixed-window admission for credential operations.
 //! Callers must obtain admission before undertaking the protected operation.
+mod custody;
 mod state;
 
 use commerce_application::request_context::Clock;
@@ -148,6 +149,7 @@ pub async fn admit(
             .execute(&mut *tx)
             .await
             .map_err(|_| AdmissionError::Unavailable)?;
+        custody::require_empty_targets(&mut tx, purpose).await?;
     }
     let total = if same_window { scope.admitted } else { 0 };
     let target = sqlx::query_scalar::<_, i32>(
@@ -176,6 +178,18 @@ pub async fn admit(
         .bind(purpose as i16).bind(window).bind(at).bind(key.version).bind(check.as_ref())
         .bind(limits.global).bind(limits.target).bind(next_total).execute(&mut *tx).await
         .map_err(|_| AdmissionError::Unavailable)?;
+    let mut written = custody::Expected {
+        purpose,
+        window,
+        last_seen: at,
+        key_version: key.version,
+        key_check: check.as_ref(),
+        limits,
+        total: next_total,
+        digest: digest.as_ref(),
+        target: next_target,
+    };
+    written.require_stored(&mut tx).await?;
     let finished = time(clock)?;
     if finished < at || finished - finished % WINDOW != window {
         return Err(AdmissionError::Unavailable);
@@ -191,6 +205,8 @@ pub async fn admit(
         .execute(&mut *tx)
         .await
         .map_err(|_| AdmissionError::Unavailable)?;
+        written.last_seen = finished;
+        written.require_stored(&mut tx).await?;
         let checked = time(clock)?;
         if checked < finished || checked - checked % WINDOW != window {
             return Err(AdmissionError::Unavailable);

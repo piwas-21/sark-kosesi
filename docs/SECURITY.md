@@ -501,7 +501,11 @@ Run all instances with the same trusted key version and limits. The active
 60-second window pins both. Switch configuration at a window boundary and
 coordinate key version changes across instances. Each purpose rejects a
 version below the one it last admitted and rejects a changed key using the
-same version. Recheck monotonic time after lock waits and preserve the
+same version. Under the purpose lock, rollover must leave no old targets and
+each debit must read back the exact target counter and scope policy, key,
+window, count and time before it can succeed. Verify the same durable state
+after a high-water update; a mismatch rolls the transaction back. Recheck
+monotonic time after lock waits and preserve the
 post-write sample as the durable high-water mark. Check time again after
 commit. A late result denies permission while retaining the debit.
 One active window per purpose bounds storage. An inactive purpose's expired

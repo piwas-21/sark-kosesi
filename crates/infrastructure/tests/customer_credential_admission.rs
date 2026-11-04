@@ -1,4 +1,7 @@
 //! Admission is committed in PostgreSQL before credential work can start.
+#[path = "support/credential_admission_write_faults.rs"]
+mod write_faults;
+
 use commerce_application::request_context::{Clock, ContextError};
 use commerce_infrastructure::{
     MIGRATOR,
