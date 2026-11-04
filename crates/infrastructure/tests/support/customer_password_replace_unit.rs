@@ -513,7 +513,8 @@ struct ExpiresBeforeCommit(std::sync::atomic::AtomicUsize);
 impl Clock for ExpiresBeforeCommit {
     fn unix_seconds(&self) -> Result<u64, ContextError> {
         let sample = self.0.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
-        Ok(if sample < 3 { 1000 } else { 1900 })
+        // Admission consumes four steady clock reads before the three proof reads.
+        Ok(if sample < 7 { 1000 } else { 1900 })
     }
 }
 
