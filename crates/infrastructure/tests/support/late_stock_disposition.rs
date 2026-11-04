@@ -67,6 +67,106 @@ fn request<'a>(
     }
 }
 
+#[sqlx::test(migrations = false)]
+async fn legacy_scarcity_custody_survives_0037_and_allows_explicit_retry(pool: PgPool) {
+    MIGRATOR
+        .run_to(36, &pool)
+        .await
+        .expect("legacy schema through 0036");
+    let f = accepted(&pool, false, true).await;
+    expire_original(&pool, &f).await;
+    receive(
+        &pool,
+        "upgrade-count-foam",
+        "SEAT-FOAM",
+        WarehouseChange::Count(2),
+    )
+    .await;
+
+    // Use the old native admission and completion guards over a genuine paid
+    // order, real expired holds and actual scarce balances; commit before upgrade.
+    let case_id = "a".repeat(32);
+    let mut tx = pool.begin().await.expect("legacy custody transaction");
+    sqlx::query("INSERT INTO late_stock_review_cases(id,order_id,attempt_id,recognition_id,group_id,actor,reason,assessed_at,footprint) SELECT $1,o.id,r.attempt_id,p.recognition_id,o.stock_group_id,'late-stock-review','component_scarcity',2000,jsonb_build_object('schema_version',1,'original',late_stock_original(o.id),'components',jsonb_build_array(jsonb_build_object('component_code','SEAT-COVER','demand',4,'active',0,'before',jsonb_build_object('on_hand',10,'quarantine',1,'reserved',0)),jsonb_build_object('component_code','SEAT-FOAM','demand',2,'active',0,'before',jsonb_build_object('on_hand',2,'quarantine',1,'reserved',0)))) FROM checkout_orders o JOIN payment_recognition_current p ON p.order_id=o.id JOIN payment_recognitions r ON r.id=p.recognition_id WHERE o.id=$2")
+        .bind(&case_id).bind(&f.order.identity.id).execute(&mut *tx).await.expect("legacy native guards admit exact scarcity");
+    sqlx::query("INSERT INTO commerce_outbox(id,aggregate_id,kind,payload,created_at) SELECT $1,c.order_id,'order.stock_recovery_review.v1',jsonb_build_object('schema_version',1,'order_id',c.order_id,'case_id',c.id,'case_sha256',late_stock_review_digest(c)),c.assessed_at FROM late_stock_review_cases c WHERE c.id=$2")
+        .bind("b".repeat(32)).bind(&case_id).execute(&mut *tx).await.expect("legacy digest-bound event");
+    tx.commit()
+        .await
+        .expect("legacy completion constraints validate and commit");
+    let before: (Value, String, Value) = sqlx::query_as("SELECT to_jsonb(c),late_stock_review_digest(c),(SELECT to_jsonb(e) FROM commerce_outbox e WHERE e.aggregate_id=c.order_id AND e.kind='order.stock_recovery_review.v1') FROM late_stock_review_cases c WHERE c.id=$1")
+        .bind(&case_id).fetch_one(&pool).await.expect("committed legacy custody");
+    let effects_before = all_effects(&pool).await;
+    MIGRATOR
+        .run(&pool)
+        .await
+        .expect("apply actual 0037 migration");
+    let after: (Value, String, Value, Option<String>) = sqlx::query_as("SELECT to_jsonb(c)-'admission_transaction_id',late_stock_review_digest(c),(SELECT to_jsonb(e) FROM commerce_outbox e WHERE e.aggregate_id=c.order_id AND e.kind='order.stock_recovery_review.v1'),c.admission_transaction_id::text FROM late_stock_review_cases c WHERE c.id=$1")
+        .bind(&case_id).fetch_one(&pool).await.expect("upgraded legacy custody");
+    assert_eq!(
+        (after.0, &after.1, after.2),
+        (before.0, &before.1, before.2)
+    );
+    assert_eq!(
+        after.3, None,
+        "legacy case has no admission transaction tag"
+    );
+    // The added nullable column is the only schema-induced row representation change.
+    let mut effects_after = all_effects(&pool).await;
+    for case in effects_after["cases"].as_array_mut().expect("one case") {
+        case.as_object_mut()
+            .expect("case object")
+            .remove("admission_transaction_id");
+    }
+    assert_eq!(
+        effects_after, effects_before,
+        "migration preserves physical and journal history"
+    );
+    let Outcome::NeedsReview(case) = read_recorded(&pool, &f.order.identity.id)
+        .await
+        .expect("upgraded reader validates legacy custody")
+        .expect("legacy review")
+    else {
+        panic!("legacy case must remain open")
+    };
+    assert_eq!(case.id, case_id);
+    assert_eq!(case.reason, ReviewReason::ComponentScarcity);
+    let token = staff(&pool, "stock.recover", 98).await;
+    let first = disposition::retry(
+        &pool,
+        &token,
+        f.time.as_ref(),
+        f.ids.as_ref(),
+        request(&case, &before.1, "11111111111111111111111111111111", 1),
+    )
+    .await
+    .expect("authorized post-upgrade scarcity retry");
+    assert!(matches!(first.outcome, DecisionOutcome::StillScarce));
+    receive(
+        &pool,
+        "upgrade-restock-foam",
+        "SEAT-FOAM",
+        WarehouseChange::Receive(20),
+    )
+    .await;
+    let success = disposition::retry(
+        &pool,
+        &token,
+        f.time.as_ref(),
+        f.ids.as_ref(),
+        request(&case, &before.1, "22222222222222222222222222222222", 2),
+    )
+    .await
+    .expect("authorized post-upgrade allocation");
+    assert!(matches!(success.outcome, DecisionOutcome::Allocated { .. }));
+    assert!(matches!(
+        read_recorded(&pool, &f.order.identity.id)
+            .await
+            .expect("upgraded complete history"),
+        Some(Outcome::Late(_))
+    ));
+}
+
 #[sqlx::test(migrator = "MIGRATOR")]
 async fn authorized_scarcity_retry_preserves_case_and_replays_each_decision_without_repeated_effects(
     pool: PgPool,
