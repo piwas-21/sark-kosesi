@@ -29,12 +29,13 @@ struct Line {
     expected: Option<i64>,
     kind: Option<String>,
 }
-pub(super) struct Members {
+pub(crate) struct Members {
     pub members: Vec<Member>,
     pub active: bool,
     pub active_members: Vec<Member>,
+    pub states: Vec<String>,
 }
-pub(super) async fn attempt(
+pub(crate) async fn attempt(
     tx: &mut Transaction<'_, Postgres>,
     order: &str,
 ) -> Result<String, SettlementError> {
@@ -49,7 +50,7 @@ pub(super) async fn attempt(
     }
     Ok(id)
 }
-pub(super) async fn claim_attempt(
+pub(crate) async fn claim_attempt(
     tx: &mut Transaction<'_, Postgres>,
     attempt: &str,
 ) -> Result<(), SettlementError> {
@@ -59,7 +60,7 @@ pub(super) async fn claim_attempt(
         .await?;
     Ok(())
 }
-pub(super) async fn members(
+pub(crate) async fn members(
     tx: &mut Transaction<'_, Postgres>,
     order: &OrderSnapshot,
     claim: bool,
@@ -80,7 +81,7 @@ pub(super) async fn members(
     let sql = if claim {
         "SELECT left(h.id,33) AS id,left(h.owner_id,33) AS owner_id,left(h.sku,66) AS sku,h.revision,h.units,h.created_at,h.expires_at,left(h.state,10) AS state,(m.sku,m.revision,m.units,m.group_id)=(h.sku,h.revision,h.units,h.basket_group_id) AS matches FROM basket_hold_members m JOIN stock_holds h ON h.id=m.hold_id WHERE m.group_id=$1 ORDER BY h.id LIMIT 21 FOR UPDATE OF h"
     } else {
-        "SELECT left(h.id,33) AS id,left(h.owner_id,33) AS owner_id,left(h.sku,66) AS sku,h.revision,h.units,h.created_at,h.expires_at,left(h.state,10) AS state,(m.sku,m.revision,m.units,m.group_id)=(h.sku,h.revision,h.units,h.basket_group_id) AS matches FROM basket_hold_members m JOIN stock_holds h ON h.id=m.hold_id WHERE m.group_id=$1 ORDER BY h.id LIMIT 21"
+        "SELECT left(h.id,33) AS id,left(h.owner_id,33) AS owner_id,left(h.sku,66) AS sku,h.revision,h.units,h.created_at,h.expires_at,left(h.state,10) AS state,(m.sku,m.revision,m.units,m.group_id)=(h.sku,h.revision,h.units,h.basket_group_id) AS matches FROM basket_hold_members m JOIN stock_holds h ON h.id=m.hold_id WHERE m.group_id=$1 ORDER BY h.id LIMIT 21 FOR SHARE OF h"
     };
     let holds: Vec<Hold> = sqlx::query_as(sql)
         .bind(&order.identity.stock_group_id)
@@ -149,6 +150,7 @@ pub(super) async fn members(
         members,
         active_members,
         active: states.iter().all(|state| state == "active"),
+        states,
     })
 }
 #[derive(sqlx::FromRow)]

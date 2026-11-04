@@ -111,3 +111,5 @@ pub struct BillOfMaterials {
     pub revision: i32,
     pub components: Vec<BomComponent>,
 }
+
+pub mod late_stock;

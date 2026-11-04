@@ -632,3 +632,31 @@ digest evaluation, with a paired healthy restoration. Domain/adapter settlement
 modules retain positive native 95% line/branch coverage and compiled fault
 controls at these proof boundaries. These source tests establish neither runtime
 stock consumption nor late-payment reallocation, shipment or provider acceptance.
+
+Late stock allocation requires one canonical allocation across original and late
+paths, with a populated schema-32 upgrade fixture whose original received history
+remains valid after new financial ambiguity. Real isolated PostgreSQL must prove
+all-active deadline, expired and mixed originals, other orders' reservations,
+covers-only and distinct codes, genuine 20 × 64 pairs and 1,280 distinct physical
+component codes. Compare literal stage balances and every required movement;
+measure the closed encoded envelope against its two-MiB bound. Shaped ledger rows
+without real balance changes must fail deferred proof, with an identical healthy
+probe. Event guards and deferred parent proof need separate negative controls.
+
+Released or consumed originals require durable review rather than fresh stock.
+Scarcity leaves no fresh group, hold, claim or physical effect. An actual queue
+interleaving must prove savepoint rollback releases component claims, reclamation
+refreshes availability, and disappearing scarcity returns without a permanent
+case. Later restock, changed evidence or failed clock/entropy cannot automatically
+restart an immutable review. Captured-active history must survive legitimate later
+expiry with coherent SHARE claims; sequence values are not commit chronology.
+
+Force healthy original settlement to commit after a reader's captured absence
+snapshot. It must not be misreported as orphan corruption; a genuine pre-existing
+orphan must still fail, with healthy restoration. Compiled fault controls cover
+current received authority, actual physical parity, successful completion seals,
+final post-write time, bounded digest evaluation and the absence-snapshot race.
+All new late-stock modules, nested allocation adapters and modified reservation
+sources retain positive native 95% line/branch gates without counter rewriting.
+These checks establish private source custody, not runtime stock, provider,
+shipping, field performance or production acceptance.

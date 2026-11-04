@@ -100,3 +100,5 @@ pub mod checkout_quotes;
 pub mod payment_attempts;
 
 pub mod order_stock;
+
+pub mod late_stock;

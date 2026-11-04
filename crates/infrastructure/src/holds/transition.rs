@@ -124,3 +124,28 @@ pub(crate) async fn consume_claimed(
     }
     Ok(())
 }
+
+/// Late recovery owns the original hold and every union balance before expiry.
+pub(crate) async fn expire_claimed(
+    tx: &mut Transaction<'_, Postgres>,
+    id: &str,
+    at: i64,
+) -> Result<(), HoldWriteError> {
+    let stored = sqlx::query_as::<_, StoredHold>("SELECT * FROM stock_holds WHERE id=$1")
+        .bind(id)
+        .fetch_one(&mut **tx)
+        .await?;
+    let receipt = transition_locked(
+        tx,
+        &stored,
+        &HoldCommand::Expire {
+            actor_id: commerce_domain::late_stock::EXPIRY_ACTOR,
+        },
+        at,
+    )
+    .await?;
+    if receipt.replayed {
+        return Err(HoldWriteError::InvalidRequest);
+    }
+    Ok(())
+}

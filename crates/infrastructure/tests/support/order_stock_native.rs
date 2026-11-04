@@ -2,7 +2,7 @@
 use super::*;
 use sqlx::{Postgres, Transaction};
 use std::collections::BTreeMap;
-async fn candidate(pool: &PgPool, f: &Fixture) -> Settlement {
+pub(crate) async fn candidate(pool: &PgPool, f: &Fixture) -> Settlement {
     let holds: Vec<(String, String)> = sqlx::query_as("SELECT id,sku FROM stock_holds ORDER BY id")
         .fetch_all(pool)
         .await
@@ -80,21 +80,27 @@ async fn candidate(pool: &PgPool, f: &Fixture) -> Settlement {
         },
     }
 }
-async fn insert(tx: &mut Transaction<'_, Postgres>, s: &Settlement) -> Result<(), sqlx::Error> {
+pub(crate) async fn insert(
+    tx: &mut Transaction<'_, Postgres>,
+    s: &Settlement,
+) -> Result<(), sqlx::Error> {
     sqlx::query("INSERT INTO order_stock_settlements(id,order_id,attempt_id,recognition_id,group_id,actor,settled_at,footprint) VALUES($1,$2,$3,$4,$5,$6,$7,$8)").bind(&s.id).bind(&s.order_id).bind(&s.attempt_id).bind(&s.recognition_id).bind(&s.group_id).bind(&s.actor).bind(s.settled_at).bind(serde_json::to_value(&s.footprint).expect("footprint fixture")).execute(&mut **tx).await.map(|_|())
 }
-async fn event(tx: &mut Transaction<'_, Postgres>, s: &Settlement) -> Result<(), sqlx::Error> {
+pub(crate) async fn event(
+    tx: &mut Transaction<'_, Postgres>,
+    s: &Settlement,
+) -> Result<(), sqlx::Error> {
     sqlx::query("INSERT INTO commerce_outbox(id,aggregate_id,kind,payload,created_at) SELECT $1,s.order_id,'order.stock_settled.v1',jsonb_build_object('schema_version',1,'order_id',s.order_id,'settlement_id',s.id,'settlement_sha256',order_stock_digest(s)),s.settled_at FROM order_stock_settlements s WHERE s.id=$2").bind("b".repeat(32)).bind(&s.id).execute(&mut **tx).await.map(|_|())
 }
 #[derive(Clone, Copy)]
-enum Fault {
+pub(crate) enum Fault {
     Healthy,
     NoPhysicalChange,
     WrongActor,
     WrongPrefix,
     Partial,
 }
-async fn effects(tx: &mut Transaction<'_, Postgres>, s: &Settlement, fault: Fault) {
+pub(crate) async fn effects(tx: &mut Transaction<'_, Postgres>, s: &Settlement, fault: Fault) {
     let mut running: BTreeMap<String, Balance> = s
         .footprint
         .components
