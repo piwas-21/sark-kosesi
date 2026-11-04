@@ -122,8 +122,10 @@ paid original. Every verified page retains the authenticated request scope,
 including empty and terminal pages. A private journal records exact authenticated child
 observations and their reciprocal events, with bounded history and effect-key
 replay. It preserves amounts above the original payment and unresolved reversal
-status. Durable page custody, orchestration, reconciliation, reservation
-disposition and execution custody remain open. A 404 leaves the child unresolved.
+status. The private page journal keeps exact candidate order and cursor lineage
+with effect-key replay. A validated open tip can restore a same-key continuation.
+Supervised scanning, reconciliation, reservation disposition and execution custody
+remain open. A 404 leaves the child unresolved.
 Customer coupon routes and budget claims remain pending.
 Private promotion drafts and independent exact-revision reviews now persist
 canonical eligibility/discount terms and explicit lifetime budget/redemption limits.

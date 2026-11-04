@@ -58,3 +58,64 @@ async fn schema44_preserves_prior_outbox_and_accepts_both_evidence_kinds(pool: P
     );
     assert_eq!(all_events(&pool).await, after);
 }
+
+#[sqlx::test(migrations = false)]
+async fn schema45_preserves_exact_observations_and_adds_page_custody(pool: PgPool) {
+    MIGRATOR.run_to(44, &pool).await.expect("schema 44");
+    let (time, frozen) = observation_cases::prepared(&pool, true).await;
+    let attempt = &frozen.snapshot().binding.id;
+    let ids = observation_cases::ids();
+    let fact = fetched(frozen.snapshot(), refund("pending", "12.34"), false).await;
+    let original = record(&pool, time.as_ref(), &ids, "before-page-upgrade", &fact)
+        .await
+        .expect("existing reversal custody");
+    let before = all_events(&pool).await;
+
+    MIGRATOR.run_to(45, &pool).await.expect("schema 45");
+    assert_eq!(all_events(&pool).await, before);
+    let preserved = lookup(&pool, attempt, "before-page-upgrade")
+        .await
+        .expect("existing digest still verifies")
+        .expect("existing receipt");
+    assert_eq!(preserved.id, original.id);
+    assert_eq!(preserved.amount_minor, 1234);
+    assert!(preserved.replayed);
+    record(&pool, &At(1501), &ids, "after-page-upgrade", &fact)
+        .await
+        .expect("updated guard still accepts observations");
+
+    let server = Server::start(vec![
+        profile(),
+        Reply::Json(200, payment(frozen.snapshot())),
+        Reply::Json(
+            200,
+            json!({"count":0,"_embedded":{"refunds":[]},"_links":{"next":null}}),
+        ),
+    ]);
+    let client = local(&server)
+        .verify_profile()
+        .await
+        .expect("test profile")
+        .into_reconciliation();
+    let verified = client
+        .reversal_page(frozen.snapshot(), PAYMENT, ReversalKind::Refund, None)
+        .await
+        .expect("authenticated empty page");
+    let page = crate::payment_attempts::reversal_pages::record(
+        &pool,
+        &At(1501),
+        &ids,
+        "page-after-upgrade",
+        None,
+        &verified,
+    )
+    .await
+    .expect("new guard accepts exact page custody");
+    assert_eq!(page.scan_id, page.id);
+    assert_eq!(page.page_number, 1);
+    assert!(page.candidates.is_empty());
+    assert!(page.next_cursor.is_none());
+    let after = all_events(&pool).await;
+    assert_eq!(after.len(), before.len() + 2);
+    assert!(before.iter().all(|row| after.contains(row)));
+}

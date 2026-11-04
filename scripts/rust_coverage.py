@@ -48,6 +48,7 @@ def validate(document, root, branches=True):
             "crates/*/src/payment_attempts/callbacks/inbox/*.rs",
             "crates/worker/src/callbacks.rs",
             "crates/infrastructure/src/mollie/*.rs",
+            "crates/infrastructure/src/mollie/reversal_discovery/*.rs",
             "crates/application/src/payment_requests.rs",
             "crates/application/src/payment_requests/*.rs",
             "crates/application/src/request_context.rs",

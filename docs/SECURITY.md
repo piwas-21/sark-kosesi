@@ -411,6 +411,14 @@ errors out of observations and diagnostics. The PostgreSQL writer role remains t
 The journal preserves positive provider facts and leaves current financial,
 stock and fulfilment decisions to separately authorized operations.
 
+The private page journal accepts only a verified payment-scoped list result.
+The attempt lock serializes page admission. The native journal enforces bounded
+history, one successor per predecessor and exact continuation scope. Receipt
+recovery checks the reciprocal event digest and bounded ancestry before returning
+historical evidence or restoring an open tip's opaque cursor. A continued fetch
+rechecks the paid parent and actual test-key fingerprint. Candidate identities
+require exact authenticated item reads before they enter the observation journal.
+
 ## Private email verification challenge custody
 
 The private challenge primitive accepts only ASCII dot-atom local parts and ASCII

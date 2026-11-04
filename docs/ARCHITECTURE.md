@@ -496,8 +496,18 @@ of the complete immutable receipt in the same transaction. Reads verify that
 binding before returning a receipt. Observations retain each
 provider identity for later reconciliation, including ambiguous payment matches
 and amounts above the original payment. Financial and inventory transitions are
-outside this evidence path. Durable page custody, orchestration and reservation
-disposition remain separate work.
+outside this evidence path.
+
+The private page journal records a verified collection response after network I/O.
+It claims the dispatched attempt, preserves the provider's ordered candidates and
+binds every stored field to a reciprocal outbox digest. Each root starts a separate
+scan. A successor must consume the exact predecessor offset under the same attempt,
+payment, collection and actual key fingerprint. A predecessor has at most one
+successor. Repeated offsets fail closed. The journal keeps at most 32 pages per
+scan and 128 per attempt. Exact effect replay verifies the historical receipt
+and its ancestry. After a restart a validated, open scan tip can restore an opaque
+continuation. Key rotation requires a fresh root. Terminal and capped scans leave
+history unresolved. Supervision and reservation disposition remain separate work.
 
 Reservations encumber refundable amounts. Before execution, reconcile
 provider-side refunds and chargebacks, define uncertain and failed attempt

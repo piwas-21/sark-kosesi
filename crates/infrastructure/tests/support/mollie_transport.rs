@@ -1010,3 +1010,6 @@ mod reversal_discovery_cases;
 
 #[path = "mollie_reversal_journal.rs"]
 mod reversal_journal_cases;
+
+#[path = "mollie_reversal_pages.rs"]
+mod reversal_page_cases;
