@@ -156,7 +156,7 @@ impl Row {
     }
 }
 
-pub(super) async fn load(
+pub(crate) async fn load(
     tx: &mut Transaction<'_, Postgres>,
     frozen: &FrozenAttempt,
     started: i64,
@@ -199,7 +199,7 @@ pub(super) async fn chain(
     }
     Err(PaymentStoreError::InvalidStoredData)
 }
-pub(super) async fn followed(
+pub(crate) async fn followed(
     tx: &mut Transaction<'_, Postgres>,
     id: &str,
 ) -> Result<bool, PaymentStoreError> {
@@ -210,7 +210,7 @@ pub(super) async fn followed(
     .fetch_one(&mut **tx)
     .await?)
 }
-pub(super) async fn history(
+pub(crate) async fn history(
     tx: &mut Transaction<'_, Postgres>,
     attempt_id: &str,
 ) -> Result<(i64, Option<i64>), PaymentStoreError> {

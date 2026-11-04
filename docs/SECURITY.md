@@ -419,6 +419,13 @@ historical evidence or restoring an open tip's opaque cursor. A continued fetch
 rechecks the paid parent and actual test-key fingerprint. Candidate identities
 require exact authenticated item reads before they enter the observation journal.
 
+The private supervisor revalidates the paid source, frozen dispatch and exact
+receipt during enrollment and claim. The durable start fixes the generation,
+credential fingerprint and predecessor before either GET. A stale worker can
+retain late provider evidence. Only the current lease or exact receipt recovery
+can advance a checkpoint. Expiry without a committed receipt leaves an explicit
+review state. A new key uses a separate scan with a fresh root.
+
 ## Private email verification challenge custody
 
 The private challenge primitive accepts only ASCII dot-atom local parts and ASCII

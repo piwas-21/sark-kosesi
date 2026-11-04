@@ -16,6 +16,25 @@ async fn all_events(pool: &PgPool) -> Vec<Value> {
         .expect("complete event rows")
 }
 
+async fn verified_empty_page(attempt: &AttemptSnapshot) -> crate::mollie::ReversalPage {
+    let server = Server::start(vec![
+        profile(),
+        Reply::Json(200, payment(attempt)),
+        Reply::Json(
+            200,
+            json!({"count":0,"_embedded":{"refunds":[]},"_links":{"next":null}}),
+        ),
+    ]);
+    local(&server)
+        .verify_profile()
+        .await
+        .expect("test profile")
+        .into_reconciliation()
+        .reversal_page(attempt, PAYMENT, ReversalKind::Refund, None)
+        .await
+        .expect("authenticated empty page")
+}
+
 #[sqlx::test(migrations = false)]
 async fn schema44_preserves_prior_outbox_and_accepts_both_evidence_kinds(pool: PgPool) {
     MIGRATOR.run_to(43, &pool).await.expect("schema 43");
@@ -84,23 +103,7 @@ async fn schema45_preserves_exact_observations_and_adds_page_custody(pool: PgPoo
         .await
         .expect("updated guard still accepts observations");
 
-    let server = Server::start(vec![
-        profile(),
-        Reply::Json(200, payment(frozen.snapshot())),
-        Reply::Json(
-            200,
-            json!({"count":0,"_embedded":{"refunds":[]},"_links":{"next":null}}),
-        ),
-    ]);
-    let client = local(&server)
-        .verify_profile()
-        .await
-        .expect("test profile")
-        .into_reconciliation();
-    let verified = client
-        .reversal_page(frozen.snapshot(), PAYMENT, ReversalKind::Refund, None)
-        .await
-        .expect("authenticated empty page");
+    let verified = verified_empty_page(frozen.snapshot()).await;
     let page = crate::payment_attempts::reversal_pages::record(
         &pool,
         &At(1501),
@@ -117,5 +120,131 @@ async fn schema45_preserves_exact_observations_and_adds_page_custody(pool: PgPoo
     assert!(page.next_cursor.is_none());
     let after = all_events(&pool).await;
     assert_eq!(after.len(), before.len() + 2);
+    assert!(before.iter().all(|row| after.contains(row)));
+}
+
+#[sqlx::test(migrations = false)]
+async fn schema46_preserves_page_evidence_and_pairs_native_scan_transitions(pool: PgPool) {
+    MIGRATOR.run_to(45, &pool).await.expect("schema 45");
+    let (_, frozen) = observation_cases::prepared(&pool, true).await;
+    let binding = &frozen.snapshot().binding;
+    let ids = observation_cases::ids();
+    let observed = observation_cases::fetched(frozen.snapshot(), PAYMENT, "paid", false).await;
+    let paid = record_verified(
+        &pool,
+        &At(1500),
+        &ids,
+        &binding.id,
+        "before-scan",
+        &observed,
+    )
+    .await
+    .expect("original paid custody");
+    let page = verified_empty_page(frozen.snapshot()).await;
+    let original = crate::payment_attempts::reversal_pages::record(
+        &pool,
+        &At(1500),
+        &ids,
+        "old-page",
+        None,
+        &page,
+    )
+    .await
+    .expect("pre-upgrade page evidence");
+    let before = all_events(&pool).await;
+
+    MIGRATOR.run_to(46, &pool).await.expect("schema 46");
+    assert_eq!(all_events(&pool).await, before);
+    let saved =
+        crate::payment_attempts::reversal_pages::read_page(&pool, &binding.id, &original.id)
+            .await
+            .expect("original page and event survive");
+    assert!(saved.candidates.is_empty());
+    let job = "a".repeat(32);
+    let operation = "b".repeat(32);
+    sqlx::query("INSERT INTO reversal_scan_jobs(id,attempt_id,observation_id,enrollment_key,profile_id,payment_id,reversal_kind,credential_fingerprint,state,generation,failures,created_at,updated_at,due_at) VALUES($1,$2,$3,'native-upgrade',$4,$5,'refund',$6,'pending',0,0,1500,1500,1500)")
+        .bind(&job).bind(&binding.id).bind(&paid.snapshot.id).bind(&binding.profile.id)
+        .bind(PAYMENT).bind(observed.credential_fingerprint()).execute(&pool).await.expect("exact native enrollment");
+
+    let start = "INSERT INTO reversal_scan_operations(id,job_id,generation,started_at,lease_until) VALUES($1,$2,1,1501,1561)";
+    let lease = "UPDATE reversal_scan_jobs SET state='leased',generation=1,updated_at=1501,lease_until=1561 WHERE id=$1";
+    assert!(
+        sqlx::query(lease).bind(&job).execute(&pool).await.is_err(),
+        "lease requires its operation"
+    );
+    let mut orphan = pool.begin().await.expect("orphan test");
+    sqlx::query(start)
+        .bind(&operation)
+        .bind(&job)
+        .execute(&mut *orphan)
+        .await
+        .expect("stage native start");
+    assert!(orphan.commit().await.is_err(), "orphan start cannot commit");
+    let mut paired = pool.begin().await.expect("paired start");
+    sqlx::query(start)
+        .bind(&operation)
+        .bind(&job)
+        .execute(&mut *paired)
+        .await
+        .expect("paired operation");
+    sqlx::query(lease)
+        .bind(&job)
+        .execute(&mut *paired)
+        .await
+        .expect("paired lease");
+    paired.commit().await.expect("durable start");
+
+    let stop =
+        "UPDATE reversal_scan_operations SET outcome='uncertain',finished_at=1561 WHERE id=$1";
+    assert!(
+        sqlx::query(
+            "UPDATE reversal_scan_operations SET outcome='uncertain',finished_at=1560 WHERE id=$1"
+        )
+        .bind(&operation)
+        .execute(&pool)
+        .await
+        .is_err(),
+        "live lease cannot be parked as uncertain"
+    );
+    let mut orphan = pool.begin().await.expect("orphan outcome test");
+    sqlx::query(stop)
+        .bind(&operation)
+        .execute(&mut *orphan)
+        .await
+        .expect("stage native outcome");
+    assert!(
+        orphan.commit().await.is_err(),
+        "orphan outcome cannot commit"
+    );
+    let mut paired = pool.begin().await.expect("paired uncertainty");
+    sqlx::query(stop)
+        .bind(&operation)
+        .execute(&mut *paired)
+        .await
+        .expect("expired operation");
+    sqlx::query("UPDATE reversal_scan_jobs SET state='review',review_reason='uncertain',lease_until=NULL,updated_at=1561,due_at=1561 WHERE id=$1")
+        .bind(&job).execute(&mut *paired).await.expect("park uncertain");
+    paired.commit().await.expect("durable uncertainty");
+    let late = crate::payment_attempts::reversal_pages::record(
+        &pool,
+        &At(1562),
+        &ids,
+        &operation,
+        None,
+        &page,
+    )
+    .await
+    .expect("late evidence can still be retained");
+    assert_eq!(late.effect_key, operation);
+    let state: (String, Option<String>, Option<String>, i32) = sqlx::query_as(
+        "SELECT state,review_reason,tip_page_id,generation FROM reversal_scan_jobs WHERE id=$1",
+    )
+    .bind(job)
+    .fetch_one(&pool)
+    .await
+    .expect("retained uncertain checkpoint");
+    assert_eq!(state, ("review".into(), Some("uncertain".into()), None, 1));
+    let after = all_events(&pool).await;
+    assert_eq!(after.len(), before.len() + 1);
     assert!(before.iter().all(|row| after.contains(row)));
 }

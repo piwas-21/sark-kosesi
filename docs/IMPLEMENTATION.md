@@ -364,8 +364,12 @@ supervision or live provider activation follows from deploying the empty preview
    serializes bounded custody with a reciprocal event. Same-effect retries
    verify the original observation. The page journal keeps a bounded linear scan
    and exact reciprocal events. A validated open tip restores a continuation
-   under the same key. A rotated key starts a new root. Implement supervised
-   scan orchestration with durable checkpoints and bounded retry. An exact GET,
+   under the same key. A rotated key starts a new root. The private page
+   supervisor enrolls from an exact paid observation, commits a single-use
+   start, and checks the matching page receipt before restoring a checkpoint.
+   Expired starts without evidence go to review. Returned transport failures
+   use bounded retries. Supervise exact candidate reads and add operator
+   review and scheduling before provider acceptance. An exact GET,
    404, empty page, ended scan or capped scan
    leaves the provider history and net balance unresolved. Complete provider-side
    refund/chargeback reconciliation, execution custody

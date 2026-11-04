@@ -507,7 +507,21 @@ successor. Repeated offsets fail closed. The journal keeps at most 32 pages per
 scan and 128 per attempt. Exact effect replay verifies the historical receipt
 and its ancestry. After a restart a validated, open scan tip can restore an opaque
 continuation. Key rotation requires a fresh root. Terminal and capped scans leave
-history unresolved. Supervision and reservation disposition remain separate work.
+history unresolved.
+
+The private page supervisor enrolls one active scan per attempt, payment,
+collection and actual test key from a validated paid observation. Each attempt
+retains at most 16 scan jobs, and each scan retains at most 40 operation
+generations. A short database claim commits one exact
+start and a 60-second lease before network I/O. One operation can verify the
+parent and fetch one page. Each explicit batch accepts at most 25 steps from a
+client whose profile was already verified. The checkpoint advances only with
+the exact operation and reciprocal receipt. An expired operation can recover an
+already recorded page without another GET. Expiry without a receipt parks the
+scan for review and preserves any late page as separate historical evidence.
+Transport failures that return to the worker retry after 60 seconds and stop
+after three consecutive failures. Candidate item supervision and reservation
+disposition remain separate.
 
 Reservations encumber refundable amounts. Before execution, reconcile
 provider-side refunds and chargebacks, define uncertain and failed attempt

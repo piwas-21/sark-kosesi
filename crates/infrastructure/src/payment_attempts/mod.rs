@@ -25,6 +25,7 @@ mod read;
 pub mod recognition;
 pub mod reconciliation;
 pub mod reversal_pages;
+pub mod reversal_supervision;
 pub mod reversals;
 pub mod searches;
 mod stored;

@@ -4,7 +4,7 @@ use super::*;
 use crate::mollie::{ReversalCursor, ReversalKind, ReversalPage};
 use commerce_application::request_context::{Clock, Identifiers, ObservedClock};
 use sqlx::PgPool;
-mod rows;
+pub(crate) mod rows;
 
 /// Historical authenticated page. Candidate identifiers still require exact GETs.
 #[derive(Clone, PartialEq, Eq)]
