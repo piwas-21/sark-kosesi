@@ -12,6 +12,14 @@ impl VerifiedCustomerAccountId {
     }
 }
 
+#[derive(sqlx::FromRow)]
+struct CreatedAccountRow {
+    id: i64,
+    email_identity: String,
+    verification_verifier: Vec<u8>,
+    verified_at: i64,
+}
+
 /// Consumes exact proof and creates its account as one indivisible effect.
 pub async fn establish(
     pool: &PgPool,
@@ -21,7 +29,7 @@ pub async fn establish(
 ) -> Result<VerifiedCustomerAccountId, VerificationError> {
     let mut tx = email_verification::begin(pool).await?;
     let proof = email_verification::consume_in_transaction(&mut tx, email, token, clock).await?;
-    let result: Result<Option<(i64, String, Vec<u8>, i64)>, sqlx::Error> = sqlx::query_as(
+    let result = sqlx::query_as::<_, CreatedAccountRow>(
         "INSERT INTO verified_customer_accounts(email_identity,verification_verifier,verified_at) VALUES ($1,$2,$3) RETURNING id,email_identity,verification_verifier,verified_at"
     ).bind(&proof.identity).bind(proof.verifier.as_slice()).bind(proof.captured)
         .fetch_optional(&mut *tx).await;
@@ -32,15 +40,18 @@ pub async fn establish(
         }
         Err(_) => return Err(VerificationError::Unavailable),
     };
-    let Some((id, identity, verifier, verified_at)) = row else {
+    let Some(row) = row else {
         return Err(VerificationError::Unavailable);
     };
-    if identity != proof.identity || verifier != proof.verifier || verified_at != proof.captured {
+    if row.email_identity != proof.identity
+        || row.verification_verifier != proof.verifier
+        || row.verified_at != proof.captured
+    {
         return Err(VerificationError::Unavailable);
     }
     proof.check(clock)?;
     tx.commit()
         .await
         .map_err(|_| VerificationError::Unavailable)?;
-    Ok(VerifiedCustomerAccountId(id))
+    Ok(VerifiedCustomerAccountId(row.id))
 }
