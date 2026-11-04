@@ -69,13 +69,7 @@ fn hex(value: &str, length: usize) -> bool {
             .bytes()
             .all(|b| b.is_ascii_digit() || (b'a'..=b'f').contains(&b))
 }
-pub async fn retry(
-    pool: &PgPool,
-    token: &SessionToken,
-    clock: &dyn Clock,
-    ids: &dyn Identifiers,
-    request: RetryRequest<'_>,
-) -> Result<DecisionReceipt, DispositionError> {
+fn validate_request(request: &RetryRequest<'_>) -> Result<(), DispositionError> {
     if !identifier(request.case_id)
         || !hex(request.case_digest, 64)
         || !hex(request.effect_key, 32)
@@ -88,6 +82,82 @@ pub async fn retry(
     {
         return Err(DispositionError::InvalidRequest);
     }
+    Ok(())
+}
+fn require_stored_ids(ids: &[&str]) -> Result<(), LateStockError> {
+    if !ids.iter().all(|id| identifier(id)) {
+        return Err(LateStockError::InvalidStoredData);
+    }
+    Ok(())
+}
+fn replay_in_history(
+    prior: &DecisionReceipt,
+    chain: &[DecisionReceipt],
+) -> Result<(), LateStockError> {
+    if !chain.iter().any(|decision| decision == prior) {
+        return Err(LateStockError::InvalidStoredData);
+    }
+    Ok(())
+}
+fn validate_replay_intent(
+    prior: &DecisionReceipt,
+    request: &RetryRequest<'_>,
+    actor: &str,
+) -> Result<(), DispositionError> {
+    if prior.case_id != request.case_id
+        || prior.case_digest != request.case_digest
+        || prior.generation != request.expected_generation
+        || prior.reason != request.reason
+        || prior.actor_id != actor
+    {
+        return Err(DispositionError::Conflict);
+    }
+    Ok(())
+}
+fn validate_case_binding(
+    case: &ReviewCase,
+    request_case: &str,
+    attempt: &str,
+) -> Result<(), DispositionError> {
+    if case.id != request_case
+        || case.attempt_id != attempt
+        || case.reason != ReviewReason::ComponentScarcity
+    {
+        return Err(DispositionError::Conflict);
+    }
+    Ok(())
+}
+fn validate_next_generation(
+    prior: &[DecisionReceipt],
+    generation: i32,
+) -> Result<(), DispositionError> {
+    if prior
+        .iter()
+        .any(|item| matches!(item.outcome, DecisionOutcome::Allocated { .. }))
+        || i32::try_from(prior.len())
+            .ok()
+            .and_then(|n| n.checked_add(1))
+            != Some(generation)
+    {
+        return Err(DispositionError::Conflict);
+    }
+    Ok(())
+}
+fn require_open_review(outcome: Option<Outcome>, case_id: &str) -> Result<(), DispositionError> {
+    match outcome {
+        Some(Outcome::NeedsReview(retained)) if retained.id == case_id => Ok(()),
+        Some(Outcome::Late(_)) => Err(DispositionError::Conflict),
+        _ => Err(LateStockError::InvalidStoredData.into()),
+    }
+}
+pub async fn retry(
+    pool: &PgPool,
+    token: &SessionToken,
+    clock: &dyn Clock,
+    ids: &dyn Identifiers,
+    request: RetryRequest<'_>,
+) -> Result<DecisionReceipt, DispositionError> {
+    validate_request(&request)?;
     let mut access = lock_staff(pool, token, clock, Capability::StockRecover)
         .await
         .map_err(DispositionError::Staff)?;
@@ -103,9 +173,7 @@ pub async fn retry(
     .fetch_optional(&mut *access.tx)
     .await?;
     if let Some(attempt) = prior_attempt {
-        if !identifier(&attempt) {
-            return Err(LateStockError::InvalidStoredData.into());
-        }
+        require_stored_ids(&[&attempt])?;
         crate::order_stock::source::claim_attempt(&mut access.tx, &attempt)
             .await
             .map_err(LateStockError::from)?;
@@ -116,23 +184,14 @@ pub async fn retry(
             return Err(LateStockError::InvalidStoredData.into());
         }
         let chain = store::validate_history(&mut access.tx, &prior.case_id).await?;
-        if !chain.iter().any(|decision| decision == &prior) {
-            return Err(LateStockError::InvalidStoredData.into());
-        }
+        replay_in_history(&prior, &chain)?;
         if !matches!(
             rows::read(&mut access.tx, &prior.order_id).await?,
             Some(Outcome::NeedsReview(_) | Outcome::Late(_))
         ) {
             return Err(LateStockError::InvalidStoredData.into());
         }
-        if prior.case_id != request.case_id
-            || prior.case_digest != request.case_digest
-            || prior.generation != request.expected_generation
-            || prior.reason != request.reason
-            || prior.actor_id != access.actor
-        {
-            return Err(DispositionError::Conflict);
-        }
+        validate_replay_intent(&prior, &request, &access.actor)?;
         access.check_time(clock).map_err(DispositionError::Staff)?;
         prior.replayed = true;
         access.tx.commit().await?;
@@ -145,26 +204,15 @@ pub async fn retry(
     .fetch_optional(&mut *access.tx)
     .await?
     .ok_or(DispositionError::Custody(LateStockError::NotFound))?;
-    if !identifier(&order) || !identifier(&attempt) {
-        return Err(LateStockError::InvalidStoredData.into());
-    }
+    require_stored_ids(&[&order, &attempt])?;
     crate::order_stock::source::claim_attempt(&mut access.tx, &attempt)
         .await
         .map_err(LateStockError::from)?;
     let case = rows::review_case(&mut access.tx, &order)
         .await?
         .ok_or(LateStockError::InvalidStoredData)?;
-    if case.id != request.case_id
-        || case.attempt_id != attempt
-        || case.reason != ReviewReason::ComponentScarcity
-    {
-        return Err(DispositionError::Conflict);
-    }
-    match rows::read(&mut access.tx, &order).await? {
-        Some(Outcome::NeedsReview(retained)) if retained.id == case.id => {}
-        Some(Outcome::Late(_)) => return Err(DispositionError::Conflict),
-        _ => return Err(LateStockError::InvalidStoredData.into()),
-    }
+    validate_case_binding(&case, request.case_id, &attempt)?;
+    require_open_review(rows::read(&mut access.tx, &order).await?, &case.id)?;
     history::review(&mut access.tx, &case).await?;
     let digest: String = sqlx::query_scalar(
         "SELECT late_stock_review_digest(s) FROM late_stock_review_cases s WHERE s.id=$1",
@@ -176,16 +224,7 @@ pub async fn retry(
         return Err(DispositionError::Conflict);
     }
     let prior = store::validate_history(&mut access.tx, &case.id).await?;
-    if prior
-        .iter()
-        .any(|item| matches!(item.outcome, DecisionOutcome::Allocated { .. }))
-        || i32::try_from(prior.len())
-            .ok()
-            .and_then(|n| n.checked_add(1))
-            != Some(request.expected_generation)
-    {
-        return Err(DispositionError::Conflict);
-    }
+    validate_next_generation(&prior, request.expected_generation)?;
     let mut receipt = DecisionReceipt {
         id: fresh(ids)?,
         case_id: case.id,
@@ -208,3 +247,7 @@ pub async fn retry(
 }
 pub(super) use store::insert;
 pub(super) use store::validate_history;
+
+#[cfg(test)]
+#[path = "../../../tests/support/late_stock_disposition_request_unit.rs"]
+mod tests;

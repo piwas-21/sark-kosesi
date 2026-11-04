@@ -184,3 +184,30 @@ async fn current(
     })?;
     Ok(Context { order, received })
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::{MIGRATOR, mollie::tests::order_stock_cases::fixture as orders};
+
+    #[sqlx::test(migrator = "MIGRATOR")]
+    async fn late_stock_current_source_requires_the_exact_order_for_a_received_attempt(
+        pool: PgPool,
+    ) {
+        let fixture = orders::accepted(&pool, false, true).await;
+        let order = &fixture.order.identity.id;
+        let attempt = &fixture.frozen.snapshot().binding.id;
+        let foreign = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
+        assert_ne!(order, foreign);
+        let mut tx = pool.begin().await.expect("inspect current paid source");
+        assert!(matches!(
+            current(&mut tx, foreign, attempt).await,
+            Err(LateStockError::InvalidStoredData)
+        ));
+        let bound = current(&mut tx, order, attempt)
+            .await
+            .expect("same received attempt authorizes its exact order");
+        assert_eq!(&bound.order.identity.id, order);
+        tx.rollback().await.expect("read-only transaction");
+    }
+}

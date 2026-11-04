@@ -4,6 +4,20 @@ use crate::{
     late_stock::disposition::{self, DecisionOutcome, DispositionError, RetryRequest},
     staff_access::{SessionToken, StaffError},
 };
+use commerce_application::request_context::{Clock, ContextError};
+use std::sync::atomic::AtomicUsize;
+
+struct FailAfterAuthorization(AtomicUsize);
+
+impl Clock for FailAfterAuthorization {
+    fn unix_seconds(&self) -> Result<u64, ContextError> {
+        if self.0.fetch_add(1, Ordering::SeqCst) == 0 {
+            Ok(2000)
+        } else {
+            Err(ContextError::ClockUnavailable)
+        }
+    }
+}
 
 async fn scarce(pool: &PgPool) -> (Fixture, ReviewCase, String) {
     let f = accepted(pool, false, true).await;
@@ -65,6 +79,292 @@ fn request<'a>(
         reason: "physical stock rechecked",
         confirmed: true,
     }
+}
+
+#[sqlx::test(migrator = "MIGRATOR")]
+async fn retry_rejects_active_original_released_after_scarcity_case(pool: PgPool) {
+    let f = accepted(&pool, false, true).await;
+    f.time.0.store(2000, Ordering::SeqCst);
+    let foam_hold: String = sqlx::query_scalar("SELECT h.id FROM stock_holds h JOIN stock_hold_lines l ON l.hold_id=h.id WHERE h.basket_group_id=$1 AND l.component_code='SEAT-FOAM'")
+        .bind(&f.order.identity.stock_group_id)
+        .fetch_one(&pool)
+        .await
+        .expect("the original foam member");
+    transition_hold(
+        &pool,
+        &foam_hold,
+        HoldCommand::Expire {
+            actor_id: "fixture-partial-expiry",
+        },
+        2000,
+    )
+    .await
+    .expect("expire only the foam member");
+    receive(
+        &pool,
+        "partial-expiry-count-foam",
+        "SEAT-FOAM",
+        WarehouseChange::Count(2),
+    )
+    .await;
+    let Outcome::NeedsReview(case) =
+        recover(&pool, f.time.as_ref(), f.ids.as_ref(), &f.order.identity.id)
+            .await
+            .expect("real scarcity with one active member")
+            .outcome
+    else {
+        panic!("scarcity must retain a review case")
+    };
+    assert_eq!(case.reason, ReviewReason::ComponentScarcity);
+    let active = case
+        .footprint
+        .original
+        .iter()
+        .find(|member| member.state == OriginalState::Active)
+        .expect("one original member remains active");
+    transition_hold(
+        &pool,
+        &active.member.hold_id,
+        HoldCommand::Release {
+            owner_id: &f.order.identity.id,
+            actor_id: "fixture-later-release",
+        },
+        2000,
+    )
+    .await
+    .expect("record genuine later release intent");
+    let digest: String = sqlx::query_scalar(
+        "SELECT late_stock_review_digest(c) FROM late_stock_review_cases c WHERE id=$1",
+    )
+    .bind(&case.id)
+    .fetch_one(&pool)
+    .await
+    .expect("exact historical case digest");
+    let token = staff(&pool, "stock.recover", 101).await;
+    let before = all_effects(&pool).await;
+    assert!(matches!(
+        disposition::retry(
+            &pool,
+            &token,
+            f.time.as_ref(),
+            f.ids.as_ref(),
+            request(&case, &digest, "10101010101010101010101010101010", 1),
+        )
+        .await,
+        Err(DispositionError::Custody(LateStockError::NotApplicable))
+    ));
+    assert_eq!(all_effects(&pool).await, before);
+    let decisions: i64 = sqlx::query_scalar("SELECT count(*) FROM late_stock_dispositions")
+        .fetch_one(&pool)
+        .await
+        .expect("no retry decision");
+    assert_eq!(decisions, 0);
+}
+
+#[sqlx::test(migrator = "MIGRATOR")]
+async fn retry_clock_failure_after_authorization_rolls_back_and_allows_same_request(pool: PgPool) {
+    let (f, case, digest) = scarce(&pool).await;
+    let token = staff(&pool, "stock.recover", 102).await;
+    let before = all_effects(&pool).await;
+    let clock = FailAfterAuthorization(AtomicUsize::new(0));
+    let key = "10201020102010201020102010201020";
+    assert!(matches!(
+        disposition::retry(
+            &pool,
+            &token,
+            &clock,
+            f.ids.as_ref(),
+            request(&case, &digest, key, 1),
+        )
+        .await,
+        Err(DispositionError::Custody(LateStockError::ClockUnavailable))
+    ));
+    assert_eq!(clock.0.load(Ordering::SeqCst), 2);
+    assert_eq!(all_effects(&pool).await, before);
+    let decisions: i64 = sqlx::query_scalar("SELECT count(*) FROM late_stock_dispositions")
+        .fetch_one(&pool)
+        .await
+        .expect("failed clock creates no decision");
+    assert_eq!(decisions, 0);
+    let healthy = disposition::retry(
+        &pool,
+        &token,
+        f.time.as_ref(),
+        f.ids.as_ref(),
+        request(&case, &digest, key, 1),
+    )
+    .await
+    .expect("healthy clock permits the same confirmed request");
+    assert!(matches!(healthy.outcome, DecisionOutcome::StillScarce));
+    assert!(!healthy.replayed);
+}
+
+#[sqlx::test(migrator = "MIGRATOR")]
+async fn retry_before_original_deadline_cannot_reassess_retained_case(pool: PgPool) {
+    let (f, case, digest) = scarce(&pool).await;
+    let token = staff(&pool, "stock.recover", 103).await;
+    let before = all_effects(&pool).await;
+    let key = "10301030103010301030103010301030";
+    assert_eq!(f.order.identity.hold_expires_at, 2000);
+    f.time.0.store(1999, Ordering::SeqCst);
+    assert!(matches!(
+        disposition::retry(
+            &pool,
+            &token,
+            f.time.as_ref(),
+            f.ids.as_ref(),
+            request(&case, &digest, key, 1),
+        )
+        .await,
+        Err(DispositionError::Custody(LateStockError::NotApplicable))
+    ));
+    assert_eq!(all_effects(&pool).await, before);
+    let decisions: i64 = sqlx::query_scalar("SELECT count(*) FROM late_stock_dispositions")
+        .fetch_one(&pool)
+        .await
+        .expect("no decision before the original deadline");
+    assert_eq!(decisions, 0);
+    f.time.0.store(2000, Ordering::SeqCst);
+    let healthy = disposition::retry(
+        &pool,
+        &token,
+        f.time.as_ref(),
+        f.ids.as_ref(),
+        request(&case, &digest, key, 1),
+    )
+    .await
+    .expect("same request at the original deadline");
+    assert!(matches!(healthy.outcome, DecisionOutcome::StillScarce));
+    assert!(!healthy.replayed);
+}
+
+async fn wait_for_retry_lock(pool: &PgPool, pattern: &str, count: i64) {
+    tokio::time::timeout(std::time::Duration::from_secs(3), async {
+        loop {
+            let actual: i64 = sqlx::query_scalar("SELECT count(*) FROM pg_stat_activity WHERE datname=current_database() AND wait_event_type='Lock' AND query LIKE $1")
+                .bind(pattern)
+                .fetch_one(pool)
+                .await
+                .expect("observe real database lock waiters");
+            if actual >= count {
+                return;
+            }
+            tokio::time::sleep(std::time::Duration::from_millis(5)).await;
+        }
+    })
+    .await
+    .expect("expected database lock wait");
+}
+
+#[sqlx::test(migrator = "MIGRATOR")]
+async fn retry_rechecks_scarcity_after_real_concurrent_restock_and_rolls_back(pool: PgPool) {
+    let (f, case, digest) = scarce(&pool).await;
+    let token = staff(&pool, "stock.recover", 104).await;
+    let before = all_effects(&pool).await;
+    let mut foam = pool.begin().await.expect("first assessment foam gate");
+    foam.execute(
+        "SELECT component_code FROM stock_balances WHERE component_code='SEAT-FOAM' FOR UPDATE",
+    )
+    .await
+    .expect("hold the second database-ordered component");
+    let mut gate = pool.begin().await.expect("restock phase gate");
+    gate.execute("SELECT pg_advisory_xact_lock(938006)")
+        .await
+        .expect("hold restock after savepoint rollback");
+    let p = pool.clone();
+    let time = f.time.clone();
+    let ids = f.ids.clone();
+    let retry_case = case.clone();
+    let retry_digest = digest.clone();
+    let key = "10401040104010401040104010401040";
+    let retry = tokio::spawn(async move {
+        disposition::retry(
+            &p,
+            &token,
+            time.as_ref(),
+            ids.as_ref(),
+            request(&retry_case, &retry_digest, key, 1),
+        )
+        .await
+    });
+    wait_for_retry_lock(&pool, "SELECT %FROM stock_balances%FOR UPDATE", 1).await;
+    let p = pool.clone();
+    let restock = tokio::spawn(async move {
+        let mut tx = p.begin().await.expect("queued real restock");
+        tx.execute("SELECT component_code FROM stock_balances ORDER BY component_code FOR UPDATE")
+            .await
+            .expect("claim both components after savepoint releases them");
+        tx.execute("SELECT pg_advisory_xact_lock(938006)")
+            .await
+            .expect("restock phase gate");
+        tx.execute("UPDATE stock_balances SET on_hand=on_hand+3 WHERE component_code='SEAT-FOAM'; INSERT INTO stock_movements(effect_key,component_code,action,quantity,actor,reason,on_hand_delta,quarantine_delta,reserved_delta,on_hand_after,quarantine_after,reserved_after) VALUES('retry-race-restock','SEAT-FOAM','receive',3,'fixture-warehouse','synthetic physical custody',3,0,0,5,1,0)")
+            .await
+            .expect("actual restock and matching physical ledger");
+        tx.commit().await.expect("commit external restock");
+    });
+    wait_for_retry_lock(&pool, "SELECT %FROM stock_balances%FOR UPDATE", 2).await;
+    foam.commit()
+        .await
+        .expect("first assessment remains scarce");
+    wait_for_retry_lock(&pool, "SELECT pg_advisory_xact_lock(938006)", 1).await;
+    wait_for_retry_lock(&pool, "SELECT %FROM stock_balances%FOR UPDATE", 1).await;
+    gate.commit().await.expect("restock wins second assessment");
+    restock.await.expect("external restock task");
+    assert!(matches!(
+        retry.await.expect("retry task"),
+        Err(DispositionError::Custody(LateStockError::StateChanged))
+    ));
+    let mut after = all_effects(&pool).await;
+    let mut expected = before.clone();
+    let before_moves = expected["moves"].as_array().expect("initial movements");
+    let after_moves = after["moves"].as_array().expect("movements after restock");
+    assert_eq!(after_moves.len(), before_moves.len() + 1);
+    assert_eq!(&after_moves[..before_moves.len()], before_moves);
+    assert_eq!(
+        after_moves[before_moves.len()]["effect_key"],
+        "retry-race-restock"
+    );
+    expected
+        .as_object_mut()
+        .expect("effects object")
+        .remove("moves");
+    expected
+        .as_object_mut()
+        .expect("effects object")
+        .remove("balances");
+    after
+        .as_object_mut()
+        .expect("effects object")
+        .remove("moves");
+    after
+        .as_object_mut()
+        .expect("effects object")
+        .remove("balances");
+    assert_eq!(after, expected, "retry leaves no durable custody effects");
+    assert_eq!(
+        balances(&pool).await,
+        vec![
+            ("SEAT-COVER".into(), 10, 1, 0),
+            ("SEAT-FOAM".into(), 5, 1, 0)
+        ]
+    );
+    let decisions: i64 = sqlx::query_scalar("SELECT count(*) FROM late_stock_dispositions")
+        .fetch_one(&pool)
+        .await
+        .expect("changed assessment creates no decision");
+    assert_eq!(decisions, 0);
+    let healthy = disposition::retry(
+        &pool,
+        &SessionToken::from_bytes([104; 32]),
+        f.time.as_ref(),
+        f.ids.as_ref(),
+        request(&case, &digest, key, 1),
+    )
+    .await
+    .expect("same confirmed request can allocate after restock");
+    assert!(matches!(healthy.outcome, DecisionOutcome::Allocated { .. }));
+    assert!(!healthy.replayed);
+    assert_eq!(allocation_counts(&pool).await, (1, 1, 1, 0, 2, 4, 3, 3, 6));
 }
 
 #[sqlx::test(migrations = false)]
@@ -279,6 +579,17 @@ async fn authorized_scarcity_retry_preserves_case_and_replays_each_decision_with
     assert!(old.replayed && current.replayed);
     assert_eq!(old.id, first.id);
     assert_eq!(current.id, success.id);
+    assert!(matches!(
+        disposition::retry(
+            &pool,
+            &token,
+            f.time.as_ref(),
+            f.ids.as_ref(),
+            request(&case, &digest, "33333333333333333333333333333333", 3),
+        )
+        .await,
+        Err(DispositionError::Conflict)
+    ));
     assert_eq!(all_effects(&pool).await, after_success);
 }
 

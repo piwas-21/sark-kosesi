@@ -145,6 +145,24 @@ async fn stock_review_inbox_authority_bounded_paging_filter_and_damaged_custody(
             .case_id,
         case.id
     );
+    pool.execute("ALTER TABLE payment_attempts RENAME TO unavailable_review_attempts")
+        .await
+        .expect("interrupt the candidate attempt lock");
+    assert!(matches!(
+        read(None, None, MAX_CANDIDATES).await,
+        Err(InboxError::Custody(LateStockError::Database))
+    ));
+    pool.execute("ALTER TABLE unavailable_review_attempts RENAME TO payment_attempts")
+        .await
+        .expect("restore the candidate attempt lock");
+    assert_eq!(
+        read(None, None, MAX_CANDIDATES)
+            .await
+            .expect("healthy read after restoring the attempt lock")
+            .cases[0]
+            .case_id,
+        case.id
+    );
     f.time.0.store(2801, Ordering::SeqCst);
     assert!(matches!(
         read(None, None, 1).await,

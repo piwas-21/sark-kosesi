@@ -88,6 +88,10 @@ pub(in crate::late_stock) async fn validate_history(
         .into_iter()
         .map(Row::receipt)
         .collect::<Result<Vec<_>, _>>()?;
+    validate_sequence(&result, case)?;
+    Ok(result)
+}
+fn validate_sequence(result: &[DecisionReceipt], case: &str) -> Result<(), LateStockError> {
     for (index, item) in result.iter().enumerate() {
         if item.case_id != case
             || usize::try_from(item.generation).ok() != Some(index + 1)
@@ -97,7 +101,7 @@ pub(in crate::late_stock) async fn validate_history(
             return Err(LateStockError::InvalidStoredData);
         }
     }
-    Ok(result)
+    Ok(())
 }
 pub(in crate::late_stock) async fn insert(
     tx: &mut Transaction<'_, Postgres>,
@@ -122,3 +126,7 @@ pub(in crate::late_stock) async fn insert(
     }
     Ok(())
 }
+
+#[cfg(test)]
+#[path = "../../../tests/support/late_stock_disposition_store_unit.rs"]
+mod tests;
