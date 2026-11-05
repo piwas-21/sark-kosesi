@@ -138,10 +138,47 @@ def validate(document, root, branches=True):
     return results
 
 
+def projected_branches(item):
+    """Reproduce LLVM's unified file-branch projection for the pinned export."""
+    rows, expansions = item.get("branches"), item.get("expansions")
+    if not isinstance(rows, list) or expansions != []:
+        raise ValueError("Missing or unsupported Rust branch detail")
+    grouped = {}
+    for row in rows:
+        if (
+            not isinstance(row, list)
+            or len(row) != 9
+            or any(type(value) is not int or value < 0 for value in row)
+            or row[0] < 1
+            or row[1] < 1
+            or row[8] != 4
+        ):
+            raise ValueError("Invalid Rust branch detail")
+        location = tuple(row[:2])
+        counts = grouped.setdefault(location, [0, 0])
+        counts[0] += row[4]
+        counts[1] += row[5]
+        # LLVM's LCOV exporter narrows the unified counters to unsigned int.
+        # Reject overflow rather than accepting wrapped or clamped evidence.
+        if max(counts) > 0xFFFFFFFF:
+            raise ValueError("Rust branch counter exceeds LCOV range")
+    result = {}
+    previous_line, pair = None, 0
+    for (line, _column), counts in sorted(grouped.items()):
+        if line != previous_line:
+            previous_line, pair = line, 0
+        result[(line, pair, pair * 2)] = counts[0]
+        result[(line, pair, pair * 2 + 1)] = counts[1]
+        pair += 1
+    return result
+
+
 def validate_lcov(text, document, root):
     """Check the Sonar import against native counters, preserving LLVM semantics."""
+    if document.get("version") != "3.1.0":
+        raise ValueError("Unsupported native LLVM coverage version")
     native = {
-        Path(item["filename"]).resolve(): item["summary"]
+        Path(item["filename"]).resolve(): item
         for unit in document.get("data", [])
         for item in unit.get("files", [])
     }
@@ -195,7 +232,8 @@ def validate_lcov(text, document, root):
     if not sources or not sources <= records.keys():
         raise ValueError("Rust LCOV import omits maintained source")
     for path, record in records.items():
-        summary = native[path]
+        item = native[path]
+        summary = item["summary"]
         lines, covered_lines = counter(summary, "lines")
         branches, covered_branches = counter(summary, "branches")
         expected = {"LF": lines, "LH": covered_lines, "BRF": branches, "BRH": covered_branches}
@@ -210,9 +248,6 @@ def validate_lcov(text, document, root):
             or sum(value > 0 for value in record["lines"].values()) > covered_lines
         ):
             raise ValueError("Rust LCOV line population exceeds native summaries")
-        if (
-            len(record["branches"]) != branches
-            or sum(value > 0 for value in record["branches"].values()) != covered_branches
-        ):
+        if record["branches"] != projected_branches(item):
             raise ValueError("Rust LCOV branch population differs from native evidence")
     return len(sources)
