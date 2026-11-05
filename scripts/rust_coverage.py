@@ -248,6 +248,13 @@ def validate_lcov(text, document, root):
             or sum(value > 0 for value in record["lines"].values()) > covered_lines
         ):
             raise ValueError("Rust LCOV line population exceeds native summaries")
-        if record["branches"] != projected_branches(item):
-            raise ValueError("Rust LCOV branch population differs from native evidence")
+        branch_hits = record["branches"]
+        if (
+            len(branch_hits) != branches
+            or sum(value > 0 for value in branch_hits.values()) < covered_branches
+            or branch_hits != projected_branches(item)
+        ):
+            raise ValueError(
+                f"Rust LCOV branch population differs from native evidence: {path.relative_to(root)}"
+            )
     return len(sources)

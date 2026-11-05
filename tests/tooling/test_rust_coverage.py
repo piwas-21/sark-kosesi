@@ -248,10 +248,31 @@ class RustCoverage(unittest.TestCase):
         native = copy.deepcopy(self.document)
         first = native["data"][0]["files"][0]
         first["branches"].insert(0, [1, 4, 1, 5, 0, 0, 0, 0, 4])
+        first["summary"]["branches"]["count"] = 22
         text = self.lcov().replace("BRDA:1,0,1,1", "BRDA:1,0,1,1\nBRDA:1,1,2,-\nBRDA:1,1,3,-", 1)
+        text = text.replace("BRF:20", "BRF:22", 1)
         self.assertEqual(validate_lcov(text, native, self.root), 5)
         with self.assertRaisesRegex(ValueError, "branch population"):
             validate_lcov(text.replace("BRDA:1,1,3,-\n", "", 1), native, self.root)
+
+    def test_joint_loss_of_detail_cannot_pass_with_intact_summaries(self):
+        from rust_coverage import validate_lcov
+
+        for drop_pair in (True, False):
+            native = copy.deepcopy(self.document)
+            rows = native["data"][0]["files"][0]["branches"]
+            text = self.lcov()
+            if drop_pair:
+                rows.pop(0)
+                text = text.replace("BRDA:1,0,0,1\nBRDA:1,0,1,1\n", "", 1)
+            else:
+                rows[0][4] = 0
+                text = text.replace("BRDA:1,0,0,1", "BRDA:1,0,0,0", 1)
+            with (
+                self.subTest(drop_pair=drop_pair),
+                self.assertRaisesRegex(ValueError, "branch population"),
+            ):
+                validate_lcov(text, native, self.root)
 
     def test_invalid_native_branch_details_fail_closed(self):
         from rust_coverage import validate_lcov

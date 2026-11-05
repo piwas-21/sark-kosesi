@@ -75,8 +75,9 @@ LLVM reports branch summaries from function instantiations and merges LCOV
 branch details by source location. Those views can disagree when different
 instantiations cover different directions. Validate LCOV summary fields against
 the native summaries and validate each LCOV branch hit count against the
-location-merged detailed native records. Native coverage thresholds use the
-original summaries.
+location-merged detailed native records. The detail must account for the full
+native branch population and at least the reported covered directions. Native
+coverage thresholds use the original summaries.
 If the coverage step fails after exporting nightly reports, CI preserves the raw
 JSON and LCOV under a separate revision-bound diagnostics artifact. Sonar only
 consumes the application artifact published after successful validation and build.
