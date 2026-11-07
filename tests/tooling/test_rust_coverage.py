@@ -30,7 +30,18 @@ class RustCoverage(unittest.TestCase):
         self.document = {
             "type": "llvm.coverage.json.export",
             "version": "3.1.0",
-            "data": [{"files": files}],
+            "data": [
+                {
+                    "files": files,
+                    "functions": [
+                        {
+                            "filenames": [item["filename"]],
+                            "branches": copy.deepcopy(item["branches"]),
+                        }
+                        for item in files
+                    ],
+                }
+            ],
         }
 
     def test_real_package_thresholds_and_zero_branch_evidence(self):
@@ -219,6 +230,7 @@ class RustCoverage(unittest.TestCase):
         native = copy.deepcopy(self.document)
         first = native["data"][0]["files"][0]
         first["branches"] += [[1, 1, 1, 2, 0, 2, 0, 0, 4]]
+        native["data"][0]["functions"][0]["branches"] = copy.deepcopy(first["branches"])
         first["summary"]["branches"]["covered"] = 19
         text = self.lcov().replace("BRDA:1,0,1,1", "BRDA:1,0,1,3", 1)
         text = text.replace("BRH:20", "BRH:19", 1)
@@ -238,6 +250,9 @@ class RustCoverage(unittest.TestCase):
         first = native["data"][0]["files"][0]
         first["branches"][0][5] = 0
         first["branches"].append([1, 1, 1, 2, 0, 1, 0, 0, 4])
+        functions = native["data"][0]["functions"]
+        functions[0]["branches"] = copy.deepcopy(first["branches"][:-1])
+        functions.append({"filenames": [first["filename"]], "branches": [first["branches"][-1]]})
         first["summary"]["branches"]["covered"] = 19
         text = self.lcov().replace("BRH:20", "BRH:19", 1)
         self.assertEqual(validate_lcov(text, native, self.root), 5)
@@ -248,6 +263,7 @@ class RustCoverage(unittest.TestCase):
         native = copy.deepcopy(self.document)
         first = native["data"][0]["files"][0]
         first["branches"].insert(0, [1, 4, 1, 5, 0, 0, 0, 0, 4])
+        native["data"][0]["functions"][0]["branches"] = copy.deepcopy(first["branches"])
         first["summary"]["branches"]["count"] = 22
         text = self.lcov().replace("BRDA:1,0,1,1", "BRDA:1,0,1,1\nBRDA:1,1,2,-\nBRDA:1,1,3,-", 1)
         text = text.replace("BRF:20", "BRF:22", 1)
@@ -268,11 +284,76 @@ class RustCoverage(unittest.TestCase):
             else:
                 rows[0][4] = 0
                 text = text.replace("BRDA:1,0,0,1", "BRDA:1,0,0,0", 1)
+            native["data"][0]["functions"][0]["branches"] = copy.deepcopy(rows)
             with (
                 self.subTest(drop_pair=drop_pair),
                 self.assertRaisesRegex(ValueError, "branch population"),
             ):
                 validate_lcov(text, native, self.root)
+
+    def test_folded_direction_can_exceed_native_population(self):
+        from rust_coverage import validate_lcov
+
+        native = copy.deepcopy(self.document)
+        first = native["data"][0]["files"][0]
+        # One compiler-folded direction is absent from the native summary but
+        # retained in both LLVM detail projections and the LCOV branch records.
+        first["branches"][0][4] = 0
+        native["data"][0]["functions"][0]["branches"][0][4] = 0
+        first["summary"]["branches"] = {"count": 19, "covered": 19}
+        text = self.lcov().replace("BRDA:1,0,0,1", "BRDA:1,0,0,-", 1)
+        text = text.replace("BRF:20\nBRH:20", "BRF:19\nBRH:19", 1)
+        self.assertEqual(validate_lcov(text, native, self.root), 5)
+
+        # A matched removal from all detail exports still cannot fall below
+        # either summary lower bound.
+        first["branches"].pop(0)
+        native["data"][0]["functions"][0]["branches"].pop(0)
+        text = text.replace("BRDA:1,0,0,-\nBRDA:1,0,1,1\n", "", 1)
+        with self.assertRaisesRegex(ValueError, "branch population"):
+            validate_lcov(text, native, self.root)
+
+    def test_function_projection_is_independent_and_fails_closed(self):
+        from rust_coverage import validate_lcov
+
+        for change in (
+            "missing",
+            "altered",
+            "missing-row",
+            "index",
+            "expanded-index",
+            "shape",
+            "filenames",
+        ):
+            native = copy.deepcopy(self.document)
+            unit = native["data"][0]
+            function = unit["functions"][0]
+            if change == "missing":
+                del unit["functions"]
+            elif change == "altered":
+                function["branches"][0][4] += 1
+            elif change == "missing-row":
+                function["branches"].pop()
+            elif change == "index":
+                function["branches"][0][6] = 1
+            elif change == "expanded-index":
+                function["branches"][0][7] = 1
+            elif change == "shape":
+                function["branches"][0].pop()
+            else:
+                function["filenames"] = []
+            with self.subTest(change=change), self.assertRaises(ValueError):
+                validate_lcov(self.lcov(), native, self.root)
+
+        # Unexported dependency filenames are permitted, but their rows and
+        # filename indices remain subject to validation.
+        native = copy.deepcopy(self.document)
+        external = {"filenames": ["/dependency.rs"], "branches": [[1, 1, 1, 2, 0, 1, 0, 0, 4]]}
+        native["data"][0]["functions"].append(external)
+        self.assertEqual(validate_lcov(self.lcov(), native, self.root), 5)
+        external["branches"][0][6] = 2
+        with self.assertRaisesRegex(ValueError, "filename index"):
+            validate_lcov(self.lcov(), native, self.root)
 
     def test_invalid_native_branch_details_fail_closed(self):
         from rust_coverage import validate_lcov

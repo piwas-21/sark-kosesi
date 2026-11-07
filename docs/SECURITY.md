@@ -400,6 +400,40 @@ The database role stays trusted. The event carries only the order, reservation
 and digest. Keep raw reasons and credentials out of diagnostics. Execution,
 credits and inventory effects require independent authority.
 
+## Private provider reversal observation custody
+
+Only an authenticated exact-item result from the test-profile client enters the
+observation writer. Network I/O finishes before the transaction claims the
+dispatched attempt. The writer verifies the frozen source and keeps a bounded,
+immutable history with exact replay and a reciprocal event bound to the full
+receipt digest. Keep provider metadata, reasons, raw credentials and raw SQL
+errors out of observations and diagnostics. The PostgreSQL writer role remains trusted for provider provenance.
+The journal preserves positive provider facts and leaves current financial,
+stock and fulfilment decisions to separately authorized operations.
+
+The private page journal accepts only a verified payment-scoped list result.
+The attempt lock serializes page admission. The native journal enforces bounded
+history, one successor per predecessor and exact continuation scope. Receipt
+recovery checks the reciprocal event digest and bounded ancestry before returning
+historical evidence or restoring an open tip's opaque cursor. A continued fetch
+rechecks the paid parent and actual test-key fingerprint. Candidate identities
+require exact authenticated item reads before they enter the observation journal.
+
+The private supervisor revalidates the paid source, frozen dispatch and exact
+receipt during enrollment and claim. The durable start fixes the generation,
+credential fingerprint and predecessor before either GET. A stale worker can
+retain late provider evidence. Only the current lease or exact receipt recovery
+can advance a checkpoint. Expiry without a committed receipt leaves an explicit
+review state. A new key uses a separate scan with a fresh root.
+
+Item supervision revalidates page ancestry, the reciprocal page digest and the
+one-based candidate ordinal under the attempt claim. The exact paid parent and
+child are fetched under the same verified test key outside the claim. Completion
+requires the operation's own reciprocal journal receipt with matching child,
+collection and key. A receipt from another operation cannot advance the job.
+Expired operations preserve their evidence for review without starting another
+fetch for the same operation.
+
 ## Private email verification challenge custody
 
 The private challenge primitive accepts only ASCII dot-atom local parts and ASCII

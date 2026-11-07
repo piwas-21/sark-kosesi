@@ -114,9 +114,24 @@ refund allocations preserve captured tax across partial credits. A pure order-sc
 allocator now checks explicit SKU/shipping balances and returns exact captured
 gross/net/VAT deltas. A private, confirmed finance reservation claims these
 amounts once against the accepted order and current received evidence, with
-immutable cumulative accounting and a minimal outbox event. Provider-side
-refund/chargeback reconciliation, resolution of reservations and execution
-custody remain open. No customer coupon route or budget claim is installed.
+immutable cumulative accounting and a minimal outbox event. Private test-key
+exact-item refund and chargeback GETs now verify the paid original and return
+minimal bounded observations. Payment-specific test-profile list pages now yield
+only bounded reversal identity hints and scoped continuations after verifying the
+paid original. Every verified page retains the authenticated request scope,
+including empty and terminal pages. A private journal records exact authenticated child
+observations and their reciprocal events, with bounded history and effect-key
+replay. It preserves amounts above the original payment and unresolved reversal
+status. The private page journal keeps exact candidate order and cursor lineage
+with effect-key replay. A validated open tip can restore a same-key continuation.
+An explicit test-profile supervisor now admits bounded page operations from an
+authenticated paid observation. Durable starts, exact receipt recovery and fenced
+checkpoints keep uncertain work visible for review. Explicit local/test worker
+commands enroll, run a bounded pass and inspect scan state. A separate item
+supervisor binds one candidate position to an exact authenticated refund or
+chargeback observation. Operator recovery, reconciliation, reservation
+disposition and execution custody remain open.
+Customer coupon routes and budget claims remain pending.
 Private promotion drafts and independent exact-revision reviews now persist
 canonical eligibility/discount terms and explicit lifetime budget/redemption limits.
 New drafts and withdrawal block older approvals; no coupons or grants are seeded.

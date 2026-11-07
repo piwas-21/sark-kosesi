@@ -72,12 +72,13 @@ LLVM LCOV summary line totals include async
 and macro regions that do not map one-to-one to emitted DA records; do not rewrite
 those totals to manufacture consistency. LCOV remains the Sonar import format.
 LLVM reports branch summaries from function instantiations and merges LCOV
-branch details by source location. Those views can disagree when different
-instantiations cover different directions. Validate LCOV summary fields against
-the native summaries and validate each LCOV branch hit count against the
-location-merged detailed native records. The detail must account for the full
-native branch population and at least the reported covered directions. Native
-coverage thresholds use the original summaries.
+branch details by source location. Those views can disagree when instantiations
+cover different directions or a direction is folded. Validate LCOV summary
+fields against the native summaries. Independently project the native file and
+function branch details by location and require both to match every LCOV branch
+identity and hit count. These details must account for at least the native
+summary's total and covered directions. Native coverage thresholds use the
+original summaries.
 If the coverage step fails after exporting nightly reports, CI preserves the raw
 JSON and LCOV under a separate revision-bound diagnostics artifact. Sonar only
 consumes the application artifact published after successful validation and build.
@@ -112,9 +113,10 @@ Linux CI uses Tab. This does not replace manual Safari/assistive-technology acce
 The P1 browser scope is the authenticated, noindex, read-only preview. The gallery,
 locale/theme and fixture catalogue run on Chromium/Firefox/WebKit; Lighthouse
 uses the production build for home/detail/gallery and k6 runs the isolated
-catalogue fixture. Checkout/payment/account/room-planner acceptance stays pending
-until those features exist. No passing dummy journeys are substituted. Initial visual candidates are captured
-separately. `config/visual-approval.json` must record actual human approval and
+catalogue fixture. The Application gate has a 65-minute job limit to accommodate
+these checks and the full visual comparison. Checkout/payment/account/room-planner
+acceptance stays pending until those features exist. No passing dummy journeys are
+substituted. Initial visual candidates are captured separately. `config/visual-approval.json` must record actual human approval and
 bind every baseline image hash to the current UI source digest. Missing/stale
 approval fails before comparison; snapshot updating is disabled in normal gates.
 The CI browser artifact contains the candidate gallery for review. Local evidence

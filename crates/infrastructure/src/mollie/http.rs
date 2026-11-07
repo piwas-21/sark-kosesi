@@ -31,6 +31,12 @@ impl Http {
             ACCEPT,
             reqwest::header::HeaderValue::from_static("application/hal+json, application/json"),
         );
+        let read_timeout = Duration::from_secs(5);
+        #[cfg(test)]
+        let read_timeout = match (base.scheme(), base.host_str()) {
+            ("http", Some("127.0.0.1")) => read_timeout.max(total),
+            _ => read_timeout,
+        };
         let client = Client::builder()
             .default_headers(headers)
             .user_agent("PiwasCommerceTest/1")
@@ -46,7 +52,7 @@ impl Http {
             .no_deflate()
             .no_zstd()
             .connect_timeout(Duration::from_secs(3))
-            .read_timeout(Duration::from_secs(5))
+            .read_timeout(read_timeout)
             .timeout(total)
             .build()
             .map_err(|_| MollieError::Unavailable)?;
@@ -68,6 +74,19 @@ impl Http {
         url.query_pairs_mut()
             .append_pair("limit", "10")
             .append_pair("sort", "desc");
+        if let Some(from) = from {
+            url.query_pairs_mut().append_pair("from", from);
+        }
+        self.get_url(url).await
+    }
+    pub(super) async fn reversal_page(
+        &self,
+        payment_id: &str,
+        collection: &str,
+        from: Option<&str>,
+    ) -> Result<Vec<u8>, MollieError> {
+        let mut url = self.path(&["payments", payment_id, collection])?;
+        url.query_pairs_mut().append_pair("limit", "10");
         if let Some(from) = from {
             url.query_pairs_mut().append_pair("from", from);
         }

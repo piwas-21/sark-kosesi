@@ -22,7 +22,7 @@ fn config(key: &TestCredential) -> Configuration {
     snapshot.profile = key.binding().clone();
     Configuration::capture(snapshot).expect("synthetic server policy")
 }
-fn captured(amount_minor: i64) -> (Configuration, FrozenAttempt) {
+pub(crate) fn captured(amount_minor: i64) -> (Configuration, FrozenAttempt) {
     let key = credential();
     let c = config(&key);
     let current = c.identity();
@@ -1001,3 +1001,21 @@ mod late_stock_cases;
 
 #[path = "refund_reservations.rs"]
 mod refund_reservations_cases;
+
+#[path = "mollie_reversals.rs"]
+mod reversal_cases;
+
+#[path = "mollie_reversal_discovery.rs"]
+mod reversal_discovery_cases;
+
+#[path = "mollie_reversal_journal.rs"]
+mod reversal_journal_cases;
+
+#[path = "mollie_reversal_pages.rs"]
+mod reversal_page_cases;
+
+#[path = "mollie_reversal_supervision.rs"]
+pub(crate) mod reversal_supervision_cases;
+
+#[path = "mollie_reversal_item_supervision.rs"]
+pub(crate) mod reversal_item_supervision_cases;

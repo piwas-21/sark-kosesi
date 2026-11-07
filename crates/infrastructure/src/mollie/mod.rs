@@ -10,6 +10,10 @@ mod client;
 mod credential;
 mod http;
 mod reconciliation;
+mod reversal;
+mod reversal_discovery;
+pub use reversal::{ReversalPhase, VerifiedReversal};
+pub use reversal_discovery::{ReversalCursor, ReversalKind, ReversalPage};
 mod search;
 pub use reconciliation::{ReconciliationClient, VerifiedReconciliationClient};
 mod wire;
@@ -116,3 +120,10 @@ pub(crate) mod tests;
 // production orchestration through the existing authenticated loopback transport.
 #[cfg(test)]
 include!(concat!(env!("OUT_DIR"), "/callback_worker_fixture.rs"));
+
+#[cfg(test)]
+include!(concat!(env!("OUT_DIR"), "/reversal_worker_fixture.rs"));
+#[cfg(test)]
+use reversal_worker_fixture as reversal_pages;
+#[cfg(test)]
+include!(concat!(env!("OUT_DIR"), "/reversal_item_worker_fixture.rs"));

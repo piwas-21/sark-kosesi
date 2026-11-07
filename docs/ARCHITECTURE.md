@@ -464,6 +464,77 @@ same transaction. An exact replay under current staff authority returns the
 original reservation and checks its historical recognition. New evidence can
 block a new reservation without changing an existing receipt.
 
+A private test-key reconciliation client can fetch one exact refund or chargeback
+only after an authenticated GET matches its original paid Test/EUR payment to
+the frozen order, attempt, profile and amount. The bounded child read validates
+its identity, parent, positive EUR amount, documented refund phase or typed
+chargeback reversal timestamp, and retains only minimal in-memory provenance.
+The chargeback schema has no required mode. Test scope derives from the verified
+parent and test credential. An omitted reversal timestamp leaves reversal status
+unknown. Unknown responses and 404 leave the child unresolved.
+The project follows Mollie's [refund GET](https://docs.mollie.com/reference/get-refund)
+and [chargeback GET](https://docs.mollie.com/reference/get-chargeback) contracts.
+Authenticated amounts above the original remain visible for review. Some methods
+allow additional reimbursement, such as return shipping. [Mollie payment reference](https://docs.mollie.com/reference/get-payment)
+
+A private list operation verifies that same paid parent before each bounded GET
+of its refund or chargeback collection. It returns only exact candidate identities;
+item status has no authority. The continuation is an in-memory capability bound to
+the entire frozen attempt, payment, collection and actual test-key fingerprint.
+Only a validated Mollie next-link offset is used to reconstruct the fixed endpoint;
+the returned URL is never followed. Empty, ended, malformed or capped scans do not
+establish absence or a net balance. The contracts are the [refund list](https://docs.mollie.com/reference/list-refunds)
+and [payment chargeback list](https://docs.mollie.com/reference/list-payment-chargebacks).
+The private observation journal accepts the exact authenticated item result
+after network I/O. It locks the dispatched attempt, compares the full frozen
+source and appends an immutable fact with the actual test-key fingerprint. It
+preserves signed source seconds, nanoseconds and the distinction between unknown
+reversal status and an observed reversal. Each attempt has at most 128 receipts.
+The original effect key replays only the identical intent. A reciprocal outbox
+event carries the order, attempt and observation identifiers and a SHA-256 digest
+of the complete immutable receipt in the same transaction. Reads verify that
+binding before returning a receipt. Observations retain each
+provider identity for later reconciliation, including ambiguous payment matches
+and amounts above the original payment. Financial and inventory transitions are
+outside this evidence path.
+
+The private page journal records a verified collection response after network I/O.
+It claims the dispatched attempt, preserves the provider's ordered candidates and
+binds every stored field to a reciprocal outbox digest. Each root starts a separate
+scan. A successor must consume the exact predecessor offset under the same attempt,
+payment, collection and actual key fingerprint. A predecessor has at most one
+successor. Repeated offsets fail closed. The journal keeps at most 32 pages per
+scan and 128 per attempt. Exact effect replay verifies the historical receipt
+and its ancestry. After a restart a validated, open scan tip can restore an opaque
+continuation. Key rotation requires a fresh root. Terminal and capped scans leave
+history unresolved.
+
+The private page supervisor enrolls one active scan per attempt, payment,
+collection and actual test key from a validated paid observation. Each attempt
+retains at most 16 scan jobs, and each scan retains at most 40 operation
+generations. A short database claim commits one exact
+start and a 60-second lease before network I/O. One operation can verify the
+parent and fetch one page. Each explicit batch accepts at most 25 steps from a
+client whose profile was already verified. The checkpoint advances only with
+the exact operation and reciprocal receipt. An expired operation can recover an
+already recorded page without another GET. Expiry without a receipt parks the
+scan for review and preserves any late page as separate historical evidence.
+Transport failures that return to the worker retry after 60 seconds and stop
+after three consecutive failures.
+
+The independent item supervisor enrolls one exact candidate ordinal from a
+validated page and its authenticated paid original. The job freezes the actual
+test-key fingerprint, so a newly verified key uses evidence from its own scan.
+Separate pages can retain separate observations of the same child. Each attempt
+can hold up to 128 item jobs and 128 exact observations. Each job has at most
+three operation generations with the same 60-second lease and backoff. One
+operation fetches the paid parent and exact child, then appends the authenticated
+fact to the observation journal under its operation ID. A validated receipt
+ends the job in the observed state. Recovery can use that exact receipt after
+expiry, while an expired start without a receipt stays in review and preserves
+any late observation. The job records evidence for reconciliation and reservation
+disposition, which remain separate operations.
+
 Reservations encumber refundable amounts. Before execution, reconcile
 provider-side refunds and chargebacks, define uncertain and failed attempt
 dispositions and use stable provider idempotency and credit-document links.

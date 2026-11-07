@@ -31,6 +31,9 @@ impl VerifiedReconciliationClient {
     pub fn profile_id(&self) -> &str {
         &self.inner.profile.id
     }
+    pub(crate) fn credential_fingerprint(&self) -> &str {
+        &self.inner.profile.credential_fingerprint
+    }
     pub async fn search_page(
         &self,
         attempt: &AttemptSnapshot,

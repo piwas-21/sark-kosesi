@@ -353,7 +353,30 @@ supervision or live provider activation follows from deploying the empty preview
    reservation against the original order's current received EUR recognition.
    It serializes the original attempt and cumulative SKU/shipping gross, net and
    VAT custody, with a reciprocal outbox event and historical exact replay.
-   Complete provider-side refund/chargeback reconciliation, execution custody
+   Private test-key exact-item refund and chargeback GETs now require a matched
+   paid original and retain minimal bounded observations only. One private,
+   payment-specific test-profile list page now provides bounded reversal identity
+   hints and a scoped continuation after verifying the same paid original.
+   Every page retains the frozen attempt, payment, reversal kind, actual key
+   fingerprint and requested cursor for receipt validation, including
+   pages without candidates or a continuation. The private observation journal
+   appends exact child facts after network I/O and
+   serializes bounded custody with a reciprocal event. Same-effect retries
+   verify the original observation. The page journal keeps a bounded linear scan
+   and exact reciprocal events. A validated open tip restores a continuation
+   under the same key. A rotated key starts a new root. The private page
+   supervisor enrolls from an exact paid observation, commits a single-use
+   start, and checks the matching page receipt before restoring a checkpoint.
+   Expired starts without evidence go to review. Returned transport failures
+   use bounded retries. Explicit local/test worker commands enroll, run one
+   bounded pass and inspect a scan without exposing provider identifiers.
+   A separate item supervisor enrolls a verified page position and its paid
+   original. It commits each operation before fetching the exact child and
+   checkpoints only against the matching authenticated journal receipt. Add
+   operator review recovery and scheduling before provider acceptance. An exact
+   GET, 404, empty page, ended scan or capped scan
+   leaves the provider history and net balance unresolved. Complete provider-side
+   refund/chargeback reconciliation, execution custody
    and reservation disposition before moving funds. Complete independent
    order/fulfilment/refund lifecycle and invoices/credit
    documents, bounded audited refunds and independent restock actions. Prove

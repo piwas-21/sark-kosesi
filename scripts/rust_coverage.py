@@ -48,6 +48,7 @@ def validate(document, root, branches=True):
             "crates/*/src/payment_attempts/callbacks/inbox/*.rs",
             "crates/worker/src/callbacks.rs",
             "crates/infrastructure/src/mollie/*.rs",
+            "crates/infrastructure/src/mollie/reversal_discovery/*.rs",
             "crates/application/src/payment_requests.rs",
             "crates/application/src/payment_requests/*.rs",
             "crates/application/src/request_context.rs",
@@ -141,22 +142,24 @@ def validate(document, root, branches=True):
     return results
 
 
-def projected_branches(item):
-    """Reproduce LLVM's unified file-branch projection for the pinned export."""
-    rows, expansions = item.get("branches"), item.get("expansions")
-    if not isinstance(rows, list) or expansions != []:
-        raise ValueError("Missing or unsupported Rust branch detail")
+def validate_branch_row(row):
+    if (
+        not isinstance(row, list)
+        or len(row) != 9
+        or any(type(value) is not int or value < 0 for value in row)
+        or row[0] < 1
+        or row[1] < 1
+        or row[8] != 4
+        or max(row[4:6]) > 0xFFFFFFFF
+    ):
+        raise ValueError("Invalid Rust branch detail")
+
+
+def project_rows(rows):
+    """Reproduce LLVM's unified location projection for the pinned export."""
     grouped = {}
     for row in rows:
-        if (
-            not isinstance(row, list)
-            or len(row) != 9
-            or any(type(value) is not int or value < 0 for value in row)
-            or row[0] < 1
-            or row[1] < 1
-            or row[8] != 4
-        ):
-            raise ValueError("Invalid Rust branch detail")
+        validate_branch_row(row)
         location = tuple(row[:2])
         counts = grouped.setdefault(location, [0, 0])
         counts[0] += row[4]
@@ -176,6 +179,42 @@ def projected_branches(item):
     return result
 
 
+def projected_branches(item):
+    rows, expansions = item.get("branches"), item.get("expansions")
+    if not isinstance(rows, list) or expansions != []:
+        raise ValueError("Missing or unsupported Rust branch detail")
+    return project_rows(rows)
+
+
+def function_branches(document, root, exported):
+    """Independently project function branches using each function's filename table."""
+    by_file = {}
+    for unit in document.get("data", []):
+        functions = unit.get("functions")
+        if not isinstance(functions, list):
+            raise ValueError("Missing Rust function branch detail")
+        for function in functions:
+            if not isinstance(function, dict):
+                raise ValueError("Invalid Rust function branch detail")
+            filenames, rows = function.get("filenames"), function.get("branches")
+            if (
+                not isinstance(filenames, list)
+                or not filenames
+                or any(not isinstance(name, str) or not name for name in filenames)
+                or not isinstance(rows, list)
+            ):
+                raise ValueError("Invalid Rust function branch detail")
+            for row in rows:
+                # Validate every row before excluding unexported dependency files.
+                validate_branch_row(row)
+                if row[6] >= len(filenames) or row[7] >= len(filenames):
+                    raise ValueError("Invalid Rust function filename index")
+                path = (root / filenames[row[6]]).resolve()
+                if path in exported:
+                    by_file.setdefault(path, []).append(row)
+    return {path: project_rows(rows) for path, rows in by_file.items()}
+
+
 def validate_lcov(text, document, root):
     """Check the Sonar import against native counters, preserving LLVM semantics."""
     if document.get("version") != "3.1.0":
@@ -185,6 +224,7 @@ def validate_lcov(text, document, root):
         for unit in document.get("data", [])
         for item in unit.get("files", [])
     }
+    functions = function_branches(document, root, native.keys())
     records, current = {}, None
     for line in text.splitlines():
         if line.startswith("SF:"):
@@ -253,9 +293,10 @@ def validate_lcov(text, document, root):
             raise ValueError("Rust LCOV line population exceeds native summaries")
         branch_hits = record["branches"]
         if (
-            len(branch_hits) != branches
+            len(branch_hits) < branches
             or sum(value > 0 for value in branch_hits.values()) < covered_branches
             or branch_hits != projected_branches(item)
+            or branch_hits != functions.get(path, {})
         ):
             raise ValueError(
                 f"Rust LCOV branch population differs from native evidence: {path.relative_to(root)}"

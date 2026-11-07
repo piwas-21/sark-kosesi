@@ -20,9 +20,9 @@ struct Payment {
 }
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
-struct Amount {
-    currency: Currency,
-    value: String,
+pub(super) struct Amount {
+    pub(super) currency: Currency,
+    pub(super) value: String,
 }
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -95,7 +95,7 @@ pub(super) fn json(body: &[u8]) -> Result<Value, MollieError> {
     }
     Ok(v)
 }
-fn minor(value: &str) -> Result<i64, MollieError> {
+pub(super) fn minor(value: &str) -> Result<i64, MollieError> {
     if value.len() > 32 {
         return Err(MollieError::InvalidResponse);
     }
