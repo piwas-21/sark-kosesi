@@ -671,6 +671,14 @@ async fn exact_enrollment_replays_and_concurrent_workers_do_not_duplicate_gets(p
             .expect("parent GET entered");
         } => {}
     }
+    // Keep polling the held request past the normal five-second read deadline.
+    tokio::select! {
+        result = &mut first => match result {
+            Ok(batch) => panic!("first worker completed during held GET: {} processed", batch.processed),
+            Err(error) => panic!("first worker failed during held GET: {error:?}"),
+        },
+        () = tokio::time::sleep(Duration::from_secs(6)) => {}
+    }
     assert_eq!(
         run_batch(&pool, time.as_ref(), &ids, &client, 1)
             .await
