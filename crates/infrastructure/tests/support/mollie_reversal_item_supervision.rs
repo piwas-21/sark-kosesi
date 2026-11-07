@@ -603,11 +603,21 @@ async fn exact_enrollment_replays_and_concurrent_workers_do_not_duplicate_gets(p
         Reply::GateJson(gate.clone(), payment(frozen.snapshot())),
         Reply::Json(200, child(ReversalKind::Refund)),
     ]);
-    let client = local(&server)
-        .verify_profile()
-        .await
-        .expect("profile")
-        .into_reconciliation();
+    // This fixture deliberately holds the parent GET while another worker runs.
+    // Give that hold its own deadline without changing the normal test client.
+    let key = credential();
+    let configuration = config(&key);
+    let client = TestClient::local(
+        key,
+        configuration,
+        server.base.clone(),
+        Duration::from_secs(60),
+    )
+    .expect("loopback only client")
+    .verify_profile()
+    .await
+    .expect("profile")
+    .into_reconciliation();
     let intent = || EnrollIntent {
         attempt_id: &frozen.snapshot().binding.id,
         observation_id: &paid,
@@ -645,22 +655,32 @@ async fn exact_enrollment_replays_and_concurrent_workers_do_not_duplicate_gets(p
         .await
         .is_err()
     );
-    let one = run_batch(&pool, time.as_ref(), &ids, &client, 1);
-    let other = async {
-        tokio::time::timeout(Duration::from_secs(2), async {
-            while server.count() < 2 {
-                tokio::time::sleep(Duration::from_millis(2)).await;
-            }
-        })
-        .await
-        .expect("GET entered");
-        let result = run_batch(&pool, time.as_ref(), &ids, &client, 1).await;
-        gate.store(true, Ordering::SeqCst);
-        result
-    };
-    let (a, b) = tokio::join!(one, other);
-    a.expect("first worker");
-    b.expect("second worker");
+    let mut first = Box::pin(run_batch(&pool, time.as_ref(), &ids, &client, 1));
+    tokio::select! {
+        result = &mut first => match result {
+            Ok(batch) => panic!("first worker completed before held GET: {} processed", batch.processed),
+            Err(error) => panic!("first worker failed before held GET: {error:?}"),
+        },
+        () = async {
+            tokio::time::timeout(Duration::from_secs(20), async {
+                while server.count() < 2 {
+                    tokio::time::sleep(Duration::from_millis(2)).await;
+                }
+            })
+            .await
+            .expect("parent GET entered");
+        } => {}
+    }
+    assert_eq!(
+        run_batch(&pool, time.as_ref(), &ids, &client, 1)
+            .await
+            .expect("second worker")
+            .processed,
+        0
+    );
+    assert_eq!(server.count(), 2);
+    gate.store(true, Ordering::SeqCst);
+    assert_eq!(first.await.expect("first worker").processed, 1);
     assert_eq!(server.count(), 3);
     assert_eq!(
         read_job(&pool, &job.id)
