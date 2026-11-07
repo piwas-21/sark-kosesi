@@ -1523,3 +1523,23 @@ the database write role is trusted and must not be exposed to untrusted clients.
 The final freshness check follows the insert and any uniqueness wait. The public standalone challenge consumer commits independently and cannot
 be used to establish an account later. No password, session, guest-order link,
 delivery, endpoint or production authority follows from this identity record.
+
+### Private customer password credentials
+
+The verified mailbox may receive a separately scoped password-change proof.
+Its random bearer verifier binds the account and the current credential
+revision, including revision zero before setup. The proof expires after 15
+minutes. Use the exact existing mailbox normalization for both issuance and
+replacement. The trusted caller receives the raw bearer after the challenge
+commits.
+
+Validate the proof before starting bounded Argon2id work outside the transaction.
+The replacement transaction claims the account before the challenge, rechecks
+the revision and time, and commits the consumed proof with the new current
+password hash. A database-assigned transaction identity and reciprocal deferred
+check bind both writes. The caller flushes that check before the final clock
+check. Historical challenges retain their consumed status, with only the current
+hash in the credential table. A future login must recheck the credential
+revision under the account claim before issuing authority and invalidate
+sessions tied to earlier revisions. Secure delivery, blocklist, abuse limits,
+browser access and session issuance remain separate.

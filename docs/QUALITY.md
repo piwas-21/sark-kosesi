@@ -71,6 +71,16 @@ and produce false zero-hit regions; never repair those counters by hand.
 LLVM LCOV summary line totals include async
 and macro regions that do not map one-to-one to emitted DA records; do not rewrite
 those totals to manufacture consistency. LCOV remains the Sonar import format.
+LLVM reports branch summaries from function instantiations and merges LCOV
+branch details by source location. Those views can disagree when different
+instantiations cover different directions. Validate LCOV summary fields against
+the native summaries and validate each LCOV branch hit count against the
+location-merged detailed native records. The detail must account for the full
+native branch population and at least the reported covered directions. Native
+coverage thresholds use the original summaries.
+If the coverage step fails after exporting nightly reports, CI preserves the raw
+JSON and LCOV under a separate revision-bound diagnostics artifact. Sonar only
+consumes the application artifact published after successful validation and build.
 The native validator requires every owned source and populated counters, with
 85% lines / 80% instrumented branches per package and 95% for money, inventory
 domain/stock/hold adapter modules and preview authorization. The match-only hold
@@ -695,3 +705,15 @@ Confirm the order's stock journal and all provider-side state stay outside
 this transaction. Local tests provide source evidence for reservation custody.
 The order refund allocator and reservation modules use the existing 95% native
 line and branch thresholds for critical financial code.
+
+### Private password credential custody
+
+Use isolated PostgreSQL with two verified accounts and actual Argon2id
+verification. Exercise registration-token misuse, wrong account, wrong or
+expired proof, replacement, simultaneous redemption and stale sibling proofs.
+Prove one exact replacement survives races and a suppressed write or late
+clock check rolls back both effects. Native negative and positive controls
+exercise detached consumption, cross-account proof and revision jumps.
+Measure proof freshness after an actual lock wait. Check that only the current
+hash remains and that the stored challenge verifier differs from the bearer
+and registration verifier. These checks establish private credential custody.

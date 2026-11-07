@@ -427,3 +427,21 @@ A duplicate identity or invalid proof denies and rolls back; suppressed writes,
 clock failures and expiry after a lock wait also cannot create detached success.
 The separately committing consume primitive cannot bridge a later account write.
 An account identifier grants no login, session, guest-order or production authority.
+
+## Private password setup and recovery custody
+
+Generate each proof from 256 random bits and use a verifier domain separate
+from registration, guest and staff credentials. The proof is specific to one
+verified account and its current credential revision. Rust verifies possession.
+PostgreSQL rejects detached consumption, wrong account or revision and reused
+transaction proof. Lock and expiry checks protect simultaneous replacements.
+
+Normalize passwords with NFC before hashing and retain spaces. The private
+primitive requires at least 15 normalized Unicode code points and at most 256
+UTF-8 bytes before and after normalization. Use Argon2id v19, 19 MiB, two passes,
+one lane, a random 16-byte salt and a 32-byte digest. Bound concurrent hashing
+and keep passwords, bearer values, hashes and SQL details out of diagnostics.
+Only the current hash remains in the live credential table. Backup retention
+and deletion still require the release privacy policy. A public recovery flow
+also requires a reviewed compromised-password check, uniform responses and
+timing, safe transport and distributed abuse controls.

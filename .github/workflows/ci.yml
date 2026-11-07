@@ -132,7 +132,18 @@ jobs:
       - run: npm run test:integration
       - run: npm run test:migrations
       - run: npm run test:contracts
-      - run: npm run test:coverage
+      - id: coverage
+        run: npm run test:coverage
+      - name: Preserve raw Rust coverage on coverage failure
+        if: failure() && steps.coverage.outcome == 'failure'
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+        with:
+          name: rust-coverage-diagnostics-${{ env.ANALYSIS_REVISION }}
+          path: |
+            coverage/rust.json
+            coverage/rust.lcov
+          if-no-files-found: ignore
+          retention-days: 7
       - run: npm run build
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
         with:

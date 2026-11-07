@@ -389,6 +389,16 @@ delivery, anti-enumeration and abuse controls remain required. Migrations 0034
 and 0035 must land after the separately reserved 0033 late-stock migration; no
 deployed migration state is implied.
 
+Private password setup and recovery use a separate one-use proof tied to the
+verified identity and current credential revision. Hash the proposed password
+outside the transaction, then lock the account and recheck the exact proof.
+Consume the challenge and replace the current Argon2id hash atomically. Flush
+the deferred completeness check before the final clock check. Older challenges
+cannot overwrite a newer credential. Login must bind rotating sessions to the
+current credential revision so reset invalidates earlier authority. Complete
+secure delivery, password blocklist, rate limiting and browser controls before
+exposing the flow.
+
 ## P5 room-fit foundation
 
 The standalone browser-safe room-fit package implements the measured rectangle

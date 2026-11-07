@@ -19,13 +19,19 @@ class RustCoverage(unittest.TestCase):
             files.append(
                 {
                     "filename": str(source),
+                    "branches": [[line, 1, line, 2, 1, 1, 0, 0, 4] for line in range(1, 11)],
+                    "expansions": [],
                     "summary": {
                         kind: {"count": 20, "covered": 20}
                         for kind in ("lines", "regions", "branches")
                     },
                 }
             )
-        self.document = {"type": "llvm.coverage.json.export", "data": [{"files": files}]}
+        self.document = {
+            "type": "llvm.coverage.json.export",
+            "version": "3.1.0",
+            "data": [{"files": files}],
+        }
 
     def test_real_package_thresholds_and_zero_branch_evidence(self):
         self.assertEqual(len(validate(self.document, self.root)), 5)
@@ -193,7 +199,7 @@ class RustCoverage(unittest.TestCase):
         for item in document["data"][0]["files"]:
             records.append(f"SF:{item['filename']}")
             records += [f"DA:{line},1" for line in range(1, 21)]
-            records += [f"BRDA:{line},0,0,1" for line in range(1, 21)]
+            records += [f"BRDA:{line},0,{branch},1" for line in range(1, 11) for branch in (0, 1)]
             records += ["LF:20", "LH:20", "BRF:20", "BRH:20", "end_of_record"]
         return "\n".join(records)
 
@@ -206,6 +212,86 @@ class RustCoverage(unittest.TestCase):
         native["data"][0]["files"][0]["summary"]["lines"] = {"count": 22, "covered": 22}
         text = self.lcov().replace("LF:20\nLH:20", "LF:22\nLH:22", 1)
         self.assertEqual(validate_lcov(text, native, self.root), 5)
+
+    def test_unified_branch_details_can_exceed_native_covered_summary(self):
+        from rust_coverage import validate_lcov
+
+        native = copy.deepcopy(self.document)
+        first = native["data"][0]["files"][0]
+        first["branches"] += [[1, 1, 1, 2, 0, 2, 0, 0, 4]]
+        first["summary"]["branches"]["covered"] = 19
+        text = self.lcov().replace("BRDA:1,0,1,1", "BRDA:1,0,1,3", 1)
+        text = text.replace("BRH:20", "BRH:19", 1)
+        self.assertEqual(validate_lcov(text, native, self.root), 5)
+        # Swapping hits preserves both population and positive-hit totals.
+        altered = text.replace("BRDA:1,0,0,1\nBRDA:1,0,1,3", "BRDA:1,0,0,3\nBRDA:1,0,1,1", 1)
+        with self.assertRaisesRegex(ValueError, "branch population"):
+            validate_lcov(altered, native, self.root)
+        missing = text.replace("BRDA:1,0,1,3\n", "", 1)
+        with self.assertRaisesRegex(ValueError, "branch population"):
+            validate_lcov(missing, native, self.root)
+
+    def test_opposite_generic_instances_unify_without_changing_summary(self):
+        from rust_coverage import validate_lcov
+
+        native = copy.deepcopy(self.document)
+        first = native["data"][0]["files"][0]
+        first["branches"][0][5] = 0
+        first["branches"].append([1, 1, 1, 2, 0, 1, 0, 0, 4])
+        first["summary"]["branches"]["covered"] = 19
+        text = self.lcov().replace("BRH:20", "BRH:19", 1)
+        self.assertEqual(validate_lcov(text, native, self.root), 5)
+
+    def test_same_line_column_order_and_uncovered_branch_are_checked(self):
+        from rust_coverage import validate_lcov
+
+        native = copy.deepcopy(self.document)
+        first = native["data"][0]["files"][0]
+        first["branches"].insert(0, [1, 4, 1, 5, 0, 0, 0, 0, 4])
+        first["summary"]["branches"]["count"] = 22
+        text = self.lcov().replace("BRDA:1,0,1,1", "BRDA:1,0,1,1\nBRDA:1,1,2,-\nBRDA:1,1,3,-", 1)
+        text = text.replace("BRF:20", "BRF:22", 1)
+        self.assertEqual(validate_lcov(text, native, self.root), 5)
+        with self.assertRaisesRegex(ValueError, "branch population"):
+            validate_lcov(text.replace("BRDA:1,1,3,-\n", "", 1), native, self.root)
+
+    def test_joint_loss_of_detail_cannot_pass_with_intact_summaries(self):
+        from rust_coverage import validate_lcov
+
+        for drop_pair in (True, False):
+            native = copy.deepcopy(self.document)
+            rows = native["data"][0]["files"][0]["branches"]
+            text = self.lcov()
+            if drop_pair:
+                rows.pop(0)
+                text = text.replace("BRDA:1,0,0,1\nBRDA:1,0,1,1\n", "", 1)
+            else:
+                rows[0][4] = 0
+                text = text.replace("BRDA:1,0,0,1", "BRDA:1,0,0,0", 1)
+            with (
+                self.subTest(drop_pair=drop_pair),
+                self.assertRaisesRegex(ValueError, "branch population"),
+            ):
+                validate_lcov(text, native, self.root)
+
+    def test_invalid_native_branch_details_fail_closed(self):
+        from rust_coverage import validate_lcov
+
+        for change in ("version", "missing", "expansions", "shape", "overflow"):
+            native = copy.deepcopy(self.document)
+            item = native["data"][0]["files"][0]
+            if change == "version":
+                native["version"] = "other"
+            elif change == "missing":
+                del item["branches"]
+            elif change == "expansions":
+                item["expansions"] = [{}]
+            elif change == "shape":
+                item["branches"][0].pop()
+            else:
+                item["branches"][0][4] = 0x100000000
+            with self.subTest(change=change), self.assertRaises(ValueError):
+                validate_lcov(self.lcov(), native, self.root)
 
     def test_empty_absent_unrelated_and_inconsistent_rust_imports_fail(self):
         from rust_coverage import validate_lcov
