@@ -113,9 +113,10 @@ Linux CI uses Tab. This does not replace manual Safari/assistive-technology acce
 The P1 browser scope is the authenticated, noindex, read-only preview. The gallery,
 locale/theme and fixture catalogue run on Chromium/Firefox/WebKit; Lighthouse
 uses the production build for home/detail/gallery and k6 runs the isolated
-catalogue fixture. Checkout/payment/account/room-planner acceptance stays pending
-until those features exist. No passing dummy journeys are substituted. Initial visual candidates are captured
-separately. `config/visual-approval.json` must record actual human approval and
+catalogue fixture. The Application gate has a 65-minute job limit to accommodate
+these checks and the full visual comparison. Checkout/payment/account/room-planner
+acceptance stays pending until those features exist. No passing dummy journeys are
+substituted. Initial visual candidates are captured separately. `config/visual-approval.json` must record actual human approval and
 bind every baseline image hash to the current UI source digest. Missing/stale
 approval fails before comparison; snapshot updating is disabled in normal gates.
 The CI browser artifact contains the candidate gallery for review. Local evidence

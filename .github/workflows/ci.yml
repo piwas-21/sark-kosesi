@@ -105,7 +105,7 @@ jobs:
   application:
     name: Application gate
     runs-on: ubuntu-24.04
-    timeout-minutes: 50
+    timeout-minutes: 65
     permissions:
       contents: read
     env:
