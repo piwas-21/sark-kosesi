@@ -1,8 +1,13 @@
+#[allow(dead_code)]
+#[path = "support/admitted_proofs.rs"]
+mod admitted_proofs;
+
+use admitted_proofs::email_verification::{consume, issue};
 use commerce_application::request_context::{Clock, ContextError};
 use commerce_domain::email_identity::normalize_email;
 use commerce_infrastructure::{
     MIGRATOR,
-    email_verification::{VerificationError, VerificationToken, consume, issue},
+    email_verification::{VerificationError, VerificationToken},
 };
 use sha2::{Digest, Sha256};
 use sqlx::PgPool;
@@ -250,7 +255,8 @@ async fn expiry_after_update_rolls_back_and_last_valid_second_can_succeed(pool: 
         .await
         .expect("issue");
     let sequence = SequenceClock {
-        values: std::sync::Mutex::new([1899, 1899, 1900].into()),
+        // Four equal samples commit admission before the original proof clock sequence.
+        values: std::sync::Mutex::new([1899, 1899, 1899, 1899, 1899, 1899, 1900].into()),
     };
     assert_eq!(
         consume(&pool, "first@example.com", &first, &sequence).await,
@@ -275,7 +281,7 @@ async fn expiry_after_update_rolls_back_and_last_valid_second_can_succeed(pool: 
 #[sqlx::test(migrator = "MIGRATOR")]
 async fn clock_failure_or_reversal_never_creates_or_consumes_a_challenge(pool: PgPool) {
     let reversed = SequenceClock {
-        values: std::sync::Mutex::new([1000, 999].into()),
+        values: std::sync::Mutex::new([1000, 1000, 1000, 1000, 1000, 999].into()),
     };
     assert!(matches!(
         issue(&pool, "a@example.com", &reversed).await,
@@ -290,14 +296,14 @@ async fn clock_failure_or_reversal_never_creates_or_consumes_a_challenge(pool: P
         .await
         .expect("issue");
     let failed = SequenceClock {
-        values: std::sync::Mutex::new([1001].into()),
+        values: std::sync::Mutex::new([1001, 1001, 1001, 1001, 1001].into()),
     };
     assert_eq!(
         consume(&pool, "a@example.com", &token, &failed).await,
         Err(VerificationError::Unavailable)
     );
     let reversed = SequenceClock {
-        values: std::sync::Mutex::new([1001, 1000].into()),
+        values: std::sync::Mutex::new([1001, 1001, 1001, 1001, 1001, 1000].into()),
     };
     assert_eq!(
         consume(&pool, "a@example.com", &token, &reversed).await,
@@ -320,7 +326,7 @@ async fn clock_boundaries_fail_closed_and_leave_valid_proof_usable(pool: PgPool)
         ));
     }
     let expired_before_commit = SequenceClock {
-        values: std::sync::Mutex::new([1000, 1900].into()),
+        values: std::sync::Mutex::new([1000, 1000, 1000, 1000, 1000, 1900].into()),
     };
     assert!(matches!(
         issue(&pool, "a@example.com", &expired_before_commit).await,
@@ -340,7 +346,7 @@ async fn clock_boundaries_fail_closed_and_leave_valid_proof_usable(pool: PgPool)
         Err(VerificationError::Denied)
     );
     let reversed_after_update = SequenceClock {
-        values: std::sync::Mutex::new([1000, 1001, 1000].into()),
+        values: std::sync::Mutex::new([1000, 1000, 1000, 1000, 1000, 1001, 1000].into()),
     };
     assert_eq!(
         consume(&pool, "a@example.com", &token, &reversed_after_update).await,
@@ -443,5 +449,46 @@ async fn suppressed_writes_fail_closed_and_healthy_operations_recover(pool: PgPo
     assert_eq!(
         consume(&pool, "a@example.com", &token, &clock).await,
         Err(VerificationError::Denied)
+    );
+}
+
+#[sqlx::test(migrator = "MIGRATOR")]
+async fn unavailable_challenge_table_fails_closed_and_recovers(pool: PgPool) {
+    let time = clock(1000);
+    let token = issue(&pool, "owner@example.com", &time)
+        .await
+        .expect("healthy issue");
+    sqlx::query("ALTER TABLE email_verification_challenges RENAME TO unavailable_email_challenges")
+        .execute(&pool)
+        .await
+        .expect("make challenge table unavailable");
+    assert!(matches!(
+        issue(&pool, "other@example.com", &time).await,
+        Err(VerificationError::Unavailable)
+    ));
+    assert_eq!(
+        consume(&pool, "owner@example.com", &token, &time).await,
+        Err(VerificationError::Unavailable)
+    );
+    sqlx::query("ALTER TABLE unavailable_email_challenges RENAME TO email_verification_challenges")
+        .execute(&pool)
+        .await
+        .expect("restore challenge table");
+    let counts: (i64, i64) =
+        sqlx::query_as("SELECT count(*), count(consumed_at) FROM email_verification_challenges")
+            .fetch_one(&pool)
+            .await
+            .expect("proof state");
+    assert_eq!(counts, (1, 0));
+    assert_eq!(
+        consume(&pool, "owner@example.com", &token, &time).await,
+        Ok(())
+    );
+    let fresh = issue(&pool, "other@example.com", &time)
+        .await
+        .expect("healthy issue retry");
+    assert_eq!(
+        consume(&pool, "other@example.com", &fresh, &time).await,
+        Ok(())
     );
 }

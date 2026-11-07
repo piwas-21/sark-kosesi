@@ -1,8 +1,12 @@
+#[allow(dead_code)]
+#[path = "support/admitted_proofs.rs"]
+mod admitted_proofs;
+
+use admitted_proofs::{email_verification::issue, verified_customer_accounts::establish};
 use commerce_application::request_context::{Clock, ContextError};
 use commerce_infrastructure::{
     MIGRATOR,
-    email_verification::{VerificationError, VerificationToken, issue},
-    verified_customer_accounts::establish,
+    email_verification::{VerificationError, VerificationToken},
 };
 use sqlx::PgPool;
 use std::sync::atomic::{AtomicU64, Ordering};
@@ -15,6 +19,36 @@ impl Clock for TestClock {
 }
 fn clock() -> TestClock {
     TestClock(AtomicU64::new(1000))
+}
+
+async fn wait_for_account_blocker(
+    pool: &PgPool,
+    blocker_pid: i32,
+    query_prefix: &str,
+    task: &tokio::task::JoinHandle<
+        Result<
+            commerce_infrastructure::verified_customer_accounts::VerifiedCustomerAccountId,
+            VerificationError,
+        >,
+    >,
+) {
+    let deadline = tokio::time::Instant::now() + std::time::Duration::from_secs(15);
+    loop {
+        assert!(
+            !task.is_finished(),
+            "account worker completed before its lock wait"
+        );
+        let waiting: bool = sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM pg_stat_activity WHERE datname=current_database() AND wait_event_type='Lock' AND $1=ANY(pg_blocking_pids(pid)) AND starts_with(query,$2))")
+            .bind(blocker_pid).bind(query_prefix).fetch_one(pool).await.expect("inspect exact account wait");
+        if waiting {
+            return;
+        }
+        assert!(
+            tokio::time::Instant::now() < deadline,
+            "worker never waited on the test's blocker"
+        );
+        tokio::time::sleep(std::time::Duration::from_millis(10)).await;
+    }
 }
 
 #[sqlx::test(migrator = "MIGRATOR")]
@@ -106,11 +140,16 @@ impl Clock for SequenceClock {
 async fn expiry_after_account_insert_and_suppressed_writes_roll_back_both_effects(pool: PgPool) {
     let time = clock();
     let token = issue(&pool, "a@example.com", &time).await.expect("issue");
-    let expires = SequenceClock(std::sync::Mutex::new([1899, 1899, 1900].into()));
+    // Admission consumes four equal readings before the original proof sequence.
+    let expires = SequenceClock(std::sync::Mutex::new(
+        [1899, 1899, 1899, 1899, 1899, 1899, 1900].into(),
+    ));
     assert!(matches!(
         establish(&pool, "a@example.com", &token, &expires).await,
         Err(VerificationError::Denied)
     ));
+    // The admission debit retains 1899, so retries cannot rewind to 1000.
+    time.0.store(1899, Ordering::SeqCst);
     sqlx::query("CREATE FUNCTION suppress_account_write() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN RETURN NULL; END $$").execute(&pool).await.expect("fault");
     sqlx::query("CREATE TRIGGER suppress_account_insert BEFORE INSERT ON verified_customer_accounts FOR EACH ROW EXECUTE FUNCTION suppress_account_write()").execute(&pool).await.expect("fault");
     assert!(matches!(
@@ -233,7 +272,7 @@ async fn concurrent_same_proof_and_suppressed_consumption_cannot_create_detached
 async fn standalone_consumption_cannot_be_replayed_to_establish_account(pool: PgPool) {
     let time = clock();
     let token = issue(&pool, "a@example.com", &time).await.expect("issue");
-    commerce_infrastructure::email_verification::consume(&pool, "a@example.com", &token, &time)
+    admitted_proofs::email_verification::consume(&pool, "a@example.com", &token, &time)
         .await
         .expect("consume");
     assert!(matches!(
@@ -249,12 +288,16 @@ async fn standalone_consumption_cannot_be_replayed_to_establish_account(pool: Pg
 
 #[sqlx::test(migrator = "MIGRATOR")]
 async fn waiting_for_challenge_lock_does_not_extend_expiry(pool: PgPool) {
-    use std::{sync::Arc, time::Duration};
+    use std::sync::Arc;
     let time = Arc::new(clock());
     let token = issue(&pool, "a@example.com", time.as_ref())
         .await
         .expect("issue");
     let mut blocker = pool.begin().await.expect("transaction");
+    let blocker_pid = sqlx::query_scalar("SELECT pg_backend_pid()")
+        .fetch_one(&mut *blocker)
+        .await
+        .expect("blocker backend");
     sqlx::query("SELECT verifier FROM email_verification_challenges FOR UPDATE")
         .fetch_one(&mut *blocker)
         .await
@@ -264,16 +307,9 @@ async fn waiting_for_challenge_lock_does_not_extend_expiry(pool: PgPool) {
     let task = tokio::spawn(async move {
         establish(&worker_pool, "a@example.com", &token, worker_time.as_ref()).await
     });
-    let mut waiting = false;
-    for _ in 0..50 {
-        let count: i64 = sqlx::query_scalar("SELECT count(*) FROM pg_locks WHERE locktype='transactionid' AND NOT granted AND pid<>pg_backend_pid()").fetch_one(&pool).await.expect("locks");
-        if count > 0 {
-            waiting = true;
-            break;
-        }
-        tokio::time::sleep(Duration::from_millis(10)).await;
-    }
-    assert!(waiting && !task.is_finished());
+    wait_for_account_blocker(&pool, blocker_pid,
+        "SELECT created_at,expires_at,consumed_at FROM email_verification_challenges WHERE verifier=$1 AND purpose=$2 AND email_identity=$3 FOR UPDATE",
+        &task).await;
     time.0.store(1900, Ordering::SeqCst);
     blocker.commit().await.expect("release");
     assert!(matches!(
@@ -287,7 +323,7 @@ async fn waiting_for_challenge_lock_does_not_extend_expiry(pool: PgPool) {
 #[sqlx::test(migrator = "MIGRATOR")]
 async fn waiting_for_unique_email_does_not_extend_expiry(pool: PgPool) {
     use sha2::{Digest, Sha256};
-    use std::{sync::Arc, time::Duration};
+    use std::sync::Arc;
     let time = Arc::new(clock());
     let blocker_token = issue(&pool, "a@example.com", time.as_ref())
         .await
@@ -301,6 +337,10 @@ async fn waiting_for_unique_email_does_not_extend_expiry(pool: PgPool) {
         .finalize()
         .to_vec();
     let mut blocker = pool.begin().await.expect("transaction");
+    let blocker_pid = sqlx::query_scalar("SELECT pg_backend_pid()")
+        .fetch_one(&mut *blocker)
+        .await
+        .expect("blocker backend");
     sqlx::query("UPDATE email_verification_challenges SET consumed_at=1000 WHERE verifier=$1")
         .bind(&verifier)
         .execute(&mut *blocker)
@@ -312,22 +352,21 @@ async fn waiting_for_unique_email_does_not_extend_expiry(pool: PgPool) {
     let task = tokio::spawn(async move {
         establish(&worker_pool, "a@example.com", &token, worker_time.as_ref()).await
     });
-    let mut waiting = false;
-    for _ in 0..50 {
-        let count: i64 = sqlx::query_scalar("SELECT count(*) FROM pg_locks WHERE locktype='transactionid' AND NOT granted AND pid<>pg_backend_pid()").fetch_one(&pool).await.expect("locks");
-        if count > 0 {
-            waiting = true;
-            break;
-        }
-        tokio::time::sleep(Duration::from_millis(10)).await;
-    }
-    assert!(waiting && !task.is_finished());
+    wait_for_account_blocker(
+        &pool,
+        blocker_pid,
+        "INSERT INTO verified_customer_accounts",
+        &task,
+    )
+    .await;
     time.0.store(1900, Ordering::SeqCst);
     blocker.rollback().await.expect("release without account");
-    assert!(matches!(
-        task.await.expect("task"),
-        Err(VerificationError::Denied)
-    ));
+    let result = task.await.expect("task");
+    assert!(
+        matches!(&result, Err(VerificationError::Denied)),
+        "unexpected worker result: {:?}",
+        result.err()
+    );
     let counts: (i64,i64) = sqlx::query_as("SELECT (SELECT count(*) FROM verified_customer_accounts), (SELECT count(*) FROM email_verification_challenges WHERE consumed_at IS NOT NULL)").fetch_one(&pool).await.expect("counts");
     assert_eq!(counts, (0, 0));
 }
@@ -341,7 +380,7 @@ async fn database_requires_native_same_transaction_consumption_and_rejects_prefi
     let standalone = issue(&pool, "standalone@example.com", &time)
         .await
         .expect("issue");
-    commerce_infrastructure::email_verification::consume(
+    admitted_proofs::email_verification::consume(
         &pool,
         "standalone@example.com",
         &standalone,
@@ -371,18 +410,27 @@ async fn database_requires_native_same_transaction_consumption_and_rejects_prefi
 
 #[sqlx::test(migrations = false)]
 async fn upgrade_preserves_but_cannot_adopt_preexisting_consumption(pool: PgPool) {
+    use sha2::{Digest, Sha256};
     use sqlx::Executor;
     MIGRATOR.run_to(34, &pool).await.expect("challenge schema");
     let time = clock();
-    let used = issue(&pool, "legacy@example.com", &time)
-        .await
-        .expect("legacy issue");
-    commerce_infrastructure::email_verification::consume(&pool, "legacy@example.com", &used, &time)
-        .await
-        .expect("legacy committed consumption");
-    let fresh = issue(&pool, "fresh@example.com", &time)
-        .await
-        .expect("unconsumed legacy challenge");
+    // Build pre-admission history through the schema that originally owned it.
+    let fresh_bytes = [28; 32];
+    for (email, bytes) in [
+        ("legacy@example.com", [27; 32]),
+        ("fresh@example.com", fresh_bytes),
+    ] {
+        let digest: [u8; 32] = Sha256::new()
+            .chain_update(b"piwas:email-verification:verifier:v1\0")
+            .chain_update(bytes)
+            .finalize()
+            .into();
+        sqlx::query("INSERT INTO email_verification_challenges(verifier,purpose,email_identity,created_at,expires_at) VALUES($1,'email-verification-v1',$2,1000,1900)")
+            .bind(digest.as_slice()).bind(email).execute(&pool).await.expect("legacy challenge");
+    }
+    sqlx::query("UPDATE email_verification_challenges SET consumed_at=1000 WHERE email_identity='legacy@example.com'")
+        .execute(&pool).await.expect("legacy committed consumption");
+    let fresh = VerificationToken::from_bytes(fresh_bytes);
     MIGRATOR.run(&pool).await.expect("upgrade account schema");
     let legacy: (Option<i64>, bool) = sqlx::query_as("SELECT consumed_at, consumed_xid IS NULL FROM email_verification_challenges WHERE email_identity='legacy@example.com'").fetch_one(&pool).await.expect("preserved row");
     assert_eq!(legacy, (Some(1000), true));

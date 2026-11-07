@@ -1,6 +1,81 @@
 use super::*;
-use crate::{MIGRATOR, customer_passwords, email_verification, verified_customer_accounts};
+use crate::{
+    MIGRATOR,
+    customer_credential_admission::{AdmissionKey, AdmissionLimits},
+};
 use commerce_application::request_context::ContextError;
+
+fn admission_key() -> AdmissionKey {
+    AdmissionKey::new(1, [7; 32]).expect("synthetic admission key")
+}
+fn admission_limits() -> AdmissionLimits {
+    AdmissionLimits::new(1000, 100).expect("fixture admission limits")
+}
+mod email_verification {
+    use super::*;
+    pub async fn issue(
+        pool: &PgPool,
+        email: &str,
+        clock: &dyn Clock,
+    ) -> Result<
+        crate::email_verification::VerificationToken,
+        crate::email_verification::VerificationError,
+    > {
+        crate::email_verification::issue(pool, email, clock, &admission_key(), admission_limits())
+            .await
+    }
+}
+mod verified_customer_accounts {
+    use super::*;
+    pub async fn establish(
+        pool: &PgPool,
+        email: &str,
+        token: &crate::email_verification::VerificationToken,
+        clock: &dyn Clock,
+    ) -> Result<
+        crate::verified_customer_accounts::VerifiedCustomerAccountId,
+        crate::email_verification::VerificationError,
+    > {
+        crate::verified_customer_accounts::establish(
+            pool,
+            email,
+            token,
+            clock,
+            &admission_key(),
+            admission_limits(),
+        )
+        .await
+    }
+}
+mod customer_passwords {
+    use super::*;
+    pub async fn issue(
+        pool: &PgPool,
+        email: &str,
+        clock: &dyn Clock,
+    ) -> Result<PasswordChangeToken, PasswordError> {
+        crate::customer_passwords::issue(pool, email, clock, &admission_key(), admission_limits())
+            .await
+    }
+    pub async fn replace(
+        pool: &PgPool,
+        email: &str,
+        token: &PasswordChangeToken,
+        password: &str,
+        clock: &dyn Clock,
+    ) -> Result<i32, PasswordError> {
+        crate::customer_passwords::replace(
+            pool,
+            email,
+            token,
+            password,
+            clock,
+            &admission_key(),
+            admission_limits(),
+        )
+        .await
+    }
+}
 
 fn proof() -> Proof {
     Proof {
@@ -114,7 +189,7 @@ async fn setup_account(pool: &PgPool) -> (i64, PasswordChangeToken) {
 
 #[sqlx::test(migrator = "MIGRATOR")]
 async fn suppressed_proof_consumption_leaves_it_usable(pool: PgPool) {
-    let _fixture = customer_passwords::TEST_HASH_FIXTURE.lock().await;
+    let _fixture = crate::customer_passwords::TEST_HASH_FIXTURE.lock().await;
     let (id, token) = setup_account(&pool).await;
     sqlx::query("CREATE FUNCTION suppress_password_consumption() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN RETURN NULL; END $$")
         .execute(&pool).await.expect("fault function");
@@ -153,7 +228,7 @@ async fn suppressed_proof_consumption_leaves_it_usable(pool: PgPool) {
 
 #[sqlx::test(migrator = "MIGRATOR")]
 async fn suppressed_reset_rolls_back_consumption_and_preserves_exact_old_credential(pool: PgPool) {
-    let _fixture = customer_passwords::TEST_HASH_FIXTURE.lock().await;
+    let _fixture = crate::customer_passwords::TEST_HASH_FIXTURE.lock().await;
     let (id, first) = setup_account(&pool).await;
     assert_eq!(
         customer_passwords::replace(
@@ -244,7 +319,7 @@ const CANONICAL_TEST_HASH: &str = "$argon2id$v=19$m=19456,t=2,p=1$AAAAAAAAAAAAAA
 
 #[sqlx::test(migrator = "MIGRATOR")]
 async fn competing_distinct_proof_cannot_replace_a_newer_revision_after_hashing(pool: PgPool) {
-    let _fixture = customer_passwords::TEST_HASH_FIXTURE.lock().await;
+    let _fixture = crate::customer_passwords::TEST_HASH_FIXTURE.lock().await;
     let (id, losing) = setup_account(&pool).await;
     let winning = customer_passwords::issue(&pool, "replacement-control@example.com", &TestClock)
         .await
@@ -295,7 +370,7 @@ async fn competing_distinct_proof_cannot_replace_a_newer_revision_after_hashing(
 
 #[sqlx::test(migrator = "MIGRATOR")]
 async fn substituted_canonical_hash_fails_final_check_and_rolls_back(pool: PgPool) {
-    let _fixture = customer_passwords::TEST_HASH_FIXTURE.lock().await;
+    let _fixture = crate::customer_passwords::TEST_HASH_FIXTURE.lock().await;
     let (id, token) = setup_account(&pool).await;
     // The trigger sorts after the native guard and changes only a valid PHC value.
     sqlx::query("CREATE FUNCTION substitute_password_hash() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN NEW.password_hash := '$argon2id$v=19$m=19456,t=2,p=1$AAAAAAAAAAAAAAAAAAAAAA$AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA'; RETURN NEW; END $$")
@@ -335,7 +410,7 @@ async fn substituted_canonical_hash_fails_final_check_and_rolls_back(pool: PgPoo
 
 #[sqlx::test(migrator = "MIGRATOR")]
 async fn source_drift_after_precheck_is_denied_without_consuming_proof(pool: PgPool) {
-    let _fixture = customer_passwords::TEST_HASH_FIXTURE.lock().await;
+    let _fixture = crate::customer_passwords::TEST_HASH_FIXTURE.lock().await;
     let (id, token) = setup_account(&pool).await;
     let digest = token.verifier();
     let mut blocker = pool.begin().await.expect("transaction");
@@ -388,7 +463,7 @@ async fn source_drift_after_precheck_is_denied_without_consuming_proof(pool: PgP
 
 #[sqlx::test(migrator = "MIGRATOR")]
 async fn account_identity_drift_after_precheck_is_denied(pool: PgPool) {
-    let _fixture = customer_passwords::TEST_HASH_FIXTURE.lock().await;
+    let _fixture = crate::customer_passwords::TEST_HASH_FIXTURE.lock().await;
     let (id, token) = setup_account(&pool).await;
     let digest = token.verifier();
     // Privileged fault injection simulates identity corruption despite native immutability.
@@ -438,13 +513,14 @@ struct ExpiresBeforeCommit(std::sync::atomic::AtomicUsize);
 impl Clock for ExpiresBeforeCommit {
     fn unix_seconds(&self) -> Result<u64, ContextError> {
         let sample = self.0.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
-        Ok(if sample < 3 { 1000 } else { 1900 })
+        // Admission consumes four steady clock reads before the three proof reads.
+        Ok(if sample < 7 { 1000 } else { 1900 })
     }
 }
 
 #[sqlx::test(migrator = "MIGRATOR")]
 async fn replacement_requires_the_native_fence_and_fresh_time_at_commit(pool: PgPool) {
-    let _fixture = customer_passwords::TEST_HASH_FIXTURE.lock().await;
+    let _fixture = crate::customer_passwords::TEST_HASH_FIXTURE.lock().await;
     let (id, token) = setup_account(&pool).await;
     let email = "replacement-control@example.com";
     let password = "long enough password";

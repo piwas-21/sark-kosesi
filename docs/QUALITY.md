@@ -717,3 +717,49 @@ exercise detached consumption, cross-account proof and revision jumps.
 Measure proof freshness after an actual lock wait. Check that only the current
 hash remains and that the stored challenge verifier differs from the bearer
 and registration verifier. These checks establish private credential custody.
+
+### Private customer sessions
+
+Use isolated PostgreSQL with real verified accounts and current password
+hashes. Check wrong or missing credentials, verifier domains, reset racing
+login, stale sessions after reset, fixed expiry, logout and concurrent
+rotation. Verify a real database wait cannot extend authority and failed
+rotation leaves the prior bearer usable. Use direct SQL controls for detached
+rotation, incorrect revision and mismatched successor. Apply the critical
+95% native line and branch policy to the session adapter. Browser and mailbox
+acceptance require separate evidence.
+
+### Private guest-order links
+
+Use isolated PostgreSQL with actual accepted guest orders and verified
+customer sessions. Check wrong basket, order, CSRF, mailbox, proof purpose
+and session revision, one-use replay and expiry after lock waits. Race two
+valid proofs for one order and prove a single link commits while the losing
+proof remains unspent. Use native negative and positive controls for detached
+consumption and cross-account custody. Assert the original order is
+unchanged. Test the private reader against wrong owners, stale sessions,
+damaged reciprocal custody and same-time cursor ties. Inspect the projection
+for exact captured totals and absence of buyer details. Assert that later
+withdrawal and newer Dutch source copy preserve accepted titles, while altered
+captured titles and missing, mismatched or rejected source reviews fail closed.
+Browser and delivery acceptance remain open.
+
+Test credential admission against isolated PostgreSQL from separate pools.
+Assert exact independent target and global caps, domain-case normalization,
+purpose separation, committed debits across later failures, and fresh window
+selection after a real lock wait. Test native constraints, backwards or
+unavailable time, stale key versions and inconsistent active configuration.
+Inspect target rows for fixed-length digests and bounded rollover. Public
+enumeration, timing and overload acceptance remain separate.
+
+At the actual login entry point, compare denial and quota debits for an unknown
+account and a wrong password. Make the credential lookup unavailable in an
+isolated database and verify that exhausted admission still returns denial.
+Check that admitted lookup failures retain their debit and correct credentials
+still require working admission storage.
+
+Test proof admission at its trusted entry points. Interrupt proof storage in
+an isolated database and distinguish a saturated target from admitted lookup
+failure. Verify shared consumption and enrolment capacity, independent password
+issuance and replacement quotas, and successful rollover with the exact
+unspent proof.

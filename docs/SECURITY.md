@@ -445,3 +445,74 @@ Only the current hash remains in the live credential table. Backup retention
 and deletion still require the release privacy policy. A public recovery flow
 also requires a reviewed compromised-password check, uniform responses and
 timing, safe transport and distributed abuse controls.
+
+## Private customer sessions
+
+Issue 256-bit random bearers after verifying the exact current credential.
+Use a SHA-256 verifier domain distinct from password proof and staff or guest
+tokens. Never log or persist bearer bytes. Hash verification runs outside the
+database transaction and only accepts the reviewed Argon2id profile. A dummy
+hash covers absent credentials with otherwise valid inputs. Public
+anti-enumeration behavior and ingress rate controls require separate checks.
+
+Claim the account before the session, and reject stale credential revisions,
+revoked sessions and expiry after waits. Rotation creates one reciprocal
+successor without extending the original expiry. Flush completion before the
+last clock check. Logout revokes the current bearer. Browser cookies, Origin
+and CSRF integration remain separate.
+
+## Private guest-order linking
+
+Use distinct proof and customer-session bearers. The issuer checks a live
+guest credential, its CSRF token and the accepted order in the owned basket.
+Redemption holds the current revision-bound customer session through commit.
+It requires the exact proof, order and verified buyer mailbox. Preserve the
+local part and fold only the ASCII domain through the existing normalizer.
+Keep bearer bytes and buyer information out of link records and diagnostics.
+PostgreSQL requires reciprocal consumption and a unique immutable link.
+Wrong scope, expiry or a competing link leaves the proof unspent. The
+private adapter provides no browser route or proof-delivery transport.
+Read linked orders only under live account and session claims. Filter the
+link by the session account, validate its exact consumed proof and accepted
+order, and check session time again before returning. Keep buyer, delivery
+address, payment and fulfilment details out of the history projection.
+
+### Private credential admission
+
+Reserve capacity before expensive credential work using a separate global
+and target budget per purpose. Normalize with the same account identity rule
+and use a purpose- and window-specific HMAC-SHA256 digest of that mailbox. Malformed
+input shares a dedicated target bucket. Apply the policy before account
+lookup so unknown and known mailboxes consume the same budgets. Counters
+contain neither plaintext mailboxes nor the key.
+
+The login operation requires admission before any credential lookup or Argon2
+work. Exhausted quotas, unknown identities and incorrect passwords use the
+same denial. An admission storage or clock failure prevents login. This
+classification does not establish equivalent response timing.
+
+Email proof issuance and consumption, account establishment, password proof
+issuance and password replacement each require a committed debit before proof
+work. Standalone email proof consumption and account establishment use the
+same budget. A failed request retains its debit while the proof and any
+account or credential writes remain governed by their own transaction.
+
+Run all instances with the same trusted key version and limits. The active
+60-second window pins both. Switch configuration at a window boundary and
+coordinate key version changes across instances. Each purpose rejects a
+version below the one it last admitted and rejects a changed key using the
+same version. Under the purpose lock, rollover must leave no old targets and
+each debit must read back the exact target counter and scope policy, key,
+window, count and time before it can succeed. Verify the same durable state
+after a high-water update; a mismatch rolls the transaction back. Recheck
+monotonic time after lock waits and preserve the
+post-write sample as the durable high-water mark. Check time again after
+commit. A late result denies permission while retaining the debit.
+One active window per purpose bounds storage. An inactive purpose's expired
+digests persist until its next successful rollover, so time-based purge
+remains an operational requirement before public exposure.
+
+Complete trusted source limits at ingress, neutral responses, enumeration
+and timing tests, and measured overload budgets before wiring public routes.
+The per-target cap can temporarily restrict an account when someone else
+submits its address. Treat that as an abuse case in ingress acceptance.

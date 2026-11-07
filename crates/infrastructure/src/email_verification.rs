@@ -2,10 +2,18 @@
 #[path = "verified_customer_accounts.rs"]
 pub mod verified_customer_accounts;
 
-use commerce_application::request_context::Clock;
+#[cfg(test)]
+#[path = "../tests/support/email_verification_clock_unit.rs"]
+mod tests;
+
+use commerce_application::request_context::{Clock, ObservedClock};
 use commerce_domain::email_identity::normalize_email;
 use sha2::{Digest, Sha256};
 use sqlx::{PgPool, Postgres, Transaction};
+
+use crate::customer_credential_admission::{
+    AdmissionError, AdmissionKey, AdmissionLimits, CredentialPurpose, admit,
+};
 
 const PURPOSE: &str = "email-verification-v1";
 const DOMAIN: &[u8] = b"piwas:email-verification:verifier:v1\0";
@@ -49,13 +57,25 @@ pub async fn issue(
     pool: &PgPool,
     email: &str,
     clock: &dyn Clock,
+    key: &AdmissionKey,
+    limits: AdmissionLimits,
 ) -> Result<VerificationToken, VerificationError> {
+    let observed = ObservedClock::new(clock, 0);
+    admit_verification(
+        pool,
+        email,
+        key,
+        limits,
+        &observed,
+        CredentialPurpose::EmailVerificationIssue,
+    )
+    .await?;
     let identity = normalize_email(email).ok_or(VerificationError::Denied)?;
     let mut bytes = [0_u8; 32];
     getrandom::fill(&mut bytes).map_err(|_| VerificationError::Unavailable)?;
     let token = VerificationToken(bytes);
     let mut tx = begin(pool).await?;
-    let created = now(clock)?;
+    let created = now(&observed)?;
     let expires = created
         .checked_add(LIFETIME)
         .ok_or(VerificationError::Unavailable)?;
@@ -65,8 +85,9 @@ pub async fn issue(
     if inserted.rows_affected() != 1 {
         return Err(VerificationError::Unavailable);
     }
-    let final_now = now(clock)?;
-    if final_now < created || final_now >= expires {
+    // The shared observation rejects any rewind from the creation sample.
+    let final_now = now(&observed)?;
+    if final_now >= expires {
         return Err(VerificationError::Unavailable);
     }
     tx.commit()
@@ -81,14 +102,42 @@ pub async fn consume(
     email: &str,
     token: &VerificationToken,
     clock: &dyn Clock,
+    key: &AdmissionKey,
+    limits: AdmissionLimits,
 ) -> Result<(), VerificationError> {
+    let observed = ObservedClock::new(clock, 0);
+    admit_verification(
+        pool,
+        email,
+        key,
+        limits,
+        &observed,
+        CredentialPurpose::EmailVerificationConsume,
+    )
+    .await?;
     let mut tx = begin(pool).await?;
-    let guard = consume_in_transaction(&mut tx, email, token, clock).await?;
-    guard.check(clock)?;
+    let guard = consume_in_transaction(&mut tx, email, token, &observed).await?;
+    guard.check(&observed)?;
     tx.commit()
         .await
         .map_err(|_| VerificationError::Unavailable)?;
     Ok(())
+}
+
+async fn admit_verification(
+    pool: &PgPool,
+    email: &str,
+    key: &AdmissionKey,
+    limits: AdmissionLimits,
+    clock: &dyn Clock,
+    purpose: CredentialPurpose,
+) -> Result<(), VerificationError> {
+    admit(pool, purpose, email, key, limits, clock)
+        .await
+        .map_err(|error| match error {
+            AdmissionError::Limited => VerificationError::Denied,
+            AdmissionError::Unavailable => VerificationError::Unavailable,
+        })
 }
 
 async fn begin(pool: &PgPool) -> Result<Transaction<'_, Postgres>, VerificationError> {

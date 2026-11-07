@@ -143,9 +143,16 @@ Private P4 email-verification challenge custody now provides exact normalized
 identity binding, random bearer verifiers and single-use expiry under database
 locking. A private account primitive now consumes the exact challenge and inserts a unique
 immutable verified identity atomically. A separate revision-bound password proof
-now supports initial setup and replacement of the current Argon2id hash. Login,
-rotating sessions, secure token delivery, abuse controls and guest linking remain
-P4 work.
+now supports initial setup and replacement of the current Argon2id hash. Private
+password login issues revocable, revision-bound sessions. Rotation preserves the
+original expiry. A private guest-order link requires an order-specific proof
+issued to the guest basket owner and a current customer session for the verified
+buyer mailbox. Private detail and bounded history reads return the linked
+order's captured items and amounts under live customer authority. Private
+credential admission provides shared purpose and mailbox quotas. Login,
+email verification, enrolment and password proof operations commit both
+debits before credential work. Secure delivery, neutral browser responses and
+measured overload behavior remain P4 work.
 
 The local room-planner preview combines the rectangle calculator with keyboard
 measurement and rotation controls, a drawn footprint, and text clearance and fit

@@ -1,3 +1,10 @@
+#[allow(dead_code)]
+#[path = "support/admitted_proofs.rs"]
+mod admitted_proofs;
+
+use admitted_proofs::{
+    customer_passwords, email_verification, verified_customer_accounts::establish,
+};
 use argon2::{
     Argon2,
     password_hash::{PasswordVerifier, phc::PasswordHash},
@@ -5,9 +12,7 @@ use argon2::{
 use commerce_application::request_context::{Clock, ContextError};
 use commerce_infrastructure::{
     MIGRATOR,
-    customer_passwords::{self, PasswordChangeToken, PasswordError},
-    email_verification,
-    verified_customer_accounts::establish,
+    customer_passwords::{PasswordChangeToken, PasswordError},
 };
 use sha2::{Digest, Sha256};
 use sqlx::PgPool;

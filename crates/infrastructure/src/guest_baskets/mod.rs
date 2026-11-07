@@ -20,6 +20,8 @@ use tower_sessions::{
 };
 mod access;
 mod basket;
+#[path = "../guest_order_links/mod.rs"]
+pub mod guest_order_links;
 mod identity;
 mod issue;
 mod scope;

@@ -1539,7 +1539,65 @@ the revision and time, and commits the consumed proof with the new current
 password hash. A database-assigned transaction identity and reciprocal deferred
 check bind both writes. The caller flushes that check before the final clock
 check. Historical challenges retain their consumed status, with only the current
-hash in the credential table. A future login must recheck the credential
-revision under the account claim before issuing authority and invalidate
-sessions tied to earlier revisions. Secure delivery, blocklist, abuse limits,
-browser access and session issuance remain separate.
+hash in the credential table.
+
+### Private customer sessions
+
+Private password login reads the bounded current credential, releases the
+database transaction and verifies it using the same bounded Argon2id worker
+as replacement. An absent credential gets a dummy verification for valid
+password input. Before issuing authority, claim the account and recheck the
+exact hash and revision. Store only a domain-separated verifier for the
+random bearer and return the bearer only after commit.
+
+A session lasts at most 12 hours. A password reset invalidates prior sessions
+by advancing the credential revision. Current reads claim the account and
+session before checking revision, revocation and fresh time. The returned
+identity is a detached snapshot. Future protected writes must hold live session
+authority in their own transaction. Rotation revokes the old bearer and
+inserts one successor with the original expiry in a single transaction. Native
+same-transaction custody and a deferred check bind both effects. Complete
+secure delivery, blocklist, abuse limits and browser integration separately.
+
+### Private guest-order linking
+
+Issue a 15-minute order-link proof only after checking the live guest basket
+session, its CSRF proof and the exact immutable order in that basket. The
+proof has an independent random bearer and verifier domain. Return it to
+the trusted caller after the issuance transaction commits.
+
+Redemption holds the current customer account and session claims, then
+locks the exact proof and order. Compare the verified account mailbox to the
+normalized buyer mailbox in the immutable order. A matching mailbox is one
+condition of linkage alongside the order-specific bearer. Consume the proof
+and insert one order-to-account link in the same transaction. The native
+transaction identity and reciprocal checks bind both writes. The original
+order remains immutable. Flush completion and recheck proof and session time
+before commit.
+
+Private order detail and history hold the same live account and session
+claims through the read. They revalidate the reciprocal proof and link,
+accepted order and verified buyer mailbox. The projection contains the order
+identity and dates, item titles, quantities and captured amounts. It excludes
+contact, address, payment and fulfilment data. Validate titles against the
+exact approved publication and translation revisions used at checkout,
+including the selected Dutch source approval for non-Dutch copy. Later
+catalogue changes leave accepted titles intact. History seeks up to eight
+entries in descending link time and order identity. The cursor is a live
+position. Refresh from the beginning to include newer links. Browser
+exposure and verified delivery remain separate.
+
+### Credential admission
+
+Acquire the credential purpose row before its target counter. Use a fresh
+clock reading after that lock and commit the debit in a dedicated transaction
+before starting authentication or proof work. Every worker uses the same
+purpose budget and normalized-mailbox quota without looking up the account.
+A later failure or cancellation of the credential operation leaves the debit
+in place. A successful window rollover removes the expired counters for that
+purpose and starts fresh counts in the same transaction. Never perform Argon2
+or network work while holding quota locks.
+
+Private login accepts an explicit trusted admission key and limits. After the
+admission transaction commits, login uses the same observed clock for its
+credential lookup and revision-bound session issuance.

@@ -119,11 +119,11 @@ async fn issue_checks_fresh_time_identity_and_rolls_back_expired_insert(pool: Pg
     }
     assert_eq!(issued_count(&pool).await, 0);
 
-    // Three samples correspond to initial validation, creation and final check.
+    // Four samples commit admission, followed by validation, creation and final check.
     for samples in [
-        [1000, 1000, 1900],
-        [1000, 1000, 999],
-        [i64::MAX as u64, i64::MAX as u64, i64::MAX as u64],
+        [1000, 1000, 1000, 1000, 1000, 1000, 1900],
+        [1000, 1000, 1000, 1000, 1000, 1000, 999],
+        [i64::MAX as u64; 7],
     ] {
         assert!(matches!(
             customer_passwords::issue(&pool, "issue-clock@example.com", &issue_clock(&samples))
@@ -137,7 +137,7 @@ async fn issue_checks_fresh_time_identity_and_rolls_back_expired_insert(pool: Pg
         Err(PasswordError::Unavailable)
     ));
     assert_eq!(issued_count(&pool).await, 0);
-    let valid = issue_clock(&[1000, 1000, 1899]);
+    let valid = issue_clock(&[1000, 1000, 1000, 1000, 1000, 1000, 1899]);
     let token = customer_passwords::issue(&pool, "issue-clock@EXAMPLE.COM", &valid)
         .await
         .expect("unexpired issue");

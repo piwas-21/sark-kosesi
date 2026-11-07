@@ -305,6 +305,7 @@ dependencies = [
  "hyper-util",
  "image",
  "reqwest",
+ "ring",
  "rustls",
  "serde",
  "serde_json",
