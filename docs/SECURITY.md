@@ -252,7 +252,10 @@ Guest checkout rejects a policy that requires a verified customer allowance.
 Private account-bound quote issue and replay require guest ownership, the same
 verified account, and a current credential-revision-bound session through the
 final time check. The account association stays in immutable private storage.
-Guest order acceptance rejects these quotes.
+Verified acceptance requires the exact account-bound quote, held current
+authority and a reciprocal account debit in the order transaction. Guest
+acceptance, guest payment preparation and guest order-link proof issuance
+reject account-bound custody.
 Public coupon access still requires authenticated checkout and trusted-edge
 abuse controls.
 

@@ -14,10 +14,38 @@ mod create;
 mod read;
 mod redemption;
 mod stored;
-pub use create::create_order;
 pub(crate) use create::products as product_snapshots;
-pub use read::owned_order;
-pub(crate) use stored::by_id as snapshot_in_transaction;
+pub use read::{owned_order, owned_verified_promoted_order};
+pub(crate) use stored::{
+    by_id as snapshot_in_transaction, guest_by_id as guest_snapshot_in_transaction,
+};
+
+/// Seller policy is trusted server configuration; no caller/customer total is accepted.
+/// This private primitive grants no provider, public-route or fulfilment permission.
+pub async fn create_order(
+    store: &GuestSessionStore,
+    key: &GuestCredential,
+    csrf: &str,
+    effect: &str,
+    intent: &OrderIntent,
+    seller: &SellerPolicy,
+) -> Result<OrderReceipt, OrderStoreError> {
+    create::create(store, key, csrf, None, effect, intent, seller).await
+}
+
+/// Accept an account-bound promoted quote while retaining both authorities.
+pub async fn create_verified_promoted_order(
+    store: &GuestSessionStore,
+    key: &GuestCredential,
+    csrf: &str,
+    customer: &crate::customer_sessions::CustomerSessionToken,
+    effect: &str,
+    intent: &OrderIntent,
+    seller: &SellerPolicy,
+) -> Result<OrderReceipt, OrderStoreError> {
+    create::create(store, key, csrf, Some(customer), effect, intent, seller).await
+}
+
 /// Failure classes contain no database detail or private request/snapshot material.
 #[derive(Debug, PartialEq, Eq)]
 pub enum OrderStoreError {
@@ -116,4 +144,28 @@ fn identifier(s: &str) -> bool {
     s.len() == 32
         && s.bytes()
             .all(|v| v.is_ascii_digit() || (b'a'..=b'f').contains(&v))
+}
+
+fn check_session(
+    session: Option<&crate::customer_sessions::HeldSession>,
+    at: i64,
+) -> Result<(), OrderStoreError> {
+    if let Some(session) = session {
+        session.check_at(at).map_err(|_| OrderStoreError::Denied)?;
+    }
+    Ok(())
+}
+
+fn check_promoted(
+    p: &commerce_domain::checkout_quotes::PromotedQuoteSnapshot,
+    policy: &commerce_domain::promotion_policies::PromotionPolicy,
+    account: Option<i64>,
+    at: i64,
+) -> Result<(), OrderStoreError> {
+    if account.is_some() {
+        p.check_at_verified(policy, p.promotion.review_revision, at)?;
+    } else {
+        p.check_at(policy, p.promotion.review_revision, at)?;
+    }
+    Ok(())
 }

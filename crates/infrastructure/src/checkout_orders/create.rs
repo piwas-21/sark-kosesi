@@ -25,37 +25,45 @@ async fn replay(
     scope: BasketScope,
     existing: (OrderSnapshot, OrderIntent),
     intent: &OrderIntent,
+    session: Option<&crate::customer_sessions::HeldSession>,
 ) -> Result<OrderReceipt, OrderStoreError> {
     let mut scope = scope;
     if existing.1 != *intent {
         return Err(OrderStoreError::Conflict);
     }
-    scope.checked_at()?;
+    let at = scope.checked_at()?;
+    check_session(session, at)?;
     scope.rollback().await?;
     Ok(OrderReceipt {
         snapshot: existing.0,
         replayed: true,
     })
 }
-/// Seller policy is trusted server configuration; no caller/customer total is accepted.
-/// This private primitive grants no provider, public-route or fulfilment permission.
-pub async fn create_order(
+pub(super) async fn create(
     store: &GuestSessionStore,
     key: &GuestCredential,
     csrf: &str,
+    customer: Option<&crate::customer_sessions::CustomerSessionToken>,
     effect: &str,
     intent: &OrderIntent,
     seller: &SellerPolicy,
 ) -> Result<OrderReceipt, OrderStoreError> {
-    let mut scope = guest_baskets::mutation_scope(store, key, csrf).await?;
+    let (mut scope, session) = if let Some(customer) = customer {
+        let (scope, session) =
+            guest_baskets::verified_scope(store, key, Some(csrf), customer).await?;
+        (scope, Some(session))
+    } else {
+        (guest_baskets::mutation_scope(store, key, csrf).await?, None)
+    };
+    let account = session.as_ref().map(|s| s.account_id());
     if !valid_command_id(effect) || intent.validate().is_err() {
         return Err(OrderStoreError::InvalidRequest);
     }
     let owner = scope.basket_id().to_owned();
-    if let Some(prior) = stored::by_effect(scope.transaction(), &owner, effect).await? {
-        return replay(scope, prior, intent).await;
+    if let Some(prior) = stored::by_effect(scope.transaction(), &owner, effect, account).await? {
+        return replay(scope, prior, intent, session.as_ref()).await;
     }
-    if stored::by_quote(scope.transaction(), &owner, &intent.quote_id)
+    if stored::by_quote(scope.transaction(), &owner, &intent.quote_id, account)
         .await?
         .is_some()
     {
@@ -65,15 +73,13 @@ pub async fn create_order(
         return Err(OrderStoreError::Conflict);
     }
     let captured =
-        crate::checkout_quotes::by_id_any(scope.transaction(), &owner, &intent.quote_id).await?;
+        crate::checkout_quotes::by_id_for(scope.transaction(), &owner, &intent.quote_id, account)
+            .await?;
     let (quote, promoted) = match captured {
+        // The quote reader permits an original snapshot only with an unbound owner.
         crate::checkout_quotes::StoredQuote::Original(quote) => (*quote, None),
         crate::checkout_quotes::StoredQuote::Promoted(promoted, historical) => {
-            promoted.check_at(
-                &historical,
-                promoted.promotion.review_revision,
-                scope.checked_at()?,
-            )?;
+            check_promoted(&promoted, &historical, account, scope.checked_at()?)?;
             (promoted.original.clone(), Some(*promoted))
         }
     };
@@ -101,7 +107,7 @@ pub async fn create_order(
     };
     let policy =
         market_policies::reviewed_policy_in_transaction(scope.transaction(), &input).await?;
-    let current_promotion = redemption::claim(&mut scope, promoted.as_ref()).await?;
+    let current_promotion = redemption::claim(&mut scope, promoted.as_ref(), account).await?;
     let clock = scope.clock();
     let mut proof = if let Some(p) = &current_promotion {
         quotes::prepare_promoted_order_in_transaction(
@@ -198,12 +204,23 @@ pub async fn create_order(
         .validate()
         .map_err(|_| OrderStoreError::InvalidStoredData)?;
     stored::insert(scope.transaction(), &snapshot, intent, effect, &event_id).await?;
-    redemption::insert(scope.transaction(), &snapshot).await?;
+    redemption::insert(scope.transaction(), &snapshot, account).await?;
+    let retained = stored::by_id_for(
+        scope.transaction(),
+        &snapshot.identity.basket_id,
+        &snapshot.identity.id,
+        account,
+    )
+    .await?;
+    if retained != snapshot {
+        return Err(OrderStoreError::InvalidStoredData);
+    }
     let at = scope.checked_at()?;
+    check_session(session.as_ref(), at)?;
     proof.check_at(at)?;
     snapshot.quote.check_at(at)?;
     if let (Some(p), Some(policy)) = (&snapshot.promoted_quote, &current_promotion) {
-        p.check_at(policy, p.promotion.review_revision, at)?;
+        check_promoted(p, policy, account, at)?;
     }
     seller
         .permits(locale.internal(), at)

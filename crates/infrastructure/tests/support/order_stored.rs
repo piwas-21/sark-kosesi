@@ -128,7 +128,35 @@ async fn verified_order_rejects_a_different_owned_quote_read_in_the_same_transac
     // Exercise a real returned legacy row first, then simulate a stale first
     // read whose coherent promoted envelope differs from the next quote read.
     let row = load(&mut tx, &order.identity.id).await;
-    assert!(verified(&mut tx, row).await.is_ok());
+    assert!(verified(&mut tx, row, None).await.is_ok());
+    let legacy = load(&mut tx, &order.identity.id).await;
+    assert!(
+        matches!(
+            verified(&mut tx, legacy, Some(1)).await,
+            Err(OrderStoreError::InvalidStoredData)
+        ),
+        "account association cannot authorize a legacy snapshot"
+    );
+    assert!(
+        matches!(
+            by_effect(&mut tx, &order.identity.basket_id, "place", Some(1)).await,
+            Err(OrderStoreError::NotFound)
+        ),
+        "another account cannot replay the guest effect"
+    );
+    assert!(
+        matches!(
+            by_quote(
+                &mut tx,
+                &order.identity.basket_id,
+                &order.identity.quote_id,
+                Some(1)
+            )
+            .await,
+            Err(OrderStoreError::NotFound)
+        ),
+        "another account cannot recover the guest quote effect"
+    );
     let mut stale = load(&mut tx, &order.identity.id).await;
     let policy = PromotionPolicy {
         currency: Currency::EUR,
@@ -162,7 +190,7 @@ async fn verified_order_rejects_a_different_owned_quote_read_in_the_same_transac
     snapshot["quote"] = value;
     assert!(
         matches!(
-            verified(&mut tx, stale).await,
+            verified(&mut tx, stale, None).await,
             Err(OrderStoreError::InvalidStoredData)
         ),
         "the second owned quote read cannot differ from the first"
@@ -218,7 +246,7 @@ async fn verified_promoted_order_requires_the_exact_second_promoted_read(pool: s
             .bind(id).fetch_one(&mut **tx).await.expect("stored order row")
     }
     let exact = load(&mut tx, &order.identity.id).await;
-    assert!(verified(&mut tx, exact).await.is_ok());
+    assert!(verified(&mut tx, exact, None).await.is_ok());
     let mut stale = load(&mut tx, &order.identity.id).await;
     let mut alternate = serde_json::to_value(&quote).expect("coherent promoted envelope");
     alternate["promotion"]["review_revision"] = 2.into();
@@ -226,7 +254,7 @@ async fn verified_promoted_order_requires_the_exact_second_promoted_read(pool: s
     stale.snapshot.as_mut().expect("order snapshot")["quote"] = alternate;
     assert!(
         matches!(
-            verified(&mut tx, stale).await,
+            verified(&mut tx, stale, None).await,
             Err(OrderStoreError::InvalidStoredData)
         ),
         "second promoted quote must be the same complete envelope"
@@ -243,13 +271,39 @@ async fn verified_promoted_order_requires_the_exact_second_promoted_read(pool: s
         let row = load(&mut tx, &order.identity.id).await;
         assert!(
             matches!(
-                verified(&mut tx, row).await,
+                verified(&mut tx, row, None).await,
                 Err(OrderStoreError::InvalidStoredData)
             ),
             "damaged receipt cannot authorize history"
         );
     }
     sqlx::query("UPDATE promotion_redemptions SET redemption_number=1,lifetime_discount_minor=500 WHERE order_id=$1").bind(&order.identity.id).execute(&mut *tx).await.expect("restore receipt");
+    (&mut *tx).execute("ALTER TABLE promotion_redemptions DROP CONSTRAINT promotion_redemption_account_sequence").await.expect("isolate inconsistent account sequence");
+    sqlx::query("UPDATE promotion_redemptions SET account_redemption_number=1 WHERE order_id=$1")
+        .bind(&order.identity.id)
+        .execute(&mut *tx)
+        .await
+        .expect("detached account sequence");
+    let row = load(&mut tx, &order.identity.id).await;
+    assert!(
+        matches!(
+            verified(&mut tx, row, None).await,
+            Err(OrderStoreError::InvalidStoredData)
+        ),
+        "guest debit with an account sequence is damaged"
+    );
+    sqlx::query(
+        "UPDATE promotion_redemptions SET account_redemption_number=NULL WHERE order_id=$1",
+    )
+    .bind(&order.identity.id)
+    .execute(&mut *tx)
+    .await
+    .expect("restore guest debit");
+    let row = load(&mut tx, &order.identity.id).await;
+    assert!(
+        verified(&mut tx, row, None).await.is_ok(),
+        "restored receipt remains readable"
+    );
     sqlx::query("UPDATE checkout_orders SET promotion_redemption_transaction_id=NULL WHERE id=$1")
         .bind(&order.identity.id)
         .execute(&mut *tx)
@@ -258,10 +312,136 @@ async fn verified_promoted_order_requires_the_exact_second_promoted_read(pool: s
     let row = load(&mut tx, &order.identity.id).await;
     assert!(
         matches!(
-            verified(&mut tx, row).await,
+            verified(&mut tx, row, None).await,
             Err(OrderStoreError::InvalidStoredData)
         ),
         "missing receipt marker cannot authorize history"
     );
     tx.rollback().await.expect("no effects");
+}
+
+#[allow(dead_code)]
+#[path = "admitted_proofs.rs"]
+mod admitted_proofs;
+
+#[sqlx::test(migrations = false)]
+async fn populated_promoted_order_survives_schema_upgrade_and_rejects_partial_account_custody(
+    pool: sqlx::PgPool,
+) {
+    use crate::payment_test_fixture::{
+        order as order_fixture, promotion as promotion_fixture, quote,
+    };
+    use crate::{
+        checkout_orders, checkout_quotes::issue_promoted_quote, guest_baskets::GuestCredential,
+    };
+    use commerce_application::Locale;
+    use sqlx::Executor;
+
+    MIGRATOR.run_to(52, &pool).await.expect("schema 52");
+    quote::seed(&pool).await;
+    pool.execute("INSERT INTO staff_capabilities VALUES('author','promotion.manage'),('reviewer','promotion.review')").await.expect("independent grants");
+    promotion_fixture::draft(&pool, &promotion_fixture::policy(), "upgrade-draft")
+        .await
+        .expect("draft");
+    promotion_fixture::decide(&pool, "upgrade-review", 1, 0, true)
+        .await
+        .expect("approval");
+    let (store, time) = quote::store(&pool, 1100);
+    let (session, csrf) = quote::guest(&store).await;
+    let key = GuestCredential::from_session(&session).expect("guest");
+    let quoted = issue_promoted_quote(
+        &store,
+        &key,
+        &csrf,
+        Locale::Nl,
+        &quote::request("upgrade"),
+        "COURTYARD",
+    )
+    .await
+    .expect("schema 52 promoted quote")
+    .snapshot;
+    let intent = order_fixture::intent(&quoted.original.binding.quote_id);
+    let order = checkout_orders::create_order(
+        &store,
+        &key,
+        &csrf,
+        "upgrade-order",
+        &intent,
+        &order_fixture::seller(),
+    )
+    .await
+    .expect("schema 52 promoted order")
+    .snapshot;
+    let mut tx = pool.begin().await.expect("schema 52 reader");
+    assert!(
+        by_id_for(&mut tx, &order.identity.basket_id, &order.identity.id, None)
+            .await
+            .is_ok(),
+        "legacy receipt is readable without account columns"
+    );
+    tx.rollback().await.expect("finish read");
+    MIGRATOR.run_to(53, &pool).await.expect("schema 53");
+    let proof =
+        admitted_proofs::email_verification::issue(&pool, "upgrade@example.test", time.as_ref())
+            .await
+            .expect("verification proof");
+    let id = admitted_proofs::verified_customer_accounts::establish(
+        &pool,
+        "upgrade@example.test",
+        &proof,
+        time.as_ref(),
+    )
+    .await
+    .expect("verified account")
+    .value();
+    let mut tx = pool.begin().await.expect("isolated damaged import");
+    (&mut *tx)
+        .execute("ALTER TABLE guest_quote_snapshots DISABLE TRIGGER guard_guest_quote")
+        .await
+        .expect("allow isolated source damage");
+    sqlx::query("UPDATE guest_quote_snapshots SET promotion_account_id=$1 WHERE id=$2")
+        .bind(id)
+        .bind(&order.identity.quote_id)
+        .execute(&mut *tx)
+        .await
+        .expect("simulate forbidden account association");
+    assert!(
+        matches!(
+            by_id_for(
+                &mut tx,
+                &order.identity.basket_id,
+                &order.identity.id,
+                Some(id)
+            )
+            .await,
+            Err(OrderStoreError::InvalidStoredData)
+        ),
+        "schema 53 has no account debit and must fail closed on an account-bound order"
+    );
+    tx.rollback()
+        .await
+        .expect("restore original quote and guard");
+    MIGRATOR
+        .run(&pool)
+        .await
+        .expect("upgrade to current schema");
+    assert!(
+        checkout_orders::owned_order(&store, &key, &order.identity.id)
+            .await
+            .expect("upgraded guest history")
+            == order
+    );
+    assert!(
+        checkout_orders::create_order(
+            &store,
+            &key,
+            &csrf,
+            "upgrade-order",
+            &intent,
+            &order_fixture::seller()
+        )
+        .await
+        .expect("upgraded replay")
+        .replayed
+    );
 }

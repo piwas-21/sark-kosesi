@@ -182,7 +182,7 @@ pub(crate) async fn by_id_any(
 ) -> Result<StoredQuote, QuoteStoreError> {
     by_id_for(tx, owner, id, None).await
 }
-pub(super) async fn by_id_for(
+pub(crate) async fn by_id_for(
     tx: &mut Transaction<'_, Postgres>,
     owner: &str,
     id: &str,
