@@ -480,6 +480,15 @@ parent and test credential. An omitted reversal timestamp leaves reversal status
 unknown. Unknown responses and 404 leave the child unresolved.
 The project follows Mollie's [refund GET](https://docs.mollie.com/reference/get-refund)
 and [chargeback GET](https://docs.mollie.com/reference/get-chargeback) contracts.
+
+A separate GET-only test-profile operation reads the optional aggregate fields
+from the [paid parent payment](https://docs.mollie.com/reference/get-payment)
+after exact attempt, profile, payment identity, amount and metadata matching.
+It preserves reported refunded, remaining, captured and charged-back amounts
+as EUR minor units and keeps omissions explicit. Explicit zero and omission
+remain distinct. Reported refunds above the original amount remain visible.
+The projection discards unrelated provider data and has no persistence or
+authority to calculate a net balance or execute a refund.
 Authenticated amounts above the original remain visible for review. Some methods
 allow additional reimbursement, such as return shipping. [Mollie payment reference](https://docs.mollie.com/reference/get-payment)
 
