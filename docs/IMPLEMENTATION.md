@@ -432,6 +432,11 @@ issuer returns its bearer to the trusted caller. The delivery issuer commits a
 nonce reservation before encryption, then commits the challenge and its encrypted
 envelope together. Its receipt omits the bearer. The schema and scope are
 specified in [security](SECURITY.md#private-email-verification-challenge-custody).
+A private start claim locks the live challenge, checks its exact prior envelope,
+nonce and configured key fingerprint, then durably records one start. Repeated
+claims while the source is live can observe that start without creating a second
+one. The claim performs no authenticated opening or transport. Design those
+steps and ambiguous-outcome recovery before connecting any mail provider.
 A private account operation now
 locks and consumes that exact proof and inserts one unique immutable normalized
 identity in the same transaction; the database binds consumption and insertion to

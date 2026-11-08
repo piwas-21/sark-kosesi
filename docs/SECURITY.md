@@ -504,7 +504,12 @@ random source and a synchronously committed nonce reservation bound to the
 exact verifier. Each key has at most one million reservations. A failed issuance
 leaves its nonce burned. Store keys separately from database
 backups and keep plaintext bearers and raw keys out of logs and storage.
-Delivery processing, anti-enumeration, token transport, mailbox delivery and
+A separate private start accepts only an exact live envelope with its registered
+key fingerprint and previously committed nonce. It creates one durable record
+and emits no bearer, ciphertext or mailbox. The start does not authenticate
+ciphertext contents; transport must authenticate the complete envelope before
+using any bearer. A committed start with no separate outcome stays unknown.
+Authenticated opening, anti-enumeration, token transport, mailbox delivery and
 recovery remain separate requirements. Private verified account establishment composes the exact
 challenge consumption and a unique immutable normalized identity in one transaction.
 The database assigns the consumption transaction ID and requires the account insert

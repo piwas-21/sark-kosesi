@@ -1699,6 +1699,14 @@ with exact readback and a final observed-clock expiry check. The receipt omits
 the bearer and the envelope stores no duplicate mailbox. Legacy direct issuance
 retains its private trusted-caller contract.
 
+A private delivery start locks the challenge before reading the exact stored
+envelope, nonce and registered key fingerprint. The immutable start has one row
+per verifier and requires an earlier envelope transaction, a live challenge and
+durable commit. Consumption serializes on the same row, and native checks
+prevent starting and consuming in one transaction. The claim performs no
+decryption or network I/O. A committed start is local custody with no provider
+outcome, and a repeat cannot create another start.
+
 A private PostgreSQL operation locks and consumes an exact email challenge while
 inserting a unique immutable customer identity and its verification reference in
 one transaction. A database-assigned transaction ID on the consumption must match

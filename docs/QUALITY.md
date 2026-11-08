@@ -793,6 +793,12 @@ an actual write wait. Assert that a failed challenge write leaves its reserved
 nonce burned. Exercise authenticated ciphertext and context tampering and
 check that stored envelope fields omit plaintext and duplicate mailbox data.
 
+Race two private delivery claims and race a claim against challenge consumption
+in both orders on isolated PostgreSQL. Check exact live source and configured
+key binding, one immutable start, rejection of same-transaction consumption, and
+rollback after a real write wait. Starting a delivery must not consume a challenge
+or create provider, account, or mailbox outcome evidence.
+
 ### Private password credential custody
 
 Use isolated PostgreSQL with two verified accounts and actual Argon2id
