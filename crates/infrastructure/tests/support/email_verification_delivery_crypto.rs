@@ -102,6 +102,20 @@ fn encrypted_bearer_round_trips_only_with_exact_authenticated_context() {
     let mut wrong_key_id = reservation(&key, &original);
     wrong_key_id.key_id = "other".into();
     assert!(seal(&key, &original, &token, wrong_key_id).is_err());
+    // A correctly reserved key cannot seal a context naming another key ID.
+    let other_key_context = Context {
+        key_id: "mail-2",
+        ..original
+    };
+    assert!(
+        seal(
+            &key,
+            &other_key_context,
+            &token,
+            reservation(&key, &other_key_context)
+        )
+        .is_err()
+    );
     let mut wrong_key = reservation(&key, &original);
     wrong_key.fingerprint = other.fingerprint;
     assert!(seal(&key, &original, &token, wrong_key).is_err());
@@ -118,6 +132,19 @@ fn encrypted_bearer_round_trips_only_with_exact_authenticated_context() {
     let mut damaged_tag = sealed.clone();
     damaged_tag[47] ^= 1;
     assert!(open(&key, &original, &damaged_tag).is_err());
+    let negative_nonce = Context {
+        counter: -1,
+        ..original
+    };
+    assert!(
+        seal(
+            &key,
+            &negative_nonce,
+            &token,
+            reservation(&key, &negative_nonce)
+        )
+        .is_err()
+    );
     let second = seal(
         &key,
         &Context {

@@ -30,6 +30,123 @@ async fn counts(pool: &PgPool) -> (i64, i64, i64, i32) {
     sqlx::query_as("SELECT (SELECT count(*) FROM email_verification_delivery_nonces),(SELECT count(*) FROM email_verification_challenges),(SELECT count(*) FROM email_verification_delivery_envelopes),(SELECT admitted FROM customer_credential_admission_scopes WHERE purpose=2)").fetch_one(pool).await.expect("nonce, challenge, envelope, quota")
 }
 
+#[test]
+fn delivery_key_rejects_ambiguous_identifiers_and_empty_material() {
+    for invalid in ["", "-prefix", "bad.key", "bad/key", "clé", &"a".repeat(65)] {
+        assert_eq!(
+            VerificationDeliveryKey::capture(invalid, [41; 32]).err(),
+            Some(VerificationError::Unavailable)
+        );
+    }
+    assert_eq!(
+        VerificationDeliveryKey::capture("valid", [0; 32]).err(),
+        Some(VerificationError::Unavailable)
+    );
+    assert!(VerificationDeliveryKey::capture("Key-A_b1", [41; 32]).is_ok());
+}
+
+#[sqlx::test(migrator = "MIGRATOR")]
+async fn key_registration_rejects_invalid_clock_or_changed_registration(pool: PgPool) {
+    let clock = Time(AtomicU64::new(9_007_199_254_740_992));
+    let key = delivery();
+    assert_eq!(
+        register_key(&pool, &clock, &key).await,
+        Err(VerificationError::Unavailable)
+    );
+    clock.0.store(1000, Ordering::SeqCst);
+    pool.execute("CREATE FUNCTION test_shift_key_registration() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN NEW.registered_at=NEW.registered_at+1; RETURN NEW; END; $$; CREATE TRIGGER z_test_shift_key_registration BEFORE INSERT ON email_verification_delivery_keys FOR EACH ROW EXECUTE FUNCTION test_shift_key_registration()").await.expect("change timestamp before persistence");
+    assert_eq!(
+        register_key(&pool, &clock, &key).await,
+        Err(VerificationError::Unavailable)
+    );
+    let saved: i64 = sqlx::query_scalar("SELECT count(*) FROM email_verification_delivery_keys")
+        .fetch_one(&pool)
+        .await
+        .expect("key registry count");
+    assert_eq!(saved, 0);
+    pool.execute("DROP TRIGGER z_test_shift_key_registration ON email_verification_delivery_keys")
+        .await
+        .expect("restore key registry");
+    register_key(&pool, &clock, &key)
+        .await
+        .expect("intact key registration");
+    clock.0.store(999, Ordering::SeqCst);
+    assert_eq!(
+        register_key(&pool, &clock, &key).await,
+        Err(VerificationError::Unavailable)
+    );
+    let saved: i64 = sqlx::query_scalar(
+        "SELECT registered_at FROM email_verification_delivery_keys WHERE key_id='key-one'",
+    )
+    .fetch_one(&pool)
+    .await
+    .expect("exact prior key registration");
+    assert_eq!(saved, 1000);
+}
+
+#[sqlx::test(migrator = "MIGRATOR")]
+async fn custody_readback_rejects_changed_writes_and_local_durability_downgrade(pool: PgPool) {
+    let clock = Time(AtomicU64::new(1000));
+    let admission = admission();
+    let key = delivery();
+    let attempt = |key| {
+        issue_for_delivery(
+            &pool,
+            "buyer@example.test",
+            &clock,
+            &admission,
+            limits(),
+            key,
+        )
+    };
+    register_key(&pool, &clock, &key)
+        .await
+        .expect("register key");
+    let wrong = VerificationDeliveryKey::capture("key-one", [42; 32]).expect("wrong material");
+    assert_eq!(
+        attempt(&wrong).await.err(),
+        Some(VerificationError::Unavailable)
+    );
+    assert_eq!(counts(&pool).await, (0, 0, 0, 1));
+
+    for (index, (add, remove)) in [
+        (
+            "CREATE FUNCTION test_change_nonce_time() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN NEW.reserved_at=NEW.reserved_at+1; RETURN NEW; END; $$; CREATE TRIGGER z_test_change_nonce_time BEFORE INSERT ON email_verification_delivery_nonces FOR EACH ROW EXECUTE FUNCTION test_change_nonce_time()",
+            "DROP TRIGGER z_test_change_nonce_time ON email_verification_delivery_nonces",
+        ),
+        (
+            "CREATE FUNCTION test_downgrade_nonce_durability() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN PERFORM set_config('synchronous_commit','off',true); RETURN NEW; END; $$; CREATE TRIGGER z_test_downgrade_nonce_durability AFTER INSERT ON email_verification_delivery_nonces FOR EACH ROW EXECUTE FUNCTION test_downgrade_nonce_durability()",
+            "DROP TRIGGER z_test_downgrade_nonce_durability ON email_verification_delivery_nonces",
+        ),
+    ].into_iter().enumerate() {
+        pool.execute(add).await.expect("install isolated nonce fault");
+        assert_eq!(attempt(&key).await.err(), Some(VerificationError::Unavailable));
+        assert_eq!(counts(&pool).await, (0, 0, 0, i32::try_from(index).expect("small index") + 2));
+        pool.execute(remove).await.expect("remove isolated nonce fault");
+    }
+
+    pool.execute("CREATE FUNCTION test_change_verification_identity() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN NEW.email_identity='substitution@example.test'; RETURN NEW; END; $$; CREATE TRIGGER z_test_change_verification_identity BEFORE INSERT ON email_verification_challenges FOR EACH ROW EXECUTE FUNCTION test_change_verification_identity()").await.expect("install coherent identity substitution");
+    assert_eq!(
+        attempt(&key).await.err(),
+        Some(VerificationError::Unavailable)
+    );
+    assert_eq!(
+        counts(&pool).await,
+        (1, 0, 0, 4),
+        "only the earlier debit and nonce survive"
+    );
+    pool.execute(
+        "DROP TRIGGER z_test_change_verification_identity ON email_verification_challenges",
+    )
+    .await
+    .expect("remove identity substitution");
+    attempt(&key).await.expect("issue with intact custody");
+    assert_eq!(counts(&pool).await, (2, 1, 1, 5));
+    let bound: (String,i64) = sqlx::query_as("SELECT c.email_identity,e.nonce_counter FROM email_verification_challenges c JOIN email_verification_delivery_envelopes e USING(verifier)")
+        .fetch_one(&pool).await.expect("exact positive source");
+    assert_eq!(bound, ("buyer@example.test".into(), 2));
+}
+
 #[sqlx::test(migrator = "MIGRATOR")]
 async fn real_issuance_uses_one_debit_and_stores_only_an_encrypted_bearer(pool: PgPool) {
     let clock = Time(AtomicU64::new(1000));
