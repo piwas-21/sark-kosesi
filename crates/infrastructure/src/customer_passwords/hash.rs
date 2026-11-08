@@ -19,7 +19,7 @@ async fn acquire_capacity(work: &Semaphore) -> Result<SemaphorePermit<'_>, Passw
         .map_err(|_| PasswordError::Unavailable)
 }
 
-fn normalize(password: &str) -> Result<Zeroizing<String>, PasswordError> {
+pub(super) fn normalize(password: &str) -> Result<Zeroizing<String>, PasswordError> {
     if password.len() > MAX_PASSWORD_BYTES {
         return Err(PasswordError::Denied);
     }

@@ -455,8 +455,12 @@ its purpose and target quota debit before lookup or hashing and carries the same
 observed clock through issuance. Verification and password proof operations also
 commit admission before accessing proof or credential state. Standalone proof
 consumption and verified account establishment share one target budget, with one
-debit per request. Complete secure delivery, password blocklist, trusted ingress, timing and
-browser controls before exposing the flow.
+debit per request. Private replacement additionally requires a trusted, immutable,
+bounded and integrity-checked offline password blocklist snapshot; exact NFC
+matches are denied after proof precheck and before Argon2. Snapshot validity is
+rechecked before commit. No corpus is supplied. Obtain and review a real corpus,
+coordinate its delivery, withdrawal and freshness, and complete secure delivery,
+trusted ingress, timing and browser controls before exposing the flow.
 
 Private guest-order linking requires a live guest basket credential and CSRF
 proof to issue a one-use challenge for that exact accepted order. A current

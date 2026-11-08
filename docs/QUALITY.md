@@ -834,3 +834,13 @@ an isolated database and distinguish a saturated target from admitted lookup
 failure. Verify shared consumption and enrolment capacity, independent password
 issuance and replacement quotas, and successful rollover with the exact
 unspent proof.
+
+### Private password blocklist preflight
+
+Use independently calculated literal digests and NFC/space-sensitive positive and
+negative controls. Reject malformed, unsorted, duplicate, over-capacity, expired
+and integrity-mismatched snapshots. Isolated PostgreSQL tests retain proof and
+existing credential after rejection while the admission debit remains committed,
+then retry successfully. A real account-lock wait advances the clock through
+snapshot expiry and demonstrates rollback. Synthetic test digests are not an
+operational corpus or evidence of its review.

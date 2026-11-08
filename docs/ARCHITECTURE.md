@@ -1716,6 +1716,13 @@ check bind both writes. The caller flushes that check before the final clock
 check. Historical challenges retain their consumed status, with only the current
 hash in the credential table.
 
+Replacement requires a trusted immutable offline blocklist snapshot with a bounded
+validity window and integrity digest. After the proof precheck and outside any
+database transaction, it checks the exact SHA-256 of the NFC-normalized password
+before Argon2. A final clock sample rechecks validity before commit. The snapshot
+is not a live revocation mechanism and does not prove corpus or reviewer quality;
+corpus approval and coordinated distribution remain operational work.
+
 ### Private customer sessions
 
 Private password login reads the bounded current credential, releases the
