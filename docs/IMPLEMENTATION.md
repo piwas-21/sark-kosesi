@@ -480,8 +480,11 @@ user-supplied door clearance yield invalid, uncertain, conflict or fit results.
 Independently calculated fixtures cover boundaries. The non-selling preview page
 uses a keyboard form, local drawing and text status. Clearing the draft allows a
 unit change without reinterpreting existing measurements. Use real approved
-measurements for any future catalogue integration. Persistence, photo placement,
-original help content and reviewed locales remain P5 work. Owner approval
+measurements for any future catalogue integration. A standalone versioned
+codec can round-trip bounded editable drafts for explicit local files. It is
+independent of the preview. Add local file controls and verify the new exact
+visual source before connecting it. Photo placement, original help content
+and reviewed locales remain P5 work. Owner approval
 binds the 252 Linux visual baselines to the exact preview source. Hosted
 comparison and native browser/device acceptance remain separate evidence.
 

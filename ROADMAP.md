@@ -179,7 +179,9 @@ neutral browser responses and measured overload behavior remain P4 work.
 
 The local room-planner preview combines the rectangle calculator with keyboard
 measurement and rotation controls, a drawn footprint, and text clearance and fit
-results. Caller measurements stay on the page. The copy is drafted for all seven
+results. Caller measurements stay on the page. A standalone bounded file codec
+is ready for explicit local import and export controls, which remain P5 work.
+The copy is drafted for all seven
 locales. The owner approved the 252 Linux preview baselines. Native-language
 acceptance, verified product dimensions and physical-fit acceptance remain open.
 

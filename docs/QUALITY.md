@@ -211,6 +211,10 @@ The visual inventory covers collection, covers/filled details, empty EN/Kurmanji
 collections, missing products, home, gallery and the room planner. The planner
 adds a filled Dutch and Arabic case in each browser, theme and viewport for 252
 expected images. The room-fit source and planner fixture are part of the digest.
+Test the separate room draft codec with exact round trips, mixed units and
+rotations across fixtures, incomplete measurement text, unknown clearances,
+count and byte limits, and malformed or unexpected fields. Fit is recomputed
+from the input; it is never imported.
 Test a long planner conflict list with keyboard document scrolling at desktop
 width. The semantic list is fully readable without a nested scroll area or an
 extra tab stop.

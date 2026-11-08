@@ -77,3 +77,12 @@ Changing units requires clearing an existing measurement draft. Measurements
 remain in page memory. The preview uses draft copy and caller measurements.
 Catalogue dimensions, persistent plans, photo placement and native-language
 approval require separate evidence.
+
+The standalone room-plan file format stores one unit, ordered caller
+measurements, item rotations and the door clearance choice. It accepts a
+closed version 1 document up to 16 KiB, rejects duplicate fields, and keeps
+bounded blank or unfinished measurement fields editable. It contains no
+calculated fit, catalogue dimensions, names or identifiers. Recompute the
+result from the validated measurements. The encoder accepts ordinary data
+records and arrays. Preview import and download controls are separate work;
+the format creates no browser or server storage.
