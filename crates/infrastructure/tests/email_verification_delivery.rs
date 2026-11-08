@@ -943,7 +943,7 @@ async fn dropping_a_blocked_envelope_write_burns_nonce_and_rolls_back_pair(pool:
         "committed nonce and debit precede the blocked writes"
     );
     work.abort();
-    assert!(work.await.err().expect("aborted work").is_cancelled());
+    assert!(matches!(work.await, Err(error) if error.is_cancelled()));
     gate.rollback().await.expect("release wait");
     tokio::time::timeout(std::time::Duration::from_secs(2), async {
         loop {
