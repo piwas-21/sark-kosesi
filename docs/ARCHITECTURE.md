@@ -682,6 +682,14 @@ source/hold/identity clock checks after the actual event write. Private history
 revalidates bounded closed records, canonical request/configuration and the
 original accepted order; reading old history grants no new payment authority.
 
+For an account-bound order, private preparation and history hold the current
+customer account and session before claiming guest and basket ownership. The
+attempt retains the quote's exact account in a private immutable column. Scoped
+reads and effect replay authorize the original order before decoding its frozen
+payment request. The final observed time covers both sessions and the existing
+source and stock deadlines. Internal dispatch and reconciliation validate the
+retained attempt and order association when restoring history.
+
 The trusted internal dispatch entry serializes contenders on the immutable attempt.
 A new start requires the same configuration and fresh commercial/held-stock claims.
 One immutable start and a reconciliation-required event commit before a noncloneable,
@@ -1610,8 +1618,8 @@ Each attributed ledger row retains the lifetime redemption sequence and the
 same account's cumulative count. The promotion lock serializes both global
 and per-account limits across policy revisions. A capped policy fails closed
 if earlier debits for that promotion have no account attribution. Capacity stays
-used after expiry or cancellation. Guest payment preparation and guest order
-link proofs reject account-bound orders.
+used after expiry or cancellation. Guest payment preparation, attempt history
+and guest order-link proofs reject account-bound orders.
 
 The infrastructure-only order primitive composes fresh guest/CSRF authority,
 current basket revision, an owned unexpired quote and the latest independently

@@ -37,7 +37,13 @@ pub(crate) async fn context(
             .fetch_optional(&mut **tx)
             .await?
     };
-    let frozen = stored::by_id(tx, &owner.ok_or(PaymentStoreError::NotFound)?, id).await?;
+    let frozen = stored::by_id(
+        tx,
+        &owner.ok_or(PaymentStoreError::NotFound)?,
+        id,
+        checkout_orders::OrderAccess::Internal,
+    )
+    .await?;
     let (start_id, started_at): (String, i64) = sqlx::query_as(
         "SELECT left(id,33),started_at FROM payment_dispatch_starts WHERE attempt_id=$1",
     )

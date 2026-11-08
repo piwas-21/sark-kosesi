@@ -175,7 +175,21 @@ async fn schema31_upgrade_preserves_received_original_order_and_reservation_with
             .expect("prior canonical recognition");
     MIGRATOR.run(&pool).await.expect("upgrade32");
     MIGRATOR.run(&pool).await.expect("idempotent upgrade32");
-    assert_eq!(unchanged(&pool).await, source);
+    let mut upgraded = unchanged(&pool).await;
+    let attempts = upgraded["attempts"]
+        .as_array_mut()
+        .expect("legacy attempt rows");
+    assert_eq!(attempts.len(), 1);
+    let marker = attempts[0]
+        .as_object_mut()
+        .expect("attempt object")
+        .remove("promotion_account_id");
+    assert_eq!(
+        marker,
+        Some(serde_json::Value::Null),
+        "legacy attempt receives only a null account marker"
+    );
+    assert_eq!(upgraded, source);
     assert_eq!(balances(&pool).await, balance);
     assert_eq!(counts(&pool).await, (0, 0, 0, 1, 2));
     assert!(

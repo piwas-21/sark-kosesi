@@ -46,7 +46,9 @@ pub(crate) async fn by_id(
     owner: &str,
     id: &str,
 ) -> Result<OrderSnapshot, OrderStoreError> {
-    by_id_inner(tx, owner, id, None, true).await
+    Ok(by_id_with_account(tx, owner, id, OrderAccess::Internal)
+        .await?
+        .0)
 }
 
 pub(crate) async fn guest_by_id(
@@ -57,30 +59,42 @@ pub(crate) async fn guest_by_id(
     by_id_for(tx, owner, id, None).await
 }
 
-pub(super) async fn by_id_for(
+pub(crate) async fn by_id_for(
     tx: &mut Transaction<'_, Postgres>,
     owner: &str,
     id: &str,
     account: Option<i64>,
 ) -> Result<OrderSnapshot, OrderStoreError> {
-    by_id_inner(tx, owner, id, account, false).await
+    Ok(
+        by_id_with_account(tx, owner, id, OrderAccess::Owned(account))
+            .await?
+            .0,
+    )
 }
 
-async fn by_id_inner(
+#[derive(Clone, Copy)]
+pub(crate) enum OrderAccess {
+    Internal,
+    Owned(Option<i64>),
+}
+
+pub(crate) async fn by_id_with_account(
     tx: &mut Transaction<'_, Postgres>,
     owner: &str,
     id: &str,
-    account: Option<i64>,
-    internal: bool,
-) -> Result<OrderSnapshot, OrderStoreError> {
+    access: OrderAccess,
+) -> Result<(OrderSnapshot, Option<i64>), OrderStoreError> {
     let row=sqlx::query_as::<_,Row>("SELECT left(o.id,33) AS id,left(o.basket_id,33) AS basket_id,o.basket_revision,left(o.quote_id,33) AS quote_id,left(o.effect_key,129) AS effect_key,left(o.stock_group_id,33) AS stock_group_id,o.created_at,o.hold_expires_at,CASE WHEN octet_length(o.intent::text)<=16384 THEN o.intent END AS intent,CASE WHEN octet_length(o.snapshot::text)<=65536 THEN o.snapshot END AS snapshot,CASE WHEN octet_length(q.snapshot::text)<=32768 THEN q.snapshot END AS original_quote,CASE WHEN octet_length(p.policy::text)<=65536 THEN p.policy END AS original_market FROM checkout_orders o LEFT JOIN guest_quote_snapshots q ON q.id=o.quote_id LEFT JOIN market_policy_drafts p ON p.id=q.policy_id AND p.revision=q.policy_revision WHERE o.basket_id=$1 AND o.id=$2")
  .bind(owner).bind(id).fetch_optional(&mut **tx).await?.ok_or(OrderStoreError::NotFound)?;
     let bound = quote_account(tx, &row.basket_id, &row.quote_id).await?;
-    if !internal && bound != account {
+    if let OrderAccess::Owned(account) = access
+        && bound != account
+    {
         return Err(OrderStoreError::NotFound);
     }
-    Ok(verified(tx, row, bound).await?.0)
+    Ok((verified(tx, row, bound).await?.0, bound))
 }
+
 async fn quote_account(
     tx: &mut Transaction<'_, Postgres>,
     owner: &str,

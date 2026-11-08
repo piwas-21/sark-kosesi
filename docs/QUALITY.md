@@ -321,6 +321,11 @@ after anonymous usage, exact replay, expiry after a write wait, and rollback of
 stock, order, debit and event. Exercise legacy guest read, payment and link denial
 against an account-bound order.
 
+For account-bound payment preparation, assert the literal discounted charge and
+original stock group. Exercise guest and wrong-account read and replay denial,
+session expiry after an actual outbox write wait, native account forgery and
+legacy guest attempt replay across the migration.
+
 Whole-basket reservation logic retains 95% critical native line/branch thresholds.
 Independent PostgreSQL oracles cover a last shared component, complete loser
 rollback, changed/omitted/extra retry intent, immutable raw imports, legacy child

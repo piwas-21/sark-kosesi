@@ -17,7 +17,10 @@ mod stored;
 pub(crate) use create::products as product_snapshots;
 pub use read::{owned_order, owned_verified_promoted_order};
 pub(crate) use stored::{
-    by_id as snapshot_in_transaction, guest_by_id as guest_snapshot_in_transaction,
+    OrderAccess, by_id as snapshot_in_transaction,
+    by_id_for as snapshot_for_account_in_transaction,
+    by_id_with_account as snapshot_with_account_in_transaction,
+    guest_by_id as guest_snapshot_in_transaction,
 };
 
 /// Seller policy is trusted server configuration; no caller/customer total is accepted.

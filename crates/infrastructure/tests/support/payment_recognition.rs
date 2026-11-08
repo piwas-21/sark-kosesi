@@ -437,7 +437,23 @@ async fn recognition_schema30_upgrade_preserves_complete_original_paid_custody_a
         .expect("all prior source custody");
     MIGRATOR.run(&pool).await.expect("31 upgrade");
     MIGRATOR.run(&pool).await.expect("idempotent upgrade");
-    assert_eq!(preserved(&pool).await, before);
+    fn legacy_projection(mut value: Value) -> Value {
+        let attempts = value["attempts"]
+            .as_array_mut()
+            .expect("legacy attempt rows");
+        assert_eq!(attempts.len(), 1);
+        let marker = attempts[0]
+            .as_object_mut()
+            .expect("attempt object")
+            .remove("promotion_account_id");
+        assert_eq!(
+            marker,
+            Some(Value::Null),
+            "legacy attempt receives only a null account marker"
+        );
+        value
+    }
+    assert_eq!(legacy_projection(preserved(&pool).await), before);
     assert_eq!(
         sqlx::query_scalar::<_, Value>(source_sql)
             .fetch_one(&pool)
@@ -478,7 +494,7 @@ async fn recognition_schema30_upgrade_preserves_complete_original_paid_custody_a
     );
     assert_eq!(receipt.resolution_id, resolution.id);
     assert_eq!(receipt.order_id, f.snapshot().binding.order_id);
-    assert_eq!(preserved(&pool).await, before);
+    assert_eq!(legacy_projection(preserved(&pool).await), before);
 }
 
 #[sqlx::test(migrator = "MIGRATOR")]
