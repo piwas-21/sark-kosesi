@@ -49,10 +49,19 @@ async fn claim(
     csrf: Option<&str>,
     write: bool,
 ) -> Result<BasketScope, GuestError> {
-    let mut access = access::lock(store, key, csrf).await?;
+    let access = access::lock(store, key, csrf).await?;
+    finish_claim(store, access, write, None).await
+}
+async fn finish_claim(
+    store: &GuestSessionStore,
+    mut access: access::Access,
+    write: bool,
+    observed: Option<Arc<dyn Clock>>,
+) -> Result<BasketScope, GuestError> {
+    let clock = observed.clone().unwrap_or_else(|| store.clock.clone());
     let (revision, lines, window) =
         basket::locked_intent(&mut access.tx, &access.identity.basket_id, write).await?;
-    let at = access.checked_at(store.clock.as_ref())?;
+    let at = access.checked_at(clock.as_ref())?;
     if window > at / 60 {
         return Err(GuestError::ClockUnavailable);
     }
@@ -61,7 +70,7 @@ async fn claim(
         access,
         revision,
         lines,
-        clock: Arc::new(ObservedClock::new(store.clock.clone(), minimum)),
+        clock: observed.unwrap_or_else(|| Arc::new(ObservedClock::new(clock, minimum))),
         identifiers: store.identifiers.clone(),
     })
 }
@@ -77,4 +86,24 @@ pub(crate) async fn read_scope(
     key: &GuestCredential,
 ) -> Result<BasketScope, GuestError> {
     claim(store, key, None, false).await
+}
+
+/// Claim account and session before guest and basket under one transaction and clock.
+pub(crate) async fn verified_scope(
+    store: &GuestSessionStore,
+    key: &GuestCredential,
+    csrf: Option<&str>,
+    customer: &crate::customer_sessions::CustomerSessionToken,
+) -> Result<(BasketScope, crate::customer_sessions::HeldSession), GuestError> {
+    let clock: Arc<dyn Clock> = Arc::new(ObservedClock::new(store.clock.clone(), 0));
+    let mut tx = begin(&store.pool).await?;
+    let session = crate::customer_sessions::claim_session(&mut tx, customer, clock.as_ref())
+        .await
+        .map_err(|error| match error {
+            crate::customer_sessions::SessionError::Denied => GuestError::Denied,
+            crate::customer_sessions::SessionError::Unavailable => GuestError::SessionUnavailable,
+        })?;
+    let access = access::lock_in_transaction(key, csrf, false, tx, clock.as_ref()).await?;
+    let scope = finish_claim(store, access, csrf.is_some(), Some(clock)).await?;
+    Ok((scope, session))
 }

@@ -1574,13 +1574,21 @@ original amounts and owned basket, market and catalogue revisions. The promoted
 format shares the quote identity, effect-key namespace and per-basket issuance
 quota with existing quotes. A guest cannot satisfy a per-customer limit.
 
+Private verified quote issuance holds the verified account and current customer
+session before claiming the guest session and basket in the same transaction.
+An immutable relational field binds the verified account to the existing quote
+format. The same account and guest ownership are required to read or replay it.
+The shared quote effect namespace and issuance quota still apply. An approved
+per-customer term can be captured here. Guest checkout rejects an account-bound
+quote and verified checkout requires its own order and debit transaction.
+
 For a new promoted quote, claim the basket, reviewed market and promotion
 anchors, then the sorted catalogue and physical component sources. Keep those
 claims through insertion and the final clock and ownership checks. Cap the
 quote expiry at the promotion end. Exact replay and reads validate the stored
 allocation against the original immutable approved source; later withdrawal does
 not extend or confer authority on an unexpired historical receipt. The legacy
-quote projection rejects the promoted format. Private order acceptance requires
+quote projection rejects the promoted format. Private guest order acceptance requires
 the original commercial sources and the exact current approved promotion and
 allocations again before committing the debit.
 

@@ -16,14 +16,54 @@ pub async fn issue_promoted_quote(
     request: &GuestQuoteRequest,
     promotion_id: &str,
 ) -> Result<PromotedQuoteReceipt, QuoteStoreError> {
-    let mut scope = guest_baskets::mutation_scope(store, key, csrf).await?;
+    issue(store, key, csrf, None, locale, request, promotion_id).await
+}
+
+/// Issue a private indicative quote while holding both owner and customer authority.
+pub async fn issue_verified_promoted_quote(
+    store: &GuestSessionStore,
+    key: &GuestCredential,
+    csrf: &str,
+    customer: &crate::customer_sessions::CustomerSessionToken,
+    locale: Locale,
+    request: &GuestQuoteRequest,
+    promotion_id: &str,
+) -> Result<PromotedQuoteReceipt, QuoteStoreError> {
+    issue(
+        store,
+        key,
+        csrf,
+        Some(customer),
+        locale,
+        request,
+        promotion_id,
+    )
+    .await
+}
+async fn issue(
+    store: &GuestSessionStore,
+    key: &GuestCredential,
+    csrf: &str,
+    customer: Option<&crate::customer_sessions::CustomerSessionToken>,
+    locale: Locale,
+    request: &GuestQuoteRequest,
+    promotion_id: &str,
+) -> Result<PromotedQuoteReceipt, QuoteStoreError> {
+    let (mut scope, session) = if let Some(customer) = customer {
+        let (scope, session) =
+            guest_baskets::verified_scope(store, key, Some(csrf), customer).await?;
+        (scope, Some(session))
+    } else {
+        (guest_baskets::mutation_scope(store, key, csrf).await?, None)
+    };
+    let account = session.as_ref().map(|s| s.account_id());
     request.validate()?;
     if !merchant_code(promotion_id) {
         return Err(QuoteStoreError::InvalidRequest);
     }
     let owner = scope.basket_id().to_owned();
     if let Some((existing, _)) =
-        stored::by_effect(scope.transaction(), &owner, &request.effect_key).await?
+        stored::by_effect_for(scope.transaction(), &owner, &request.effect_key, account).await?
     {
         let (snapshot, policy) = match existing {
             stored::StoredQuote::Original(_) => return Err(QuoteStoreError::Conflict),
@@ -38,11 +78,9 @@ pub async fn issue_promoted_quote(
         {
             return Err(QuoteStoreError::Conflict);
         }
-        snapshot.check_at(
-            &policy,
-            snapshot.promotion.review_revision,
-            scope.checked_at()?,
-        )?;
+        let at = scope.checked_at()?;
+        check_session(session.as_ref(), at)?;
+        check_snapshot(&snapshot, &policy, account, at)?;
         scope.rollback().await?;
         return Ok(PromotedQuoteReceipt {
             snapshot,
@@ -65,7 +103,7 @@ pub async fn issue_promoted_quote(
         market_policies::reviewed_policy_in_transaction(scope.transaction(), &input).await?;
     let (promotion, review_revision) =
         promotion_policies::current_for_quote(scope.transaction(), promotion_id).await?;
-    if promotion.limits.per_customer_redemptions.is_some() {
+    if account.is_none() && promotion.limits.per_customer_redemptions.is_some() {
         return Err(QuoteStoreError::InvalidRequest);
     }
     let clock = scope.clock();
@@ -98,12 +136,27 @@ pub async fn issue_promoted_quote(
         policy_review_revision: market.review_revision,
     };
     let original = QuoteSnapshot::capture(binding, &proof.original.totals, &proof.bom_revisions())?;
-    let snapshot = PromotedQuoteSnapshot::capture(original, &promotion, review_revision)?;
-    stored::insert_promoted(scope.transaction(), &snapshot, &request.effect_key).await?;
-    let loaded = stored::by_id_any(
+    let snapshot = if account.is_some() {
+        PromotedQuoteSnapshot::capture_verified(original, &promotion, review_revision)?
+    } else {
+        PromotedQuoteSnapshot::capture(original, &promotion, review_revision)?
+    };
+    if let Some(account) = account {
+        stored::insert_verified_promoted(
+            scope.transaction(),
+            &snapshot,
+            &request.effect_key,
+            account,
+        )
+        .await?;
+    } else {
+        stored::insert_promoted(scope.transaction(), &snapshot, &request.effect_key).await?;
+    }
+    let loaded = stored::by_id_for(
         scope.transaction(),
         &owner,
         &snapshot.original.binding.quote_id,
+        account,
     )
     .await?;
     match loaded {
@@ -112,8 +165,9 @@ pub async fn issue_promoted_quote(
         _ => return Err(QuoteStoreError::InvalidStoredData),
     }
     let at = scope.checked_at()?;
+    check_session(session.as_ref(), at)?;
     proof.check_at(at)?;
-    snapshot.check_at(&promotion, review_revision, at)?;
+    check_snapshot(&snapshot, &promotion, account, at)?;
     scope.commit().await?;
     Ok(PromotedQuoteReceipt {
         snapshot,
@@ -126,20 +180,66 @@ pub async fn owned_promoted_quote(
     key: &GuestCredential,
     id: &str,
 ) -> Result<PromotedQuoteSnapshot, QuoteStoreError> {
-    let mut scope = guest_baskets::read_scope(store, key).await?;
+    owned(store, key, None, id).await
+}
+
+pub async fn owned_verified_promoted_quote(
+    store: &GuestSessionStore,
+    key: &GuestCredential,
+    customer: &crate::customer_sessions::CustomerSessionToken,
+    id: &str,
+) -> Result<PromotedQuoteSnapshot, QuoteStoreError> {
+    owned(store, key, Some(customer), id).await
+}
+async fn owned(
+    store: &GuestSessionStore,
+    key: &GuestCredential,
+    customer: Option<&crate::customer_sessions::CustomerSessionToken>,
+    id: &str,
+) -> Result<PromotedQuoteSnapshot, QuoteStoreError> {
+    let (mut scope, session) = if let Some(customer) = customer {
+        let (scope, session) = guest_baskets::verified_scope(store, key, None, customer).await?;
+        (scope, Some(session))
+    } else {
+        (guest_baskets::read_scope(store, key).await?, None)
+    };
+    let account = session.as_ref().map(|s| s.account_id());
     if !identifier(id) {
         return Err(QuoteStoreError::InvalidRequest);
     }
     let owner = scope.basket_id().to_owned();
-    let (snapshot, policy) = match stored::by_id_any(scope.transaction(), &owner, id).await? {
-        stored::StoredQuote::Original(_) => return Err(QuoteStoreError::NotFound),
-        stored::StoredQuote::Promoted(snapshot, policy) => (*snapshot, *policy),
-    };
-    snapshot.check_at(
-        &policy,
-        snapshot.promotion.review_revision,
-        scope.checked_at()?,
-    )?;
+    let (snapshot, policy) =
+        match stored::by_id_for(scope.transaction(), &owner, id, account).await? {
+            stored::StoredQuote::Original(_) => return Err(QuoteStoreError::NotFound),
+            stored::StoredQuote::Promoted(snapshot, policy) => (*snapshot, *policy),
+        };
+    let at = scope.checked_at()?;
+    check_session(session.as_ref(), at)?;
+    check_snapshot(&snapshot, &policy, account, at)?;
     scope.rollback().await?;
     Ok(snapshot)
+}
+fn check_session(
+    session: Option<&crate::customer_sessions::HeldSession>,
+    at: i64,
+) -> Result<(), QuoteStoreError> {
+    if let Some(session) = session {
+        session
+            .check_at(at)
+            .map_err(|_| QuoteStoreError::Guest(GuestError::Denied))?;
+    }
+    Ok(())
+}
+fn check_snapshot(
+    snapshot: &PromotedQuoteSnapshot,
+    policy: &commerce_domain::promotion_policies::PromotionPolicy,
+    account: Option<i64>,
+    at: i64,
+) -> Result<(), QuoteStoreError> {
+    if account.is_some() {
+        snapshot.check_at_verified(policy, snapshot.promotion.review_revision, at)?;
+    } else {
+        snapshot.check_at(policy, snapshot.promotion.review_revision, at)?;
+    }
+    Ok(())
 }

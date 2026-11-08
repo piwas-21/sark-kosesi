@@ -20,7 +20,10 @@ mod issue;
 mod promoted;
 mod stored;
 pub use issue::{issue_quote, owned_quote};
-pub use promoted::{PromotedQuoteReceipt, issue_promoted_quote, owned_promoted_quote};
+pub use promoted::{
+    PromotedQuoteReceipt, issue_promoted_quote, issue_verified_promoted_quote,
+    owned_promoted_quote, owned_verified_promoted_quote,
+};
 #[derive(Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct GuestQuoteRequest {

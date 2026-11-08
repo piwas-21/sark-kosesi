@@ -173,6 +173,10 @@ fn changed_captured_fields_and_trusted_source_are_rejected() {
             value.validate(&policy(), 4),
             Err(SnapshotError::InvalidSnapshot)
         ));
+        assert!(matches!(
+            value.validate_verified(&policy(), 4),
+            Err(SnapshotError::InvalidSnapshot)
+        ));
     }
     let value = snapshot();
     assert!(matches!(

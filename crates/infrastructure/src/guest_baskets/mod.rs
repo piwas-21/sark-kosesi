@@ -26,7 +26,7 @@ mod identity;
 mod issue;
 mod scope;
 mod session_create;
-pub(crate) use scope::{BasketScope, mutation_scope, read_scope};
+pub(crate) use scope::{BasketScope, mutation_scope, read_scope, verified_scope};
 mod store;
 pub use basket::{read_basket, write_basket};
 use identity::GuestIdentity;

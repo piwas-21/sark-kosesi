@@ -21,11 +21,21 @@ pub(super) async fn lock_mode(
     csrf: Option<&str>,
     exclusive: bool,
 ) -> Result<Access, GuestError> {
-    let mut tx = begin(&store.pool).await?;
+    let tx = begin(&store.pool).await?;
+    lock_in_transaction(key, csrf, exclusive, tx, store.clock.as_ref()).await
+}
+
+pub(super) async fn lock_in_transaction(
+    key: &GuestCredential,
+    csrf: Option<&str>,
+    exclusive: bool,
+    mut tx: Transaction<'static, Postgres>,
+    clock: &dyn Clock,
+) -> Result<Access, GuestError> {
     let identity = identity::load(&mut tx, &key.digest(), exclusive)
         .await?
         .ok_or(GuestError::Denied)?;
-    let started = now(store.clock.as_ref())?;
+    let started = now(clock)?;
     identity.check(started)?;
     if let Some(csrf) = csrf
         && (!valid_hex(csrf, 64)

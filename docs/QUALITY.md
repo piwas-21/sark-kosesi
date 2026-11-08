@@ -307,6 +307,13 @@ amounts in the private test payment, paid recognition and refund reservation,
 with the original quantities in stock settlement. Keep the existing critical
 coverage and isolated PostgreSQL gates.
 
+For account-bound indicative quotes, use actual verified customer sessions.
+Check same-account replay, a different account with the same basket, different
+guest ownership, rotation or revocation, and expiry while a real write waits.
+Assert the shared guest quote quota and effect namespace, immutable account
+association and guest order rejection. Exercise a capped promotion as the
+positive verified control.
+
 Whole-basket reservation logic retains 95% critical native line/branch thresholds.
 Independent PostgreSQL oracles cover a last shared component, complete loser
 rollback, changed/omitted/extra retry intent, immutable raw imports, legacy child
