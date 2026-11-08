@@ -22,6 +22,39 @@ struct Source {
     nonce_counter: Option<i64>,
     fingerprint: Option<Vec<u8>>,
 }
+impl Source {
+    /// Validate an exact stored header before looking up or writing a start.
+    fn validate(&self, key: &VerificationDeliveryKey) -> Result<i64, VerificationError> {
+        if self.mode != "envelope" || self.consumed_at.is_some() || !self.consumed_xid_empty {
+            return Err(VerificationError::Denied);
+        }
+        if self.envelope_key.as_deref() != Some(key.key_id.as_str()) {
+            return Err(VerificationError::Denied);
+        }
+        let fingerprint = self
+            .fingerprint
+            .as_deref()
+            .ok_or(VerificationError::Unavailable)?;
+        if fingerprint != key.fingerprint.as_slice() {
+            return Err(VerificationError::Denied);
+        }
+        let counter = self.nonce_counter.ok_or(VerificationError::Unavailable)?;
+        let identity = self
+            .identity
+            .as_deref()
+            .ok_or(VerificationError::Unavailable)?;
+        if normalize_email(identity).as_deref() != Some(identity)
+            || self.created_at < 0
+            || self.created_at.checked_add(LIFETIME) != Some(self.expires_at)
+            || self.expires_at > MAX_QUOTE_UNIX_SECONDS
+            || !(1..=1_000_000).contains(&counter)
+        {
+            return Err(VerificationError::Unavailable);
+        }
+        Ok(counter)
+    }
+}
+
 #[derive(sqlx::FromRow)]
 struct Started {
     key_id: String,
@@ -56,39 +89,9 @@ pub async fn claim(
     // READ COMMITTED obtains a fresh source snapshot after a possible lock wait.
     let source: Source = sqlx::query_as("SELECT c.created_at,c.expires_at,CASE WHEN octet_length(c.email_identity)<=254 THEN c.email_identity END AS identity,c.delivery_mode AS mode,c.consumed_at,c.consumed_xid IS NULL AS consumed_xid_empty,left(e.key_id,65) AS envelope_key,e.nonce_counter,CASE WHEN octet_length(k.key_fingerprint)=32 THEN k.key_fingerprint END AS fingerprint FROM email_verification_challenges c LEFT JOIN email_verification_delivery_envelopes e ON e.verifier=c.verifier LEFT JOIN email_verification_delivery_keys k ON k.key_id=e.key_id WHERE c.verifier=$1")
         .bind(verifier.as_slice()).fetch_one(&mut *tx).await.map_err(|_| VerificationError::Unavailable)?;
-    if source.mode != "envelope" || source.consumed_at.is_some() || !source.consumed_xid_empty {
-        return Err(VerificationError::Denied);
-    }
-    if source.envelope_key.as_deref() != Some(key.key_id.as_str()) {
-        return Err(VerificationError::Denied);
-    }
-    let fingerprint = source
-        .fingerprint
-        .as_deref()
-        .ok_or(VerificationError::Unavailable)?;
-    if fingerprint != key.fingerprint.as_slice() {
-        return Err(VerificationError::Denied);
-    }
-    let counter = source.nonce_counter.ok_or(VerificationError::Unavailable)?;
-    let identity = source
-        .identity
-        .as_deref()
-        .ok_or(VerificationError::Unavailable)?;
-    if normalize_email(identity).as_deref() != Some(identity)
-        || source.created_at < 0
-        || source.created_at.checked_add(LIFETIME) != Some(source.expires_at)
-        || source.expires_at > MAX_QUOTE_UNIX_SECONDS
-        || !(1..=1_000_000).contains(&counter)
-    {
-        return Err(VerificationError::Unavailable);
-    }
+    let counter = source.validate(key)?;
     let at = bounded_now(&observed)?;
-    if at < source.created_at {
-        return Err(VerificationError::Unavailable);
-    }
-    if at >= source.expires_at {
-        return Err(VerificationError::Denied);
-    }
+    check_live(&source, at)?;
     // Reuse the native exact source predicate without creating a start yet.
     let source_valid: bool = sqlx::query_scalar("SELECT email_verification_delivery_start_source(ROW($1::bytea,$2::text,$3::bigint,$4::bytea,$5::bigint,pg_current_xact_id())::email_verification_delivery_starts)")
         .bind(verifier.as_slice()).bind(&key.key_id).bind(counter).bind(key.fingerprint.as_slice()).bind(at)
@@ -163,3 +166,7 @@ fn check_live(source: &Source, at: i64) -> Result<(), VerificationError> {
     }
     Ok(())
 }
+
+#[cfg(test)]
+#[path = "../../../tests/support/email_verification_start_unit.rs"]
+mod tests;

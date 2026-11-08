@@ -484,3 +484,68 @@ async fn altered_start_write_rolls_back_and_replay_rejects_an_earlier_clock(pool
         Ok(ClaimOutcome::AlreadyStarted)
     );
 }
+
+#[sqlx::test(migrator = "MIGRATOR")]
+async fn damaged_nonce_time_cannot_authorize_a_start_and_exact_repair_recovers(pool: PgPool) {
+    let (time, key, verifier) = fixture(&pool).await;
+    pool.execute("ALTER TABLE email_verification_delivery_nonces DISABLE TRIGGER guard_email_verification_delivery_nonce").await.expect("isolate damaged historical import");
+    sqlx::query("UPDATE email_verification_delivery_nonces SET reserved_at=1001 WHERE verifier=$1")
+        .bind(verifier.as_slice())
+        .execute(&pool)
+        .await
+        .expect("put nonce after challenge creation");
+    assert_eq!(
+        claim(&pool, &verifier, time.as_ref(), &key).await,
+        Err(VerificationError::Unavailable)
+    );
+    assert_eq!(
+        starts(&pool).await,
+        0,
+        "invalid temporal custody creates no start"
+    );
+    sqlx::query("UPDATE email_verification_delivery_nonces SET reserved_at=1000 WHERE verifier=$1")
+        .bind(verifier.as_slice())
+        .execute(&pool)
+        .await
+        .expect("restore exact nonce time");
+    pool.execute("ALTER TABLE email_verification_delivery_nonces ENABLE TRIGGER guard_email_verification_delivery_nonce").await.expect("restore immutability");
+    assert_eq!(
+        claim(&pool, &verifier, time.as_ref(), &key).await,
+        Ok(ClaimOutcome::Started)
+    );
+    assert_eq!(
+        claim(&pool, &verifier, time.as_ref(), &key).await,
+        Ok(ClaimOutcome::AlreadyStarted)
+    );
+    assert_eq!(starts(&pool).await, 1);
+}
+
+#[sqlx::test(migrator = "MIGRATOR")]
+async fn post_guard_foreign_start_xid_fails_exact_readback_and_rolls_back(pool: PgPool) {
+    let (time, key, verifier) = fixture(&pool).await;
+    // The z-trigger runs after the native BEFORE guard assigned the current xid.
+    // The separate committed xid preserves every other source relationship.
+    // Disable only the deferred check so Rust's current-xid readback is exercised.
+    pool.execute("CREATE TABLE test_start_xid_seed(marker xid8 NOT NULL); INSERT INTO test_start_xid_seed VALUES(pg_current_xact_id()); ALTER TABLE email_verification_delivery_starts DISABLE TRIGGER require_email_verification_delivery_start; CREATE FUNCTION test_forge_delivery_start_xid() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN SELECT marker INTO NEW.transaction_id FROM test_start_xid_seed; RETURN NEW; END; $$; CREATE TRIGGER z_test_forge_delivery_start_xid BEFORE INSERT ON email_verification_delivery_starts FOR EACH ROW EXECUTE FUNCTION test_forge_delivery_start_xid()").await.expect("isolate post-guard transaction marker fault");
+    assert_eq!(
+        claim(&pool, &verifier, time.as_ref(), &key).await,
+        Err(VerificationError::Unavailable)
+    );
+    assert_eq!(
+        starts(&pool).await,
+        0,
+        "foreign transaction marker rolls back"
+    );
+    let custody: (i64,i64,i64) = sqlx::query_as("SELECT (SELECT count(*) FROM email_verification_delivery_nonces),(SELECT count(*) FROM email_verification_challenges),(SELECT count(*) FROM email_verification_delivery_envelopes)").fetch_one(&pool).await.expect("unchanged prior custody");
+    assert_eq!(custody, (1, 1, 1));
+    pool.execute("DROP TRIGGER z_test_forge_delivery_start_xid ON email_verification_delivery_starts; ALTER TABLE email_verification_delivery_starts ENABLE TRIGGER require_email_verification_delivery_start").await.expect("restore native guard");
+    assert_eq!(
+        claim(&pool, &verifier, time.as_ref(), &key).await,
+        Ok(ClaimOutcome::Started)
+    );
+    assert_eq!(
+        claim(&pool, &verifier, time.as_ref(), &key).await,
+        Ok(ClaimOutcome::AlreadyStarted)
+    );
+    assert_eq!(starts(&pool).await, 1);
+}
