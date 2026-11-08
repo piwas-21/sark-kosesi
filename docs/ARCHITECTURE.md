@@ -888,8 +888,10 @@ statement, then inspect the complete current evidence and require a validated
 resolution at exactly that watermark. Observation append uses the same attempt
 lock, serializing evidence through commit. Native journal/pointer guards also
 reject other isolation levels and independently lock before querying current
-evidence. Their snapshot-sensitive functions are VOLATILE; do not combine the
-lock and evidence inspection in a CTE or STABLE wrapper. New writes sample a
+evidence. Their snapshot-sensitive functions are VOLATILE. The native proof
+validates each bounded observation prefix in one ordered query, including
+adjacent timestamps, the exact captured snapshot and its reciprocal event.
+The attempt lock remains a separate statement. New writes sample a
 nondecreasing observed clock after proof/lock waits and again after actual event
 and pointer writes. Failure or cancellation rolls back the whole decision.
 

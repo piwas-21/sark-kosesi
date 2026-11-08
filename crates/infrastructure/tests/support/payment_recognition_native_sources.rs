@@ -162,3 +162,106 @@ async fn recognition_native_sources_are_required_before_any_canonical_row_exists
         assert_eq!(preserved(&pool).await, physical_before);
     }
 }
+
+#[sqlx::test(migrator = "MIGRATOR")]
+async fn recognition_native_rejects_damage_inside_a_multi_observation_prefix(pool: PgPool) {
+    let (time, frozen) = prepared(&pool, true).await;
+    let attempt = &frozen.snapshot().binding.id;
+    let identifiers = ids();
+    for (effect, at) in [("first", 1500), ("middle", 1501), ("last", 1502)] {
+        time.0.store(at, Ordering::SeqCst);
+        record_verified(
+            &pool,
+            time.as_ref(),
+            &identifiers,
+            attempt,
+            effect,
+            &fetched(frozen.snapshot(), "tr_A", "paid", false).await,
+        )
+        .await
+        .expect("authenticated ordered observation");
+    }
+    let resolution = resolve(&pool, time.as_ref(), &identifiers, attempt, "three")
+        .await
+        .expect("complete three-observation resolution")
+        .resolution;
+    let candidate = Recognition {
+        id: "a".repeat(32),
+        order_id: frozen.snapshot().binding.order_id.clone(),
+        attempt_id: attempt.clone(),
+        resolution_id: resolution.id,
+        through_observation: 3,
+        recorded_at: 1502,
+        state: State::Received,
+        currency: commerce_domain::Currency::EUR,
+        amount_minor: 38245,
+    };
+    let before = preserved(&pool).await;
+    for (label, damage) in [
+        ("gap", "DELETE FROM payment_observations WHERE revision=2"),
+        (
+            "middle projection",
+            "UPDATE payment_observations SET snapshot=jsonb_set(snapshot,'{intent,payment,amount_minor}','1') WHERE revision=2",
+        ),
+        (
+            "missing middle event",
+            "DELETE FROM commerce_outbox WHERE kind='payment.observation_recorded.v1' AND payload->>'observation_id'=(SELECT id FROM payment_observations WHERE revision=2)",
+        ),
+        (
+            "non-exact middle event",
+            "UPDATE commerce_outbox SET payload=payload||'{\"extra\":true}'::jsonb WHERE kind='payment.observation_recorded.v1' AND payload->>'observation_id'=(SELECT id FROM payment_observations WHERE revision=2)",
+        ),
+        (
+            "event time mismatch",
+            "UPDATE commerce_outbox SET created_at=1502 WHERE kind='payment.observation_recorded.v1' AND payload->>'observation_id'=(SELECT id FROM payment_observations WHERE revision=2)",
+        ),
+        (
+            "time regression",
+            "UPDATE payment_observations SET recorded_at=CASE revision WHEN 2 THEN 1502 ELSE 1501 END, snapshot=jsonb_set(snapshot,'{recorded_at}',to_jsonb(CASE revision WHEN 2 THEN 1502 ELSE 1501 END)) WHERE revision IN (2,3); UPDATE commerce_outbox e SET created_at=o.recorded_at FROM payment_observations o WHERE e.kind='payment.observation_recorded.v1' AND e.payload->>'observation_id'=o.id AND o.revision IN (2,3)",
+        ),
+        (
+            "after resolution",
+            "UPDATE payment_observations SET recorded_at=1503,snapshot=jsonb_set(snapshot,'{recorded_at}','1503') WHERE revision=3; UPDATE commerce_outbox SET created_at=1503 WHERE kind='payment.observation_recorded.v1' AND payload->>'observation_id'=(SELECT id FROM payment_observations WHERE revision=3)",
+        ),
+    ] {
+        let mut tx = pool.begin().await.expect("isolated damaged source");
+        tx.execute("ALTER TABLE payment_observations DISABLE TRIGGER USER; ALTER TABLE commerce_outbox DISABLE TRIGGER USER")
+            .await.expect("disable only fixture immutability guards");
+        sqlx::raw_sql(damage)
+            .execute(&mut *tx)
+            .await
+            .expect("damage exact source");
+        tx.execute("ALTER TABLE payment_observations ENABLE TRIGGER USER; ALTER TABLE commerce_outbox ENABLE TRIGGER USER")
+            .await.expect("restore guards before native recognition");
+        let error = insert(&mut tx, &candidate)
+            .await
+            .expect_err("damaged prefix rejected");
+        let database = error.as_database_error().expect("native database guard");
+        assert_eq!(database.code().as_deref(), Some("23514"), "{label}");
+        assert!(
+            database
+                .message()
+                .contains("complete current authenticated evidence"),
+            "wrong rejection for {label}"
+        );
+        tx.rollback().await.expect("restore exact source");
+
+        let mut healthy = pool.begin().await.expect("paired healthy native control");
+        insert(&mut healthy, &candidate)
+            .await
+            .expect("repaired prefix accepted");
+        pointer(&mut healthy, &candidate)
+            .await
+            .expect("current pointer");
+        event(&mut healthy, &candidate.id, false)
+            .await
+            .expect("exact event");
+        healthy
+            .execute("SET CONSTRAINTS ALL IMMEDIATE")
+            .await
+            .expect("complete native custody");
+        healthy.rollback().await.expect("preserve next control");
+        assert_eq!(recognition_counts(&pool).await, (0, 0, 0));
+        assert_eq!(preserved(&pool).await, before);
+    }
+}

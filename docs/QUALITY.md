@@ -715,6 +715,10 @@ Confirm the order's stock journal and all provider-side state stay outside
 this transaction. Local tests provide source evidence for reservation custody.
 The order refund allocator and reservation modules use the existing 95% native
 line and branch thresholds for critical financial code.
+At maximum history, validate 16 distinct recognition prefixes through 1,000
+observations and the complete 20-line refund journal under the existing
+two-second statement budget. Keep historical and current proof checks against
+gaps, time regressions, changed snapshots and incorrect reciprocal events.
 
 ### Private refund execution proposals
 
