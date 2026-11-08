@@ -143,13 +143,13 @@ pub struct OrderReceipt {
     pub snapshot: OrderSnapshot,
     pub replayed: bool,
 }
-fn identifier(s: &str) -> bool {
+pub(crate) fn identifier(s: &str) -> bool {
     s.len() == 32
         && s.bytes()
             .all(|v| v.is_ascii_digit() || (b'a'..=b'f').contains(&v))
 }
 
-fn check_session(
+pub(crate) fn check_session(
     session: Option<&crate::customer_sessions::HeldSession>,
     at: i64,
 ) -> Result<(), OrderStoreError> {

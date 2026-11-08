@@ -64,6 +64,8 @@ async fn prepare(
         if frozen.snapshot().binding.order_id != intent.order_id {
             return Err(PaymentStoreError::Conflict);
         }
+        crate::checkout_cancellations::ensure_not_canceled(scope.transaction(), &intent.order_id)
+            .await?;
         let at = scope.checked_at()?;
         check_session(session.as_ref(), at)?;
         scope.rollback().await?;
@@ -79,6 +81,8 @@ async fn prepare(
         account,
     )
     .await?;
+    crate::checkout_cancellations::ensure_not_canceled(scope.transaction(), &intent.order_id)
+        .await?;
     if stored::by_order(scope.transaction(), &owner, &intent.order_id, account)
         .await?
         .is_some()
