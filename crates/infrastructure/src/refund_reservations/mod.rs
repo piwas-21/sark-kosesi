@@ -10,7 +10,23 @@ use commerce_application::{
 use commerce_domain::{Currency, checkout_orders::OrderSnapshot, payment_attempts::AttemptBinding};
 use sqlx::{PgPool, Postgres, Transaction};
 mod allocation;
+
+// The test-only observer sees named SQLx errors before ordinary redaction.
+macro_rules! sql_phase {
+    ($phase:expr, $result:expr) => {
+        $result.map_err(|error| {
+            #[cfg(test)]
+            crate::refund_reservations::diagnostic::record($phase, &error);
+            RefundError::from(error)
+        })
+    };
+}
+
+#[cfg(test)]
+#[path = "../../tests/support/refund_reservation_diagnostic.rs"]
+pub(crate) mod diagnostic;
 mod store;
+
 pub use allocation::{RefundAllocation, RefundAllocationAmounts, RefundAllocationLine};
 
 pub struct RefundRequest<'a> {
@@ -195,10 +211,7 @@ pub async fn reserve(
     let mut access = lock_staff(pool, token, &observed, Capability::RefundPrepare)
         .await
         .map_err(staff)?;
-    sqlx::query("SELECT pg_advisory_xact_lock(hashtextextended($1,0))")
-        .bind(format!("refund-reservation:{}", request.effect_key))
-        .execute(&mut *access.tx)
-        .await?;
+    store::lock_effect(&mut access.tx, request.effect_key).await?;
     let prior = store::lookup(&mut access.tx, request.effect_key).await?;
     let attempt = if let Some((_, attempt)) = &prior {
         attempt.clone()
@@ -235,7 +248,7 @@ pub async fn reserve(
         let mut receipt = store::take_receipt(history, request.effect_key)?;
         access.check_time(&observed).map_err(staff)?;
         receipt.replayed = true;
-        access.tx.commit().await?;
+        sql_phase!("commit", access.tx.commit().await)?;
         return Ok(receipt);
     }
     let (order, received) = source(&mut access.tx, &attempt, None).await?;
@@ -265,14 +278,17 @@ pub async fn reserve(
     store::insert(&mut access.tx, &receipt, &fresh(ids)?).await?;
     // Complete native custody while the authority and attempt claims are held.
     // The seal prevents the checked payment source from changing before commit.
-    sqlx::query("SET CONSTRAINTS require_complete_refund_reservation IMMEDIATE")
-        .execute(&mut *access.tx)
-        .await?;
-    let written = store::history(&mut access.tx, request.order_id).await?;
+    sql_phase!(
+        "deferred_constraints",
+        sqlx::query("SET CONSTRAINTS require_complete_refund_reservation IMMEDIATE")
+            .execute(&mut *access.tx)
+            .await
+    )?;
+    let written = store::readback(&mut access.tx, request.order_id).await?;
     allocation::validate_history(&order, &receipt.attempt_id, &written)?;
     validate_written(&written, &receipt)?;
     access.check_time(&observed).map_err(staff)?;
-    access.tx.commit().await?;
+    sql_phase!("commit", access.tx.commit().await)?;
     Ok(receipt)
 }
 

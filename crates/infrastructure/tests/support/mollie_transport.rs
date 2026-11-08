@@ -1019,3 +1019,6 @@ pub(crate) mod reversal_supervision_cases;
 
 #[path = "mollie_reversal_item_supervision.rs"]
 pub(crate) mod reversal_item_supervision_cases;
+
+#[path = "refund_execution_proposals.rs"]
+mod refund_execution_proposal_cases;

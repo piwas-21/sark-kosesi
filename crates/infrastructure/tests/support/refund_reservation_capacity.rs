@@ -1,11 +1,15 @@
 //! Maximum valid recognition history under the production transaction limits.
 //! This module is nested beneath `refund_reservations_cases` to reuse its fixture.
+use super::super::order_stock_cases::fixture::{additional_variant, bounds, seed};
 use super::*;
 use crate::payment_attempts::{
     identities::resolve,
     observations::record_verified,
     recognition::{State, recognize},
 };
+use crate::refund_execution_proposals::{ProposalRequest, propose};
+use commerce_domain::ComponentKind;
+use std::time::Instant;
 
 #[sqlx::test(migrations = false)]
 async fn refund_schema38_upgrade_preserves_existing_custody_and_accepts_both_effect_kinds(
@@ -93,8 +97,25 @@ async fn refund_schema38_upgrade_preserves_existing_custody_and_accepts_both_eff
 async fn sixteen_distinct_received_proofs_at_maximum_observation_prefix_remain_usable(
     pool: PgPool,
 ) {
-    let f = accepted(&pool, false, true).await;
+    seed(&pool).await;
+    let cover = "CAPACITY-COVER";
+    bounds::component(&pool, cover, ComponentKind::Cover, 40).await;
+    let skus: Vec<_> = (0..20).map(|i| format!("CAPACITY-SET-{i:02}")).collect();
+    for sku in &skus {
+        additional_variant(&pool, sku, false, &[(cover.into(), 1)]).await;
+    }
+    bounds::market(&pool, &skus).await;
+    let f = bounds::accepted_lines(&pool, &skus).await;
+    assert_eq!(
+        (f.order.quote.lines.len(), f.order.quote.total.gross_minor),
+        (20, 248110)
+    );
     let token = staff(&pool, "refund-finance", 94).await;
+    pool.execute(
+        "INSERT INTO staff_capabilities VALUES ('refund-finance','refund.execution.prepare')",
+    )
+    .await
+    .expect("separate proposal grant");
     let order = &f.order.identity.id;
     let attempt = &f.frozen.snapshot().binding.id;
     let physical = footprint(&pool).await;
@@ -124,19 +145,20 @@ async fn sixteen_distinct_received_proofs_at_maximum_observation_prefix_remain_u
         .await
         .expect("native deferred observation custody");
 
-    let verified =
-        super::super::order_stock_cases::fixture::verified(&f.frozen, "tr_SETTLEMENT", "paid")
-            .await;
-    let lines = [
-        RefundLine {
-            sku: "SET-COVERS",
-            gross_minor: 1,
-        },
-        RefundLine {
-            sku: "SET-FILLED",
-            gross_minor: 0,
-        },
-    ];
+    let verified = super::super::order_stock_cases::fixture::verified(
+        &f.frozen,
+        "tr_BOUNDED_SETTLEMENT",
+        "paid",
+    )
+    .await;
+    let lines: Vec<_> = skus
+        .iter()
+        .enumerate()
+        .map(|(index, sku)| RefundLine {
+            sku,
+            gross_minor: if index == 0 { 1 } else { 0 },
+        })
+        .collect();
     let mut first = None;
     let mut proofs = Vec::new();
     for prefix in 985..=1000 {
@@ -165,16 +187,19 @@ async fn sixteen_distinct_received_proofs_at_maximum_observation_prefix_remain_u
                 receipt.recognition.through_observation,
                 receipt.recognition.amount_minor
             ),
-            (State::Received, prefix, 25900)
+            (State::Received, prefix, 248110)
         );
         assert!(!receipt.replayed);
         let key = format!("capacity-reservation-{prefix}");
-        let reservation = reserve(
-            &pool,
-            &token,
-            f.time.as_ref(),
-            f.ids.as_ref(),
-            request(order, &receipt.recognition.id, &key, &lines, 0),
+        let reservation = crate::refund_reservations::diagnostic::scope(
+            prefix,
+            reserve(
+                &pool,
+                &token,
+                f.time.as_ref(),
+                f.ids.as_ref(),
+                request(order, &receipt.recognition.id, &key, &lines, 0),
+            ),
         )
         .await
         .expect("one cent with 2-second native statement limit");
@@ -189,12 +214,15 @@ async fn sixteen_distinct_received_proofs_at_maximum_observation_prefix_remain_u
     proofs.dedup();
     assert_eq!(proofs.len(), 16);
     let (proof, first_id) = first.expect("first reservation");
-    let replay = reserve(
-        &pool,
-        &token,
-        f.time.as_ref(),
-        f.ids.as_ref(),
-        request(order, &proof, "capacity-reservation-985", &lines, 0),
+    let replay = crate::refund_reservations::diagnostic::scope(
+        985,
+        reserve(
+            &pool,
+            &token,
+            f.time.as_ref(),
+            f.ids.as_ref(),
+            request(order, &proof, "capacity-reservation-985", &lines, 0),
+        ),
     )
     .await
     .expect("historical first receipt under full journal");
@@ -225,4 +253,32 @@ async fn sixteen_distinct_received_proofs_at_maximum_observation_prefix_remain_u
         .expect("full native proof within 2 seconds");
     assert!(exact);
     validation.rollback().await.expect("read-only validation");
+
+    let latest = recognition(&pool, order).await;
+    let intent = || ProposalRequest {
+        order_id: order,
+        reservation_id: &first_id,
+        expected_recognition_id: &latest,
+        expected_through_observation: 1000,
+        effect_key: "cap-prop",
+        reason: "Synthetic capacity review",
+        confirmed: true,
+    };
+    let started = Instant::now();
+    let proposal = propose(&pool, &token, f.time.as_ref(), f.ids.as_ref(), intent()).await;
+    eprintln!("maximum-journal proposal: {:?}", started.elapsed());
+    let proposal = proposal.expect("current proposal under the existing native statement limit");
+    assert_eq!(proposal.allocation, replay.allocation);
+    assert_eq!(
+        (proposal.through_observation, proposal.replayed),
+        (1000, false)
+    );
+    let started = Instant::now();
+    let replayed = propose(&pool, &token, f.time.as_ref(), f.ids.as_ref(), intent()).await;
+    eprintln!("maximum-journal replay: {:?}", started.elapsed());
+    let replayed = replayed.expect("historical proposal replay under the existing limit");
+    assert_eq!(replayed.id, proposal.id);
+    assert!(replayed.replayed);
+    assert_eq!(counts(&pool).await, (16, 16));
+    assert_eq!(footprint(&pool).await, physical);
 }
