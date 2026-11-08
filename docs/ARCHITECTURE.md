@@ -888,8 +888,14 @@ statement, then inspect the complete current evidence and require a validated
 resolution at exactly that watermark. Observation append uses the same attempt
 lock, serializing evidence through commit. Native journal/pointer guards also
 reject other isolation levels and independently lock before querying current
-evidence. Their snapshot-sensitive functions are VOLATILE; do not combine the
-lock and evidence inspection in a CTE or STABLE wrapper. New writes sample a
+evidence. Their snapshot-sensitive functions are VOLATILE. The native proof
+validates each bounded observation prefix in one ordered query, including
+adjacent timestamps, the exact captured snapshot and its reciprocal event.
+For refund history, one complete proof covers the longest referenced prefix
+for the original attempt. Each shorter recognition still binds its exact
+resolution, provider identity summary and event, and checks the observation
+time at its own watermark.
+The attempt lock remains a separate statement. New writes sample a
 nondecreasing observed clock after proof/lock waits and again after actual event
 and pointer writes. Failure or cancellation rolls back the whole decision.
 
@@ -1557,6 +1563,24 @@ money allocations. Server ownership claims protect issue, replay and read paths.
 HTTP projections omit owner, destination and internal policy/evidence references,
 map internal `kmr` to public `ku`, and remain private/no-store behind preview auth.
 Installation seeds no quote, readiness, guest identity or commercial authority.
+
+A private server-selected promotion can be captured in a version-2 indicative
+quote. The outer snapshot preserves the exact promotion draft and independent
+approval, allocation version, per-SKU discount and discounted gross/net/VAT,
+unchanged shipping, and totals. Its nested version-1 snapshot retains the
+original amounts and owned basket, market and catalogue revisions. The promoted
+format shares the quote identity, effect-key namespace and per-basket issuance
+quota with existing quotes. A guest cannot satisfy a per-customer limit.
+
+For a new promoted quote, claim the basket, reviewed market and promotion
+anchors, then the sorted catalogue and physical component sources. Keep those
+claims through insertion and the final clock and ownership checks. Cap the
+quote expiry at the promotion end. Exact replay and reads validate the stored
+allocation against the original immutable approved source; later withdrawal does
+not extend or confer authority on an unexpired historical receipt. The legacy
+quote projection and order path cannot consume the promoted format. A separate
+order transaction must implement lifetime redemption and discount accounting
+before checkout can accept it.
 
 An unexpired historical snapshot can remain readable after source withdrawal; this
 is owned history, not fresh readiness. Order creation must independently compare

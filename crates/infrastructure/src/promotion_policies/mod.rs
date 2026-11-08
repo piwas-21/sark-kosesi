@@ -14,6 +14,7 @@ mod read;
 mod review;
 pub use draft::{DraftRequest, record_draft};
 pub use read::{ApprovedPolicy, PolicyInspection, approved_policy, inspect_policy};
+pub(crate) use read::{current_for_quote, historical_for_quote};
 pub use review::{ReviewRequest, record_review};
 #[derive(Debug)]
 pub enum PolicyError {

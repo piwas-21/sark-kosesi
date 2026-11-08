@@ -293,6 +293,14 @@ capability must fail the intended real-clock, lock-ordering and role assertions.
 Configuration tests do not prove atomic redemption budgets, per-customer identity,
 public coupons, provider sandbox or operational promotion acceptance.
 
+For private owned promoted quotes, use literal mixed-rate discount and tax
+fixtures. Exercise guest ownership, CSRF, ineligible or withdrawn sources,
+expiry during a real source wait, old quote compatibility, shared issue limits
+and cross-format retries. Reject damaged immutable source or amount records.
+Check that the legacy quote projection and order guard both reject the promoted
+format, and that issue, denial and replay have no stock, order or redemption
+effect. Keep the existing critical coverage and isolated PostgreSQL gates.
+
 Whole-basket reservation logic retains 95% critical native line/branch thresholds.
 Independent PostgreSQL oracles cover a last shared component, complete loser
 rollback, changed/omitted/extra retry intent, immutable raw imports, legacy child
@@ -707,6 +715,12 @@ Confirm the order's stock journal and all provider-side state stay outside
 this transaction. Local tests provide source evidence for reservation custody.
 The order refund allocator and reservation modules use the existing 95% native
 line and branch thresholds for critical financial code.
+At maximum history, validate 16 distinct recognition prefixes through 1,000
+observations and the complete 20-line refund journal under the existing
+two-second statement budget. Keep historical and current proof checks against
+gaps, time regressions, changed snapshots and incorrect reciprocal events.
+With an intact longest prefix, damage an earlier resolution's time and verify
+that read-only refund history rejects it until the exact source is restored.
 
 ### Private refund execution proposals
 

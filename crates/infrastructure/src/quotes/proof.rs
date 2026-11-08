@@ -39,3 +39,23 @@ impl QuoteProof {
             .collect()
     }
 }
+
+pub(crate) async fn prepare_promoted_in_transaction(
+    tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
+    clock: &dyn Clock,
+    locale: Locale,
+    request: &QuoteRequest,
+    policies: &[MarketPolicy],
+    promotion: &commerce_domain::promotions::Promotion,
+) -> Result<QuoteProof, QuoteFailure> {
+    evaluate(
+        tx,
+        clock,
+        locale,
+        request,
+        policies,
+        Some(promotion),
+        Some(StockClaim::Indicative),
+    )
+    .await
+}

@@ -63,6 +63,84 @@ async fn counts(pool: &PgPool) -> (i64, i64) {
 }
 
 #[sqlx::test(migrator = "MIGRATOR")]
+async fn shared_refund_prefix_keeps_each_historical_resolution_time_bound(pool: PgPool) {
+    let f = accepted(&pool, false, false).await;
+    let token = staff(&pool, "refund-prefix-finance", 94).await;
+    let order = &f.order.identity.id;
+    let attempt = &f.frozen.snapshot().binding.id;
+    let lines = [
+        RefundLine {
+            sku: "SET-COVERS",
+            gross_minor: 1,
+        },
+        RefundLine {
+            sku: "SET-FILLED",
+            gross_minor: 0,
+        },
+    ];
+    let mut proofs = Vec::new();
+    for (at, effect) in [(1510, "older-refund"), (1520, "newer-refund")] {
+        f.time.0.store(at, Ordering::SeqCst);
+        observe(&pool, &f, "tr_PREFIX", "paid", effect).await;
+        let proof = recognize(&pool, f.time.as_ref(), f.ids.as_ref(), attempt)
+            .await
+            .expect("authentic paid recognition")
+            .recognition;
+        reserve(
+            &pool,
+            &token,
+            f.time.as_ref(),
+            f.ids.as_ref(),
+            request(order, &proof.id, effect, &lines, 0),
+        )
+        .await
+        .expect("one cent against each genuine prefix");
+        proofs.push(proof);
+    }
+    assert_eq!(
+        (proofs[0].through_observation, proofs[1].through_observation),
+        (1, 2)
+    );
+    async fn valid_history(pool: &PgPool, order: &str) -> bool {
+        let mut tx = pool.begin().await.expect("read-only transaction");
+        tx.execute("SET TRANSACTION READ ONLY")
+            .await
+            .expect("read-only mode");
+        let exact = sqlx::query_scalar::<_, bool>("SELECT refund_reservation_history_exact($1)")
+            .bind(order)
+            .fetch_one(&mut *tx)
+            .await
+            .expect("historical refund proof");
+        tx.rollback().await.expect("finish read-only inspection");
+        exact
+    }
+    assert!(valid_history(&pool, order).await);
+    let older = &proofs[0].resolution_id;
+    pool.execute("ALTER TABLE payment_identity_resolutions DISABLE TRIGGER guard_payment_identity_resolution; ALTER TABLE commerce_outbox DISABLE TRIGGER guard_commerce_outbox")
+        .await.expect("isolated damaged import");
+    for (at, exact) in [(1509_i64, false), (1510, true)] {
+        sqlx::query("UPDATE payment_identity_resolutions SET recorded_at=$2 WHERE id=$1")
+            .bind(older)
+            .bind(at)
+            .execute(&pool)
+            .await
+            .expect("historical resolution");
+        sqlx::query("UPDATE commerce_outbox SET created_at=$2 WHERE kind='payment.identity_resolved.v1' AND payload->>'resolution_id'=$1")
+            .bind(older).bind(at).execute(&pool).await.expect("matching resolution event time");
+        let newest: bool = sqlx::query_scalar(
+            "SELECT payment_recognition_source(r,false) FROM payment_recognitions r WHERE id=$1",
+        )
+        .bind(&proofs[1].id)
+        .fetch_one(&pool)
+        .await
+        .expect("longest prefix");
+        assert!(newest, "longest prefix still proves every observation");
+        assert_eq!(valid_history(&pool, order).await, exact);
+    }
+    assert_eq!(counts(&pool).await, (2, 2));
+}
+
+#[sqlx::test(migrator = "MIGRATOR")]
 async fn partial_then_complete_preserves_captured_sku_and_shipping_tax_without_other_effects(
     pool: PgPool,
 ) {

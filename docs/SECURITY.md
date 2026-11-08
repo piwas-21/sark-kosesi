@@ -237,6 +237,15 @@ and rollback leaves no quote or successful-issuance charge. Historical receipts
 cannot refresh expiry or bypass current order readiness. Public bridge abuse
 controls, retention operations and complete order/payment authority remain required.
 
+Only trusted private code selects a promotion for an owned indicative quote.
+Keep the same guest ownership, CSRF and issuance limits; a client-supplied
+promotion, customer identity or amount confers no authority. The latest exact
+independently approved promotion must still be eligible after source waits.
+Historical replay validates the exact original review, amounts, intent and
+expiry. Do not project the undiscounted nested snapshot through a legacy route
+or accept a promoted quote into the legacy order path. Neither format adds a
+public coupon or makes a redemption, stock or payment decision.
+
 The development-only minimatch exception expired on 2026-11-03. The
 [dependency review](DEPENDENCIES.md#development-minimatch-advisory) documents
 the verified lint backport and removal of the separate OpenAPI dependency.
