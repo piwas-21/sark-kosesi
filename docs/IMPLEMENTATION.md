@@ -251,8 +251,12 @@ supervision or live provider activation follows from deploying the empty preview
    A private version-2 promoted snapshot additionally retains one exact
    approved promotion and its immutable original and discounted allocations.
    It shares the owner, effect namespace and quota and expires by the promotion
-   end. Accepting it in private checkout binds the exact discounted quote and a
-   cumulative immutable redemption to the new order. Complete
+   end. Private verified quote issuance holds the current customer session and
+   guest basket through commit and binds the quote to that account. These quotes
+   can retain an approved per-customer term. Guest order acceptance binds the
+   exact discounted quote and a cumulative immutable redemption to the new
+   order. Implement account-bound acceptance and per-customer debits separately.
+   Complete
    trusted-edge abuse controls before a public customer bridge. Private immutable order/address/seller/market/product snapshots now compose
    whole-basket holds and a minimal outbox event in one transaction. Current basket,
    publications, reviewed policy and exact amounts are revalidated; changes require

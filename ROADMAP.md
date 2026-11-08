@@ -141,7 +141,7 @@ New drafts and withdrawal block older approvals for new orders. Private guest
 orders now commit reviewed discount allocations, lifetime redemption usage,
 whole-basket holds and a minimal outbox event together. Exact retries preserve
 history and prior redemptions carry across policy revisions. Complete country and
-territory readiness, verified-customer limits, cancellation disposition, public checkout controls,
+territory readiness, verified-customer redemption limits, cancellation disposition, public checkout controls,
 order/payment lifecycle, Mollie sandbox attempts/
 reconciliation, invoices and executed refunds remain P3 work under the [implementation plan](docs/IMPLEMENTATION.md). P3 owns
 late-payment reallocation. Supervision of expiry remains a deployment gate.
@@ -196,10 +196,12 @@ now retain exact source revisions, checked totals and short fixed expiry, with
 intent-bound retries and final source checks after writes. Historical prices grant
 no current order authority. A private promoted snapshot retains exact original
 and discounted amounts, the approved promotion, shared issuance limits and
-the shorter expiry. Private order creation revalidates the approved terms and
-debits the lifetime count and cents at acceptance. Complete verified-customer
-checkout, capacity disposition after cancellation and trusted-edge abuse controls
-before exposing customer routes.
+the shorter expiry. Private guest order creation revalidates the approved
+terms and debits the lifetime count and cents at acceptance. Private indicative
+quotes can also bind a verified customer and an approved per-customer term.
+Complete account-bound order acceptance and redemption, capacity disposition
+after cancellation and trusted-edge abuse controls before exposing customer
+routes.
 
 Private durable owned-order test attempts and one serialized dispatch-start fact
 now compose the frozen request policy, existing physically backed reservation and

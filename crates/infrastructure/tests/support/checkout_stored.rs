@@ -60,6 +60,7 @@ fn row() -> Row {
         created_at: b.created_at,
         expires_at: b.expires_at,
         promotion_columns: false,
+        account_column: false,
         snapshot: Some(serde_json::to_value(s).expect("fixture")),
     }
 }

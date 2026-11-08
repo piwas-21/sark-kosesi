@@ -43,9 +43,19 @@ impl PromotedQuoteSnapshot {
         policy: &PromotionPolicy,
         review_revision: i32,
     ) -> Result<Self, SnapshotError> {
+        if policy.limits.per_customer_redemptions.is_some() {
+            return Err(SnapshotError::InvalidSnapshot);
+        }
+        Self::capture_verified(original, policy, review_revision)
+    }
+    /// Capture for a caller that holds separately verified customer authority.
+    pub fn capture_verified(
+        original: QuoteSnapshot,
+        policy: &PromotionPolicy,
+        review_revision: i32,
+    ) -> Result<Self, SnapshotError> {
         if review_revision <= 0
             || policy.validate().is_err()
-            || policy.limits.per_customer_redemptions.is_some()
             || original.binding.expires_at > policy.promotion.expires_at
         {
             return Err(SnapshotError::InvalidSnapshot);
@@ -97,6 +107,18 @@ impl PromotedQuoteSnapshot {
         }
         Ok(())
     }
+    /// Revalidate an envelope whose customer authority is established separately.
+    pub fn validate_verified(
+        &self,
+        policy: &PromotionPolicy,
+        review_revision: i32,
+    ) -> Result<(), SnapshotError> {
+        let expected = Self::capture_verified(self.original.clone(), policy, review_revision)?;
+        if *self != expected {
+            return Err(SnapshotError::InvalidSnapshot);
+        }
+        Ok(())
+    }
     /// Check the captured time window, not live review, stock or budget authority.
     pub fn check_at(
         &self,
@@ -105,6 +127,18 @@ impl PromotedQuoteSnapshot {
         at: i64,
     ) -> Result<(), SnapshotError> {
         self.validate(policy, review_revision)?;
+        self.check_window(policy, at)
+    }
+    pub fn check_at_verified(
+        &self,
+        policy: &PromotionPolicy,
+        review_revision: i32,
+        at: i64,
+    ) -> Result<(), SnapshotError> {
+        self.validate_verified(policy, review_revision)?;
+        self.check_window(policy, at)
+    }
+    fn check_window(&self, policy: &PromotionPolicy, at: i64) -> Result<(), SnapshotError> {
         self.original.check_at(at)?;
         policy
             .permits(&self.original.binding.country, at)

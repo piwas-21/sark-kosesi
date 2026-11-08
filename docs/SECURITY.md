@@ -249,6 +249,10 @@ The database independently verifies the original publication price, market VAT
 and shipping, and the approved discount formula and allocation before recording
 a debit.
 Guest checkout rejects a policy that requires a verified customer allowance.
+Private account-bound quote issue and replay require guest ownership, the same
+verified account, and a current credential-revision-bound session through the
+final time check. The account association stays in immutable private storage.
+Guest order acceptance rejects these quotes.
 Public coupon access still requires authenticated checkout and trusted-edge
 abuse controls.
 
