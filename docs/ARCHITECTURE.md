@@ -541,6 +541,23 @@ dispositions and use stable provider idempotency and credit-document links.
 No inventory movement is part of the reservation. Accountant, market and
 provider acceptance remain separate gates.
 
+### Private refund execution proposals
+
+A separate command records one immutable test-mode proposal per reservation.
+Staff explicitly confirm the order, reservation, expected current received
+recognition and observation watermark, with a reason and effect key. Under the
+shared payment attempt claim, bind the reservation digest and its exact captured
+SKU and shipping allocations to the sole recognized paid identity under the
+original frozen test profile. A newer received recognition may support a new
+proposal without changing the reservation. The proposal and its minimal
+digest-bound event commit together. Exact same-effect replay revalidates the
+historical source and requires the original actor and current staff authority.
+
+The proposal is an audit record for later review. Execution still requires
+provider-side refund and chargeback reconciliation, a separate authorized
+decision and durable dispatch and recovery custody. This command has no provider
+I/O or stock, refund disposition or credit-document effect.
+
 ### Reviewed promotion configuration
 
 Private promotion policy storage uses separate unseeded `promotion.manage` and

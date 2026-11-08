@@ -400,6 +400,16 @@ The database role stays trusted. The event carries only the order, reservation
 and digest. Keep raw reasons and credentials out of diagnostics. Execution,
 credits and inventory effects require independent authority.
 
+Preparing a refund execution proposal requires the separate unseeded
+`refund.execution.prepare` grant, recent MFA and explicit confirmation. The
+command derives the profile and payment identity from authenticated historical
+evidence; caller input supplies only the expected internal source and watermark.
+Claim the attempt before checking current recognition. Hold the staff session
+and grant through commit and recheck staff time after waits. An exact historical
+retry remains actor-bound and requires live authority. The outbox carries
+only the order, proposal and digest; keep reasons, payment/profile IDs and raw
+SQL errors out of diagnostics. No credentials or provider dispatch are installed.
+
 ## Private provider reversal observation custody
 
 Only an authenticated exact-item result from the test-profile client enters the

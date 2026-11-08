@@ -353,6 +353,11 @@ supervision or live provider activation follows from deploying the empty preview
    reservation against the original order's current received EUR recognition.
    It serializes the original attempt and cumulative SKU/shipping gross, net and
    VAT custody, with a reciprocal outbox event and historical exact replay.
+   A separate private recent-MFA `refund.execution.prepare` command records one
+   explicitly confirmed test-mode proposal per reservation. It retains the exact
+   allocation, original profile-scoped payment and current received recognition
+   with its observation watermark. Exact authorized retries return history. This
+   proposal supplies no net balance or permission to contact the provider.
    Private test-key exact-item refund and chargeback GETs now require a matched
    paid original and retain minimal bounded observations only. One private,
    payment-specific test-profile list page now provides bounded reversal identity

@@ -53,16 +53,29 @@ impl Row {
         })
     }
 }
+pub(super) async fn lock_effect(
+    tx: &mut Transaction<'_, Postgres>,
+    key: &str,
+) -> Result<(), RefundError> {
+    sql_phase!(
+        "effect_lock",
+        sqlx::query("SELECT pg_advisory_xact_lock(hashtextextended($1,0))")
+            .bind(format!("refund-reservation:{key}"))
+            .execute(&mut **tx)
+            .await
+    )?;
+    Ok(())
+}
 pub(super) async fn lookup(
     tx: &mut Transaction<'_, Postgres>,
     key: &str,
 ) -> Result<Option<(String, String)>, RefundError> {
-    let result: Option<(String, String)> = sqlx::query_as(
+    let result: Option<(String, String)> = sql_phase!("lookup", sqlx::query_as(
         "SELECT left(order_id,33),left(attempt_id,33) FROM refund_reservations WHERE effect_key=$1",
     )
     .bind(key)
     .fetch_optional(&mut **tx)
-    .await?;
+    .await)?;
     if result
         .as_ref()
         .is_some_and(|(o, a)| !identifier(o) || !identifier(a))
@@ -75,10 +88,13 @@ pub(super) async fn require_exact_history(
     tx: &mut Transaction<'_, Postgres>,
     order: &str,
 ) -> Result<(), RefundError> {
-    let valid: bool = sqlx::query_scalar("SELECT refund_reservation_history_exact($1)")
-        .bind(order)
-        .fetch_one(&mut **tx)
-        .await?;
+    let valid: bool = sql_phase!(
+        "native_history",
+        sqlx::query_scalar("SELECT refund_reservation_history_exact($1)")
+            .bind(order)
+            .fetch_one(&mut **tx)
+            .await
+    )?;
     if !valid {
         return Err(RefundError::InvalidStoredData);
     }
@@ -88,8 +104,23 @@ pub(super) async fn history(
     tx: &mut Transaction<'_, Postgres>,
     order: &str,
 ) -> Result<Vec<RefundReceipt>, RefundError> {
-    let rows: Vec<Row> = sqlx::query_as("SELECT left(id,33) id,left(order_id,33) order_id,left(attempt_id,33) attempt_id,left(recognition_id,33) recognition_id,left(actor_id,129) actor_id,left(effect_key,129) effect_key,generation,left(reason,241) reason,reserved_at,CASE WHEN octet_length(allocation::text)<=16384 THEN allocation END AS allocation FROM refund_reservations WHERE order_id=$1 ORDER BY generation LIMIT 17")
-        .bind(order).fetch_all(&mut **tx).await?;
+    history_at(tx, order, "history_read").await
+}
+pub(super) async fn readback(
+    tx: &mut Transaction<'_, Postgres>,
+    order: &str,
+) -> Result<Vec<RefundReceipt>, RefundError> {
+    history_at(tx, order, "readback").await
+}
+async fn history_at(
+    tx: &mut Transaction<'_, Postgres>,
+    order: &str,
+    phase: &'static str,
+) -> Result<Vec<RefundReceipt>, RefundError> {
+    #[cfg(not(test))]
+    let _ = phase;
+    let rows: Vec<Row> = sql_phase!(phase, sqlx::query_as("SELECT left(id,33) id,left(order_id,33) order_id,left(attempt_id,33) attempt_id,left(recognition_id,33) recognition_id,left(actor_id,129) actor_id,left(effect_key,129) effect_key,generation,left(reason,241) reason,reserved_at,CASE WHEN octet_length(allocation::text)<=16384 THEN allocation END AS allocation FROM refund_reservations WHERE order_id=$1 ORDER BY generation LIMIT 17")
+        .bind(order).fetch_all(&mut **tx).await)?;
     if rows.len() > 16 {
         return Err(RefundError::InvalidStoredData);
     }
@@ -110,14 +141,14 @@ pub(super) async fn insert(
     event: &str,
 ) -> Result<(), RefundError> {
     let json = serde_json::to_value(&r.allocation).map_err(|_| RefundError::InvalidStoredData)?;
-    let inserted = sqlx::query("INSERT INTO refund_reservations(id,order_id,attempt_id,recognition_id,actor_id,effect_key,generation,reason,reserved_at,allocation,event_id) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)")
+    let inserted = sql_phase!("reservation_insert", sqlx::query("INSERT INTO refund_reservations(id,order_id,attempt_id,recognition_id,actor_id,effect_key,generation,reason,reserved_at,allocation,event_id) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)")
         .bind(&r.id).bind(&r.order_id).bind(&r.attempt_id).bind(&r.recognition_id).bind(&r.actor_id).bind(&r.effect_key)
-        .bind(r.generation).bind(&r.reason).bind(r.reserved_at).bind(json).bind(event).execute(&mut **tx).await?;
+        .bind(r.generation).bind(&r.reason).bind(r.reserved_at).bind(json).bind(event).execute(&mut **tx).await)?;
     if inserted.rows_affected() != 1 {
         return Err(RefundError::InvalidStoredData);
     }
-    let inserted = sqlx::query("INSERT INTO commerce_outbox(id,aggregate_id,kind,payload,created_at) SELECT s.event_id,s.order_id,'order.refund_reserved.v1',jsonb_build_object('schema_version',1,'order_id',s.order_id,'reservation_id',s.id,'reservation_sha256',refund_reservation_digest(s)),s.reserved_at FROM refund_reservations s WHERE s.id=$1")
-        .bind(&r.id).execute(&mut **tx).await?;
+    let inserted = sql_phase!("event_insert", sqlx::query("INSERT INTO commerce_outbox(id,aggregate_id,kind,payload,created_at) SELECT s.event_id,s.order_id,'order.refund_reserved.v1',jsonb_build_object('schema_version',1,'order_id',s.order_id,'reservation_id',s.id,'reservation_sha256',refund_reservation_digest(s)),s.reserved_at FROM refund_reservations s WHERE s.id=$1")
+        .bind(&r.id).execute(&mut **tx).await)?;
     if inserted.rows_affected() != 1 {
         return Err(RefundError::InvalidStoredData);
     }

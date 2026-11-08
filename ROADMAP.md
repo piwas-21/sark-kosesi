@@ -129,8 +129,12 @@ authenticated paid observation. Durable starts, exact receipt recovery and fence
 checkpoints keep uncertain work visible for review. Explicit local/test worker
 commands enroll, run a bounded pass and inspect scan state. A separate item
 supervisor binds one candidate position to an exact authenticated refund or
-chargeback observation. Operator recovery, reconciliation, reservation
-disposition and execution custody remain open.
+chargeback observation. Private finance staff can now prepare one immutable
+test-mode execution proposal per reservation. It preserves the reserved SKU and
+shipping amounts and binds the current received recognition, observation watermark
+and original payment under its frozen test profile. Exact retries return the
+historical proposal under current staff authority. Operator recovery, provider
+reversal reconciliation, reservation disposition and dispatch custody remain open.
 Customer coupon routes and budget claims remain pending.
 Private promotion drafts and independent exact-revision reviews now persist
 canonical eligibility/discount terms and explicit lifetime budget/redemption limits.

@@ -708,6 +708,18 @@ this transaction. Local tests provide source evidence for reservation custody.
 The order refund allocator and reservation modules use the existing 95% native
 line and branch thresholds for critical financial code.
 
+### Private refund execution proposals
+
+Use isolated PostgreSQL with real reservation and recognition custody. Check
+that the proposal retains the literal SKU and shipping amounts and the exact
+payment identity and observation watermark. Exercise stale, unrelated and
+incorrect source references, missing prepare authority, changed replay intent
+and concurrent proposals for one reservation. Pair native rejection of detached
+or incomplete events with a complete transaction, and check that the source
+cannot change after early constraint evaluation. Verify that the operation does
+not change reserved amounts, stock or payment state. Proposal modules use the
+existing 95% native line and branch thresholds for critical financial code.
+
 ### Private password credential custody
 
 Use isolated PostgreSQL with two verified accounts and actual Argon2id
