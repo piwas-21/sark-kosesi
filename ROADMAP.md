@@ -182,6 +182,8 @@ acceptance, verified product dimensions and physical-fit acceptance remain open.
 Remaining delivery sequence: P0 business inputs in parallel → P2 inventory/catalogue → P3 checkout/payments → P4 customer/admin operations → P5 room planning and content → P6 acceptance → P7 controlled launch. Each phase has explicit exit evidence in the plan.
 
 External blockers: final brand/domain, real product specification/media, market/carrier/tax readiness, Mollie retail website approval, translated legal/product content, email delivery and recovery evidence. EU-wide intent is unchanged; an unready country cannot take payment.
+The [EU destination readiness register](docs/MARKET-READINESS.md) tracks the
+qualified evidence still needed for each of the 27 disabled destinations.
 
 The repository is public and the protection audit passes. Current-revision CI
 remains mandatory, including successful evidence uploads, browser acceptance and
