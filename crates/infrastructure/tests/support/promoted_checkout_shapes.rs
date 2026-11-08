@@ -68,4 +68,16 @@ async fn restored_quote_rejects_nonobjects_and_inconsistent_promotion_headers(po
             .expect("intact control")
             == receipt.snapshot
     );
+    pool.execute("ALTER TABLE guest_quote_snapshots DISABLE TRIGGER guard_guest_quote")
+        .await
+        .expect("simulate missing isolated promotion metadata");
+    sqlx::query("UPDATE guest_quote_snapshots SET promotion_id=NULL,promotion_revision=NULL,promotion_review_revision=NULL,promotion_transaction_id=NULL WHERE id=$1")
+        .bind(id).execute(&pool).await.expect("remove only the relational source");
+    pool.execute("ALTER TABLE guest_quote_snapshots ENABLE TRIGGER guard_guest_quote")
+        .await
+        .expect("restore immutable guard");
+    assert!(matches!(
+        owned_promoted_quote(&store, &owner, id).await,
+        Err(QuoteStoreError::InvalidStoredData)
+    ));
 }

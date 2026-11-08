@@ -137,13 +137,11 @@ pub async fn approved_policy(
 }
 
 /// Hold the promotion anchor through quote issuance, excluding review or draft changes.
+/// The owned quote command validates the caller's locator before this lookup.
 pub(crate) async fn current_for_quote(
     tx: &mut Transaction<'_, Postgres>,
     id: &str,
 ) -> Result<(PromotionPolicy, i32), PolicyError> {
-    if !merchant_code(id) {
-        return Err(PolicyError::InvalidRequest);
-    }
     let inspected = approved_in_transaction(tx, id).await?;
     let revision = inspected
         .review
@@ -159,9 +157,6 @@ pub(crate) async fn historical_for_quote(
     revision: i32,
     review_revision: i32,
 ) -> Result<PromotionPolicy, PolicyError> {
-    if !merchant_code(id) || revision <= 0 || review_revision <= 0 {
-        return Err(PolicyError::InvalidStoredData);
-    }
     let draft = load(tx, id, revision).await.map_err(|e| match e {
         PolicyError::NotFound => PolicyError::InvalidStoredData,
         other => other,
@@ -169,10 +164,14 @@ pub(crate) async fn historical_for_quote(
     let policy = draft.decode(id, revision)?;
     let review: Option<StoredReview> = sqlx::query_as("SELECT draft_revision,revision,left(decision,9) AS decision,left(evidence_ref,501) AS evidence_ref,left(qualification_ref,501) AS qualification_ref,left(actor,501) AS actor,left(reason,501) AS reason FROM promotion_policy_reviews WHERE id=$1 AND draft_revision=$2 AND revision=$3")
         .bind(id).bind(revision).bind(review_revision).fetch_optional(&mut **tx).await?;
-    if !review.is_some_and(|r| {
-        r.revision == review_revision && r.valid(&draft, revision) && r.decision == "approved"
-    }) {
+    // SQL binds the exact review revision; the decoder checks the stored
+    // positive revisions, canonical draft and independent approved source.
+    if !review.is_some_and(|r| r.valid(&draft, revision) && r.decision == "approved") {
         return Err(PolicyError::InvalidStoredData);
     }
     Ok(policy)
 }
+
+#[cfg(test)]
+#[path = "../../tests/support/promotion_quote_source_controls.rs"]
+mod quote_source_tests;
