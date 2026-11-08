@@ -159,6 +159,47 @@ async fn real_issuance_uses_one_debit_and_stores_only_an_encrypted_bearer(pool: 
         !row.3.windows(bearer.len()).any(|part| part == &*bearer),
         "ciphertext contains no raw bearer"
     );
+    // Inspect persisted custody encodings rather than only the ciphertext column.
+    // A deliberately stored test secret proves that this scan can find a leak.
+    let bearer_hex: String = bearer.iter().map(|byte| format!("{byte:02x}")).collect();
+    let key_hex = "29".repeat(32);
+    let marker = "synthetic-private-delivery-marker-513704";
+    let custody: String = sqlx::query_scalar("SELECT jsonb_build_object('keys',(SELECT jsonb_agg(to_jsonb(k)) FROM email_verification_delivery_keys k),'nonces',(SELECT jsonb_agg(to_jsonb(n)) FROM email_verification_delivery_nonces n),'challenges',(SELECT jsonb_agg(to_jsonb(c)) FROM email_verification_challenges c),'envelopes',(SELECT jsonb_agg(to_jsonb(e)) FROM email_verification_delivery_envelopes e),'admission_scopes',(SELECT jsonb_agg(to_jsonb(s)) FROM customer_credential_admission_scopes s),'admission_targets',(SELECT jsonb_agg(to_jsonb(t)) FROM customer_credential_admission_targets t))::text")
+        .fetch_one(&pool).await.expect("persisted custody scan");
+    assert!(
+        !custody.contains(&bearer_hex),
+        "persisted custody contains no raw bearer"
+    );
+    assert!(
+        !custody.contains(&key_hex),
+        "persisted custody contains no raw encryption key"
+    );
+    assert!(!custody.contains(marker), "negative marker control");
+    pool.execute("CREATE TABLE synthetic_delivery_secret_probe(bearer bytea, marker text)")
+        .await
+        .expect("probe table");
+    sqlx::query("INSERT INTO synthetic_delivery_secret_probe VALUES($1,$2)")
+        .bind(&*bearer)
+        .bind(marker)
+        .execute(&pool)
+        .await
+        .expect("persist synthetic scan control");
+    let positive: String =
+        sqlx::query_scalar("SELECT to_jsonb(p)::text FROM synthetic_delivery_secret_probe p")
+            .fetch_one(&pool)
+            .await
+            .expect("positive control scan");
+    assert!(
+        positive.contains(&bearer_hex),
+        "scan detects the persisted raw bearer control"
+    );
+    assert!(
+        positive.contains(marker),
+        "scan detects the persisted marker control"
+    );
+    pool.execute("DROP TABLE synthetic_delivery_secret_probe")
+        .await
+        .expect("remove synthetic control");
     let columns: Vec<String> = sqlx::query_scalar("SELECT column_name::text FROM information_schema.columns WHERE table_schema=current_schema() AND table_name='email_verification_delivery_envelopes' ORDER BY ordinal_position").fetch_all(&pool).await.expect("envelope shape");
     assert_eq!(
         columns,
@@ -735,4 +776,88 @@ async fn nonce_rejects_async_commit_but_issue_locally_forces_durable_reservation
     tx.commit().await.expect("exact durable pair commits");
     assert_eq!(counts(&async_pool).await, (2, 2, 2, 1));
     async_pool.close().await;
+}
+
+#[sqlx::test(migrator = "MIGRATOR")]
+async fn dropping_a_blocked_envelope_write_burns_nonce_and_rolls_back_pair(pool: PgPool) {
+    use std::sync::Arc;
+    let clock = Arc::new(Time(AtomicU64::new(1000)));
+    let key = delivery();
+    register_key(&pool, clock.as_ref(), &key)
+        .await
+        .expect("register key");
+    pool.execute("CREATE FUNCTION test_verification_cancel_wait() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN PERFORM pg_advisory_xact_lock(1936876971,1); RETURN NEW; END; $$; CREATE TRIGGER z_test_verification_cancel_wait AFTER INSERT ON email_verification_delivery_envelopes FOR EACH ROW EXECUTE FUNCTION test_verification_cancel_wait()").await.expect("actual envelope write gate");
+    let mut gate = pool.begin().await.expect("gate transaction");
+    sqlx::query("SELECT pg_advisory_xact_lock(1936876971,1)")
+        .execute(&mut *gate)
+        .await
+        .expect("hold gate");
+    let mut observer = pool
+        .acquire()
+        .await
+        .expect("independent observer connection");
+    let work = tokio::spawn({
+        let pool = pool.clone();
+        let clock = clock.clone();
+        async move {
+            let admission = admission();
+            let key = delivery();
+            issue_for_delivery(
+                &pool,
+                "buyer@example.test",
+                clock.as_ref(),
+                &admission,
+                limits(),
+                &key,
+            )
+            .await
+        }
+    });
+    let pid: i32 = tokio::time::timeout(std::time::Duration::from_secs(2), async {
+        loop {
+            let pid: Option<i32> = sqlx::query_scalar("SELECT pid FROM pg_stat_activity WHERE datname=current_database() AND wait_event_type='Lock' AND wait_event='advisory' AND query LIKE '%INSERT INTO email_verification_delivery_envelopes%' LIMIT 1").fetch_optional(&mut *observer).await.expect("observe actual envelope write wait");
+            if let Some(pid) = pid { break pid; }
+            tokio::time::sleep(std::time::Duration::from_millis(5)).await;
+        }
+    }).await.expect("issuer reached real write gate");
+    assert_eq!(
+        counts(&pool).await,
+        (1, 0, 0, 1),
+        "committed nonce and debit precede the blocked writes"
+    );
+    work.abort();
+    assert!(work.await.err().expect("aborted work").is_cancelled());
+    gate.rollback().await.expect("release wait");
+    tokio::time::timeout(std::time::Duration::from_secs(2), async {
+        loop {
+            let cleaned: bool = sqlx::query_scalar("SELECT NOT EXISTS(SELECT 1 FROM pg_stat_activity WHERE pid=$1 AND (state IS DISTINCT FROM 'idle' OR xact_start IS NOT NULL))").bind(pid).fetch_one(&mut *observer).await.expect("observe transaction cleanup");
+            if cleaned { break; }
+            tokio::time::sleep(std::time::Duration::from_millis(5)).await;
+        }
+    }).await.expect("aborted transaction finished cleanup");
+    drop(observer);
+    assert_eq!(
+        counts(&pool).await,
+        (1, 0, 0, 1),
+        "drop rolls back challenge and envelope only"
+    );
+    pool.execute(
+        "DROP TRIGGER z_test_verification_cancel_wait ON email_verification_delivery_envelopes",
+    )
+    .await
+    .expect("remove gate");
+    let admission = admission();
+    issue_for_delivery(
+        &pool,
+        "buyer@example.test",
+        clock.as_ref(),
+        &admission,
+        limits(),
+        &key,
+    )
+    .await
+    .expect("fresh nonce retry");
+    assert_eq!(counts(&pool).await, (2, 1, 1, 2));
+    let (reserved, used): (Vec<i64>, i64) = sqlx::query_as("SELECT (SELECT array_agg(nonce_counter ORDER BY nonce_counter) FROM email_verification_delivery_nonces),(SELECT nonce_counter FROM email_verification_delivery_envelopes)").fetch_one(&pool).await.expect("nonce burn and retry");
+    assert_eq!((reserved, used), (vec![1, 2], 2));
 }
