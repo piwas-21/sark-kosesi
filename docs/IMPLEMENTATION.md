@@ -247,7 +247,12 @@ supervision or live provider activation follows from deploying the empty preview
    Owned indicative quote snapshots now bind basket revision, destination/locale,
    reviewed policy and publication/BOM revisions to checked allocations and a
    fixed maximum five-minute lifetime. Full-intent retries retain old receipts;
-   final identity/source/deadline checks follow the actual insert wait. Complete
+   final identity/source/deadline checks follow the actual insert wait.
+   A private version-2 promoted snapshot additionally retains one exact
+   approved promotion and its immutable original and discounted allocations.
+   It shares the owner, effect namespace and quota and expires by the promotion
+   end. The legacy order path cannot consume it. Add atomic lifetime budget and
+   redemption claims before accepting promoted quotes at checkout. Complete
    trusted-edge abuse controls before a public customer bridge. Private immutable order/address/seller/market/product snapshots now compose
    whole-basket holds and a minimal outbox event in one transaction. Current basket,
    publications, reviewed policy and exact amounts are revalidated; changes require

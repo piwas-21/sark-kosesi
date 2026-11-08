@@ -59,6 +59,7 @@ fn row() -> Row {
         policy_review_revision: b.policy_review_revision,
         created_at: b.created_at,
         expires_at: b.expires_at,
+        promotion_columns: false,
         snapshot: Some(serde_json::to_value(s).expect("fixture")),
     }
 }

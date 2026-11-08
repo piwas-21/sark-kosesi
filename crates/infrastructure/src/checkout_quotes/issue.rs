@@ -1,5 +1,5 @@
 use super::*;
-async fn quota(scope: &mut BasketScope) -> Result<(), QuoteStoreError> {
+pub(super) async fn quota(scope: &mut BasketScope) -> Result<(), QuoteStoreError> {
     let at = scope.checked_at()?;
     let owner = scope.basket_id().to_owned();
     sqlx::query("INSERT INTO guest_quote_quota(basket_id,rate_window,issued) VALUES($1,$2,0) ON CONFLICT DO NOTHING").bind(&owner).bind(at/60).execute(&mut **scope.transaction()).await?;
@@ -45,6 +45,10 @@ pub async fn issue_quote(
     if let Some((snapshot, _)) =
         stored::by_effect(scope.transaction(), &owner, &request.effect_key).await?
     {
+        let snapshot = match snapshot {
+            stored::StoredQuote::Original(snapshot) => *snapshot,
+            stored::StoredQuote::Promoted(_, _) => return Err(QuoteStoreError::Conflict),
+        };
         let b = &snapshot.binding;
         if b.basket_revision != request.expected_basket_revision
             || b.locale != locale.internal()

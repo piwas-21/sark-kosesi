@@ -4,7 +4,9 @@ use crate::{
     quotes::{AmountBreakdown, QuoteTotals},
 };
 use serde::{Deserialize, Serialize};
+mod promoted;
 mod validate;
+pub use promoted::{PromotedLine, PromotedQuoteSnapshot, PromotionReference};
 pub const SNAPSHOT_VERSION: u16 = 1;
 pub const INTERNAL_LOCALES: [&str; 7] = ["nl", "de", "fr", "en", "ar", "tr", "kmr"];
 pub const MAX_QUOTE_LIFETIME_SECONDS: i64 = 300;

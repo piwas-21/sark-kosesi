@@ -293,6 +293,14 @@ capability must fail the intended real-clock, lock-ordering and role assertions.
 Configuration tests do not prove atomic redemption budgets, per-customer identity,
 public coupons, provider sandbox or operational promotion acceptance.
 
+For private owned promoted quotes, use literal mixed-rate discount and tax
+fixtures. Exercise guest ownership, CSRF, ineligible or withdrawn sources,
+expiry during a real source wait, old quote compatibility, shared issue limits
+and cross-format retries. Reject damaged immutable source or amount records.
+Check that the legacy quote projection and order guard both reject the promoted
+format, and that issue, denial and replay have no stock, order or redemption
+effect. Keep the existing critical coverage and isolated PostgreSQL gates.
+
 Whole-basket reservation logic retains 95% critical native line/branch thresholds.
 Independent PostgreSQL oracles cover a last shared component, complete loser
 rollback, changed/omitted/extra retry intent, immutable raw imports, legacy child

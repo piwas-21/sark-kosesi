@@ -1558,6 +1558,24 @@ HTTP projections omit owner, destination and internal policy/evidence references
 map internal `kmr` to public `ku`, and remain private/no-store behind preview auth.
 Installation seeds no quote, readiness, guest identity or commercial authority.
 
+A private server-selected promotion can be captured in a version-2 indicative
+quote. The outer snapshot preserves the exact promotion draft and independent
+approval, allocation version, per-SKU discount and discounted gross/net/VAT,
+unchanged shipping, and totals. Its nested version-1 snapshot retains the
+original amounts and owned basket, market and catalogue revisions. The promoted
+format shares the quote identity, effect-key namespace and per-basket issuance
+quota with existing quotes. A guest cannot satisfy a per-customer limit.
+
+For a new promoted quote, claim the basket, reviewed market and promotion
+anchors, then the sorted catalogue and physical component sources. Keep those
+claims through insertion and the final clock and ownership checks. Cap the
+quote expiry at the promotion end. Exact replay and reads validate the stored
+allocation against the original immutable approved source; later withdrawal does
+not extend or confer authority on an unexpired historical receipt. The legacy
+quote projection and order path cannot consume the promoted format. A separate
+order transaction must implement lifetime redemption and discount accounting
+before checkout can accept it.
+
 An unexpired historical snapshot can remain readable after source withdrawal; this
 is owned history, not fresh readiness. Order creation must independently compare
 current basket and commercial terms, claim current reviewed sources, reserve the

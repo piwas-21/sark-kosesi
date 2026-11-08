@@ -2,6 +2,7 @@
 use crate::{
     guest_baskets::{self, BasketScope, GuestCredential, GuestError, GuestSessionStore},
     market_policies::{self, MarketError},
+    promotion_policies::{self, PolicyError},
     quotes,
 };
 use commerce_application::Locale;
@@ -16,8 +17,10 @@ mod decode;
 pub(crate) use decode::decode_snapshot;
 pub(crate) use stored::by_id as snapshot_in_transaction;
 mod issue;
+mod promoted;
 mod stored;
 pub use issue::{issue_quote, owned_quote};
+pub use promoted::{PromotedQuoteReceipt, issue_promoted_quote, owned_promoted_quote};
 #[derive(Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct GuestQuoteRequest {
@@ -39,6 +42,7 @@ impl GuestQuoteRequest {
 pub enum QuoteStoreError {
     Guest(GuestError),
     Market(MarketError),
+    Promotion(PolicyError),
     Evaluation(quotes::QuoteFailure),
     InvalidRequest,
     InvalidStoredData,
@@ -57,6 +61,14 @@ impl From<GuestError> for QuoteStoreError {
 impl From<MarketError> for QuoteStoreError {
     fn from(value: MarketError) -> Self {
         Self::Market(value)
+    }
+}
+impl From<PolicyError> for QuoteStoreError {
+    fn from(value: PolicyError) -> Self {
+        match value {
+            PolicyError::InvalidStoredData => Self::InvalidStoredData,
+            other => Self::Promotion(other),
+        }
     }
 }
 impl From<quotes::QuoteFailure> for QuoteStoreError {
