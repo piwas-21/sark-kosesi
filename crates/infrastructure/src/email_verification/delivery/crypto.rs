@@ -1,4 +1,4 @@
-//! Authenticated envelope bytes; no production opening or delivery operation.
+//! Authenticated envelope bytes; no delivery operation.
 use super::*;
 use ring::aead::{AES_256_GCM, Aad, LessSafeKey, Nonce, UnboundKey};
 use zeroize::Zeroizing;
@@ -109,10 +109,10 @@ pub(super) fn open(
             &mut in_place,
         )
         .map_err(|_| VerificationError::Unavailable)?;
+    let plaintext: &[u8; 32] = (&*plaintext)
+        .try_into()
+        .map_err(|_| VerificationError::Unavailable)?;
     let mut bearer = Zeroizing::new([0_u8; 32]);
-    if plaintext.len() != bearer.len() {
-        return Err(VerificationError::Unavailable);
-    }
     bearer.copy_from_slice(plaintext);
     let mut hash = Sha256::new();
     hash.update(DOMAIN);

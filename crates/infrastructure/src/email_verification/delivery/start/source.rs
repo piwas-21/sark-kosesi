@@ -28,9 +28,13 @@ impl Drop for Source {
     }
 }
 impl Source {
+    pub(super) fn is_consumed(&self) -> bool {
+        self.consumed_at.is_some() || !self.consumed_xid_empty
+    }
+
     /// Validate an exact stored header before looking up or writing a start.
     pub(super) fn validate(&self, key: &VerificationDeliveryKey) -> Result<i64, VerificationError> {
-        if self.mode != "envelope" || self.consumed_at.is_some() || !self.consumed_xid_empty {
+        if self.mode != "envelope" || self.is_consumed() {
             return Err(VerificationError::Denied);
         }
         if self.envelope_key.as_deref() != Some(key.key_id.as_str()) {

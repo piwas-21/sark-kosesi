@@ -426,6 +426,141 @@ async fn substituted_ciphertext_after_start_commit_is_not_opened(pool: PgPool) {
     assert_eq!(calls.load(Ordering::SeqCst), 0);
 }
 
+async fn changed_retained_start_case(pool: PgPool, change_xid: bool) {
+    let (time, key, verifier) = fixture(&pool).await;
+    time.0.store(1001, Ordering::SeqCst);
+    pool.execute("CREATE FUNCTION test_opening_retained_start_wait() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN PERFORM pg_advisory_xact_lock(1936876993,1); RETURN NEW; END; $$; CREATE TRIGGER z_test_opening_retained_start_wait AFTER INSERT ON email_verification_delivery_starts FOR EACH ROW EXECUTE FUNCTION test_opening_retained_start_wait()")
+        .await
+        .expect("isolate start change and gate insertion");
+    let mut gate = pool.begin().await.expect("gate");
+    sqlx::query("SELECT pg_advisory_xact_lock(1936876993,1)")
+        .execute(&mut *gate)
+        .await
+        .expect("hold start gate");
+    let calls = Arc::new(AtomicUsize::new(0));
+    let opening = tokio::spawn({
+        let pool = pool.clone();
+        let time = time.clone();
+        let key = key.clone();
+        let calls = calls.clone();
+        async move {
+            claim_and_open(&pool, &verifier, time.as_ref(), &key, |_, _| {
+                calls.fetch_add(1, Ordering::SeqCst);
+            })
+            .await
+        }
+    });
+    wait_for(&pool, start_gate_sql()).await;
+    let (held_tx, held_rx) = tokio::sync::oneshot::channel();
+    let (release_tx, release_rx) = tokio::sync::oneshot::channel();
+    let blocker = tokio::spawn({
+        let pool = pool.clone();
+        async move {
+            let mut tx = pool.begin().await.expect("fresh-opening blocker");
+            sqlx::query(
+                "SELECT verifier FROM email_verification_challenges WHERE verifier=$1 FOR UPDATE",
+            )
+            .bind(verifier.as_slice())
+            .execute(&mut *tx)
+            .await
+            .expect("hold challenge after start");
+            held_tx.send(()).expect("signal challenge held");
+            release_rx.await.expect("release signal");
+            tx.rollback().await.expect("release challenge");
+        }
+    });
+    wait_for(&pool, challenge_wait_sql()).await;
+    gate.rollback().await.expect("let start commit");
+    tokio::time::timeout(std::time::Duration::from_secs(2), held_rx)
+        .await
+        .expect("blocker acquired challenge")
+        .expect("blocker signal");
+    wait_for(&pool, challenge_wait_sql()).await;
+
+    let snapshot_sql = "SELECT s.started_at,s.transaction_id::text,email_verification_delivery_start_source(s) FROM email_verification_delivery_starts s WHERE s.verifier=$1";
+    let original: (i64, String, bool) = sqlx::query_as(snapshot_sql)
+        .bind(verifier.as_slice())
+        .fetch_one(&pool)
+        .await
+        .expect("original retained start");
+    assert_eq!(original.0, 1001);
+    assert!(original.2);
+    pool.execute("ALTER TABLE email_verification_delivery_starts DISABLE TRIGGER guard_email_verification_delivery_start")
+        .await
+        .expect("isolate committed start change");
+    let update = if change_xid {
+        "UPDATE email_verification_delivery_starts SET transaction_id=pg_current_xact_id() WHERE verifier=$1"
+    } else {
+        "UPDATE email_verification_delivery_starts SET started_at=1000 WHERE verifier=$1"
+    };
+    sqlx::query(update)
+        .bind(verifier.as_slice())
+        .execute(&pool)
+        .await
+        .expect("change retained start while fresh opening waits");
+    let damaged: (i64, String, bool) = sqlx::query_as(snapshot_sql)
+        .bind(verifier.as_slice())
+        .fetch_one(&pool)
+        .await
+        .expect("changed retained start");
+    assert!(
+        damaged.2,
+        "changed start still passes native source validation"
+    );
+    if change_xid {
+        assert_ne!(damaged.1, original.1);
+        assert_eq!(damaged.0, original.0);
+    } else {
+        assert_eq!(damaged.0, 1000);
+        assert_eq!(damaged.1, original.1);
+    }
+    release_tx.send(()).expect("release fresh opening");
+    blocker.await.expect("blocker task");
+    assert!(matches!(
+        opening.await.expect("opening task"),
+        Err(VerificationError::Unavailable)
+    ));
+    assert_eq!(calls.load(Ordering::SeqCst), 0);
+    assert_eq!(starts(&pool).await, 1);
+    let after: (i64, String, bool) = sqlx::query_as(snapshot_sql)
+        .bind(verifier.as_slice())
+        .fetch_one(&pool)
+        .await
+        .expect("start after failed opening");
+    assert_eq!(
+        after, damaged,
+        "failed opening leaves the retained start unchanged"
+    );
+    sqlx::query("UPDATE email_verification_delivery_starts SET started_at=$2,transaction_id=$3::text::xid8 WHERE verifier=$1")
+        .bind(verifier.as_slice())
+        .bind(original.0)
+        .bind(&original.1)
+        .execute(&pool)
+        .await
+        .expect("restore retained start");
+    pool.execute("ALTER TABLE email_verification_delivery_starts ENABLE TRIGGER guard_email_verification_delivery_start")
+        .await
+        .expect("restore start guard");
+    assert!(matches!(
+        claim_and_open(&pool, &verifier, time.as_ref(), &key, |_, _| {
+            calls.fetch_add(1, Ordering::SeqCst);
+        })
+        .await,
+        Ok(OpenOutcome::AlreadyStarted)
+    ));
+    assert_eq!(calls.load(Ordering::SeqCst), 0);
+}
+
+#[sqlx::test(migrator = "MIGRATOR")]
+async fn changed_retained_start_time_during_fresh_open_wait_fails_closed(pool: PgPool) {
+    changed_retained_start_case(pool, false).await;
+}
+
+#[sqlx::test(migrator = "MIGRATOR")]
+async fn changed_retained_start_xid_during_fresh_open_wait_fails_closed(pool: PgPool) {
+    changed_retained_start_case(pool, true).await;
+}
+
 struct FinalRewind(AtomicUsize);
 impl Clock for FinalRewind {
     fn unix_seconds(&self) -> Result<u64, ContextError> {

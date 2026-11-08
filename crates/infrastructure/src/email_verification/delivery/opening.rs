@@ -20,37 +20,39 @@ pub async fn claim_and_open(
     accept: impl FnOnce(&str, &[u8; 32]),
 ) -> Result<OpenOutcome, VerificationError> {
     let observed = ObservedClock::new(clock, 0);
-    let permit = match start::claim_with_permit(pool, verifier, &observed, key).await? {
-        start::InternalClaim::New(permit) => permit,
-        start::InternalClaim::AlreadyStarted => return Ok(OpenOutcome::AlreadyStarted),
-    };
-    let mut tx = begin(pool).await?;
-    let source = start::source_for_open(&mut tx, &permit, key, &observed).await?;
-    let identity = source
-        .identity
-        .as_deref()
-        .ok_or(VerificationError::Unavailable)?;
-    let ciphertext = source
-        .ciphertext
-        .as_deref()
-        .ok_or(VerificationError::Unavailable)?;
-    let counter = source.nonce_counter.ok_or(VerificationError::Unavailable)?;
-    let context = crypto::Context {
-        purpose: PURPOSE,
-        identity,
-        verifier: &permit.verifier,
-        created_at: source.created_at,
-        expires_at: source.expires_at,
-        key_id: &key.key_id,
-        counter,
-        version: crypto::VERSION,
-    };
-    let bearer = crypto::open(key, &context, ciphertext)?;
-    start::check_live(&source, bounded_now(&observed)?)?;
-    tx.commit()
-        .await
-        .map_err(|_| VerificationError::Unavailable)?;
-    start::check_live(&source, bounded_now(&observed)?)?;
-    accept(identity, &bearer);
-    Ok(OpenOutcome::Opened)
+    if let start::InternalClaim::New(permit) =
+        start::claim_with_permit(pool, verifier, &observed, key).await?
+    {
+        let mut tx = begin(pool).await?;
+        let source = start::source_for_open(&mut tx, &permit, key, &observed).await?;
+        let identity = source
+            .identity
+            .as_deref()
+            .ok_or(VerificationError::Unavailable)?;
+        let ciphertext = source
+            .ciphertext
+            .as_deref()
+            .ok_or(VerificationError::Unavailable)?;
+        let counter = source.nonce_counter.ok_or(VerificationError::Unavailable)?;
+        let context = crypto::Context {
+            purpose: PURPOSE,
+            identity,
+            verifier: &permit.verifier,
+            created_at: source.created_at,
+            expires_at: source.expires_at,
+            key_id: &key.key_id,
+            counter,
+            version: crypto::VERSION,
+        };
+        let bearer = crypto::open(key, &context, ciphertext)?;
+        start::check_live(&source, bounded_now(&observed)?)?;
+        tx.commit()
+            .await
+            .map_err(|_| VerificationError::Unavailable)?;
+        start::check_live(&source, bounded_now(&observed)?)?;
+        accept(identity, &bearer);
+        Ok(OpenOutcome::Opened)
+    } else {
+        Ok(OpenOutcome::AlreadyStarted)
+    }
 }

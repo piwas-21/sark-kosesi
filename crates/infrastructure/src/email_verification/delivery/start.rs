@@ -115,7 +115,7 @@ pub(super) async fn source_for_open(
     clock: &dyn Clock,
 ) -> Result<Source, VerificationError> {
     let source = lock_source(tx, &permit.verifier).await?;
-    if source.consumed_at.is_some() || !source.consumed_xid_empty {
+    if source.is_consumed() {
         return Err(VerificationError::Denied);
     }
     let at = bounded_now(clock)?;
