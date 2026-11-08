@@ -118,7 +118,8 @@ immutable cumulative accounting and a minimal outbox event. Private test-key
 exact-item refund and chargeback GETs now verify the paid original and return
 minimal bounded observations. A separate paid-parent GET records an immutable
 operation against the exact received recognition and retains the authenticated
-aggregate amounts with a reciprocal event. Net balance remains unresolved. Payment-specific
+aggregate amounts with a reciprocal event. A local/test worker can inspect one
+exact stored operation or receipt without provider access. Net balance remains unresolved. Payment-specific
 test-profile list pages now yield
 only bounded reversal identity hints and scoped continuations after verifying the
 paid original. Every verified page retains the authenticated request scope,

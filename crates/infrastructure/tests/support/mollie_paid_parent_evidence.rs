@@ -1054,3 +1054,204 @@ async fn clock_rewind_while_real_parent_get_waits_rejects_fetched_evidence(pool:
     assert_eq!(counts(&pool).await, (2, 1, 1));
     assert_eq!(server.count(), 3);
 }
+
+// Compile the actual worker inspection module against this crate's existing
+// canonical reversal-pages fixture, without widening production transport APIs.
+use crate::mollie::reversal_worker_fixture as reversal_pages;
+#[path = "../../../worker/src/paid_parent.rs"]
+mod worker_inspect;
+
+async fn worker_event(pool: &PgPool, attempt: &str, effect: &str) -> Vec<(String, String)> {
+    use super::reversal_supervision_cases::worker_entry::Capture;
+    use std::sync::{Arc, Mutex};
+    use tracing::instrument::WithSubscriber;
+    let captured = Arc::new(Mutex::new(Vec::new()));
+    let input = worker_inspect::Inspection::parse(attempt, effect).expect("valid worker input");
+    worker_inspect::inspect(pool, input)
+        .with_subscriber(Capture(captured.clone()))
+        .await
+        .expect("worker inspection");
+    let events = captured.lock().expect("captured fields");
+    assert_eq!(events.len(), 1, "one inspection emits one event");
+    let mut fields = events[0].clone();
+    fields.sort();
+    fields
+}
+fn expected_worker_fields(fields: &[(&str, &str)]) -> Vec<(String, String)> {
+    let mut fields: Vec<_> = fields
+        .iter()
+        .map(|(key, value)| ((*key).into(), (*value).into()))
+        .collect();
+    fields.sort();
+    fields
+}
+
+#[sqlx::test(migrator = "MIGRATOR")]
+async fn actual_worker_inspects_absent_pending_and_complete_without_effects_or_provider_io(
+    pool: PgPool,
+) {
+    let (time, frozen, ids) = paid(&pool).await;
+    let mut source = payment(frozen.snapshot());
+    source["amountRefunded"] = json!({"currency":"EUR","value":"0.00"});
+    source["amountCaptured"] = json!({"currency":"EUR","value":"382.45"});
+    source["amountChargedBack"] = json!({"currency":"EUR","value":"0.00"});
+    let server = Server::start(vec![profile(), Reply::Json(200, source)]);
+    let client = local(&server)
+        .verify_profile()
+        .await
+        .expect("verified synthetic profile")
+        .into_reconciliation();
+    let attempt = &frozen.snapshot().binding.id;
+    let pending = match paid_parent_evidence::start(
+        &pool,
+        time.as_ref(),
+        &ids,
+        attempt,
+        "pending-effect",
+        &client,
+    )
+    .await
+    .expect("genuine pending operation")
+    {
+        Start::Fetch(p) => p,
+        _ => panic!("first permit"),
+    };
+    let complete = match paid_parent_evidence::start(
+        &pool,
+        time.as_ref(),
+        &ids,
+        attempt,
+        "complete-effect",
+        &client,
+    )
+    .await
+    .expect("genuine complete operation")
+    {
+        Start::Fetch(p) => p,
+        _ => panic!("second permit"),
+    };
+    let fetched = paid_parent_evidence::fetch(complete, time.as_ref(), &client)
+        .await
+        .expect("authenticated loopback parent GET");
+    let receipt = paid_parent_evidence::record(&pool, time.as_ref(), &ids, &fetched)
+        .await
+        .expect("exact receipt");
+    assert_eq!(
+        (
+            receipt.totals.refunded_minor,
+            receipt.totals.remaining_minor,
+            receipt.totals.captured_minor,
+            receipt.totals.charged_back_minor
+        ),
+        (Some(0), None, Some(38245), Some(0))
+    );
+    let _pending_permit = pending;
+    let before = counts(&pool).await;
+    let requests = server.count();
+    assert_eq!(before, (2, 1, 1));
+    assert_eq!(requests, 2);
+    let absent = worker_event(&pool, attempt, "absent-effect").await;
+    assert!(
+        absent
+            == expected_worker_fields(&[
+                ("code", "paid_parent_evidence_state"),
+                ("state", "absent")
+            ])
+    );
+    let pending = worker_event(&pool, attempt, "pending-effect").await;
+    assert!(
+        pending
+            == expected_worker_fields(&[
+                ("code", "paid_parent_evidence_state"),
+                ("state", "pending")
+            ])
+    );
+    let complete = worker_event(&pool, attempt, "complete-effect").await;
+    assert!(
+        complete
+            == expected_worker_fields(&[
+                ("code", "paid_parent_evidence_state"),
+                ("state", "complete"),
+                ("refunded_present", "true"),
+                ("remaining_present", "false"),
+                ("captured_present", "true"),
+                ("charged_back_present", "true")
+            ])
+    );
+    let snapshot_sql = "SELECT jsonb_build_object('operation', to_jsonb(o), 'receipt', to_jsonb(r), 'event', to_jsonb(e))::text FROM paid_parent_total_operations o JOIN paid_parent_total_receipts r ON r.operation_id=o.id JOIN commerce_outbox e ON e.id=r.event_id WHERE o.id=$1";
+    let original: String = sqlx::query_scalar(snapshot_sql)
+        .bind(&receipt.operation.id)
+        .fetch_one(&pool)
+        .await
+        .expect("original evidence snapshot");
+    pool.execute(
+        "ALTER TABLE paid_parent_total_receipts DISABLE TRIGGER guard_paid_parent_total_receipt",
+    )
+    .await
+    .expect("isolate receipt corruption");
+    sqlx::query("UPDATE paid_parent_total_receipts SET refunded_minor=1 WHERE operation_id=$1")
+        .bind(&receipt.operation.id)
+        .execute(&pool)
+        .await
+        .expect("corrupt one aggregate cent");
+    let damaged: String = sqlx::query_scalar(snapshot_sql)
+        .bind(&receipt.operation.id)
+        .fetch_one(&pool)
+        .await
+        .expect("damaged evidence snapshot");
+    assert!(damaged != original, "fault changed the receipt");
+    {
+        use super::reversal_supervision_cases::worker_entry::Capture;
+        use std::sync::{Arc, Mutex};
+        use tracing::instrument::WithSubscriber;
+
+        let events = Arc::new(Mutex::new(Vec::new()));
+        let input = worker_inspect::Inspection::parse(attempt, "complete-effect")
+            .expect("valid worker input");
+        let result = worker_inspect::inspect(&pool, input)
+            .with_subscriber(Capture(events.clone()))
+            .await;
+        assert!(
+            matches!(result, Err(error) if error.to_string() == "paid-parent evidence unavailable")
+        );
+        assert!(events.lock().expect("captured events").is_empty());
+    }
+    let after_inspection: String = sqlx::query_scalar(snapshot_sql)
+        .bind(&receipt.operation.id)
+        .fetch_one(&pool)
+        .await
+        .expect("evidence after damaged inspection");
+    assert!(
+        after_inspection == damaged,
+        "inspection made no evidence changes"
+    );
+    assert_eq!(counts(&pool).await, before);
+    assert_eq!(server.count(), requests);
+    sqlx::query("UPDATE paid_parent_total_receipts SET refunded_minor=0 WHERE operation_id=$1")
+        .bind(&receipt.operation.id)
+        .execute(&pool)
+        .await
+        .expect("restore aggregate cent");
+    pool.execute(
+        "ALTER TABLE paid_parent_total_receipts ENABLE TRIGGER guard_paid_parent_total_receipt",
+    )
+    .await
+    .expect("restore receipt guard");
+    let restored: String = sqlx::query_scalar(snapshot_sql)
+        .bind(&receipt.operation.id)
+        .fetch_one(&pool)
+        .await
+        .expect("restored evidence snapshot");
+    assert!(restored == original, "original evidence restored");
+    assert!(worker_event(&pool, attempt, "complete-effect").await == complete);
+    assert_eq!(
+        server.count(),
+        requests,
+        "inspection never calls the provider"
+    );
+    assert_eq!(
+        counts(&pool).await,
+        before,
+        "inspection leaves evidence and outbox unchanged"
+    );
+}
