@@ -1,4 +1,5 @@
 //! Private challenge custody. Possession alone grants no account or order authority.
+pub mod delivery;
 #[path = "verified_customer_accounts.rs"]
 pub mod verified_customer_accounts;
 
@@ -10,6 +11,7 @@ use commerce_application::request_context::{Clock, ObservedClock};
 use commerce_domain::email_identity::normalize_email;
 use sha2::{Digest, Sha256};
 use sqlx::{PgPool, Postgres, Transaction};
+use zeroize::Zeroize;
 
 use crate::customer_credential_admission::{
     AdmissionError, AdmissionKey, AdmissionLimits, CredentialPurpose, admit,
@@ -32,8 +34,14 @@ impl VerificationToken {
     fn verifier(&self) -> [u8; 32] {
         let mut hash = Sha256::new();
         hash.update(DOMAIN);
-        hash.update(self.0);
+        hash.update(self.0.as_slice());
         hash.finalize().into()
+    }
+}
+
+impl Drop for VerificationToken {
+    fn drop(&mut self) {
+        self.0.zeroize();
     }
 }
 
@@ -50,6 +58,12 @@ fn now(clock: &dyn Clock) -> Result<i64, VerificationError> {
         .ok()
         .and_then(|n| i64::try_from(n).ok())
         .ok_or(VerificationError::Unavailable)
+}
+
+fn fresh_token() -> Result<VerificationToken, VerificationError> {
+    let mut token = VerificationToken([0; 32]);
+    getrandom::fill(&mut token.0).map_err(|_| VerificationError::Unavailable)?;
+    Ok(token)
 }
 
 /// Issues an OS-random bearer exactly once to the caller after durable insertion.
@@ -71,9 +85,7 @@ pub async fn issue(
     )
     .await?;
     let identity = normalize_email(email).ok_or(VerificationError::Denied)?;
-    let mut bytes = [0_u8; 32];
-    getrandom::fill(&mut bytes).map_err(|_| VerificationError::Unavailable)?;
-    let token = VerificationToken(bytes);
+    let token = fresh_token()?;
     let mut tx = begin(pool).await?;
     let created = now(&observed)?;
     let expires = created

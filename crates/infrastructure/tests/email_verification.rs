@@ -123,9 +123,19 @@ async fn issued_verifier_is_domain_separated_and_never_stores_the_bearer(pool: P
             "created_at",
             "expires_at",
             "consumed_at",
-            "consumed_xid"
+            "consumed_xid",
+            "delivery_mode",
+            "delivery_transaction_id"
         ]
     );
+    let delivery: (String, bool) = sqlx::query_as(
+        "SELECT delivery_mode,delivery_transaction_id IS NULL FROM email_verification_challenges WHERE verifier=$1",
+    )
+    .bind(&stored)
+    .fetch_one(&pool)
+    .await
+    .expect("direct challenge delivery marker");
+    assert_eq!(delivery, ("direct".to_owned(), true));
     assert!(
         sqlx::query("UPDATE email_verification_challenges SET email_identity='other@example.com'")
             .execute(&pool)
