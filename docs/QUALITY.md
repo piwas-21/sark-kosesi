@@ -314,6 +314,13 @@ Assert the shared guest quote quota and effect namespace, immutable account
 association and guest order rejection. Exercise a capped promotion as the
 positive verified control.
 
+For account-bound order acceptance, race two distinct baskets under the same
+verified account for the last allowance. Admit a different verified account
+while global capacity remains. Check counts across a new approval and denial
+after anonymous usage, exact replay, expiry after a write wait, and rollback of
+stock, order, debit and event. Exercise legacy guest read, payment and link denial
+against an account-bound order.
+
 Whole-basket reservation logic retains 95% critical native line/branch thresholds.
 Independent PostgreSQL oracles cover a last shared component, complete loser
 rollback, changed/omitted/extra retry intent, immutable raw imports, legacy child

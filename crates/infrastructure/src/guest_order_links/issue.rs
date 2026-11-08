@@ -13,9 +13,10 @@ pub async fn issue(
     let mut scope = access::lock(store, guest, Some(csrf)).await?;
     let basket_id = scope.identity.basket_id.clone();
     require_unlinked_order(&mut scope.tx, &basket_id, order_id).await?;
-    let snapshot = checkout_orders::snapshot_in_transaction(&mut scope.tx, &basket_id, order_id)
-        .await
-        .map_err(order_error)?;
+    let snapshot =
+        checkout_orders::guest_snapshot_in_transaction(&mut scope.tx, &basket_id, order_id)
+            .await
+            .map_err(order_error)?;
     commerce_domain::email_identity::normalize_email(&snapshot.buyer.email)
         .ok_or(LinkError::Denied)?;
     let created_at = scope.checked_at(store.clock.as_ref())?;

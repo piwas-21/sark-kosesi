@@ -15,7 +15,7 @@ use serde::{Deserialize, Serialize};
 use sqlx::{Postgres, Transaction};
 mod decode;
 pub(crate) use decode::decode_snapshot;
-pub(crate) use stored::{StoredQuote, by_id_any};
+pub(crate) use stored::{StoredQuote, by_id_for};
 mod issue;
 mod promoted;
 mod stored;

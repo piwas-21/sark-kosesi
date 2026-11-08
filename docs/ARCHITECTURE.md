@@ -1580,7 +1580,8 @@ An immutable relational field binds the verified account to the existing quote
 format. The same account and guest ownership are required to read or replay it.
 The shared quote effect namespace and issuance quota still apply. An approved
 per-customer term can be captured here. Guest checkout rejects an account-bound
-quote and verified checkout requires its own order and debit transaction.
+quote. Verified order acceptance retains the same account and basket claims
+through the order and debit commit.
 
 For a new promoted quote, claim the basket, reviewed market and promotion
 anchors, then the sorted catalogue and physical component sources. Keep those
@@ -1601,6 +1602,16 @@ calling the indicative SHARE-stock evaluator first would risk lock upgrades.
 No browser checkout, order, payment or deployment is enabled by these receipts.
 
 ### Private accepted orders
+
+A private verified promoted order requires the account bound to its owned
+quote and a current session for that account. The transaction claims account,
+session and basket before market, promotion, catalogue and physical stock.
+Each attributed ledger row retains the lifetime redemption sequence and the
+same account's cumulative count. The promotion lock serializes both global
+and per-account limits across policy revisions. A capped policy fails closed
+if earlier debits for that promotion have no account attribution. Capacity stays
+used after expiry or cancellation. Guest payment preparation and guest order
+link proofs reject account-bound orders.
 
 The infrastructure-only order primitive composes fresh guest/CSRF authority,
 current basket revision, an owned unexpired quote and the latest independently

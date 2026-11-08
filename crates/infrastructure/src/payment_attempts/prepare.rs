@@ -23,6 +23,12 @@ pub async fn prepare_attempt(
         if frozen.snapshot().binding.order_id != intent.order_id {
             return Err(PaymentStoreError::Conflict);
         }
+        checkout_orders::guest_snapshot_in_transaction(
+            scope.transaction(),
+            &owner,
+            &intent.order_id,
+        )
+        .await?;
         scope.checked_at()?;
         scope.rollback().await?;
         return Ok(PreparationReceipt {
@@ -30,15 +36,18 @@ pub async fn prepare_attempt(
             replayed: true,
         });
     }
+    let order = checkout_orders::guest_snapshot_in_transaction(
+        scope.transaction(),
+        &owner,
+        &intent.order_id,
+    )
+    .await?;
     if stored::by_order(scope.transaction(), &owner, &intent.order_id)
         .await?
         .is_some()
     {
         return Err(PaymentStoreError::Conflict);
     }
-    let order =
-        checkout_orders::snapshot_in_transaction(scope.transaction(), &owner, &intent.order_id)
-            .await?;
     let clock = scope.clock();
     let mut proof = eligibility::claim(scope.transaction(), clock.as_ref(), &order).await?;
     let created_at = scope.checked_at()?;

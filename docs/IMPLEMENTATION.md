@@ -231,8 +231,9 @@ supervision or live provider activation follows from deploying the empty preview
    exact-revision reviews, explicit EUR currency, separate unseeded capabilities and lifetime
    discount/redemption ceilings. Private guest order acceptance requires the
    latest approval and atomically appends to the promotion's lifetime usage.
-   Implement per-customer claims through verified checkout identity. A guest
-   cookie cannot establish a per-person allowance. Version 1 indicative fixed/percentage quote and captured
+   Verified promoted checkout binds a cumulative account debit to the held
+   session and exact quote. An existing promotion with anonymous usage is
+   unavailable under a later per-customer cap. Version 1 indicative fixed/percentage quote and captured
    refund arithmetic is implemented; an order-scoped allocator applies it to explicit
    SKU and shipping balances from accepted quotes. The private refund reservation
    command below derives the prior balances from immutable reservation history.
@@ -255,13 +256,13 @@ supervision or live provider activation follows from deploying the empty preview
    guest basket through commit and binds the quote to that account. These quotes
    can retain an approved per-customer term. Guest order acceptance binds the
    exact discounted quote and a cumulative immutable redemption to the new
-   order. Implement account-bound acceptance and per-customer debits separately.
-   Complete
+   order. Account-bound acceptance requires the same current account and basket
+   and retains the account's cumulative use across policy revisions. Complete
    trusted-edge abuse controls before a public customer bridge. Private immutable order/address/seller/market/product snapshots now compose
    whole-basket holds and a minimal outbox event in one transaction. Current basket,
    publications, reviewed policy and exact amounts are revalidated; changes require
    fresh acceptance. One quote creates one order and exact retries preserve history.
-   Finish verified-customer coupon claims, redemption disposition after
+   Finish verified-customer payment admission, redemption disposition after
    cancellation, lifecycle/payment transitions and retention before
    public checkout; seller/legal facts remain required trusted configuration.
    Expose the same-origin API/contracts and checkout UI only with those controls.
