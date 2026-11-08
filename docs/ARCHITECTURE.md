@@ -891,6 +891,10 @@ reject other isolation levels and independently lock before querying current
 evidence. Their snapshot-sensitive functions are VOLATILE. The native proof
 validates each bounded observation prefix in one ordered query, including
 adjacent timestamps, the exact captured snapshot and its reciprocal event.
+For refund history, one complete proof covers the longest referenced prefix
+for the original attempt. Each shorter recognition still binds its exact
+resolution, provider identity summary and event, and checks the observation
+time at its own watermark.
 The attempt lock remains a separate statement. New writes sample a
 nondecreasing observed clock after proof/lock waits and again after actual event
 and pointer writes. Failure or cancellation rolls back the whole decision.

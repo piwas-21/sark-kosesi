@@ -1,5 +1,7 @@
--- Preserve the recognition custody proof while evaluating its bounded prefix as a set.
-CREATE OR REPLACE FUNCTION payment_recognition_source(r payment_recognitions, require_current boolean)
+-- Internal proof reuse: a non-null watermark is valid only after a full source
+-- proof of that prefix for the same original order, attempt and profile under
+-- the same attempt lock in this transaction. It is not standalone authority.
+CREATE FUNCTION payment_recognition_source_after_prefix(r payment_recognitions, require_current boolean, proved_through bigint)
  RETURNS boolean LANGUAGE plpgsql VOLATILE AS $$
 DECLARE a payment_attempts%ROWTYPE; owned checkout_orders%ROWTYPE;
  d payment_dispatch_starts%ROWTYPE; resolution payment_identity_resolutions%ROWTYPE;
@@ -67,36 +69,47 @@ BEGIN
    'method',a.configuration->>'method','sequenceType','oneoff',
    'metadata',jsonb_build_object('schema_version',1,'order_id',owned.id,'attempt_id',a.id));
  IF a.request_body::jsonb IS DISTINCT FROM expected THEN RETURN false; END IF;
- -- One bounded statement proves the entire captured prefix against a single
- -- fresh READ COMMITTED snapshot. The caller holds the attempt lock first.
- WITH ordered AS MATERIALIZED (
-  SELECT o.*, row_number() OVER (ORDER BY o.revision) AS position,
-   lag(o.recorded_at,1,d.started_at) OVER (ORDER BY o.revision) AS previous_at
-  FROM payment_observations o WHERE o.attempt_id=a.id
-   AND o.revision<=r.through_observation ORDER BY o.revision LIMIT 1001
- )
- SELECT count(*),coalesce(bool_or(
-   o.position>1000 OR o.revision<>o.position OR o.recorded_at<o.previous_at
-   OR o.recorded_at>resolution.recorded_at OR octet_length(o.snapshot::text)>8192
-   OR o.snapshot IS DISTINCT FROM jsonb_build_object('schema_version',1,'id',o.id,'attempt_id',a.id,
-     'effect_key',o.effect_key,'revision',o.revision,'recorded_at',o.recorded_at,
-     'intent',jsonb_build_object('payment',jsonb_build_object('resource','payment','id',o.provider_id,
-       'profile_id',profile->>'id','mode','test','currency','EUR','amount_minor',gross,
-       'metadata_schema_version',1,'order_id',owned.id,'attempt_id',a.id,'status',o.status),
-       'credential_fingerprint',o.credential_fingerprint))
-   OR o.id !~ '^[a-f0-9]{32}$' OR o.effect_key !~ '^[a-zA-Z0-9-]{1,128}$'
-   OR o.credential_fingerprint !~ '^[a-f0-9]{64}$'
-   OR o.provider_id !~ '^tr_.+$' OR octet_length(o.provider_id)>256
-   OR btrim(o.provider_id)<>o.provider_id OR o.provider_id ~ '[[:cntrl:]]'
-   OR o.status NOT IN ('open','pending','authorized','paid','canceled','expired','failed')
-   OR e.id IS NULL),false)
- INTO seen,invalid_observation
- FROM ordered o LEFT JOIN commerce_outbox e ON e.kind='payment.observation_recorded.v1'
-  AND e.payload->>'observation_id'=o.id AND e.aggregate_id=owned.id AND e.created_at=o.recorded_at
-  AND e.payload=jsonb_build_object('schema_version',1,'order_id',owned.id,'attempt_id',a.id,'observation_id',o.id);
- IF invalid_observation THEN RETURN false; END IF;
- IF seen<>r.through_observation OR (require_current AND EXISTS(
-   SELECT 1 FROM payment_observations WHERE attempt_id=a.id AND revision>r.through_observation))
+ -- With no prior proof, validate the entire bounded prefix in one fresh
+ -- READ COMMITTED statement after the separate attempt lock.
+ IF proved_through IS NULL THEN
+  WITH ordered AS MATERIALIZED (
+   SELECT o.*, row_number() OVER (ORDER BY o.revision) AS position,
+    lag(o.recorded_at,1,d.started_at) OVER (ORDER BY o.revision) AS previous_at
+   FROM payment_observations o WHERE o.attempt_id=a.id
+    AND o.revision<=r.through_observation ORDER BY o.revision LIMIT 1001
+  )
+  SELECT count(*),coalesce(bool_or(
+    o.position>1000 OR o.revision<>o.position OR o.recorded_at<o.previous_at
+    OR o.recorded_at>resolution.recorded_at OR octet_length(o.snapshot::text)>8192
+    OR o.snapshot IS DISTINCT FROM jsonb_build_object('schema_version',1,'id',o.id,'attempt_id',a.id,
+      'effect_key',o.effect_key,'revision',o.revision,'recorded_at',o.recorded_at,
+      'intent',jsonb_build_object('payment',jsonb_build_object('resource','payment','id',o.provider_id,
+        'profile_id',profile->>'id','mode','test','currency','EUR','amount_minor',gross,
+        'metadata_schema_version',1,'order_id',owned.id,'attempt_id',a.id,'status',o.status),
+        'credential_fingerprint',o.credential_fingerprint))
+    OR o.id !~ '^[a-f0-9]{32}$' OR o.effect_key !~ '^[a-zA-Z0-9-]{1,128}$'
+    OR o.credential_fingerprint !~ '^[a-f0-9]{64}$'
+    OR o.provider_id !~ '^tr_.+$' OR octet_length(o.provider_id)>256
+    OR btrim(o.provider_id)<>o.provider_id OR o.provider_id ~ '[[:cntrl:]]'
+    OR o.status NOT IN ('open','pending','authorized','paid','canceled','expired','failed')
+    OR e.id IS NULL),false)
+  INTO seen,invalid_observation
+  FROM ordered o LEFT JOIN commerce_outbox e ON e.kind='payment.observation_recorded.v1'
+   AND e.payload->>'observation_id'=o.id AND e.aggregate_id=owned.id AND e.created_at=o.recorded_at
+   AND e.payload=jsonb_build_object('schema_version',1,'order_id',owned.id,'attempt_id',a.id,'observation_id',o.id);
+  IF invalid_observation OR seen<>r.through_observation THEN RETURN false; END IF;
+ ELSE
+  -- Monotonicity was established by the full proof. Each older resolution
+  -- must still be no earlier than the final observation in its own prefix.
+  IF r.through_observation IS NULL OR r.through_observation<0
+   OR r.through_observation>proved_through OR proved_through>1000
+   OR (r.through_observation>0 AND NOT EXISTS(
+     SELECT 1 FROM payment_observations o WHERE o.attempt_id=a.id
+      AND o.revision=r.through_observation AND o.recorded_at<=resolution.recorded_at))
+  THEN RETURN false; END IF;
+ END IF;
+ IF require_current AND EXISTS(
+   SELECT 1 FROM payment_observations WHERE attempt_id=a.id AND revision>r.through_observation)
  THEN RETURN false; END IF;
  summary=payment_identity_summary(a.id,r.through_observation);
  IF resolution.summary IS DISTINCT FROM summary
@@ -120,5 +133,131 @@ BEGIN
      WHEN jsonb_array_length(summary->'paid_provider_ids')=1 THEN 'received' ELSE 'unconfirmed' END)
  THEN RETURN false; END IF;
  RETURN true;
+END;
+$$;
+
+-- The established native entry always performs the complete proof.
+CREATE OR REPLACE FUNCTION payment_recognition_source(r payment_recognitions, require_current boolean)
+ RETURNS boolean LANGUAGE plpgsql VOLATILE AS $$
+BEGIN
+ RETURN payment_recognition_source_after_prefix(r,require_current,NULL);
+END;
+$$;
+
+-- Prove the greatest bounded, same-attempt recognition prefix once.
+CREATE OR REPLACE FUNCTION refund_reservation_history_exact(wanted_order text) RETURNS boolean LANGUAGE plpgsql VOLATILE AS $$
+DECLARE owned checkout_orders%ROWTYPE; q jsonb; line jsonb; source jsonb; part jsonb;
+ r refund_reservations%ROWTYPE; n integer:=0; i integer; count_lines integer;
+ prior numeric[]; gross numeric; net numeric; vat numeric; captured numeric; captured_net numeric;
+ captured_vat numeric; expected_vat numeric; sum_g numeric; sum_n numeric; sum_v numeric;
+ source_g numeric:=0; source_n numeric:=0; source_v numeric:=0; last_at bigint:=0; sku text;
+ seen_recognitions text[]:='{}'; original_attempt text; event_count integer;
+ recognition payment_recognitions%ROWTYPE; greatest payment_recognitions%ROWTYPE;
+ proved_through bigint; bounded_count integer:=0;
+BEGIN
+ SELECT * INTO owned FROM checkout_orders WHERE id=wanted_order;
+ IF owned.id IS NULL OR octet_length(owned.snapshot::text)>65536 THEN RETURN false; END IF;
+ q=owned.snapshot->'quote';
+ IF jsonb_typeof(q->'lines') IS DISTINCT FROM 'array' OR q->>'currency' IS DISTINCT FROM 'EUR'
+  OR jsonb_array_length(q->'lines') NOT BETWEEN 1 AND 20 THEN RETURN false; END IF;
+ count_lines=jsonb_array_length(q->'lines'); prior=array_fill(0::numeric,ARRAY[count_lines+1]);
+ -- Verify the captured amounts independently and require distinct ordered SKU identities.
+ FOR i IN 0..count_lines LOOP
+  IF i=count_lines THEN source=q->'shipping';
+  ELSE
+   line=q->'lines'->i; source=line->'amounts'; sku=line->>'sku';
+   IF sku IS NULL OR sku='' OR octet_length(sku)>128 OR EXISTS(
+    SELECT 1 FROM jsonb_array_elements(q->'lines') WITH ORDINALITY x(v,j)
+     WHERE j<=i AND v->>'sku'=sku) THEN RETURN false; END IF;
+  END IF;
+  captured=(source->>'gross_minor')::numeric; captured_net=(source->>'net_minor')::numeric; captured_vat=(source->>'vat_minor')::numeric;
+  IF captured IS NULL OR captured_net IS NULL OR captured_vat IS NULL
+   OR captured NOT BETWEEN 0 AND 9007199254740991 OR captured_net NOT BETWEEN 0 AND captured OR captured_vat NOT BETWEEN 0 AND captured
+   OR source IS DISTINCT FROM jsonb_build_object('gross_minor',captured,'net_minor',captured_net,'vat_minor',captured_vat)
+   OR trunc(captured)<>captured OR trunc(captured_net)<>captured_net OR trunc(captured_vat)<>captured_vat
+   OR captured_net+captured_vat<>captured THEN RETURN false; END IF;
+  source_g=source_g+captured; source_n=source_n+captured_net; source_v=source_v+captured_vat;
+ END LOOP;
+ IF source_g NOT BETWEEN 1 AND 9007199254740991 OR q->'total' IS DISTINCT FROM
+  jsonb_build_object('gross_minor',source_g,'net_minor',source_n,'vat_minor',source_v) THEN RETURN false; END IF;
+ -- Evidence is append-only; write guards separately claim the original attempt.
+ -- Capture the bounded set first and prove its greatest referenced prefix.
+ SELECT id INTO original_attempt FROM payment_attempts WHERE order_id=wanted_order;
+ FOR r IN SELECT * FROM refund_reservations WHERE order_id=wanted_order ORDER BY generation LIMIT 17 LOOP
+  bounded_count=bounded_count+1;
+  IF bounded_count>16 OR original_attempt IS NULL
+   OR r.attempt_id IS DISTINCT FROM original_attempt THEN RETURN false; END IF;
+  SELECT * INTO recognition FROM payment_recognitions WHERE id=r.recognition_id;
+  IF recognition.id IS NULL OR recognition.order_id IS DISTINCT FROM wanted_order
+   OR recognition.attempt_id IS DISTINCT FROM original_attempt OR recognition.state IS DISTINCT FROM 'received'
+   OR r.reserved_at<recognition.recorded_at OR r.reserved_at<owned.created_at
+   OR r.reserved_at NOT BETWEEN 0 AND 9007199254740991 THEN RETURN false; END IF;
+  IF greatest.id IS NULL OR recognition.through_observation>greatest.through_observation THEN
+   greatest=recognition;
+  END IF;
+ END LOOP;
+ IF bounded_count>0 THEN
+  IF greatest.id IS NULL OR NOT payment_recognition_source(greatest,false) THEN RETURN false; END IF;
+  proved_through=greatest.through_observation;
+ END IF;
+ FOR r IN SELECT * FROM refund_reservations WHERE order_id=wanted_order ORDER BY generation LIMIT 17 LOOP
+  n=n+1;
+  IF n>16 OR r.generation<>n OR r.reserved_at<last_at OR r.reserved_at>9007199254740991
+   OR r.id !~ '^[a-f0-9]{32}$' OR r.event_id !~ '^[a-f0-9]{32}$'
+   OR r.effect_key !~ '^[a-zA-Z0-9-]{1,128}$' OR r.reason='' OR btrim(r.reason)<>r.reason
+   OR octet_length(r.reason)>240 OR r.reason ~ '[[:cntrl:]]' OR r.transaction_id IS NULL
+   OR NOT EXISTS(SELECT 1 FROM staff_accounts WHERE id=r.actor_id)
+   OR r.attempt_id IS DISTINCT FROM original_attempt OR octet_length(r.allocation::text)>16384
+   OR NOT EXISTS(SELECT 1 FROM commerce_outbox e WHERE e.id=r.event_id AND e.aggregate_id=r.order_id
+    AND e.kind='order.refund_reserved.v1' AND e.created_at=r.reserved_at
+    AND e.payload=jsonb_build_object('schema_version',1,'order_id',r.order_id,
+     'reservation_id',r.id,'reservation_sha256',refund_reservation_digest(r)))
+   OR jsonb_typeof(r.allocation->'lines') IS DISTINCT FROM 'array'
+   OR jsonb_array_length(r.allocation->'lines')<>count_lines
+   OR r.allocation IS DISTINCT FROM jsonb_build_object('schema_version',1,'lines',r.allocation->'lines',
+     'shipping',r.allocation->'shipping','total',r.allocation->'total') THEN RETURN false; END IF;
+  IF NOT r.recognition_id=ANY(seen_recognitions) THEN
+   SELECT * INTO recognition FROM payment_recognitions WHERE id=r.recognition_id;
+   IF recognition.id IS NULL OR recognition.order_id IS DISTINCT FROM wanted_order
+    OR recognition.attempt_id IS DISTINCT FROM original_attempt OR recognition.state IS DISTINCT FROM 'received'
+    OR r.reserved_at<recognition.recorded_at OR r.reserved_at<owned.created_at
+    OR r.reserved_at NOT BETWEEN 0 AND 9007199254740991
+    OR NOT payment_recognition_source_after_prefix(recognition,false,proved_through)
+    OR NOT EXISTS(SELECT 1 FROM commerce_outbox e WHERE e.aggregate_id=owned.id
+      AND e.kind='payment.recognized.v1' AND e.created_at=recognition.recorded_at
+      AND e.payload=jsonb_build_object('schema_version',1,'order_id',owned.id,
+       'attempt_id',recognition.attempt_id,'recognition_id',recognition.id,
+       'recognition_sha256',payment_recognition_digest(recognition))) THEN RETURN false; END IF;
+  END IF;
+  seen_recognitions=array_append(seen_recognitions,r.recognition_id);
+  sum_g=0;sum_n=0;sum_v=0;
+  FOR i IN 0..count_lines LOOP
+   IF i=count_lines THEN source=q->'shipping'; part=r.allocation->'shipping';
+   ELSE source=q->'lines'->i->'amounts'; part=r.allocation->'lines'->i; END IF;
+   gross=(part->>'gross_minor')::numeric; net=(part->>'net_minor')::numeric; vat=(part->>'vat_minor')::numeric;
+   captured=(source->>'gross_minor')::numeric; captured_vat=(source->>'vat_minor')::numeric;
+   IF gross IS NULL OR net IS NULL OR vat IS NULL OR gross NOT BETWEEN 0 AND 9007199254740991
+    OR net NOT BETWEEN 0 AND gross OR vat NOT BETWEEN 0 AND gross
+    OR trunc(gross)<>gross OR trunc(net)<>net OR trunc(vat)<>vat OR net+vat<>gross
+    OR prior[i+1]+gross>captured THEN RETURN false; END IF;
+   IF i=count_lines THEN
+    IF part IS DISTINCT FROM jsonb_build_object('gross_minor',gross,'net_minor',net,'vat_minor',vat) THEN RETURN false; END IF;
+   ELSE
+    IF part IS DISTINCT FROM jsonb_build_object('sku',q->'lines'->i->>'sku','gross_minor',gross,'net_minor',net,'vat_minor',vat) THEN RETURN false; END IF;
+   END IF;
+   expected_vat=refund_reservation_vat_delta(captured,captured_vat,prior[i+1],gross);
+   IF vat<>expected_vat THEN RETURN false; END IF;
+   prior[i+1]=prior[i+1]+gross; sum_g=sum_g+gross;sum_n=sum_n+net;sum_v=sum_v+vat;
+  END LOOP;
+  IF sum_g NOT BETWEEN 1 AND 9007199254740991 OR r.allocation->'total' IS DISTINCT FROM
+   jsonb_build_object('gross_minor',sum_g,'net_minor',sum_n,'vat_minor',sum_v) THEN RETURN false; END IF;
+  last_at=r.reserved_at;
+ END LOOP;
+ IF n<>bounded_count THEN RETURN false; END IF;
+ SELECT count(*) INTO event_count FROM (SELECT 1 FROM commerce_outbox WHERE aggregate_id=wanted_order
+  AND kind='order.refund_reserved.v1' LIMIT 17) bounded_events;
+ IF event_count<>n THEN RETURN false; END IF;
+ RETURN true;
+EXCEPTION WHEN check_violation OR invalid_text_representation OR numeric_value_out_of_range OR invalid_parameter_value OR datatype_mismatch OR division_by_zero THEN RETURN false;
 END;
 $$;

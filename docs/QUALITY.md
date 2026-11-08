@@ -719,6 +719,8 @@ At maximum history, validate 16 distinct recognition prefixes through 1,000
 observations and the complete 20-line refund journal under the existing
 two-second statement budget. Keep historical and current proof checks against
 gaps, time regressions, changed snapshots and incorrect reciprocal events.
+With an intact longest prefix, damage an earlier resolution's time and verify
+that read-only refund history rejects it until the exact source is restored.
 
 ### Private refund execution proposals
 
