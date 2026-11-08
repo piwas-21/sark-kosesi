@@ -3,56 +3,14 @@
 //! This checks ciphertext length and relational custody, not AEAD authenticity.
 //! A same-length ciphertext modification is detected only by a later authenticated opening.
 use super::*;
+mod source;
+pub(super) use source::Source;
+use source::lock_source;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum ClaimOutcome {
     Started,
     AlreadyStarted,
-}
-
-#[derive(sqlx::FromRow)]
-struct Source {
-    created_at: i64,
-    expires_at: i64,
-    identity: Option<String>,
-    mode: String,
-    consumed_at: Option<i64>,
-    consumed_xid_empty: bool,
-    envelope_key: Option<String>,
-    nonce_counter: Option<i64>,
-    fingerprint: Option<Vec<u8>>,
-}
-impl Source {
-    /// Validate an exact stored header before looking up or writing a start.
-    fn validate(&self, key: &VerificationDeliveryKey) -> Result<i64, VerificationError> {
-        if self.mode != "envelope" || self.consumed_at.is_some() || !self.consumed_xid_empty {
-            return Err(VerificationError::Denied);
-        }
-        if self.envelope_key.as_deref() != Some(key.key_id.as_str()) {
-            return Err(VerificationError::Denied);
-        }
-        let fingerprint = self
-            .fingerprint
-            .as_deref()
-            .ok_or(VerificationError::Unavailable)?;
-        if fingerprint != key.fingerprint.as_slice() {
-            return Err(VerificationError::Denied);
-        }
-        let counter = self.nonce_counter.ok_or(VerificationError::Unavailable)?;
-        let identity = self
-            .identity
-            .as_deref()
-            .ok_or(VerificationError::Unavailable)?;
-        if normalize_email(identity).as_deref() != Some(identity)
-            || self.created_at < 0
-            || self.created_at.checked_add(LIFETIME) != Some(self.expires_at)
-            || self.expires_at > MAX_QUOTE_UNIX_SECONDS
-            || !(1..=1_000_000).contains(&counter)
-        {
-            return Err(VerificationError::Unavailable);
-        }
-        Ok(counter)
-    }
 }
 
 #[derive(sqlx::FromRow)]
@@ -63,6 +21,19 @@ struct Started {
     started_at: i64,
     current_transaction: bool,
     valid_source: bool,
+    transaction_id: Option<String>,
+}
+
+/// Only the transaction that created the durable start can construct this value.
+pub(super) struct Permit {
+    pub(super) verifier: [u8; 32],
+    source: Source,
+    started_at: i64,
+    transaction_id: String,
+}
+pub(super) enum InternalClaim {
+    New(Box<Permit>),
+    AlreadyStarted,
 }
 
 /// Commit the one local start while the challenge is still live and locked.
@@ -74,23 +45,23 @@ pub async fn claim(
     key: &VerificationDeliveryKey,
 ) -> Result<ClaimOutcome, VerificationError> {
     let observed = ObservedClock::new(clock, 0);
-    bounded_now(&observed)?;
-    let mut tx = begin_durable(pool).await?;
-    let claimed: Option<Vec<u8>> = sqlx::query_scalar(
-        "SELECT verifier FROM email_verification_challenges WHERE verifier=$1 FOR UPDATE",
-    )
-    .bind(verifier.as_slice())
-    .fetch_optional(&mut *tx)
-    .await
-    .map_err(|_| VerificationError::Unavailable)?;
-    if claimed.is_none() {
-        return Err(VerificationError::Denied);
+    match claim_with_permit(pool, verifier, &observed, key).await? {
+        InternalClaim::New(_) => Ok(ClaimOutcome::Started),
+        InternalClaim::AlreadyStarted => Ok(ClaimOutcome::AlreadyStarted),
     }
-    // READ COMMITTED obtains a fresh source snapshot after a possible lock wait.
-    let source: Source = sqlx::query_as("SELECT c.created_at,c.expires_at,CASE WHEN octet_length(c.email_identity)<=254 THEN c.email_identity END AS identity,c.delivery_mode AS mode,c.consumed_at,c.consumed_xid IS NULL AS consumed_xid_empty,left(e.key_id,65) AS envelope_key,e.nonce_counter,CASE WHEN octet_length(k.key_fingerprint)=32 THEN k.key_fingerprint END AS fingerprint FROM email_verification_challenges c LEFT JOIN email_verification_delivery_envelopes e ON e.verifier=c.verifier LEFT JOIN email_verification_delivery_keys k ON k.key_id=e.key_id WHERE c.verifier=$1")
-        .bind(verifier.as_slice()).fetch_one(&mut *tx).await.map_err(|_| VerificationError::Unavailable)?;
+}
+
+pub(super) async fn claim_with_permit(
+    pool: &PgPool,
+    verifier: &[u8; 32],
+    observed: &dyn Clock,
+    key: &VerificationDeliveryKey,
+) -> Result<InternalClaim, VerificationError> {
+    bounded_now(observed)?;
+    let mut tx = begin_durable(pool).await?;
+    let source = lock_source(&mut tx, verifier).await?;
     let counter = source.validate(key)?;
-    let at = bounded_now(&observed)?;
+    let at = bounded_now(observed)?;
     check_live(&source, at)?;
     // Reuse the native exact source predicate without creating a start yet.
     let source_valid: bool = sqlx::query_scalar("SELECT email_verification_delivery_start_source(ROW($1::bytea,$2::text,$3::bigint,$4::bytea,$5::bigint,pg_current_xact_id())::email_verification_delivery_starts)")
@@ -102,11 +73,11 @@ pub async fn claim(
     if let Some(previous) = read_start(&mut tx, verifier).await? {
         validate_start(&previous, key, counter, &source, at)?;
         require_durable(&mut tx).await?;
-        check_live(&source, bounded_now(&observed)?)?;
+        check_live(&source, bounded_now(observed)?)?;
         tx.commit()
             .await
             .map_err(|_| VerificationError::Unavailable)?;
-        return Ok(ClaimOutcome::AlreadyStarted);
+        return Ok(InternalClaim::AlreadyStarted);
     }
     sqlx::query("INSERT INTO email_verification_delivery_starts(verifier,key_id,nonce_counter,key_fingerprint,started_at) VALUES($1,$2,$3,$4,$5)")
         .bind(verifier.as_slice()).bind(&key.key_id).bind(counter).bind(key.fingerprint.as_slice()).bind(at)
@@ -122,19 +93,54 @@ pub async fn claim(
     if saved.started_at != at || !saved.current_transaction {
         return Err(VerificationError::Unavailable);
     }
+    let transaction_id = saved.transaction_id.ok_or(VerificationError::Unavailable)?;
     require_durable(&mut tx).await?;
-    check_live(&source, bounded_now(&observed)?)?;
+    check_live(&source, bounded_now(observed)?)?;
     tx.commit()
         .await
         .map_err(|_| VerificationError::Unavailable)?;
-    Ok(ClaimOutcome::Started)
+    Ok(InternalClaim::New(Box::new(Permit {
+        verifier: *verifier,
+        source,
+        started_at: at,
+        transaction_id,
+    })))
+}
+
+/// Re-lock and validate the exact prior start and encrypted source before opening.
+pub(super) async fn source_for_open(
+    tx: &mut Transaction<'_, Postgres>,
+    permit: &Permit,
+    key: &VerificationDeliveryKey,
+    clock: &dyn Clock,
+) -> Result<Source, VerificationError> {
+    let source = lock_source(tx, &permit.verifier).await?;
+    if source.consumed_at.is_some() || !source.consumed_xid_empty {
+        return Err(VerificationError::Denied);
+    }
+    let at = bounded_now(clock)?;
+    check_live(&source, at)?;
+    if source != permit.source {
+        return Err(VerificationError::Unavailable);
+    }
+    let saved = read_start(tx, &permit.verifier)
+        .await?
+        .ok_or(VerificationError::Unavailable)?;
+    let counter = source.nonce_counter.ok_or(VerificationError::Unavailable)?;
+    validate_start(&saved, key, counter, &source, at)?;
+    if saved.started_at != permit.started_at
+        || saved.transaction_id.as_deref() != Some(permit.transaction_id.as_str())
+    {
+        return Err(VerificationError::Unavailable);
+    }
+    Ok(source)
 }
 
 async fn read_start(
     tx: &mut Transaction<'_, Postgres>,
     verifier: &[u8; 32],
 ) -> Result<Option<Started>, VerificationError> {
-    sqlx::query_as("SELECT left(s.key_id,65) AS key_id,s.nonce_counter,CASE WHEN octet_length(s.key_fingerprint)=32 THEN s.key_fingerprint END AS key_fingerprint,s.started_at,COALESCE(s.transaction_id=pg_current_xact_id_if_assigned(),false) AS current_transaction,COALESCE(email_verification_delivery_start_source(s),false) AS valid_source FROM email_verification_delivery_starts s WHERE s.verifier=$1")
+    sqlx::query_as("SELECT left(s.key_id,65) AS key_id,s.nonce_counter,CASE WHEN octet_length(s.key_fingerprint)=32 THEN s.key_fingerprint END AS key_fingerprint,s.started_at,COALESCE(s.transaction_id=pg_current_xact_id_if_assigned(),false) AS current_transaction,COALESCE(email_verification_delivery_start_source(s),false) AS valid_source,left(s.transaction_id::text,21) AS transaction_id FROM email_verification_delivery_starts s WHERE s.verifier=$1")
         .bind(verifier.as_slice()).fetch_optional(&mut **tx).await.map_err(|_| VerificationError::Unavailable)
 }
 fn validate_start(
@@ -157,7 +163,7 @@ fn validate_start(
     }
     Ok(())
 }
-fn check_live(source: &Source, at: i64) -> Result<(), VerificationError> {
+pub(super) fn check_live(source: &Source, at: i64) -> Result<(), VerificationError> {
     if at < source.created_at {
         return Err(VerificationError::Unavailable);
     }

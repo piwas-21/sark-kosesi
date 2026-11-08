@@ -176,9 +176,11 @@ debits before credential work. Password replacement requires an explicitly suppl
 integrity-checked offline blocklist and fails closed on unavailable or expired
 snapshots. Private email-verification issuance can now commit the challenge and
 its encrypted delivery envelope together. A separate private claim records one
-start while that challenge is live; a start has no transport outcome. Real corpus
-review, coordinated freshness and withdrawal, key and retention operations,
-message delivery, neutral browser responses and measured overload behavior remain P4 work.
+start while that challenge is live. Only a newly committed start can authenticate
+the stored envelope and hand a short-lived bearer to a trusted in-process caller.
+There is no transport outcome. Real corpus review, coordinated freshness and
+withdrawal, key and retention operations, message delivery, neutral browser
+responses and measured overload behavior remain P4 work.
 An optional loopback test-only verification redemption API consumes a supplied
 proof after preview authentication, exact Origin validation and shared admission.
 It issues no session and remains disabled without explicit test configuration.

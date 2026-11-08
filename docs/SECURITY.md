@@ -506,11 +506,15 @@ leaves its nonce burned. Store keys separately from database
 backups and keep plaintext bearers and raw keys out of logs and storage.
 A separate private start accepts only an exact live envelope with its registered
 key fingerprint and previously committed nonce. It creates one durable record
-and emits no bearer, ciphertext or mailbox. The start does not authenticate
-ciphertext contents; transport must authenticate the complete envelope before
-using any bearer. A committed start with no separate outcome stays unknown.
-Authenticated opening, anti-enumeration, token transport, mailbox delivery and
-recovery remain separate requirements. Private verified account establishment composes the exact
+and emits no bearer, ciphertext or mailbox. A trusted in-process consumer can
+receive borrowed bearer bytes and the normalized mailbox only after its own new
+start commits, the source is rechecked under lock and the ciphertext and
+recovered verifier authenticate. No transaction spans the callback. Expiry or
+consumption can still occur after the last local check. The caller must keep the
+borrowed values out of logs and storage. A committed start with no separate
+outcome stays unknown; replay cannot reopen it.
+Anti-enumeration, token transport, mailbox delivery and recovery remain separate
+requirements. Private verified account establishment composes the exact
 challenge consumption and a unique immutable normalized identity in one transaction.
 The database assigns the consumption transaction ID and requires the account insert
 to match; legacy or separately committed consumption cannot be adopted. This attests

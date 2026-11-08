@@ -15,6 +15,14 @@ fn source(key: &VerificationDeliveryKey) -> Source {
         envelope_key: Some(key.key_id.clone()),
         nonce_counter: Some(1),
         fingerprint: Some(key.fingerprint.to_vec()),
+        ciphertext: Some(vec![0; 48]),
+        envelope_version: Some(1),
+        challenge_xid: Some("11".into()),
+        envelope_xid: Some("11".into()),
+        nonce_xid: Some("10".into()),
+        nonce_verifier: Some(vec![2; 32]),
+        reserved_at: Some(999),
+        registered_at: Some(998),
     }
 }
 fn started(key: &VerificationDeliveryKey) -> Started {
@@ -25,6 +33,7 @@ fn started(key: &VerificationDeliveryKey) -> Started {
         started_at: 1100,
         current_transaction: false,
         valid_source: true,
+        transaction_id: Some("12".into()),
     }
 }
 

@@ -435,8 +435,13 @@ specified in [security](SECURITY.md#private-email-verification-challenge-custody
 A private start claim locks the live challenge, checks its exact prior envelope,
 nonce and configured key fingerprint, then durably records one start. Repeated
 claims while the source is live can observe that start without creating a second
-one. The claim performs no authenticated opening or transport. Design those
-steps and ambiguous-outcome recovery before connecting any mail provider.
+one. The separate in-process opening path shares the exact claim transaction.
+Only its new committed start can open the captured envelope. It re-locks and
+checks the exact source, authenticates the complete ciphertext and verifies the
+recovered bearer, then completes the transaction before calling the trusted
+in-process consumer. A failed or interrupted opening does not restore the start.
+Design transport outcomes and ambiguous-outcome recovery before connecting any
+mail provider.
 A private account operation now
 locks and consumes that exact proof and inserts one unique immutable normalized
 identity in the same transaction; the database binds consumption and insertion to

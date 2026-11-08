@@ -1703,9 +1703,14 @@ A private delivery start locks the challenge before reading the exact stored
 envelope, nonce and registered key fingerprint. The immutable start has one row
 per verifier and requires an earlier envelope transaction, a live challenge and
 durable commit. Consumption serializes on the same row, and native checks
-prevent starting and consuming in one transaction. The claim performs no
-decryption or network I/O. A committed start is local custody with no provider
-outcome, and a repeat cannot create another start.
+prevent starting and consuming in one transaction. The standalone claim performs
+no decryption or network I/O. A committed start is local custody with no provider
+outcome, and a repeat cannot create another start. A distinct trusted in-process
+path can authenticate and open only the envelope whose start it just committed.
+It re-locks the challenge, revalidates the start and source, authenticates the
+ciphertext and matches the recovered verifier. It releases the transaction before
+passing short-lived borrowed values to its caller. A prior start cannot be used to
+reconstruct the in-process authority.
 
 A private PostgreSQL operation locks and consumes an exact email challenge while
 inserting a unique immutable customer identity and its verification reference in
