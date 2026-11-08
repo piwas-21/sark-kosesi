@@ -378,8 +378,10 @@ supervision or live provider activation follows from deploying the empty preview
    proposal supplies no net balance or permission to contact the provider.
    Private test-key exact-item refund and chargeback GETs now require a matched
    paid original and retain minimal bounded observations only. A separate
-   paid-parent test-profile GET retains four optional provider aggregate amounts
-   without inferring missing amounts or deciding net balance. One private,
+   paid-parent test-profile GET commits its exact received source before I/O and
+   retains four independent optional provider aggregates with a reciprocal
+   event. Effect replay restores the operation or result. Net balance remains
+   unresolved. One private,
    payment-specific test-profile list page now provides bounded reversal identity
    hints and a scoped continuation after verifying the same paid original.
    Every page retains the frozen attempt, payment, reversal kind, actual key

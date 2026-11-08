@@ -58,7 +58,7 @@ fn present_amount<'de, D: Deserializer<'de>>(d: D) -> Result<Option<i64>, D::Err
 impl VerifiedReconciliationClient {
     /// Fetch only the exact paid original. These observations neither establish a
     /// net balance nor authorize a refund, even when every field is present.
-    pub async fn fetch_reversal_totals(
+    pub(crate) async fn fetch_reversal_totals(
         &self,
         attempt: &AttemptSnapshot,
         payment_id: &str,

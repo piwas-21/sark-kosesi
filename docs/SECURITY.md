@@ -454,6 +454,12 @@ errors out of observations and diagnostics. The PostgreSQL writer role remains t
 The journal preserves positive provider facts and leaves current financial,
 stock and fulfilment decisions to separately authorized operations.
 
+The paid-parent aggregate GET uses a single committed permit tied to the exact
+received source and authenticated test credential. The credential fingerprint is
+private and binds the fetched fact to the operation. The durable event carries
+the order, operation and digest. Keep raw credentials and provider identifiers
+out of event payloads and diagnostics.
+
 The private page journal accepts only a verified payment-scoped list result.
 The attempt lock serializes page admission. The native journal enforces bounded
 history, one successor per predecessor and exact continuation scope. Receipt
