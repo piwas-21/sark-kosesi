@@ -5,7 +5,7 @@ use commerce_application::Locale;
 mod catalogue {
     include!("../../../../tests/fixtures/approved_catalogue.rs");
 }
-use crate::payment_test_fixture::{order, quote};
+use crate::payment_test_fixture::{order, promotion, quote};
 use commerce_domain::{
     guest_baskets::BasketUpdate,
     inventory::WarehouseChange,
@@ -13,7 +13,7 @@ use commerce_domain::{
 };
 use commerce_infrastructure::{
     checkout_orders::create_order,
-    checkout_quotes::issue_quote,
+    checkout_quotes::{issue_promoted_quote, issue_quote},
     guest_baskets::*,
     stock::{WarehouseRequest, warehouse_movement},
 };
@@ -272,6 +272,30 @@ pub async fn accepted_with_store(
     only_covers: bool,
     paid: bool,
 ) -> Fixture {
+    accept_order(pool, store, time, only_covers, paid, false).await
+}
+pub async fn accepted_with_promotion(pool: &PgPool) -> Fixture {
+    seed(pool).await;
+    pool.execute("INSERT INTO staff_capabilities VALUES('author','promotion.manage'),('reviewer','promotion.review')")
+        .await
+        .expect("isolated promotion grants");
+    promotion::draft(pool, &promotion::policy(), "settlement-promotion-draft")
+        .await
+        .expect("promotion draft");
+    promotion::decide(pool, "settlement-promotion-review", 1, 0, true)
+        .await
+        .expect("independent promotion approval");
+    let (store, time) = quote::store(pool, 1100);
+    accept_order(pool, store, time, false, true, true).await
+}
+async fn accept_order(
+    pool: &PgPool,
+    store: GuestSessionStore,
+    time: Arc<quote::Time>,
+    only_covers: bool,
+    paid: bool,
+    promoted: bool,
+) -> Fixture {
     let session = tower_sessions::Session::new(None, Arc::new(store.clone()), None);
     let established = ensure_session(&store, &session).await.expect("guest");
     let csrf = established.csrf_token().to_owned();
@@ -298,22 +322,29 @@ pub async fn accepted_with_store(
     )
     .await
     .expect("exact two-member basket");
-    let quote = issue_quote(
-        &store,
-        &owner,
-        &csrf,
-        Locale::Nl,
-        &quote::request("settlement-quote"),
-    )
-    .await
-    .expect("owned accepted quote")
-    .snapshot;
+    let request = quote::request("settlement-quote");
+    let quote_id = if promoted {
+        issue_promoted_quote(&store, &owner, &csrf, Locale::Nl, &request, "COURTYARD")
+            .await
+            .expect("owned promoted quote")
+            .snapshot
+            .original
+            .binding
+            .quote_id
+    } else {
+        issue_quote(&store, &owner, &csrf, Locale::Nl, &request)
+            .await
+            .expect("owned accepted quote")
+            .snapshot
+            .binding
+            .quote_id
+    };
     let order = create_order(
         &store,
         &owner,
         &csrf,
         "settlement-order",
-        &order::intent(&quote.binding.quote_id),
+        &order::intent(&quote_id),
         &order::seller(),
     )
     .await
@@ -406,7 +437,8 @@ pub async fn counts(pool: &PgPool) -> (i64, i64, i64, i64, i64) {
     sqlx::query_as("SELECT (SELECT count(*) FROM order_stock_settlements),(SELECT count(*) FROM commerce_outbox WHERE kind='order.stock_settled.v1'),(SELECT count(*) FROM stock_movements WHERE action='consume-hold'),(SELECT count(*) FROM basket_hold_groups),(SELECT count(*) FROM stock_holds)").fetch_one(pool).await.expect("canonical settlement effects")
 }
 pub async fn unchanged(pool: &PgPool) -> Value {
-    sqlx::query_scalar("SELECT jsonb_build_object('orders',(SELECT jsonb_agg(to_jsonb(o) ORDER BY id) FROM checkout_orders o),'attempts',(SELECT jsonb_agg(to_jsonb(a) ORDER BY id) FROM payment_attempts a),'groups',(SELECT jsonb_agg(to_jsonb(g) ORDER BY id) FROM basket_hold_groups g),'members',(SELECT jsonb_agg(to_jsonb(m) ORDER BY hold_id) FROM basket_hold_members m),'source',(SELECT jsonb_agg(to_jsonb(l) ORDER BY hold_id,component_code) FROM stock_hold_lines l))").fetch_one(pool).await.expect("original source snapshots")
+    // Old rows lack the new promotion marker. A SQL null adds no custody.
+    sqlx::query_scalar("SELECT jsonb_build_object('orders',(SELECT jsonb_agg(CASE WHEN to_jsonb(o)->'promotion_redemption_transaction_id'='null'::jsonb THEN to_jsonb(o)-'promotion_redemption_transaction_id' ELSE to_jsonb(o) END ORDER BY id) FROM checkout_orders o),'attempts',(SELECT jsonb_agg(to_jsonb(a) ORDER BY id) FROM payment_attempts a),'groups',(SELECT jsonb_agg(to_jsonb(g) ORDER BY id) FROM basket_hold_groups g),'members',(SELECT jsonb_agg(to_jsonb(m) ORDER BY hold_id) FROM basket_hold_members m),'source',(SELECT jsonb_agg(to_jsonb(l) ORDER BY hold_id,component_code) FROM stock_hold_lines l))").fetch_one(pool).await.expect("original source snapshots")
 }
 pub async fn footprint(pool: &PgPool) -> Value {
     sqlx::query_scalar("SELECT jsonb_build_object('balances',(SELECT jsonb_agg(to_jsonb(b) ORDER BY component_code) FROM stock_balances b),'holds',(SELECT jsonb_agg(to_jsonb(h) ORDER BY id) FROM stock_holds h),'moves',(SELECT jsonb_agg(to_jsonb(m) ORDER BY sequence) FROM stock_movements m),'settlements',(SELECT jsonb_agg(to_jsonb(s) ORDER BY id) FROM order_stock_settlements s),'events',(SELECT jsonb_agg(to_jsonb(e) ORDER BY id) FROM commerce_outbox e WHERE kind='order.stock_settled.v1'))").fetch_one(pool).await.expect("all atomic physical effects")

@@ -41,6 +41,16 @@ pub struct CapturedAmount {
     pub net_minor: i64,
     pub vat_minor: i64,
 }
+impl CapturedAmount {
+    /// Convert captured minor units without inventing values for invalid money.
+    pub fn breakdown(&self) -> Result<AmountBreakdown, SnapshotError> {
+        Ok(AmountBreakdown {
+            gross: money(self.gross_minor)?,
+            net: money(self.net_minor)?,
+            vat: money(self.vat_minor)?,
+        })
+    }
+}
 impl From<&AmountBreakdown> for CapturedAmount {
     fn from(value: &AmountBreakdown) -> Self {
         Self {

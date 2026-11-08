@@ -416,9 +416,9 @@ its existing policy, publication, image and physical-stock claims. Promotion ter
 are closed, bounded server values; no customer request can supply them, and no
 promotion or coupon route is installed. Exact publication/SKU and country scopes,
 a minimum eligible item subtotal, explicit maximum discount and UTC instants apply.
-A quote supports one promotion, without stacking or shipping discounts. Reviewed
-promotion configuration is described below; atomic budget/redemption claims remain
-required inside order creation before any payment can use a promotion.
+A quote supports one promotion, without stacking or shipping discounts. Private
+promoted order acceptance records the lifetime discount and redemption claim
+inside the order transaction.
 
 Allocation version 1 rounds a percentage once, half up, on eligible extended-line
 gross. Fixed or percentage discounts are capped by their explicit maximum and the
@@ -442,8 +442,8 @@ stable provider attempt. Accountant/market acceptance remains a separate gate.
 A pure order-scoped allocation composes that arithmetic over the validated accepted
 order quote. It requires one explicit prior gross and requested gross for every SKU
 and shipping, rejects duplicate, unknown, missing and excessive allocations, and
-returns line, shipping and total gross/net/VAT deltas. The accepted quote does not
-yet capture a promotion.
+returns line, shipping and total gross/net/VAT deltas from the amounts captured
+after any promotion.
 
 ### Private refund reservations
 
@@ -567,8 +567,7 @@ explicit EUR currency, canonical country/product selection, fixed/percentage ter
 explicit total discount/redemption ceilings and an optional per-customer limit.
 Stored JSON must include the nullable customer-limit field; an explicit null
 records the absence of that limit. A missing field fails validation. Limits are
-lifetime terms for the promotion identity, never a new budget for each
-revision. They are configuration, not an installed coupon or redemption ledger.
+lifetime terms for the promotion identity and carry forward across revisions.
 
 Immutable anchors and real no-op writes serialize draft/review history, including
 stale repeatable-read imports. Effect retries bind full canonical terms, actor,
@@ -585,13 +584,16 @@ checks, without extending a lifetime or clamping a backward observation. Authori
 claims survive all writes; cancellation and final clock failures roll back history.
 No source review, provider request or network side effect is implied by a receipt.
 
-Order composition must retain current promotion, market and catalogue claims while
-computing final allocations and claiming lifetime budget/redemption counters in
-the same order/stock/outbox transaction. Policy revision cannot reset prior usage
-or rewrite captured order discounts. Per-customer limits require verified server
-identity; a guest cookie is neither a verified account nor a per-person proof.
-Guest eligibility and verified-customer limits must be explicit before a customer
-coupon bridge is implemented. No redemption, refund or payment effect is enabled.
+Private order composition claims the owner and basket, market, exclusive promotion
+anchor, sorted catalogue sources and physical components in that order. The
+promotion anchor serializes current review changes and capacity use across buyers.
+An immutable redemption per accepted order carries the exact approved source,
+gross discount, lifetime sequence and cumulative discount. The latest indexed
+receipt supplies the prior usage across policy revisions. A database constraint
+requires the matching debit to commit with the order, holds and event. Per-customer
+limits require verified server identity and remain unavailable to guest checkout.
+Capacity stays used after a hold expires until a separate disposition policy is
+implemented.
 
 ### Non-selling HTTPS staging
 
@@ -1578,9 +1580,9 @@ claims through insertion and the final clock and ownership checks. Cap the
 quote expiry at the promotion end. Exact replay and reads validate the stored
 allocation against the original immutable approved source; later withdrawal does
 not extend or confer authority on an unexpired historical receipt. The legacy
-quote projection and order path cannot consume the promoted format. A separate
-order transaction must implement lifetime redemption and discount accounting
-before checkout can accept it.
+quote projection rejects the promoted format. Private order acceptance requires
+the original commercial sources and the exact current approved promotion and
+allocations again before committing the debit.
 
 An unexpired historical snapshot can remain readable after source withdrawal; this
 is owned history, not fresh readiness. Order creation must independently compare
@@ -1619,10 +1621,14 @@ Seller policy is a required trusted server argument with explicit identity, tax
 registration choice, document versions/digests, locale, evidence and validity.
 Nothing installs or infers real seller/legal facts. Email validation checks bounded
 single-mailbox syntax only, including UTF-8; it proves neither delivery nor identity.
-Initial orders require a positive payable total and accept no coupon. Promotion
-budget accounting, order/payment/fulfilment transitions, retained-data operations,
-public HTTP/UI/edge controls, outbox processing and actual provider transport remain
-separate work. Private test attempts and initial dispatch custody are described above. No transaction performs provider/network I/O or sends a customer message.
+Initial orders require a positive payable total. Version 1 orders retain their
+original snapshot format. Version 2 orders retain the exact promoted envelope.
+Payment attempts, recognition, refund limits and linked-order amounts use the
+captured payable allocations. Stock settlement uses original quantities and BOMs.
+Order, payment and fulfilment transitions, retained-data operations, public
+HTTP/UI/edge controls, outbox processing and actual provider transport remain
+separate work. No transaction performs provider/network I/O or sends a customer
+message.
 
 ### Private verified customer identity
 

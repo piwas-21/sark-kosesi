@@ -150,13 +150,12 @@ fn validate_capture(
 ) -> Result<(), RefundError> {
     // A new currency requires an explicit decision about refund support.
     let (Currency::EUR, Currency::EUR) = (received.currency, binding.currency);
-    let totals = order
-        .quote
-        .totals()
+    order
+        .validate()
         .map_err(|_| RefundError::InvalidStoredData)?;
     if received.order_id != order.identity.id
         || received.attempt_id != attempt
-        || received.amount_minor != totals.total.gross.minor_units()
+        || received.amount_minor != order.payable_total().gross_minor
         || binding.amount_minor != received.amount_minor
     {
         return Err(RefundError::InvalidStoredData);

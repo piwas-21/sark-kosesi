@@ -1,6 +1,7 @@
 //! Pure allocations over an accepted order; no payment or refund authority.
 use crate::{
-    Money, checkout_orders::OrderSnapshot, promotions::allocate_refund, quotes::AmountBreakdown,
+    Money, checkout_orders::OrderSnapshot, checkout_quotes::CapturedAmount,
+    promotions::allocate_refund, quotes::AmountBreakdown,
 };
 use std::collections::BTreeMap;
 
@@ -89,10 +90,12 @@ pub fn allocate_order_refund(
     order
         .validate()
         .map_err(|_| RefundAllocationError::InvalidOrder)?;
-    let quote = order
-        .quote
-        .totals()
-        .map_err(|_| RefundAllocationError::InvalidOrder)?;
+    let quote = &order.quote;
+    let breakdown = |amount: &CapturedAmount| {
+        amount
+            .breakdown()
+            .map_err(|_| RefundAllocationError::InvalidOrder)
+    };
     if lines.len() != quote.lines.len() {
         return Err(RefundAllocationError::InvalidAllocation);
     }
@@ -102,14 +105,17 @@ pub fn allocate_order_refund(
             return Err(RefundAllocationError::InvalidAllocation);
         }
     }
-    let shipping_delta = delta(&quote.shipping, shipping)?;
+    let shipping_delta = delta(&breakdown(&quote.shipping)?, shipping)?;
     let mut total = shipping_delta.clone();
     let mut allocated = Vec::with_capacity(lines.len());
-    for line in &quote.lines {
+    for (index, line) in quote.lines.iter().enumerate() {
         let amounts = by_sku
             .remove(line.sku.as_str())
             .ok_or(RefundAllocationError::InvalidAllocation)?;
-        let result = delta(&line.amounts, amounts)?;
+        let captured = order
+            .payable_line_amounts(index)
+            .ok_or(RefundAllocationError::InvalidOrder)?;
+        let result = delta(&breakdown(captured)?, amounts)?;
         total = sum(&total, &result)?;
         allocated.push((line.sku.clone(), result));
     }

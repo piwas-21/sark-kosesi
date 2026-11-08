@@ -11,7 +11,8 @@ use commerce_domain::payment_attempts::recognition::State;
 use sqlx::{Executor, PgPool};
 use std::sync::{Arc, atomic::Ordering};
 async fn preserved(pool: &PgPool) -> Value {
-    sqlx::query_scalar("SELECT jsonb_build_object('orders',(SELECT jsonb_agg(to_jsonb(t) ORDER BY id) FROM checkout_orders t),'attempts',(SELECT jsonb_agg(to_jsonb(t) ORDER BY id) FROM payment_attempts t),'balances',(SELECT jsonb_agg(to_jsonb(t) ORDER BY component_code) FROM stock_balances t),'holds',(SELECT jsonb_agg(to_jsonb(t) ORDER BY id) FROM stock_holds t),'movements',(SELECT jsonb_agg(to_jsonb(t) ORDER BY sequence) FROM stock_movements t))").fetch_one(pool).await.expect("immutable money and physical custody")
+    // Old rows lack the new promotion marker. A SQL null adds no custody.
+    sqlx::query_scalar("SELECT jsonb_build_object('orders',(SELECT jsonb_agg(CASE WHEN to_jsonb(t)->'promotion_redemption_transaction_id'='null'::jsonb THEN to_jsonb(t)-'promotion_redemption_transaction_id' ELSE to_jsonb(t) END ORDER BY id) FROM checkout_orders t),'attempts',(SELECT jsonb_agg(to_jsonb(t) ORDER BY id) FROM payment_attempts t),'balances',(SELECT jsonb_agg(to_jsonb(t) ORDER BY component_code) FROM stock_balances t),'holds',(SELECT jsonb_agg(to_jsonb(t) ORDER BY id) FROM stock_holds t),'movements',(SELECT jsonb_agg(to_jsonb(t) ORDER BY sequence) FROM stock_movements t))").fetch_one(pool).await.expect("immutable money and physical custody")
 }
 async fn recognition_counts(pool: &PgPool) -> (i64, i64, i64) {
     sqlx::query_as("SELECT (SELECT count(*) FROM payment_recognitions),(SELECT count(*) FROM payment_recognition_current),(SELECT count(*) FROM commerce_outbox WHERE kind='payment.recognized.v1')").fetch_one(pool).await.expect("recognition atomic counts")

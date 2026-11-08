@@ -65,7 +65,7 @@ async fn clone_quote(
 }
 
 #[sqlx::test(migrator = "MIGRATOR")]
-async fn exact_promotion_reference_and_legacy_order_gate_fail_closed(pool: PgPool) {
+async fn exact_promotion_reference_and_order_binding_fail_closed(pool: PgPool) {
     let quote = issued(&pool).await;
     let mut wrong = pool.begin().await.expect("bad reference transaction");
     check_violation(
@@ -94,8 +94,11 @@ async fn exact_promotion_reference_and_legacy_order_gate_fail_closed(pool: PgPoo
     .bind(&quote)
     .execute(&mut *order_tx)
     .await
-    .expect_err("promoted quote cannot enter legacy order guard");
-    check_violation(error, "Promoted indicative quotes cannot create orders");
+    .expect_err("promoted order requires an exact intent and snapshot");
+    check_violation(
+        error,
+        "Order requires exact owned quote, intent and source snapshots",
+    );
     order_tx.rollback().await.expect("discard rejected order");
     // Model a damaged import in this isolated database only: even without the
     // reference columns, the version-two envelope must never enter checkout.
@@ -120,7 +123,7 @@ async fn exact_promotion_reference_and_legacy_order_gate_fail_closed(pool: PgPoo
     .execute(&mut *corrupt)
     .await
     .expect_err("version-two envelope is rejected even with missing promotion metadata");
-    check_violation(error, "Promoted indicative quotes cannot create orders");
+    check_violation(error, "Legacy order requires a legacy quote");
     corrupt
         .rollback()
         .await
@@ -307,6 +310,37 @@ async fn populated_schema47_upgrade_preserves_owned_v1_and_accepts_first_v2(pool
     let counts: (i64, i64) = sqlx::query_as("SELECT (SELECT count(*) FROM guest_quote_snapshots),(SELECT coalesce(sum(issued),0)::bigint FROM guest_quote_quota)")
         .fetch_one(&pool).await.expect("shared history and quota");
     assert_eq!(counts, (2, 2));
+    MIGRATOR
+        .run(&pool)
+        .await
+        .expect("upgrade through current redemption schema");
+    let legacy_order = commerce_infrastructure::checkout_orders::create_order(
+        &store,
+        &key,
+        &csrf,
+        "upgrade-legacy-order",
+        &order::intent(id),
+        &order::seller(),
+    )
+    .await
+    .expect("legacy quote still creates an order after upgrade");
+    assert!(legacy_order.snapshot.promoted_quote.is_none());
+    let promoted_order = commerce_infrastructure::checkout_orders::create_order(
+        &store,
+        &key,
+        &csrf,
+        "upgrade-promoted-order",
+        &order::intent(&promoted.original.binding.quote_id),
+        &order::seller(),
+    )
+    .await
+    .expect("promoted quote creates its debit after upgrade");
+    assert!(promoted_order.snapshot.promoted_quote.as_ref() == Some(&promoted));
+    let debit_count: i64 = sqlx::query_scalar("SELECT count(*) FROM promotion_redemptions")
+        .fetch_one(&pool)
+        .await
+        .expect("one promoted debit");
+    assert_eq!(debit_count, 1);
 }
 
 #[sqlx::test(migrator = "MIGRATOR")]

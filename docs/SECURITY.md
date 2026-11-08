@@ -181,8 +181,7 @@ quotes reuse reviewed market/publication/stock claims and final source clocks;
 promotion expiry cannot extend country or photography eligibility. Stored quote
 arithmetic is revalidated before discounting, and every amount remains bounded EUR
 minor units. Refund arithmetic preserves immutable captured tax but grants no
-finance capability, ownership, provider attempt or restocking effect. Atomic
-redemption limits and authenticated checkout remain prerequisites.
+finance capability, ownership, provider attempt or restocking effect.
 
 Guest basket credentials use a maintained stateful transport and a private SQLx
 store. The opt-in internal routes retain preview authentication and a validated
@@ -242,9 +241,16 @@ Keep the same guest ownership, CSRF and issuance limits; a client-supplied
 promotion, customer identity or amount confers no authority. The latest exact
 independently approved promotion must still be eligible after source waits.
 Historical replay validates the exact original review, amounts, intent and
-expiry. Do not project the undiscounted nested snapshot through a legacy route
-or accept a promoted quote into the legacy order path. Neither format adds a
-public coupon or makes a redemption, stock or payment decision.
+expiry. The legacy projection rejects promoted quotes. Private promoted order
+acceptance requires the exact current approval and a same-transaction debit.
+The promotion anchor serializes capacity claims and approval changes. The
+immutable ledger keeps usage across revisions and prevents order or quote reuse.
+The database independently verifies the original publication price, market VAT
+and shipping, and the approved discount formula and allocation before recording
+a debit.
+Guest checkout rejects a policy that requires a verified customer allowance.
+Public coupon access still requires authenticated checkout and trusted-edge
+abuse controls.
 
 The development-only minimatch exception expired on 2026-11-03. The
 [dependency review](DEPENDENCIES.md#development-minimatch-advisory) documents

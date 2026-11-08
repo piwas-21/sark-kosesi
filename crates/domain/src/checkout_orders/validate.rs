@@ -4,7 +4,12 @@ impl OrderSnapshot {
     pub fn validate(&self) -> Result<(), OrderError> {
         let id = &self.identity;
         let binding = &self.quote.binding;
-        if self.schema_version != ORDER_SNAPSHOT_VERSION
+        if self.schema_version
+            != if self.promoted_quote.is_some() {
+                2
+            } else {
+                ORDER_SNAPSHOT_VERSION
+            }
             || !hex(&id.id, 32)
             || !hex(&id.stock_group_id, 32)
             || id.basket_id != binding.basket_id
@@ -48,10 +53,11 @@ impl OrderSnapshot {
         crate::holds::HoldWindow::new(id.created_at, id.hold_expires_at)
             .map_err(|_| OrderError::InvalidSnapshot)?;
         if id.hold_expires_at > crate::checkout_quotes::MAX_QUOTE_UNIX_SECONDS
-            || self.quote.total.gross_minor <= 0
+            || self.payable_total().gross_minor <= 0
         {
             return Err(OrderError::InvalidSnapshot);
         }
+        self.validate_promotion()?;
         self.buyer
             .validate()
             .map_err(|_| OrderError::InvalidSnapshot)?;
@@ -77,6 +83,81 @@ impl OrderSnapshot {
             {
                 return Err(OrderError::InvalidSnapshot);
             }
+        }
+        Ok(())
+    }
+}
+
+impl OrderSnapshot {
+    pub fn payable_total(&self) -> &crate::checkout_quotes::CapturedAmount {
+        self.promoted_quote
+            .as_ref()
+            .map_or(&self.quote.total, |p| &p.total)
+    }
+    pub fn payable_line_amounts(
+        &self,
+        index: usize,
+    ) -> Option<&crate::checkout_quotes::CapturedAmount> {
+        match &self.promoted_quote {
+            Some(p) => p.lines.get(index).map(|line| &line.amounts),
+            None => self.quote.lines.get(index).map(|line| &line.amounts),
+        }
+    }
+    fn validate_promotion(&self) -> Result<(), OrderError> {
+        let Some(p) = &self.promoted_quote else {
+            return Ok(());
+        };
+        if p.schema_version != 2
+            || p.original != self.quote
+            || p.allocation_version != 1
+            || p.promotion.revision <= 0
+            || p.promotion.review_revision <= 0
+            || !crate::catalogue_authoring::merchant_code(&p.promotion.id)
+            || p.shipping != self.quote.shipping
+            || p.lines.len() != self.quote.lines.len()
+            || p.discount_minor <= 0
+        {
+            return Err(OrderError::InvalidSnapshot);
+        }
+        let mut gross = p.shipping.gross_minor;
+        let mut net = p.shipping.net_minor;
+        let mut vat = p.shipping.vat_minor;
+        let mut discount = 0_i64;
+        for (line, original) in p.lines.iter().zip(&self.quote.lines) {
+            if line.sku != original.sku
+                || line.discount_minor < 0
+                || original
+                    .amounts
+                    .gross_minor
+                    .checked_sub(line.discount_minor)
+                    != Some(line.amounts.gross_minor)
+            {
+                return Err(OrderError::InvalidSnapshot);
+            }
+            let discounted = crate::Money::eur(line.amounts.gross_minor)
+                .map_err(|_| OrderError::InvalidSnapshot)?;
+            let calculated = crate::quotes::split(discounted, original.vat_basis_points)
+                .map_err(|_| OrderError::InvalidSnapshot)?;
+            if crate::checkout_quotes::CapturedAmount::from(&calculated) != line.amounts {
+                return Err(OrderError::InvalidSnapshot);
+            }
+            gross = gross
+                .checked_add(line.amounts.gross_minor)
+                .ok_or(OrderError::InvalidSnapshot)?;
+            net = net
+                .checked_add(line.amounts.net_minor)
+                .ok_or(OrderError::InvalidSnapshot)?;
+            vat = vat
+                .checked_add(line.amounts.vat_minor)
+                .ok_or(OrderError::InvalidSnapshot)?;
+            discount = discount
+                .checked_add(line.discount_minor)
+                .ok_or(OrderError::InvalidSnapshot)?;
+        }
+        if discount != p.discount_minor
+            || (gross, net, vat) != (p.total.gross_minor, p.total.net_minor, p.total.vat_minor)
+        {
+            return Err(OrderError::InvalidSnapshot);
         }
         Ok(())
     }

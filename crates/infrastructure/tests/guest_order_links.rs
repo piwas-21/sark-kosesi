@@ -13,17 +13,20 @@ use commerce_application::Locale;
 use commerce_infrastructure::{
     MIGRATOR,
     checkout_orders::create_order,
-    checkout_quotes::issue_quote,
+    checkout_quotes::{issue_promoted_quote, issue_quote},
     customer_sessions::{self, CustomerSessionToken},
     guest_baskets::{GuestCredential, GuestSessionStore},
     guest_order_links::{self, GuestOrderLinkToken, LinkError},
 };
 use sha2::{Digest, Sha256};
-use sqlx::PgPool;
+use sqlx::{Executor, PgPool};
 use std::{sync::atomic::Ordering, time::Duration};
 
 #[path = "support/checkout_order_fixture.rs"]
 mod fixture;
+#[allow(dead_code)]
+#[path = "support/promotion_policy_fixture.rs"]
+mod promotion_fixture;
 #[allow(dead_code)]
 #[path = "support/checkout_quote_fixture.rs"]
 mod quote_fixture;
@@ -95,6 +98,66 @@ fn verifier(token: &GuestOrderLinkToken) -> Vec<u8> {
 async fn counts(pool: &PgPool) -> (i64, i64) {
     sqlx::query_as("SELECT (SELECT count(*) FROM customer_order_links), (SELECT count(*) FROM guest_order_link_proofs WHERE consumed_at IS NOT NULL)")
         .fetch_one(pool).await.expect("custody counts")
+}
+
+#[sqlx::test(migrator = "MIGRATOR")]
+async fn linked_promoted_order_projects_payable_line_and_total(pool: PgPool) {
+    seed(&pool).await;
+    pool.execute("INSERT INTO staff_capabilities VALUES('author','promotion.manage'),('reviewer','promotion.review')")
+        .await
+        .expect("isolated promotion grants");
+    promotion_fixture::draft(&pool, &promotion_fixture::policy(), "linked-promotion")
+        .await
+        .expect("promotion draft");
+    promotion_fixture::decide(&pool, "linked-promotion-review", 1, 0, true)
+        .await
+        .expect("independent approval");
+    let (store, time) = store(&pool, 1100);
+    let (owner, csrf) = guest(&store).await;
+    let key = GuestCredential::from_session(&owner).expect("guest credential");
+    let quote = issue_promoted_quote(
+        &store,
+        &key,
+        &csrf,
+        Locale::Nl,
+        &request("promo"),
+        "COURTYARD",
+    )
+    .await
+    .expect("owned promotion")
+    .snapshot;
+    let order = create_order(
+        &store,
+        &key,
+        &csrf,
+        "accept-promo",
+        &fixture::intent(&quote.original.binding.quote_id),
+        &fixture::seller(),
+    )
+    .await
+    .expect("accepted promoted order")
+    .snapshot
+    .identity
+    .id;
+    let (_, session) = account(&pool, "buyer@example.test", &time).await;
+    let proof = guest_order_links::issue(&store, &key, &csrf, &order)
+        .await
+        .expect("owner proof");
+    guest_order_links::link(&pool, &session, &order, &proof, time.as_ref())
+        .await
+        .expect("verified linked account");
+    let view = guest_order_links::read_linked_order(&pool, &session, &order, time.as_ref())
+        .await
+        .expect("linked order");
+    assert_eq!(view.lines.len(), 1);
+    assert_eq!(
+        (
+            view.lines[0].quantity,
+            view.lines[0].amounts.gross_minor,
+            view.total.gross_minor
+        ),
+        (3, 36535, 37745)
+    );
 }
 
 #[sqlx::test(migrator = "MIGRATOR")]

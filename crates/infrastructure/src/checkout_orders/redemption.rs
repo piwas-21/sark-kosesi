@@ -1,0 +1,65 @@
+use super::*;
+use commerce_domain::{
+    checkout_quotes::PromotedQuoteSnapshot, promotion_policies::PromotionPolicy,
+};
+
+/// Market precedes this exclusive promotion claim; catalogue and stock follow it.
+pub(super) async fn claim(
+    scope: &mut BasketScope,
+    promoted: Option<&PromotedQuoteSnapshot>,
+) -> Result<Option<PromotionPolicy>, OrderStoreError> {
+    let Some(p) = promoted else {
+        return Ok(None);
+    };
+    let (current, review) =
+        crate::promotion_policies::current_for_redemption(scope.transaction(), &p.promotion.id)
+            .await
+            .map_err(|e| match e {
+                crate::promotion_policies::PolicyError::Database(_) => OrderStoreError::Database,
+                crate::promotion_policies::PolicyError::InvalidStoredData => {
+                    OrderStoreError::InvalidStoredData
+                }
+                _ => OrderStoreError::Unavailable,
+            })?;
+    if current.promotion.revision != p.promotion.revision || review != p.promotion.review_revision {
+        return Err(OrderStoreError::QuoteChanged);
+    }
+    // check_at reconstructs the approved allocation and rejects guest use of
+    // any policy with a per-customer limit.
+    p.check_at(&current, review, scope.checked_at()?)?;
+    let latest: Option<(i64, i64)> = sqlx::query_as(
+        "SELECT redemption_number,lifetime_discount_minor FROM promotion_redemptions WHERE promotion_id=$1 ORDER BY redemption_number DESC LIMIT 1",
+    ).bind(&p.promotion.id).fetch_optional(&mut **scope.transaction()).await?;
+    let (count, spent) = match latest {
+        Some((count, spent))
+            if (1..=1_000_000).contains(&count)
+                && (1..=commerce_domain::quotes::MAX_MINOR_UNITS).contains(&spent) =>
+        {
+            (count, spent)
+        }
+        Some(_) => return Err(OrderStoreError::InvalidStoredData),
+        None => (0, 0),
+    };
+    let next_spent = spent
+        .checked_add(p.discount_minor)
+        .ok_or(OrderStoreError::Unavailable)?;
+    if count >= i64::from(current.limits.total_redemptions)
+        || next_spent > current.limits.total_discount_minor
+    {
+        return Err(OrderStoreError::Unavailable);
+    }
+    Ok(Some(current))
+}
+
+pub(super) async fn insert(
+    tx: &mut Transaction<'_, Postgres>,
+    snapshot: &OrderSnapshot,
+) -> Result<(), OrderStoreError> {
+    if let Some(p) = &snapshot.promoted_quote {
+        sqlx::query("INSERT INTO promotion_redemptions(order_id,quote_id,promotion_id,promotion_revision,promotion_review_revision,discount_minor,created_at) VALUES($1,$2,$3,$4,$5,$6,$7)")
+            .bind(&snapshot.identity.id).bind(&snapshot.identity.quote_id).bind(&p.promotion.id)
+            .bind(p.promotion.revision).bind(p.promotion.review_revision).bind(p.discount_minor)
+            .bind(snapshot.identity.created_at).execute(&mut **tx).await?;
+    }
+    Ok(())
+}

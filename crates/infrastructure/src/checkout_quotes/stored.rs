@@ -3,7 +3,7 @@ use commerce_domain::{
     checkout_quotes::PromotedQuoteSnapshot, promotion_policies::PromotionPolicy,
 };
 
-pub(super) enum StoredQuote {
+pub(crate) enum StoredQuote {
     Original(Box<QuoteSnapshot>),
     Promoted(Box<PromotedQuoteSnapshot>, Box<PromotionPolicy>),
 }
@@ -148,7 +148,7 @@ pub(super) async fn by_effect(
         None => Ok(None),
     }
 }
-pub(super) async fn by_id_any(
+pub(crate) async fn by_id_any(
     tx: &mut Transaction<'_, Postgres>,
     owner: &str,
     id: &str,

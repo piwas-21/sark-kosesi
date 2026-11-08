@@ -64,12 +64,19 @@ pub async fn create_order(
     if intent.expected_basket_revision != scope.revision() {
         return Err(OrderStoreError::Conflict);
     }
-    let quote = crate::checkout_quotes::snapshot_in_transaction(
-        scope.transaction(),
-        &owner,
-        &intent.quote_id,
-    )
-    .await?;
+    let captured =
+        crate::checkout_quotes::by_id_any(scope.transaction(), &owner, &intent.quote_id).await?;
+    let (quote, promoted) = match captured {
+        crate::checkout_quotes::StoredQuote::Original(quote) => (*quote, None),
+        crate::checkout_quotes::StoredQuote::Promoted(promoted, historical) => {
+            promoted.check_at(
+                &historical,
+                promoted.promotion.review_revision,
+                scope.checked_at()?,
+            )?;
+            (promoted.original.clone(), Some(*promoted))
+        }
+    };
     quote.check_at(scope.checked_at()?)?;
     if quote.binding.basket_revision != scope.revision()
         || quote.binding.country != intent.shipping_address.country
@@ -94,15 +101,28 @@ pub async fn create_order(
     };
     let policy =
         market_policies::reviewed_policy_in_transaction(scope.transaction(), &input).await?;
+    let current_promotion = redemption::claim(&mut scope, promoted.as_ref()).await?;
     let clock = scope.clock();
-    let mut proof = quotes::prepare_order_in_transaction(
-        scope.transaction(),
-        clock.as_ref(),
-        locale,
-        &input,
-        std::slice::from_ref(&policy.policy),
-    )
-    .await?;
+    let mut proof = if let Some(p) = &current_promotion {
+        quotes::prepare_promoted_order_in_transaction(
+            scope.transaction(),
+            clock.as_ref(),
+            locale,
+            &input,
+            std::slice::from_ref(&policy.policy),
+            &p.promotion,
+        )
+        .await?
+    } else {
+        quotes::prepare_order_in_transaction(
+            scope.transaction(),
+            clock.as_ref(),
+            locale,
+            &input,
+            std::slice::from_ref(&policy.policy),
+        )
+        .await?
+    };
     let mut binding: QuoteBinding = quote.binding.clone();
     binding.policy_id = policy.policy.id.clone();
     binding.policy_revision = policy.policy.revision;
@@ -111,6 +131,9 @@ pub async fn create_order(
     if current != quote {
         return Err(OrderStoreError::QuoteChanged);
     }
+    // claim() has reconstructed the promoted allocation from this exact original
+    // and current reviewed policy. The stock-locked evaluation above reprices
+    // the same original and policy; the equality check retains both claims.
     let created_at = scope.checked_at()?;
     quote.check_at(created_at)?;
     proof.check_at(created_at)?;
@@ -149,7 +172,11 @@ pub async fn create_order(
         return Err(OrderStoreError::Conflict);
     }
     let snapshot = OrderSnapshot {
-        schema_version: ORDER_SNAPSHOT_VERSION,
+        schema_version: if promoted.is_some() {
+            2
+        } else {
+            ORDER_SNAPSHOT_VERSION
+        },
         identity: OrderIdentity {
             id,
             basket_id: owner,
@@ -159,6 +186,7 @@ pub async fn create_order(
             hold_expires_at,
         },
         quote,
+        promoted_quote: promoted,
         buyer: intent.buyer.clone(),
         shipping_address: intent.shipping_address.clone(),
         billing_address: intent.billing_address.clone(),
@@ -170,9 +198,13 @@ pub async fn create_order(
         .validate()
         .map_err(|_| OrderStoreError::InvalidStoredData)?;
     stored::insert(scope.transaction(), &snapshot, intent, effect, &event_id).await?;
+    redemption::insert(scope.transaction(), &snapshot).await?;
     let at = scope.checked_at()?;
     proof.check_at(at)?;
     snapshot.quote.check_at(at)?;
+    if let (Some(p), Some(policy)) = (&snapshot.promoted_quote, &current_promotion) {
+        p.check_at(policy, p.promotion.review_revision, at)?;
+    }
     seller
         .permits(locale.internal(), at)
         .map_err(|_| OrderStoreError::Unavailable)?;

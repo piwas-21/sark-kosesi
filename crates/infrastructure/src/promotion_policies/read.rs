@@ -175,3 +175,17 @@ pub(crate) async fn historical_for_quote(
 #[cfg(test)]
 #[path = "../../tests/support/promotion_quote_source_controls.rs"]
 mod quote_source_tests;
+
+/// Serialize lifetime redemption with review changes before catalogue and stock claims.
+pub(crate) async fn current_for_redemption(
+    tx: &mut Transaction<'_, Postgres>,
+    id: &str,
+) -> Result<(PromotionPolicy, i32), PolicyError> {
+    let found: Option<String> =
+        sqlx::query_scalar("SELECT id FROM promotion_policy_anchors WHERE id=$1 FOR UPDATE")
+            .bind(id)
+            .fetch_optional(&mut **tx)
+            .await?;
+    found.ok_or(PolicyError::NotFound)?;
+    current_for_quote(tx, id).await
+}

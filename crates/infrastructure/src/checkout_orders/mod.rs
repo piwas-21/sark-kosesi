@@ -12,6 +12,7 @@ use commerce_domain::{
 use sqlx::{Postgres, Transaction};
 mod create;
 mod read;
+mod redemption;
 mod stored;
 pub use create::create_order;
 pub(crate) use create::products as product_snapshots;
