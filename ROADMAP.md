@@ -135,15 +135,13 @@ shipping amounts and binds the current received recognition, observation waterma
 and original payment under its frozen test profile. Exact retries return the
 historical proposal under current staff authority. Operator recovery, provider
 reversal reconciliation, reservation disposition and dispatch custody remain open.
-Customer coupon routes and budget claims remain pending.
 Private promotion drafts and independent exact-revision reviews now persist
 canonical eligibility/discount terms and explicit lifetime budget/redemption limits.
-New drafts and withdrawal block older approvals; no coupons or grants are seeded.
-These configuration limits are not spending claims. Private immutable guest orders
-now compose accepted quote/seller/market/merchandise snapshots, whole-basket holds
-and minimal outbox events atomically. Exact receipt retries preserve history;
-changed commercial terms require fresh acceptance. Complete country/territory
-readiness evidence, atomic promotion/customer limits, public checkout controls,
+New drafts and withdrawal block older approvals for new orders. Private guest
+orders now commit reviewed discount allocations, lifetime redemption usage,
+whole-basket holds and a minimal outbox event together. Exact retries preserve
+history and prior redemptions carry across policy revisions. Complete country and
+territory readiness, verified-customer limits, cancellation disposition, public checkout controls,
 order/payment lifecycle, Mollie sandbox attempts/
 reconciliation, invoices and executed refunds remain P3 work under the [implementation plan](docs/IMPLEMENTATION.md). P3 owns
 late-payment reallocation. Supervision of expiry remains a deployment gate.
@@ -198,10 +196,10 @@ now retain exact source revisions, checked totals and short fixed expiry, with
 intent-bound retries and final source checks after writes. Historical prices grant
 no current order authority. A private promoted snapshot retains exact original
 and discounted amounts, the approved promotion, shared issuance limits and
-the shorter expiry. Legacy order creation cannot consume it; atomic lifetime
-discount and redemption claims are the next promotion slice. Continue immutable order/address/policy snapshots and
-fresh source/amount validation in the atomic whole-basket reservation transaction.
-Complete trusted-edge abuse controls before exposing customer routes.
+the shorter expiry. Private order creation revalidates the approved terms and
+debits the lifetime count and cents at acceptance. Complete verified-customer
+checkout, capacity disposition after cancellation and trusted-edge abuse controls
+before exposing customer routes.
 
 Private durable owned-order test attempts and one serialized dispatch-start fact
 now compose the frozen request policy, existing physically backed reservation and

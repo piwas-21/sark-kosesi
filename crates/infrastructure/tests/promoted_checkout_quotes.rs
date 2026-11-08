@@ -2,7 +2,6 @@
 use commerce_application::Locale;
 use commerce_infrastructure::{
     MIGRATOR,
-    checkout_orders::{OrderStoreError, create_order},
     checkout_quotes::*,
     guest_baskets::{GuestCredential, GuestError},
 };
@@ -99,19 +98,6 @@ async fn owned_promoted_quote_exact_money_replay_and_v1_boundaries(pool: PgPool)
     assert!(matches!(
         issue_promoted_quote(&store, &key, &csrf, Locale::Nl, &request, "OTHER").await,
         Err(QuoteStoreError::Conflict)
-    ));
-    let intent = order::intent(&p.original.binding.quote_id);
-    assert!(matches!(
-        create_order(
-            &store,
-            &key,
-            &csrf,
-            "promoted-order",
-            &intent,
-            &order::seller()
-        )
-        .await,
-        Err(OrderStoreError::QuoteNotFound)
     ));
     let after = fixture::counts(&pool).await;
     assert_eq!(

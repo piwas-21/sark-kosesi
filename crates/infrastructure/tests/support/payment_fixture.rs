@@ -3,6 +3,9 @@
 #[path = "checkout_order_fixture.rs"]
 pub mod order;
 #[allow(dead_code)]
+#[path = "promotion_policy_fixture.rs"]
+pub mod promotion;
+#[allow(dead_code)]
 #[path = "checkout_quote_fixture.rs"]
 pub mod quote;
 use commerce_application::{Locale, payment_requests::*};

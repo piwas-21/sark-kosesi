@@ -52,7 +52,7 @@ pub async fn prepare_attempt(
         profile: current.profile,
         configuration_sha256: current.sha256,
         currency: commerce_domain::Currency::EUR,
-        amount_minor: order.quote.total.gross_minor,
+        amount_minor: order.payable_total().gross_minor,
         created_at,
         dispatch_before: order.identity.hold_expires_at,
     };

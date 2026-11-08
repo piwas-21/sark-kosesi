@@ -12,7 +12,9 @@ enum StockClaim {
     Indicative,
     Reservation,
 }
-pub(crate) use proof::{QuoteProof, prepare_promoted_in_transaction};
+pub(crate) use proof::{
+    QuoteProof, prepare_promoted_in_transaction, prepare_promoted_order_in_transaction,
+};
 
 #[derive(Debug)]
 pub enum QuoteFailure {

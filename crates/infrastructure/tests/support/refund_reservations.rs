@@ -141,6 +141,61 @@ async fn shared_refund_prefix_keeps_each_historical_resolution_time_bound(pool: 
 }
 
 #[sqlx::test(migrator = "MIGRATOR")]
+async fn promoted_order_keeps_discounted_payment_and_refund_but_original_physical_bom(
+    pool: PgPool,
+) {
+    use super::order_stock_cases::fixture::{accepted_with_promotion, balances};
+
+    let f = accepted_with_promotion(&pool).await;
+    let order = &f.order.identity.id;
+    assert_eq!(f.order.quote.total.gross_minor, 25900);
+    assert_eq!(f.frozen.snapshot().binding.amount_minor, 25400);
+    let body: serde_json::Value = serde_json::from_str(f.frozen.body()).expect("test request");
+    assert_eq!(body["amount"]["value"], "254.00");
+    let proof = recognition(&pool, order).await;
+    crate::order_stock::settle(&pool, f.time.as_ref(), f.ids.as_ref(), order)
+        .await
+        .expect("original component quantities still settle");
+    assert_eq!(
+        balances(&pool).await,
+        vec![
+            ("SEAT-COVER".into(), 6, 1, 0),
+            ("SEAT-FOAM".into(), 2, 1, 0)
+        ]
+    );
+    let token = staff(&pool, "refund-finance", 94).await;
+    let mut lines = [
+        RefundLine {
+            sku: "SET-COVERS",
+            gross_minor: 12345,
+        },
+        RefundLine {
+            sku: "SET-FILLED",
+            gross_minor: 11846,
+        },
+    ];
+    let input = request(order, &proof, "too-much", &lines, 1210);
+    assert_eq!(
+        reserve(&pool, &token, f.time.as_ref(), f.ids.as_ref(), input)
+            .await
+            .err(),
+        Some(RefundError::InvalidRequest)
+    );
+    assert_eq!(counts(&pool).await, (0, 0));
+    lines[1].gross_minor = 11845;
+    let input = request(order, &proof, "complete", &lines, 1210);
+    let receipt = reserve(&pool, &token, f.time.as_ref(), f.ids.as_ref(), input)
+        .await
+        .expect("reserve the exact payable amounts");
+    let total = receipt.allocation.total;
+    assert_eq!(
+        (total.gross_minor, total.net_minor, total.vat_minor),
+        (25400, 20991, 4409)
+    );
+    assert_eq!(counts(&pool).await, (1, 1));
+}
+
+#[sqlx::test(migrator = "MIGRATOR")]
 async fn partial_then_complete_preserves_captured_sku_and_shipping_tax_without_other_effects(
     pool: PgPool,
 ) {

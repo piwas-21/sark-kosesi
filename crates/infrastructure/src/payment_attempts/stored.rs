@@ -72,7 +72,7 @@ async fn restore(
     let b = &frozen.snapshot().binding;
     let order = checkout_orders::snapshot_in_transaction(tx, &b.basket_id, &b.order_id).await?;
     if b.stock_group_id != order.identity.stock_group_id
-        || b.amount_minor != order.quote.total.gross_minor
+        || b.amount_minor != order.payable_total().gross_minor
         || b.created_at < order.identity.created_at
         || b.dispatch_before != order.identity.hold_expires_at
     {

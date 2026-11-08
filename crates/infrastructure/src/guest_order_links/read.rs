@@ -129,15 +129,22 @@ async fn project(
     let lines = snapshot
         .quote
         .lines
-        .into_iter()
-        .zip(snapshot.products)
-        .map(|(line, product)| LinkedOrderLine {
-            sku: line.sku,
-            title: product.title,
-            quantity: line.quantity,
-            amounts: line.amounts,
+        .iter()
+        .zip(&snapshot.products)
+        .enumerate()
+        .map(|(index, (line, product))| {
+            Ok(LinkedOrderLine {
+                sku: line.sku.clone(),
+                title: product.title.clone(),
+                quantity: line.quantity,
+                amounts: snapshot
+                    .payable_line_amounts(index)
+                    .ok_or(LinkError::Unavailable)?
+                    .clone(),
+            })
         })
-        .collect();
+        .collect::<Result<Vec<_>, LinkError>>()?;
+    let total = snapshot.payable_total().clone();
     Ok(LinkedOrderView {
         order_id: row.order_id,
         created_at: snapshot.identity.created_at,
@@ -145,7 +152,7 @@ async fn project(
         currency: snapshot.quote.currency,
         lines,
         shipping: snapshot.quote.shipping,
-        total: snapshot.quote.total,
+        total,
     })
 }
 

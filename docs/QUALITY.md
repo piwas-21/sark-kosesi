@@ -297,9 +297,15 @@ For private owned promoted quotes, use literal mixed-rate discount and tax
 fixtures. Exercise guest ownership, CSRF, ineligible or withdrawn sources,
 expiry during a real source wait, old quote compatibility, shared issue limits
 and cross-format retries. Reject damaged immutable source or amount records.
-Check that the legacy quote projection and order guard both reject the promoted
-format, and that issue, denial and replay have no stock, order or redemption
-effect. Keep the existing critical coverage and isolated PostgreSQL gates.
+Check that the legacy projection rejects the promoted format and that indicative
+issue and replay leave stock, orders and redemption usage untouched. For order
+acceptance, race distinct baskets for the last redemption and the last available
+cents under an actual anchor wait. Assert exact immutable usage across policy
+revisions, rollback after late expiry or write failure, replay and ownership,
+and native rejection of a missing or mismatched debit. Verify exact discounted
+amounts in the private test payment, paid recognition and refund reservation,
+with the original quantities in stock settlement. Keep the existing critical
+coverage and isolated PostgreSQL gates.
 
 Whole-basket reservation logic retains 95% critical native line/branch thresholds.
 Independent PostgreSQL oracles cover a last shared component, complete loser

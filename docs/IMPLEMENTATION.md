@@ -229,10 +229,10 @@ supervision or live provider activation follows from deploying the empty preview
    from actual reviewed tax/carrier/returns inputs before enabling destinations.
    Promotion configuration now has immutable canonical drafts, independent
    exact-revision reviews, explicit EUR currency, separate unseeded capabilities and lifetime
-   discount/redemption ceilings. Latest approved state only; configuration creates
-   no coupon route or spending claim. Integrate atomic lifetime budget/redemption
-   accounting with order transactions and verified customer limits. A guest cookie
-   cannot establish a per-person allowance. Version 1 indicative fixed/percentage quote and captured
+   discount/redemption ceilings. Private guest order acceptance requires the
+   latest approval and atomically appends to the promotion's lifetime usage.
+   Implement per-customer claims through verified checkout identity. A guest
+   cookie cannot establish a per-person allowance. Version 1 indicative fixed/percentage quote and captured
    refund arithmetic is implemented; an order-scoped allocator applies it to explicit
    SKU and shipping balances from accepted quotes. The private refund reservation
    command below derives the prior balances from immutable reservation history.
@@ -251,13 +251,14 @@ supervision or live provider activation follows from deploying the empty preview
    A private version-2 promoted snapshot additionally retains one exact
    approved promotion and its immutable original and discounted allocations.
    It shares the owner, effect namespace and quota and expires by the promotion
-   end. The legacy order path cannot consume it. Add atomic lifetime budget and
-   redemption claims before accepting promoted quotes at checkout. Complete
+   end. Accepting it in private checkout binds the exact discounted quote and a
+   cumulative immutable redemption to the new order. Complete
    trusted-edge abuse controls before a public customer bridge. Private immutable order/address/seller/market/product snapshots now compose
    whole-basket holds and a minimal outbox event in one transaction. Current basket,
    publications, reviewed policy and exact amounts are revalidated; changes require
    fresh acceptance. One quote creates one order and exact retries preserve history.
-   Finish atomic coupon claims, lifecycle/payment transitions and retention before
+   Finish verified-customer coupon claims, redemption disposition after
+   cancellation, lifecycle/payment transitions and retention before
    public checkout; seller/legal facts remain required trusted configuration.
    Expose the same-origin API/contracts and checkout UI only with those controls.
 4. The private test-payment domain now models immutable attempt identity, exact
