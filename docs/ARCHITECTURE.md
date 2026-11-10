@@ -480,8 +480,22 @@ parent and test credential. An omitted reversal timestamp leaves reversal status
 unknown. Unknown responses and 404 leave the child unresolved.
 The project follows Mollie's [refund GET](https://docs.mollie.com/reference/get-refund)
 and [chargeback GET](https://docs.mollie.com/reference/get-chargeback) contracts.
-Authenticated amounts above the original remain visible for review. Some methods
-allow additional reimbursement, such as return shipping. [Mollie payment reference](https://docs.mollie.com/reference/get-payment)
+
+A separate GET-only test-profile operation reads the optional aggregate fields
+from the [paid parent payment](https://docs.mollie.com/reference/get-payment)
+after exact attempt, profile, payment identity, amount and metadata matching.
+It preserves reported refunded, remaining, captured and charged-back amounts
+as EUR minor units. Omission remains distinct from zero, and reported refunds
+above the original stay visible for review.
+
+The trusted operation commits against the exact current received recognition,
+observation watermark, payment and actual test credential before I/O. An opaque
+permit can start one GET within 60 seconds. An exact effect replay restores the
+pending operation or its receipt. The result is bound to the historical operation
+and can retain a later response from a GET that started in time. The immutable
+amounts and a minimal digest event commit together under the original attempt
+claim. They supply evidence for later reconciliation. Net balance and refund
+execution require separate authority and evidence.
 
 A private list operation verifies that same paid parent before each bounded GET
 of its refund or chargeback collection. It returns only exact candidate identities;

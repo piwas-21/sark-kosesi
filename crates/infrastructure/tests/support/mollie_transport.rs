@@ -1022,3 +1022,12 @@ pub(crate) mod reversal_item_supervision_cases;
 
 #[path = "refund_execution_proposals.rs"]
 mod refund_execution_proposal_cases;
+
+#[path = "mollie_reversal_totals.rs"]
+mod reversal_total_cases;
+
+#[path = "mollie_paid_parent_evidence.rs"]
+mod paid_parent_evidence_cases;
+
+#[path = "mollie_paid_parent_faults.rs"]
+mod paid_parent_fault_cases;

@@ -765,6 +765,18 @@ cannot change after early constraint evaluation. Verify that the operation does
 not change reserved amounts, stock or payment state. Proposal modules use the
 existing 95% native line and branch thresholds for critical financial code.
 
+### Private paid-parent reversal totals
+
+Exercise the private paid-parent aggregate GET through authenticated loopback
+HTTP. Cover matching and mismatched original payment identity, profile, mode,
+amount and metadata. Check exact decimal minor units, omitted versus explicit
+zero, reported amounts above original gross, malformed money objects and
+duplicate aggregate keys. Pair the loopback with isolated PostgreSQL. Check
+current source before the permit, one start per effect, rotated credential
+custody, start expiry, pending replay, historical result binding, and rollback
+when the reciprocal event is suppressed or altered. Keep provider acceptance
+separate from this evidence.
+
 ### Private password credential custody
 
 Use isolated PostgreSQL with two verified accounts and actual Argon2id

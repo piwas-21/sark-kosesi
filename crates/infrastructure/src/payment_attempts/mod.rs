@@ -20,6 +20,7 @@ mod eligibility;
 pub(crate) mod evidence;
 pub mod identities;
 pub mod observations;
+pub mod paid_parent_evidence;
 mod prepare;
 mod read;
 pub mod recognition;

@@ -116,7 +116,10 @@ gross/net/VAT deltas. A private, confirmed finance reservation claims these
 amounts once against the accepted order and current received evidence, with
 immutable cumulative accounting and a minimal outbox event. Private test-key
 exact-item refund and chargeback GETs now verify the paid original and return
-minimal bounded observations. Payment-specific test-profile list pages now yield
+minimal bounded observations. A separate paid-parent GET records an immutable
+operation against the exact received recognition and retains the authenticated
+aggregate amounts with a reciprocal event. Net balance remains unresolved. Payment-specific
+test-profile list pages now yield
 only bounded reversal identity hints and scoped continuations after verifying the
 paid original. Every verified page retains the authenticated request scope,
 including empty and terminal pages. A private journal records exact authenticated child

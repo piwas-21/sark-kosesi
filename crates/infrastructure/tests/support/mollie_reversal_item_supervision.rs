@@ -1,7 +1,7 @@
 //! Isolated PostgreSQL and authenticated loopback item-supervision controls.
 use super::*;
 use crate::payment_attempts::{
-    reversal_item_supervision::{EnrollIntent, enroll, read_job, run_batch},
+    reversal_item_supervision::{EnrollIntent, RecoveryError, enroll, read_job, run_batch},
     reversal_pages,
 };
 use std::sync::{
@@ -129,16 +129,7 @@ async fn exact_page_candidates_of_both_kinds_produce_separate_observations(pool:
             ordinal: 1,
             enrollment_key: effect,
         };
-        let job = enroll(
-            &pool,
-            time.as_ref(),
-            &ids,
-            &client,
-            intent(collection(kind)),
-        )
-        .await
-        .expect("enrollment");
-        assert!(
+        assert!(matches!(
             enroll(
                 &pool,
                 time.as_ref(),
@@ -149,9 +140,19 @@ async fn exact_page_candidates_of_both_kinds_produce_separate_observations(pool:
                     ..intent("bad-ordinal")
                 }
             )
-            .await
-            .is_err()
-        );
+            .await,
+            Err(RecoveryError::InvalidRequest)
+        ));
+        // The blocking attempt lock in enrollment fences the rejected transaction's rollback.
+        let job = enroll(
+            &pool,
+            time.as_ref(),
+            &ids,
+            &client,
+            intent(collection(kind)),
+        )
+        .await
+        .expect("enrollment");
         assert!(
             run_batch(&pool, time.as_ref(), &ids, &client, 0)
                 .await
@@ -163,6 +164,21 @@ async fn exact_page_candidates_of_both_kinds_produce_separate_observations(pool:
                 .is_err()
         );
         assert_eq!(server.count(), 1);
+        let mut lock = pool.begin().await.expect("hold attempt");
+        sqlx::query("SELECT id FROM payment_attempts WHERE id=$1 FOR UPDATE")
+            .bind(&job.attempt_id)
+            .fetch_one(&mut *lock)
+            .await
+            .expect("lock attempt");
+        assert_eq!(
+            run_batch(&pool, time.as_ref(), &ids, &client, 25)
+                .await
+                .expect("busy batch")
+                .processed,
+            0
+        );
+        assert_eq!(server.count(), 1, "a busy attempt sends no GET");
+        lock.rollback().await.expect("release attempt");
         assert_eq!(
             run_batch(&pool, time.as_ref(), &ids, &client, 25)
                 .await
