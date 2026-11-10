@@ -1,5 +1,8 @@
 //! Shared synthetic quota configuration for integration tests of proof operations.
 //! Every call still commits the real PostgreSQL admission debit before proof work.
+#[path = "password_blocklist_fixture.rs"]
+mod password_blocklist_fixture;
+
 use commerce_application::request_context::Clock;
 use commerce_infrastructure::{
     customer_credential_admission::{AdmissionKey, AdmissionLimits},
@@ -83,7 +86,10 @@ pub mod customer_passwords {
             pool,
             email,
             token,
-            password,
+            commerce_infrastructure::customer_passwords::PasswordCandidate {
+                password,
+                blocklist: Some(&password_blocklist_fixture::synthetic()),
+            },
             clock,
             &key(),
             limits(),

@@ -172,8 +172,10 @@ buyer mailbox. Private detail and bounded history reads return the linked
 order's captured items and amounts under live customer authority. Private
 credential admission provides shared purpose and mailbox quotas. Login,
 email verification, enrolment and password proof operations commit both
-debits before credential work. Secure delivery, neutral browser responses and
-measured overload behavior remain P4 work.
+debits before credential work. Password replacement requires an explicitly supplied,
+integrity-checked offline blocklist and fails closed on unavailable or expired
+snapshots. Real corpus review, coordinated freshness and withdrawal, secure delivery,
+neutral browser responses and measured overload behavior remain P4 work.
 
 The local room-planner preview combines the rectangle calculator with keyboard
 measurement and rotation controls, a drawn footprint, and text clearance and fit

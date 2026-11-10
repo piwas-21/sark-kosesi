@@ -3,8 +3,8 @@ use commerce_domain::email_identity::normalize_email;
 use sqlx::PgPool;
 
 use super::{
-    AdmissionKey, AdmissionLimits, CredentialPurpose, LIFETIME, PasswordChangeToken, PasswordError,
-    admit_password, begin, current_revision, hash, now,
+    AdmissionKey, AdmissionLimits, CredentialPurpose, LIFETIME, PasswordBlocklist,
+    PasswordChangeToken, PasswordError, admit_password, begin, current_revision, hash, now,
 };
 
 #[derive(sqlx::FromRow)]
@@ -72,12 +72,18 @@ impl Stored {
     }
 }
 
+/// Password and trusted snapshot are consumed together for one replacement attempt.
+pub struct PasswordCandidate<'a> {
+    pub password: &'a str,
+    pub blocklist: Option<&'a PasswordBlocklist>,
+}
+
 /// Consumes exact proof and changes the credential atomically; it grants no session.
 pub async fn replace(
     pool: &PgPool,
     email: &str,
     token: &PasswordChangeToken,
-    password: &str,
+    candidate: PasswordCandidate<'_>,
     clock: &dyn Clock,
     key: &AdmissionKey,
     limits: AdmissionLimits,
@@ -105,10 +111,13 @@ pub async fn replace(
         .await
         .map_err(|_| PasswordError::Unavailable)?;
     let initial = initial.ok_or(PasswordError::Denied)?;
-    if !initial.valid(now(&observed)?) {
+    let preflight_at = now(&observed)?;
+    if !initial.valid(preflight_at) {
         return Err(PasswordError::Denied);
     }
-    let password_hash = hash::hash_password(password).await?;
+    let blocklist = candidate.blocklist.ok_or(PasswordError::Unavailable)?;
+    blocklist.check(candidate.password, preflight_at)?;
+    let password_hash = hash::hash_password(candidate.password).await?;
     let mut tx = begin(pool).await?;
     let account: Option<i64> = sqlx::query_scalar(
         "SELECT id FROM verified_customer_accounts WHERE id=$1 AND email_identity=$2 FOR UPDATE",
@@ -161,9 +170,11 @@ pub async fn replace(
     if !stored.matches(&proof, next, &password_hash, &verifier, captured) {
         return Err(PasswordError::Unavailable);
     }
-    if now(&observed)? >= proof.expires_at {
+    let final_at = now(&observed)?;
+    if final_at >= proof.expires_at {
         return Err(PasswordError::Denied);
     }
+    blocklist.require_current(final_at)?;
     tx.commit().await.map_err(|_| PasswordError::Unavailable)?;
     Ok(next)
 }

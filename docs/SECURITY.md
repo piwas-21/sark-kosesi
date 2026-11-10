@@ -525,9 +525,30 @@ UTF-8 bytes before and after normalization. Use Argon2id v19, 19 MiB, two passes
 one lane, a random 16-byte salt and a 32-byte digest. Bound concurrent hashing
 and keep passwords, bearer values, hashes and SQL details out of diagnostics.
 Only the current hash remains in the live credential table. Backup retention
-and deletion still require the release privacy policy. A public recovery flow
-also requires a reviewed compromised-password check, uniform responses and
-timing, safe transport and distributed abuse controls.
+and deletion still require the release privacy policy.
+
+Every private replacement requires a caller-supplied immutable offline blocklist
+snapshot. It contains 1–1,000,000 strictly sorted, unique SHA-256 digests of
+NFC-normalized UTF-8 passwords, bounded version/provenance/qualification
+references and a trusted validity interval of at most 90 days. The caller passes
+an independently trusted SHA-256 integrity digest. The canonical digest covers
+`piwas:password-blocklist:snapshot:v1` and a NUL, then each metadata string's
+unsigned 64-bit big-endian byte length and bytes, followed by signed 64-bit
+big-endian validity bounds, unsigned 64-bit big-endian entry count and the
+concatenated 32-byte entries. Snapshot validation establishes integrity and
+shape, not authenticity, actual corpus quality or reviewer qualification.
+
+After the admission debit and cheap revision-bound proof precheck, release the
+database transaction and reject exact blocklist matches before Argon2. Normalize
+with the same NFC function used for hashing, retaining leading and trailing
+spaces. Missing, malformed, not-yet-valid or expired snapshots fail closed.
+Recheck expiry with the final observed clock before committing the credential;
+rejection leaves proof and credential intact but never refunds admission.
+Coordinate trusted snapshot provisioning, corpus review, withdrawal and freshness
+across instances; an already supplied immutable snapshot has no live revocation
+channel. No corpus or grant of production readiness is included. Public recovery
+also requires secure delivery, uniform responses and timing, safe transport and
+distributed abuse controls.
 
 ## Private customer sessions
 

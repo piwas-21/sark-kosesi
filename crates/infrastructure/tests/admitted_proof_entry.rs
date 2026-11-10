@@ -1,4 +1,7 @@
 //! The private proof entry points commit an admission debit before work.
+#[path = "support/password_blocklist_fixture.rs"]
+mod password_blocklist_fixture;
+
 use commerce_application::request_context::{Clock, ContextError};
 use commerce_infrastructure::{
     MIGRATOR,
@@ -116,7 +119,10 @@ async fn password_proof_and_replacement_have_independent_durable_budgets(pool: P
             &pool,
             email,
             &wrong,
-            "correct-password-long",
+            customer_passwords::PasswordCandidate {
+                password: "correct-password-long",
+                blocklist: Some(&password_blocklist_fixture::synthetic()),
+            },
             &time,
             &key,
             limits,
@@ -134,7 +140,10 @@ async fn password_proof_and_replacement_have_independent_durable_budgets(pool: P
             &pool,
             "owner@EXAMPLE.COM",
             &proof,
-            "correct-password-long",
+            customer_passwords::PasswordCandidate {
+                password: "correct-password-long",
+                blocklist: Some(&password_blocklist_fixture::synthetic()),
+            },
             &time,
             &key,
             limits,
@@ -147,7 +156,10 @@ async fn password_proof_and_replacement_have_independent_durable_budgets(pool: P
             &pool,
             "other@example.com",
             &proof,
-            "correct-password-long",
+            customer_passwords::PasswordCandidate {
+                password: "correct-password-long",
+                blocklist: Some(&password_blocklist_fixture::synthetic()),
+            },
             &time,
             &key,
             limits,
@@ -173,7 +185,10 @@ async fn password_proof_and_replacement_have_independent_durable_budgets(pool: P
             &pool,
             email,
             &proof,
-            "correct-password-long",
+            customer_passwords::PasswordCandidate {
+                password: "correct-password-long",
+                blocklist: Some(&password_blocklist_fixture::synthetic()),
+            },
             &At(1020),
             &key,
             limits,

@@ -1,4 +1,5 @@
 //! Private password change custody. This module creates no session or login authority.
+mod blocklist;
 pub(crate) mod hash;
 mod issue;
 mod replace;
@@ -12,8 +13,9 @@ use crate::customer_credential_admission::{
     AdmissionError, AdmissionKey, AdmissionLimits, CredentialPurpose, admit,
 };
 
+pub use blocklist::{BlocklistManifest, PasswordBlocklist};
 pub use issue::issue;
-pub use replace::replace;
+pub use replace::{PasswordCandidate, replace};
 
 const DOMAIN: &[u8] = b"piwas:customer-password-change:verifier:v1\0";
 const LIFETIME: i64 = 900;

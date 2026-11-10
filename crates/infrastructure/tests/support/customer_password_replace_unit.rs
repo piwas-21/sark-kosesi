@@ -5,6 +5,19 @@ use crate::{
 };
 use commerce_application::request_context::ContextError;
 
+fn synthetic_blocklist() -> PasswordBlocklist {
+    let manifest = crate::customer_passwords::BlocklistManifest {
+        version: "synthetic-test-v1".into(),
+        provenance: "local test fixture".into(),
+        qualification_ref: "synthetic-only".into(),
+        valid_from: 0,
+        valid_until: 7_776_000,
+        digests: vec![[0; 32]],
+    };
+    let digest = manifest.integrity_digest();
+    PasswordBlocklist::new(manifest, digest).expect("synthetic fixture")
+}
+
 fn admission_key() -> AdmissionKey {
     AdmissionKey::new(1, [7; 32]).expect("synthetic admission key")
 }
@@ -68,7 +81,10 @@ mod customer_passwords {
             pool,
             email,
             token,
-            password,
+            crate::customer_passwords::PasswordCandidate {
+                password,
+                blocklist: Some(&synthetic_blocklist()),
+            },
             clock,
             &admission_key(),
             admission_limits(),
