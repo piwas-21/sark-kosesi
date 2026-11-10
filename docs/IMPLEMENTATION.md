@@ -486,9 +486,9 @@ preview validates a selected file before asking the user to replace the current
 draft. It generates fresh form identifiers and clears the old assessment.
 Downloads use a short-lived local object URL. Photo placement, original help
 content and reviewed locales remain P5 work. Owner approval binds the 252
-Linux visual baselines to their exact preview source. The file controls need
-approval of their own source and gallery. Hosted comparison and native
-browser/device acceptance remain separate evidence.
+Linux visual baselines, including the file controls, to their exact preview
+source. Hosted comparison and native browser and device acceptance require
+separate evidence.
 
 ## Next session prompt
 
