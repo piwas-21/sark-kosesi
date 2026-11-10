@@ -201,8 +201,11 @@ terms and debits the lifetime count and cents at acceptance. Private indicative
 quotes can also bind a verified customer and an approved per-customer term.
 Account-bound order acceptance debits the same verified account under the
 promotion lock. Private payment preparation and attempt history use the same
-current customer account and guest basket. Complete capacity disposition after
-cancellation and trusted-edge abuse controls before exposing customer routes.
+current customer account and guest basket. Private cancellation can close an
+owned order before its first payment attempt. Cancellation and new payment
+preparation share the basket claim. The normal hold expiry still governs stock,
+and lifetime promotion usage stays recorded. Complete cancellation after payment
+admission and trusted-edge abuse controls before exposing customer routes.
 
 Private durable owned-order test attempts and one serialized dispatch-start fact
 now compose the frozen request policy, existing physically backed reservation and

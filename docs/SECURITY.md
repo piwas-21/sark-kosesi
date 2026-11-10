@@ -264,6 +264,9 @@ issuance reject account-bound custody. Private verified payment preparation and
 history require both the retained order account and current guest ownership.
 Native insertion binds the attempt to the quote account. The account association
 stays in the private relational record.
+Private cancellation uses the same guest and account authority as the order.
+The cancellation and attempt guards share a basket claim so neither can commit
+after the other. The event carries only the order ID and schema version.
 Public coupon access still requires authenticated checkout and trusted-edge
 abuse controls.
 

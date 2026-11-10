@@ -99,6 +99,7 @@ pub async fn catalogue(pool: &PgPool, locale: Locale) -> Result<Vec<CatalogueIte
         .collect()
 }
 
+pub mod checkout_cancellations;
 pub mod checkout_orders;
 pub mod checkout_quotes;
 
