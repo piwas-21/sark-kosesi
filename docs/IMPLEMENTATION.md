@@ -380,7 +380,9 @@ supervision or live provider activation follows from deploying the empty preview
    paid original and retain minimal bounded observations only. A separate
    paid-parent test-profile GET commits its exact received source before I/O and
    retains four independent optional provider aggregates with a reciprocal
-   event. Effect replay restores the operation or result. Net balance remains
+   event. Effect replay restores the operation or result. A read-only local/test
+   worker command reports the exact stored operation's state and which optional
+   totals are present, without contacting Mollie. Net balance remains
    unresolved. One private,
    payment-specific test-profile list page now provides bounded reversal identity
    hints and a scoped continuation after verifying the same paid original.

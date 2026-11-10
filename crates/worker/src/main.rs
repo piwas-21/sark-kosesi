@@ -4,6 +4,7 @@ use commerce_infrastructure::runtime::SystemClock;
 use commerce_infrastructure::{connect, readiness};
 use commerce_worker::expire_batch;
 mod callbacks;
+mod paid_parent;
 mod payments;
 mod reversal_items;
 mod reversal_pages;
@@ -20,6 +21,7 @@ enum Mode {
     InspectReversalItem(String),
     EnrollReversal(reversal_pages::Enrollment),
     InspectReversal(String),
+    InspectPaidParent(paid_parent::Inspection),
 }
 
 fn parse_mode(args: &[String]) -> Result<Mode, std::io::Error> {
@@ -49,6 +51,9 @@ fn parse_mode(args: &[String]) -> Result<Mode, std::io::Error> {
             if argument == "--inspect-reversal-scan" && reversal_pages::identifier(job) =>
         {
             Ok(Mode::InspectReversal(job.clone()))
+        }
+        [argument, attempt, effect] if argument == "--inspect-paid-parent" => {
+            paid_parent::Inspection::parse(attempt, effect).map(Mode::InspectPaidParent)
         }
         _ => Err(std::io::Error::other("unsupported worker command")),
     }
@@ -118,6 +123,7 @@ async fn main() -> Result<(), std::io::Error> {
         Mode::InspectReversalItem(id) => reversal_items::inspect(&pool, &id).await?,
         Mode::EnrollReversal(intent) => reversal_pages::run(&pool, Some(intent)).await?,
         Mode::InspectReversal(id) => reversal_pages::inspect(&pool, &id).await?,
+        Mode::InspectPaidParent(intent) => paid_parent::inspect(&pool, intent).await?,
         Mode::Probe => tracing::info!(code = "worker_dependencies_ready", effects_enabled = false),
     }
     Ok(())

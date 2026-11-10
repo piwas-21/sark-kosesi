@@ -90,6 +90,17 @@ callbacks, financial transitions, late-paid stock recovery and provider acceptan
 have separate evidence. Unit/loopback PostgreSQL tests are source evidence, not an
 actual Mollie sandbox payment or deployed/physical acceptance.
 
+## Private paid-parent evidence inspection
+
+In an isolated local/test environment, run
+`commerce-worker --inspect-paid-parent <attempt-id> <effect-key>` for one exact
+stored operation. It needs PostgreSQL and does not load a Mollie credential.
+It reports absent, pending or complete and, for complete evidence, whether each
+of the four totals is present. It emits neither the actual totals nor the
+lookup identifiers. Pending without a receipt stays unresolved; complete
+describes one historical GET. This command cannot fetch, retry, reconcile a
+balance, or authorize a refund.
+
 ## Private reversal-page supervision
 
 In an isolated local/test environment, `commerce-worker --enroll-reversal-scan
