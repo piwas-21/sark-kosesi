@@ -1058,8 +1058,7 @@ async fn clock_rewind_while_real_parent_get_waits_rejects_fetched_evidence(pool:
 // Compile the actual worker inspection module against this crate's existing
 // canonical reversal-pages fixture, without widening production transport APIs.
 use crate::mollie::reversal_worker_fixture as reversal_pages;
-#[path = "../../../worker/src/paid_parent.rs"]
-mod worker_inspect;
+include!(concat!(env!("OUT_DIR"), "/paid_parent_worker_fixture.rs"));
 
 async fn worker_event(pool: &PgPool, attempt: &str, effect: &str) -> Vec<(String, String)> {
     use super::reversal_supervision_cases::worker_entry::Capture;

@@ -45,9 +45,21 @@ fn main() -> io::Result<()> {
         "#[allow(dead_code)]\n#[path = {item_worker:?}]\npub(crate) mod reversal_item_worker_fixture;\n"
     );
     fs::write(
-        PathBuf::from(output).join("reversal_item_worker_fixture.rs"),
+        PathBuf::from(&output).join("reversal_item_worker_fixture.rs"),
         declaration,
     )?;
+    let paid_parent_worker = manifest
+        .join("../worker/src/paid_parent.rs")
+        .canonicalize()?;
+    let paid_parent_worker = paid_parent_worker
+        .to_str()
+        .ok_or_else(|| io::Error::other("Worker source path must be UTF-8"))?;
+    let declaration = format!("#[path = {paid_parent_worker:?}]\nmod worker_inspect;\n");
+    fs::write(
+        PathBuf::from(output).join("paid_parent_worker_fixture.rs"),
+        declaration,
+    )?;
+    println!("cargo:rerun-if-changed=../worker/src/paid_parent.rs");
     println!("cargo:rerun-if-changed=../worker/src/reversal_items.rs");
     println!("cargo:rerun-if-changed=../worker/src/reversal_pages.rs");
     println!("cargo:rerun-if-changed=build.rs");
