@@ -1,0 +1,93 @@
+{
+  "nl": {
+    "heading": "Planbestand",
+    "privacy": "Het bestand blijft op dit apparaat.",
+    "download": "Een kopie downloaden",
+    "open": "Een planbestand openen",
+    "replace": "Dit plan vervangt de huidige maten en maateenheid.",
+    "apply": "Dit plan gebruiken",
+    "cancel": "Annuleren",
+    "imported": "Het plan is geopend.",
+    "invalid": "Dit bestand bevat geen geldig ruimteplan.",
+    "tooLarge": "Het planbestand is te groot.",
+    "cannotSave": "Controleer je maten voordat je een kopie downloadt."
+  },
+  "de": {
+    "heading": "Plandatei",
+    "privacy": "Die Datei bleibt auf diesem Gerät.",
+    "download": "Eine Kopie herunterladen",
+    "open": "Plandatei öffnen",
+    "replace": "Dieser Plan ersetzt die aktuellen Maße und die Maßeinheit.",
+    "apply": "Diesen Plan verwenden",
+    "cancel": "Abbrechen",
+    "imported": "Der Plan wurde geöffnet.",
+    "invalid": "Diese Datei enthält keinen gültigen Raumplan.",
+    "tooLarge": "Die Plandatei ist zu groß.",
+    "cannotSave": "Prüfe deine Maße, bevor du eine Kopie herunterlädst."
+  },
+  "fr": {
+    "heading": "Fichier de plan",
+    "privacy": "Le fichier reste sur cet appareil.",
+    "download": "Télécharger une copie",
+    "open": "Ouvrir un fichier de plan",
+    "replace": "Ce plan remplacera les mesures et l’unité actuelles.",
+    "apply": "Utiliser ce plan",
+    "cancel": "Annuler",
+    "imported": "Le plan a été ouvert.",
+    "invalid": "Ce fichier ne contient pas de plan valide.",
+    "tooLarge": "Le fichier de plan est trop volumineux.",
+    "cannotSave": "Vérifiez vos mesures avant de télécharger une copie."
+  },
+  "en": {
+    "heading": "Plan file",
+    "privacy": "The file stays on this device.",
+    "download": "Download a copy",
+    "open": "Open a plan file",
+    "replace": "This plan will replace the current measurements and unit.",
+    "apply": "Use this plan",
+    "cancel": "Cancel",
+    "imported": "The plan is open.",
+    "invalid": "This file does not contain a valid room plan.",
+    "tooLarge": "This plan file is too large.",
+    "cannotSave": "Check the measurements before downloading a copy."
+  },
+  "ar": {
+    "heading": "ملف المخطط",
+    "privacy": "يبقى الملف على هذا الجهاز.",
+    "download": "نزّل نسخة",
+    "open": "افتح ملف مخطط",
+    "replace": "سيحل هذا المخطط محل القياسات ووحدة القياس الحالية.",
+    "apply": "استخدم هذا المخطط",
+    "cancel": "إلغاء",
+    "imported": "تم فتح المخطط.",
+    "invalid": "لا يحتوي هذا الملف على مخطط صالح.",
+    "tooLarge": "ملف المخطط كبير جدًا.",
+    "cannotSave": "تحقّق من القياسات قبل تنزيل نسخة."
+  },
+  "tr": {
+    "heading": "Plan dosyası",
+    "privacy": "Dosya bu cihazda kalır.",
+    "download": "Bir kopya indir",
+    "open": "Plan dosyası aç",
+    "replace": "Bu plan, mevcut ölçülerin ve ölçü biriminin yerini alır.",
+    "apply": "Bu planı kullan",
+    "cancel": "İptal",
+    "imported": "Plan açıldı.",
+    "invalid": "Bu dosya geçerli bir oda planı içermiyor.",
+    "tooLarge": "Plan dosyası çok büyük.",
+    "cannotSave": "Bir kopya indirmeden önce ölçüleri kontrol et."
+  },
+  "kmr": {
+    "heading": "Pelê planê",
+    "privacy": "Pel li ser vê cîhazê dimîne.",
+    "download": "Kopiyekê daxîne",
+    "open": "Pelê planê veke",
+    "replace": "Ev plan dê li şûna pîvan û yekeya pîvanê ya heyî were.",
+    "apply": "Vê planê bi kar bîne",
+    "cancel": "Betal bike",
+    "imported": "Plan hat vekirin.",
+    "invalid": "Di vê pelê de planeke derbasdar tune ye.",
+    "tooLarge": "Pelê planê pir mezin e.",
+    "cannotSave": "Berî ku kopiyekê daxînî, pîvanên xwe kontrol bike."
+  }
+}

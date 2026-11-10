@@ -1,4 +1,5 @@
 import { measurementNanometres, type MeasurementUnit } from "@piwas/room-fit";
+import type { RoomDraft } from "@piwas/room-draft";
 
 export const coordinates = ["width", "depth", "left", "top"] as const;
 export type Coordinate = (typeof coordinates)[number];
@@ -48,4 +49,33 @@ export function hasMeasurements(zone: ZoneDraft): boolean {
   return Boolean(
     zone.width || zone.depth || zone.left !== "0" || zone.top !== "0",
   );
+}
+
+export function draftFileInput(
+  unit: MeasurementUnit,
+  room: RoomDraft["room"],
+  items: ZoneDraft[],
+  doorMode: RoomDraft["doorMode"],
+  doors: ZoneDraft[],
+): RoomDraft {
+  const rectangle = ({ width, depth, left, top }: ZoneDraft) => ({
+    width: decimal(width),
+    depth: decimal(depth),
+    left: decimal(left),
+    top: decimal(top),
+  });
+  return {
+    unit,
+    room: {
+      width: decimal(room.width),
+      depth: decimal(room.depth),
+      tolerance: decimal(room.tolerance),
+    },
+    items: items.map((zone) => ({
+      ...rectangle(zone),
+      rotation: zone.rotation,
+    })),
+    doorMode,
+    doors: doors.map(rectangle),
+  };
 }

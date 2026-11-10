@@ -6,6 +6,7 @@ export default defineConfig({
       "apps/web/tests/**/*.test.tsx",
       "packages/design/tests/**/*.test.tsx",
       "packages/room-fit/tests/**/*.test.tsx",
+      "packages/room-draft/tests/**/*.test.ts",
     ],
     setupFiles: ["./tests/application/setup.ts"],
     coverage: {
@@ -16,6 +17,7 @@ export default defineConfig({
         "apps/web/src/**/*.{ts,tsx}",
         "packages/design/src/**/*.tsx",
         "packages/room-fit/src/**/*.ts",
+        "packages/room-draft/src/**/*.ts",
       ],
       exclude: [],
       thresholds: { lines: 85, branches: 80, functions: 85, statements: 85 },

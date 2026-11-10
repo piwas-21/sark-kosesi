@@ -11,7 +11,10 @@ const change = (input: HTMLElement, value: string) =>
   fireEvent.change(input, { target: { value } });
 const click = (name: string) =>
   fireEvent.click(screen.getByRole("button", { name }));
-const result = () => screen.getByRole("status");
+const result = () =>
+  within(screen.getByRole("complementary", { name: copy.drawing })).getByRole(
+    "status",
+  );
 
 function fillRoom() {
   change(room().getByLabelText("Width (cm)"), "400");

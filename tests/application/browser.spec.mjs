@@ -1,5 +1,6 @@
 import { test, expect } from "@playwright/test";
 import AxeBuilder from "@axe-core/playwright";
+import { readFile } from "node:fs/promises";
 import { visualContext, themeReady } from "./visual-context.mjs";
 import { fillPlannerPreview } from "./planner-fixture.mjs";
 const locales = ["nl", "de", "fr", "en", "ar", "tr", "ku"];
@@ -78,6 +79,31 @@ test("@journey explicit locale and first-paint theme survive denied storage", as
   await expect(page.locator("html")).toHaveAttribute("data-theme", "dark");
   await page.getByLabel("Language").selectOption("ku");
   await expect(page.locator("html")).toHaveAttribute("lang", "ku-Latn");
+});
+test("@journey visual readiness rejects stale descendant colours", async ({
+  page,
+}) => {
+  await page.emulateMedia({ colorScheme: "dark", reducedMotion: "reduce" });
+  await page.goto("/nl/collection/missing?variant=MISSING");
+  await page.getByLabel("Theme").selectOption("dark");
+  await themeReady(page, "dark");
+  for (const [selector, property] of [
+    ["main h1", "color"],
+    ['header nav[aria-label="Main"] a:last-child', "color"],
+    ["header .brand svg path", "stroke"],
+  ]) {
+    await page.locator(selector).evaluate((element, name) => {
+      element.style.setProperty(name, "rgb(255, 0, 0)", "important");
+    }, property);
+    await expect(page.locator("html")).toHaveAttribute("data-theme", "dark");
+    await expect(page.locator("body")).toHaveCSS("color", "rgb(232, 237, 207)");
+    await expect(page.locator(selector)).toHaveCSS(property, "rgb(255, 0, 0)");
+    await expect(themeReady(page, "dark", 250)).rejects.toThrow(/Timeout/);
+    await page.locator(selector).evaluate((element, name) => {
+      element.style.removeProperty(name);
+    }, property);
+    await themeReady(page, "dark");
+  }
 });
 for (const locale of locales)
   for (const theme of ["light", "dark"]) {
@@ -287,13 +313,68 @@ test("@journey default family selection survives locale-specific family slugs", 
   );
 });
 
+test("@journey room planner downloads and confirms a local plan file", async ({
+  page,
+}) => {
+  const writes = [];
+  page.on("request", (request) => {
+    if (!["GET", "HEAD"].includes(request.method()))
+      writes.push(request.method());
+  });
+  await page.goto("/en/room-planner");
+  await fillPlannerPreview(page);
+  const files = page.getByRole("region", { name: "Plan file" });
+  const result = page
+    .getByRole("complementary", { name: "Floor plan" })
+    .getByRole("status");
+  await expect(result).toHaveAttribute("data-state", "fit");
+  const downloadPromise = page.waitForEvent("download");
+  await files.getByRole("button", { name: "Download a copy" }).click();
+  const download = await downloadPromise;
+  expect(download.suggestedFilename()).toBe("room-plan.json");
+  const document = JSON.parse(await readFile(await download.path(), "utf8"));
+  expect(document.format).toBe("piwas-room-plan");
+  expect(document.room.width).toBe("430");
+  document.unit = "mm";
+  document.room.width = "5000";
+  document.room.depth = "3300";
+  const input = files.locator('input[type="file"]');
+  const payload = {
+    name: "room-plan.json",
+    mimeType: "application/json",
+    buffer: Buffer.from(JSON.stringify(document)),
+  };
+  await input.setInputFiles(payload);
+  await expect(files.getByRole("status")).toContainText(
+    "This plan will replace the current measurements and unit.",
+  );
+  await expect(page.locator("#plan-room-width")).toHaveValue("430");
+  await expect(result).toHaveAttribute("data-state", "fit");
+  await files.getByRole("button", { name: "Cancel" }).click();
+  await expect(page.locator("#plan-room-width")).toHaveValue("430");
+  await expect(
+    files.getByRole("button", { name: "Open a plan file" }),
+  ).toBeFocused();
+  await input.setInputFiles(payload);
+  await files.getByRole("button", { name: "Use this plan" }).click();
+  await expect(page.locator("#plan-room-width")).toHaveValue("5000");
+  await expect(page.locator("#plan-unit")).toHaveValue("mm");
+  await expect(result).not.toHaveAttribute("data-state", "fit");
+  await expect(
+    files.getByRole("button", { name: "Open a plan file" }),
+  ).toBeFocused();
+  expect(writes).toEqual([]);
+});
+
 test("@journey room planner checks rotation and clearance locally", async ({
   page,
 }) => {
   await page.goto("/en/room-planner");
   const room = page.getByRole("region", { name: "Room", exact: true });
   const piece = page.getByRole("group", { name: "Piece 1" });
-  const status = page.getByRole("status");
+  const status = page
+    .getByRole("complementary", { name: "Floor plan" })
+    .getByRole("status");
   const check = page.getByRole("button", { name: "Check the layout" });
   const writes = [];
   page.on("request", (request) => {

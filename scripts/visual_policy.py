@@ -11,6 +11,7 @@ def source_digest(root):
         "apps/web/public",
         "packages/design/src",
         "packages/room-fit/src",
+        "packages/room-draft/src",
     ):
         paths.extend(path for path in (root / directory).rglob("*") if path.is_file())
     paths.extend(

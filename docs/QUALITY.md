@@ -210,7 +210,12 @@ formatting checks the maximum exact public integer without dividing a float.
 The visual inventory covers collection, covers/filled details, empty EN/Kurmanji
 collections, missing products, home, gallery and the room planner. The planner
 adds a filled Dutch and Arabic case in each browser, theme and viewport for 252
-expected images. The room-fit source and planner fixture are part of the digest.
+expected images. The room-fit and room-draft sources and planner fixture are
+part of the digest.
+Test the separate room draft codec with exact round trips, mixed units and
+rotations across fixtures, incomplete measurement text, unknown clearances,
+count and byte limits, and malformed or unexpected fields. Fit is recomputed
+from the input; it is never imported.
 Test a long planner conflict list with keyboard document scrolling at desktop
 width. The semantic list is fully readable without a nested scroll area or an
 extra tab stop.
@@ -222,8 +227,10 @@ If the visual check already completed the gallery, CI uploads that capture.
 The fallback runs only after a browser failure without a completed capture.
 
 Visual cases start with their declared native device theme before navigation,
-then verify the explicit theme and inherited text colour after fonts and paint
-frames settle. Capture and comparison use the same setup. Theme changes and
+then verify the explicit theme and inherited body, main heading, visible header
+links and mark stroke colours after fonts load, before the paint-frame fence.
+Controls reject stale descendant colours even when the body is correct. Capture
+and comparison use the same setup. Theme changes and
 stored overrides remain separate interaction cases. This avoids a reproduced
 macOS WebKit screenshot repaint defect after changing colour scheme in place;
 computed text styles were correct while the captured inherited text was stale.

@@ -19,7 +19,12 @@ def main():
     for result in results:
         print(json.dumps(result))
     typescript = ROOT / "coverage/typescript/lcov.info"
-    for package in ("apps/web/src", "packages/design/src", "packages/room-fit/src"):
+    for package in (
+        "apps/web/src",
+        "packages/design/src",
+        "packages/room-fit/src",
+        "packages/room-draft/src",
+    ):
         critical = (
             [
                 "apps/web/src/proxy.ts",
