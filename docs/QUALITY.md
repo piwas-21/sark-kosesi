@@ -210,7 +210,8 @@ formatting checks the maximum exact public integer without dividing a float.
 The visual inventory covers collection, covers/filled details, empty EN/Kurmanji
 collections, missing products, home, gallery and the room planner. The planner
 adds a filled Dutch and Arabic case in each browser, theme and viewport for 252
-expected images. The room-fit source and planner fixture are part of the digest.
+expected images. The room-fit and room-draft sources and planner fixture are
+part of the digest.
 Test the separate room draft codec with exact round trips, mixed units and
 rotations across fixtures, incomplete measurement text, unknown clearances,
 count and byte limits, and malformed or unexpected fields. Fit is recomputed

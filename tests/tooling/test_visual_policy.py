@@ -24,6 +24,7 @@ class VisualApproval(unittest.TestCase):
             "tests/fixtures/approved_catalogue.rs",
             "playwright.application.config.mjs",
             "apps/web/src/page.tsx",
+            "packages/room-draft/src/index.ts",
         ):
             path = self.root / name
             path.parent.mkdir(parents=True, exist_ok=True)
@@ -80,6 +81,7 @@ class VisualApproval(unittest.TestCase):
             "crates/infrastructure/tests/support/browser_catalogue.rs",
             "tests/fixtures/approved_catalogue.rs",
             "playwright.application.config.mjs",
+            "packages/room-draft/src/index.ts",
         ):
             path = self.root / name
             original = path.read_text()
