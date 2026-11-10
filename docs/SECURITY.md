@@ -17,6 +17,11 @@ P1 supplies automated authorization/header/abuse tests and a local-only scanner 
 
 Report vulnerabilities through the root [disclosure policy](../SECURITY.md). Do not include secrets or customer information in public issues/CI artifacts.
 
+The RustSec check audits the full lockfile. The PostgreSQL-only SQLx export
+crate removes the unused SQLite dependency affected by
+[RUSTSEC-2026-0459](https://rustsec.org/advisories/RUSTSEC-2026-0459.html).
+Failed audits preserve their JSON report separately from passing evidence.
+
 ## P1 verification scope
 
 ASVS level 2 is the inventory target. The implemented trust boundaries are the
