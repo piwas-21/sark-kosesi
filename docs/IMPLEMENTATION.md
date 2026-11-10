@@ -440,8 +440,13 @@ Only its new committed start can open the captured envelope. It re-locks and
 checks the exact source, authenticates the complete ciphertext and verifies the
 recovered bearer, then completes the transaction before calling the trusted
 in-process consumer. A failed or interrupted opening does not restore the start.
-Design transport outcomes and ambiguous-outcome recovery before connecting any
-mail provider.
+An optional trusted synthetic callback records one bounded accepted, explicit
+rejection or uncertain result against the exact earlier start, after releasing all
+database locks. A start without a recorded result remains unknown, and the
+envelope stays closed. Results remain historical after expiry or consumption.
+The database records the trusted caller's classification. Provider authentication,
+mailbox receipt and redemption each require their own evidence. A provider,
+retry policy and reconciliation remain separately reviewed work.
 A private account operation now
 locks and consumes that exact proof and inserts one unique immutable normalized
 identity in the same transaction; the database binds consumption and insertion to

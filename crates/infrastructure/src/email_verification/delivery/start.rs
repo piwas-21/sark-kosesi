@@ -31,6 +31,33 @@ pub(super) struct Permit {
     started_at: i64,
     transaction_id: String,
 }
+
+impl Permit {
+    /// Match the exact historical start, without requiring the challenge to remain live.
+    pub(super) async fn matches_start(
+        &self,
+        tx: &mut Transaction<'_, Postgres>,
+        key: &VerificationDeliveryKey,
+    ) -> Result<bool, VerificationError> {
+        let counter = self
+            .source
+            .nonce_counter
+            .ok_or(VerificationError::Unavailable)?;
+        let found: Option<bool> = sqlx::query_scalar("SELECT transaction_id::text=$2 AND started_at=$3 AND key_id=$4 AND nonce_counter=$5 AND key_fingerprint=$6 FROM email_verification_delivery_starts WHERE verifier=$1 FOR SHARE")
+            .bind(self.verifier.as_slice()).bind(&self.transaction_id).bind(self.started_at)
+            .bind(&key.key_id).bind(counter).bind(key.fingerprint.as_slice())
+            .fetch_optional(&mut **tx).await.map_err(|_| VerificationError::Unavailable)?;
+        Ok(found == Some(true))
+    }
+
+    pub(super) fn transaction_id(&self) -> &str {
+        &self.transaction_id
+    }
+
+    pub(super) fn started_at(&self) -> i64 {
+        self.started_at
+    }
+}
 pub(super) enum InternalClaim {
     New(Box<Permit>),
     AlreadyStarted,

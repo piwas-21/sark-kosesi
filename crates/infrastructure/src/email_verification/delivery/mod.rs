@@ -5,6 +5,7 @@ use sha2::{Digest, Sha256};
 use zeroize::Zeroizing;
 mod crypto;
 pub mod opening;
+pub mod outcome;
 pub mod start;
 
 const KEY_DOMAIN: &[u8] = b"piwas:verification-delivery:key-fingerprint:v1\0";

@@ -513,6 +513,15 @@ recovered verifier authenticate. No transaction spans the callback. Expiry or
 consumption can still occur after the last local check. The caller must keep the
 borrowed values out of logs and storage. A committed start with no separate
 outcome stays unknown; replay cannot reopen it.
+An optional trusted in-process callback returns only accepted, explicit rejection
+or uncertain. An immutable durable row binds that classification to its exact
+earlier start without storing a mailbox, bearer, credentials or provider body.
+Recording happens after the callback, outside its I/O, and does not require the
+challenge to remain live. The database records the trusted caller's classification.
+Provider authentication, mailbox receipt and redemption each require their own
+evidence. The in-process caller and write role remain trusted. A crash or failed recording
+leaves the start unknown and never permits reopening. Acceptance proves neither
+mailbox receipt nor redemption. No provider or retry is installed.
 Anti-enumeration, token transport, mailbox delivery and recovery remain separate
 requirements. Private verified account establishment composes the exact
 challenge consumption and a unique immutable normalized identity in one transaction.

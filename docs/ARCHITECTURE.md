@@ -1712,6 +1712,15 @@ ciphertext and matches the recovered verifier. It releases the transaction befor
 passing short-lived borrowed values to its caller. A prior start cannot be used to
 reconstruct the in-process authority.
 
+A separate immutable outcome can retain only a closed accepted, explicit rejection
+or uncertain classification, observation time and exact prior start transaction.
+Only the fresh-opening in-process path can record it. The callback runs without a
+database transaction. A later durable transaction matches the captured start.
+Neither expiry nor redemption invalidates a historical result. A start without a
+result is unknown and grants no resend authority. The database records the trusted
+caller's classification. Provider authentication, mailbox receipt and redemption
+each require their own evidence. No provider transport or retry is installed.
+
 A private PostgreSQL operation locks and consumes an exact email challenge while
 inserting a unique immutable customer identity and its verification reference in
 one transaction. A database-assigned transaction ID on the consumption must match
