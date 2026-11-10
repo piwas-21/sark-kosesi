@@ -26,6 +26,7 @@ crates/application/       # use cases and adapter ports
 crates/infrastructure/    # SQLx, Mollie, email, storage
 crates/api/               # Axum HTTP/auth/OpenAPI
 crates/worker/            # outbox and reconciliation entry point
+crates/sqlx-postgres-compat/ # PostgreSQL-only SQLx exports
 migrations/              # forward SQL migrations
 packages/contracts/      # generated TS client/schema
 packages/design/         # tokens and accessible UI primitives
@@ -33,6 +34,11 @@ packages/design/         # tokens and accessible UI primitives
 ```
 
 Keep modules small and organized by commerce capability. Avoid a generic repository/CQRS framework. Domain code is independent of HTTP/SQL and is deterministic with explicit clock/identifier inputs. Use typed identifiers, checked integer money arithmetic and explicit state transitions; no floating-point money, unchecked casts or panic/unwrap/expect in request paths. Forbid unsafe code in owned application crates. Error responses are typed and redact internals. Connection, request, payload, queue and retry limits are explicit.
+
+Database callers share a small PostgreSQL-only export crate that keeps the
+existing `sqlx` import paths. It uses the exact released SQLx core, PostgreSQL
+driver and macro crates directly. This keeps the audited lockfile scoped to
+the database driver the application uses.
 
 Application `Clock` and `Identifiers` ports supply explicit request-diagnostic
 inputs. Infrastructure adapters use checked system-clock conversion and OS

@@ -1,5 +1,5 @@
 [workspace]
-members = ["crates/domain", "crates/application", "crates/infrastructure", "crates/api", "crates/worker"]
+members = ["crates/domain", "crates/application", "crates/infrastructure", "crates/api", "crates/worker", "crates/sqlx-postgres-compat"]
 resolver = "3"
 
 [workspace.package]
@@ -24,7 +24,7 @@ argon2 = { version = "=0.6.0", default-features = false, features = ["alloc", "p
 unicode-normalization = "=0.1.26"
 zeroize = "=1.9.1"
 image = { version = "=0.25.10", default-features = false, features = ["jpeg", "png", "webp"] }
-sqlx = { version = "=0.9.0", default-features = false, features = ["runtime-tokio", "tls-rustls-ring", "postgres", "migrate", "macros"] }
+sqlx = { package = "sqlx-postgres-compat", path = "crates/sqlx-postgres-compat", version = "=0.1.0" }
 tokio = { version = "=1.54.1", features = ["macros", "rt-multi-thread", "net", "signal", "time", "sync"] }
 tracing = "=0.1.44"
 tracing-subscriber = { version = "=0.3.23", features = ["env-filter", "json"] }

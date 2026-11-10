@@ -29,10 +29,16 @@ def main():
         raise ValueError("RustSec advisory database is stale or future-dated")
     report = subprocess.run(
         ["cargo", "audit", "--json", "--db", str(database), "--no-fetch"],
-        check=True,
         capture_output=True,
         text=True,
     )
+    if report.returncode:
+        diagnostics = ROOT / ".local/evidence/rust-audit-failure.json"
+        diagnostics.parent.mkdir(parents=True, exist_ok=True)
+        diagnostics.write_text(report.stdout or json.dumps({"exit-code": report.returncode}))
+        raise ValueError(
+            f"RustSec audit failed (exit {report.returncode}). See {diagnostics.name}."
+        )
     evidence = json.loads(report.stdout)
     if evidence.get("vulnerabilities", {}).get("found") is not False or not evidence.get(
         "lockfile", {}
