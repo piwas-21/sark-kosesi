@@ -80,6 +80,31 @@ test("@journey explicit locale and first-paint theme survive denied storage", as
   await page.getByLabel("Language").selectOption("ku");
   await expect(page.locator("html")).toHaveAttribute("lang", "ku-Latn");
 });
+test("@journey visual readiness rejects stale descendant colours", async ({
+  page,
+}) => {
+  await page.emulateMedia({ colorScheme: "dark", reducedMotion: "reduce" });
+  await page.goto("/nl/collection/missing?variant=MISSING");
+  await page.getByLabel("Theme").selectOption("dark");
+  await themeReady(page, "dark");
+  for (const [selector, property] of [
+    ["main h1", "color"],
+    ['header nav[aria-label="Main"] a:last-child', "color"],
+    ["header .brand svg path", "stroke"],
+  ]) {
+    await page.locator(selector).evaluate((element, name) => {
+      element.style.setProperty(name, "rgb(255, 0, 0)", "important");
+    }, property);
+    await expect(page.locator("html")).toHaveAttribute("data-theme", "dark");
+    await expect(page.locator("body")).toHaveCSS("color", "rgb(232, 237, 207)");
+    await expect(page.locator(selector)).toHaveCSS(property, "rgb(255, 0, 0)");
+    await expect(themeReady(page, "dark", 250)).rejects.toThrow(/Timeout/);
+    await page.locator(selector).evaluate((element, name) => {
+      element.style.removeProperty(name);
+    }, property);
+    await themeReady(page, "dark");
+  }
+});
 for (const locale of locales)
   for (const theme of ["light", "dark"]) {
     test(`@a11y ${locale} ${theme} gallery keyboard and axe`, async ({

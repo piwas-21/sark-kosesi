@@ -227,8 +227,10 @@ If the visual check already completed the gallery, CI uploads that capture.
 The fallback runs only after a browser failure without a completed capture.
 
 Visual cases start with their declared native device theme before navigation,
-then verify the explicit theme and inherited text colour after fonts and paint
-frames settle. Capture and comparison use the same setup. Theme changes and
+then verify the explicit theme and inherited body, main heading, visible header
+links and mark stroke colours after fonts load, before the paint-frame fence.
+Controls reject stale descendant colours even when the body is correct. Capture
+and comparison use the same setup. Theme changes and
 stored overrides remain separate interaction cases. This avoids a reproduced
 macOS WebKit screenshot repaint defect after changing colour scheme in place;
 computed text styles were correct while the captured inherited text was stale.
