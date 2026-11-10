@@ -14,6 +14,7 @@
     "react": "19.3.1",
     "react-dom": "19.3.1",
     "openapi-fetch": "0.17.0",
-    "@piwas/room-fit": "0.1.0"
+    "@piwas/room-fit": "0.1.0",
+    "@piwas/room-draft": "0.1.0"
   }
 }

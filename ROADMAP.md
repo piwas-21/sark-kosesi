@@ -179,11 +179,12 @@ neutral browser responses and measured overload behavior remain P4 work.
 
 The local room-planner preview combines the rectangle calculator with keyboard
 measurement and rotation controls, a drawn footprint, and text clearance and fit
-results. Caller measurements stay on the page. A standalone bounded file codec
-is ready for explicit local import and export controls, which remain P5 work.
-The copy is drafted for all seven
-locales. The owner approved the 252 Linux preview baselines. Native-language
-acceptance, verified product dimensions and physical-fit acceptance remain open.
+results. Caller measurements stay on the page unless the user downloads a
+local file. A selected plan replaces the current draft only after confirmation.
+The copy is drafted for all seven locales. The previous 252 Linux preview
+baselines have owner approval; the file controls require new exact visual
+approval. Native-language acceptance, verified product dimensions and
+physical-fit acceptance remain open.
 
 Remaining delivery sequence: P0 business inputs in parallel → P2 inventory/catalogue → P3 checkout/payments → P4 customer/admin operations → P5 room planning and content → P6 acceptance → P7 controlled launch. Each phase has explicit exit evidence in the plan.
 

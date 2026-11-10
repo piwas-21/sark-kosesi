@@ -1,0 +1,29 @@
+.section {
+  margin-block: 0;
+  padding-block: 1.25rem;
+  border-block-start: 1px solid var(--line);
+}
+.section h2 {
+  font-size: 1.65rem;
+  margin-block-end: 0.65rem;
+}
+.note,
+.status {
+  color: var(--muted);
+  font-size: 0.95rem;
+}
+.status p + p {
+  margin-block-start: 0.4rem;
+}
+.actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.6rem 1.25rem;
+  padding-block-start: 0.75rem;
+}
+.action {
+  inline-size: fit-content;
+  color: var(--ink);
+  text-decoration: underline;
+  text-underline-offset: 0.25em;
+}

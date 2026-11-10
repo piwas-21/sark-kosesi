@@ -10,11 +10,13 @@ import {
 import type { PlannerCopy } from "./copy";
 import {
   decimal,
+  draftFileInput,
   emptyZone,
   hasMeasurements,
   zoneInput,
   type ZoneDraft,
 } from "./draft";
+import { DraftFiles } from "./draft-files";
 import { PlanSheet } from "./plan-sheet";
 import { RoomFields, ZoneFields } from "./zone-fields";
 import styles from "./planner.module.css";
@@ -100,7 +102,10 @@ export function RoomPlanner({ copy }: { copy: PlannerCopy }) {
                 tolerance: decimal(room.tolerance),
                 items: items.map(zoneInput),
                 doorClearances:
-                  doorState === "unknown" ? null : activeDoors.map(zoneInput),
+                  doorState === "unknown" ||
+                  (doorState === "measured" && activeDoors.length === 0)
+                    ? null
+                    : activeDoors.map(zoneInput),
               }),
             );
           }}
@@ -205,6 +210,27 @@ export function RoomPlanner({ copy }: { copy: PlannerCopy }) {
               {copy.clear}
             </button>
           </div>
+          <DraftFiles
+            copy={copy.files}
+            draft={draftFileInput(unit, room, items, doorState, doors)}
+            onApply={(opened) => {
+              setUnit(opened.unit);
+              setRoom(opened.room);
+              setItems(
+                opened.items.map((zone) => ({ ...zone, id: nextId.current++ })),
+              );
+              setDoors(
+                opened.doors.map((zone) => ({
+                  ...zone,
+                  id: nextId.current++,
+                  rotation: 0,
+                })),
+              );
+              setDoorState(opened.doorMode);
+              setShowErrors(false);
+              setResult(null);
+            }}
+          />
         </form>
         <PlanSheet
           copy={copy}

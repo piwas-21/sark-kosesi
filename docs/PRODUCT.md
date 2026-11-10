@@ -84,5 +84,6 @@ closed version 1 document up to 16 KiB, rejects duplicate fields, and keeps
 bounded blank or unfinished measurement fields editable. It contains no
 calculated fit, catalogue dimensions, names or identifiers. Recompute the
 result from the validated measurements. The encoder accepts ordinary data
-records and arrays. Preview import and download controls are separate work;
-the format creates no browser or server storage.
+records and arrays. The preview can download a local copy and open a file
+chosen by the user. Opening only stages the draft until the user confirms
+replacement. The planner does not send or automatically store a file.
