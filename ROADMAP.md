@@ -182,9 +182,9 @@ measurement and rotation controls, a drawn footprint, and text clearance and fit
 results. Caller measurements stay on the page unless the user downloads a
 local file. A selected plan replaces the current draft only after confirmation.
 The copy is drafted for all seven locales. The owner approved the 252 Linux
-preview baselines with the file controls. Hosted visual comparison,
-native-language acceptance, verified product dimensions and
-physical-fit acceptance remain open.
+preview baselines with the file controls. Integration requires successful
+hosted visual comparison. Native-language acceptance, verified product
+dimensions and physical-fit acceptance remain open.
 
 Remaining delivery sequence: P0 business inputs in parallel → P2 inventory/catalogue → P3 checkout/payments → P4 customer/admin operations → P5 room planning and content → P6 acceptance → P7 controlled launch. Each phase has explicit exit evidence in the plan.
 
