@@ -320,3 +320,177 @@ async fn outcome_row_does_not_contain_synthetic_mailbox_or_bearer(pool: PgPool) 
     assert!(!row.contains(ADDRESS));
     assert!(!row.contains(&bearer_hex));
 }
+
+#[sqlx::test(migrator = "MIGRATOR")]
+async fn inspect_rejects_damaged_outcome_and_start_binding(pool: PgPool) {
+    let (time, key, verifier) = fixture(&pool).await;
+    assert_eq!(
+        claim_open_and_record(&pool, &verifier, time.as_ref(), &key, |_, _| {
+            TransportOutcome::Accepted
+        })
+        .await,
+        Ok(OpenOutcome::Opened)
+    );
+    assert_eq!(
+        inspect(&pool, &verifier).await,
+        Ok(DeliveryState::Recorded(TransportOutcome::Accepted))
+    );
+    pool.execute("ALTER TABLE email_verification_delivery_outcomes DISABLE TRIGGER guard_email_verification_delivery_outcome; ALTER TABLE email_verification_delivery_outcomes DROP CONSTRAINT email_verification_delivery_outcomes_outcome_check").await.expect("isolate damaged storage");
+    sqlx::query(
+        "UPDATE email_verification_delivery_outcomes SET outcome='invalid' WHERE verifier=$1",
+    )
+    .bind(verifier.as_slice())
+    .execute(&pool)
+    .await
+    .expect("damage classification");
+    assert_eq!(
+        inspect(&pool, &verifier).await,
+        Err(VerificationError::Unavailable)
+    );
+    sqlx::query("UPDATE email_verification_delivery_outcomes SET outcome='accepted',start_transaction_id=transaction_id WHERE verifier=$1").bind(verifier.as_slice()).execute(&pool).await.expect("damage start binding");
+    assert_eq!(
+        inspect(&pool, &verifier).await,
+        Err(VerificationError::Unavailable)
+    );
+    sqlx::query("UPDATE email_verification_delivery_outcomes o SET start_transaction_id=s.transaction_id FROM email_verification_delivery_starts s WHERE o.verifier=$1 AND s.verifier=o.verifier").bind(verifier.as_slice()).execute(&pool).await.expect("restore binding");
+    assert_eq!(
+        inspect(&pool, &verifier).await,
+        Ok(DeliveryState::Recorded(TransportOutcome::Accepted))
+    );
+}
+
+#[sqlx::test(migrator = "MIGRATOR")]
+async fn changed_classification_after_guard_rolls_back_exact_readback(pool: PgPool) {
+    let (time, key, verifier) = fixture(&pool).await;
+    pool.execute("CREATE FUNCTION test_change_outcome() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN NEW.outcome='uncertain'; RETURN NEW; END $$; CREATE TRIGGER z_change_outcome BEFORE INSERT ON email_verification_delivery_outcomes FOR EACH ROW EXECUTE FUNCTION test_change_outcome()").await.expect("install post-guard change");
+    assert_eq!(
+        claim_open_and_record(&pool, &verifier, time.as_ref(), &key, |_, _| {
+            TransportOutcome::Accepted
+        })
+        .await,
+        Err(VerificationError::Unavailable)
+    );
+    assert_eq!(inspect(&pool, &verifier).await, Ok(DeliveryState::Unknown));
+    pool.execute("DROP TRIGGER z_change_outcome ON email_verification_delivery_outcomes")
+        .await
+        .expect("remove change");
+    let (time, key, control) = fixture(&pool).await;
+    assert_eq!(
+        claim_open_and_record(&pool, &control, time.as_ref(), &key, |_, _| {
+            TransportOutcome::Accepted
+        })
+        .await,
+        Ok(OpenOutcome::Opened)
+    );
+    assert_eq!(
+        inspect(&pool, &control).await,
+        Ok(DeliveryState::Recorded(TransportOutcome::Accepted))
+    );
+}
+
+#[sqlx::test(migrator = "MIGRATOR")]
+async fn changed_start_after_insert_fails_exact_binding_even_when_native_check_passes(
+    pool: PgPool,
+) {
+    let (time, key, verifier) = fixture(&pool).await;
+    pool.execute("CREATE FUNCTION test_change_start() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN UPDATE email_verification_delivery_starts SET started_at=started_at-1 WHERE verifier=NEW.verifier; RETURN NEW; END $$; CREATE TRIGGER z_change_start AFTER INSERT ON email_verification_delivery_outcomes FOR EACH ROW EXECUTE FUNCTION test_change_start()").await.expect("install post-insert start mutation");
+    let options = (*pool.connect_options()).clone();
+    assert_eq!(
+        claim_open_and_record(&pool, &verifier, time.as_ref(), &key, |_, _| {
+            std::thread::spawn(move || {
+                let runtime = tokio::runtime::Builder::new_current_thread().enable_all().build().expect("runtime");
+                runtime.block_on(async move {
+                    let other = PgPoolOptions::new().max_connections(1).connect_with(options).await.expect("separate pool");
+                    other.execute("ALTER TABLE email_verification_delivery_starts DISABLE TRIGGER guard_email_verification_delivery_start").await.expect("isolate corrupted start after opening");
+                    other.close().await;
+                });
+            }).join().expect("isolation thread");
+            TransportOutcome::Accepted
+        })
+        .await,
+        Err(VerificationError::Unavailable)
+    );
+    assert_eq!(inspect(&pool, &verifier).await, Ok(DeliveryState::Unknown));
+    let retained: i64 = sqlx::query_scalar(
+        "SELECT started_at FROM email_verification_delivery_starts WHERE verifier=$1",
+    )
+    .bind(verifier.as_slice())
+    .fetch_one(&pool)
+    .await
+    .expect("retained start");
+    assert_eq!(retained, 1000, "failed operation rolled the mutation back");
+    let mut tx = pool.begin().await.expect("native control");
+    sqlx::query("INSERT INTO email_verification_delivery_outcomes(verifier,start_transaction_id,outcome,observed_at) SELECT verifier,transaction_id,'accepted',1000 FROM email_verification_delivery_starts WHERE verifier=$1").bind(verifier.as_slice()).execute(&mut *tx).await.expect("insert control");
+    sqlx::query("SET CONSTRAINTS require_email_verification_delivery_outcome IMMEDIATE")
+        .execute(&mut *tx)
+        .await
+        .expect("native constraint accepts changed start time");
+    let changed: i64 = sqlx::query_scalar(
+        "SELECT started_at FROM email_verification_delivery_starts WHERE verifier=$1",
+    )
+    .bind(verifier.as_slice())
+    .fetch_one(&mut *tx)
+    .await
+    .expect("changed start");
+    assert_eq!(changed, 999);
+    tx.rollback().await.expect("discard control");
+}
+
+#[sqlx::test(migrator = "MIGRATOR")]
+async fn changed_start_xid_or_chronology_fails_real_deferred_constraint(pool: PgPool) {
+    for setup in [
+        "CREATE OR REPLACE FUNCTION test_damage_outcome() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN NEW.start_transaction_id=NEW.transaction_id; RETURN NEW; END $$; CREATE TRIGGER z_damage_outcome BEFORE INSERT ON email_verification_delivery_outcomes FOR EACH ROW EXECUTE FUNCTION test_damage_outcome()",
+        "CREATE OR REPLACE FUNCTION test_damage_outcome() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN NEW.observed_at=0; RETURN NEW; END $$; CREATE TRIGGER z_damage_outcome BEFORE INSERT ON email_verification_delivery_outcomes FOR EACH ROW EXECUTE FUNCTION test_damage_outcome()",
+    ] {
+        let (time, key, verifier) = fixture(&pool).await;
+        pool.execute(setup)
+            .await
+            .expect("install post-guard corruption");
+        assert_eq!(
+            claim_open_and_record(&pool, &verifier, time.as_ref(), &key, |_, _| {
+                TransportOutcome::Accepted
+            })
+            .await,
+            Err(VerificationError::Unavailable)
+        );
+        assert_eq!(inspect(&pool, &verifier).await, Ok(DeliveryState::Unknown));
+        let mut tx = pool.begin().await.expect("native control");
+        sqlx::query("INSERT INTO email_verification_delivery_outcomes(verifier,start_transaction_id,outcome,observed_at) SELECT verifier,transaction_id,'accepted',1000 FROM email_verification_delivery_starts WHERE verifier=$1").bind(verifier.as_slice()).execute(&mut *tx).await.expect("guard executes before test mutation");
+        let error =
+            sqlx::query("SET CONSTRAINTS require_email_verification_delivery_outcome IMMEDIATE")
+                .execute(&mut *tx)
+                .await
+                .expect_err("real deferred constraint must fail");
+        assert!(
+            error
+                .to_string()
+                .contains("Verification delivery outcome requires its prior durable start")
+        );
+        tx.rollback().await.expect("discard failed control");
+        pool.execute("DROP TRIGGER z_damage_outcome ON email_verification_delivery_outcomes")
+            .await
+            .expect("remove mutation");
+    }
+}
+
+#[sqlx::test(migrator = "MIGRATOR")]
+async fn clock_rewind_in_callback_leaves_start_unknown(pool: PgPool) {
+    let (time, key, verifier) = fixture(&pool).await;
+    assert_eq!(
+        claim_open_and_record(&pool, &verifier, time.as_ref(), &key, |_, _| {
+            time.0.store(999, Ordering::SeqCst);
+            TransportOutcome::Accepted
+        })
+        .await,
+        Err(VerificationError::Unavailable)
+    );
+    assert_eq!(inspect(&pool, &verifier).await, Ok(DeliveryState::Unknown));
+    time.0.store(1000, Ordering::SeqCst);
+    assert_eq!(
+        claim_open_and_record(&pool, &verifier, time.as_ref(), &key, |_, _| panic!(
+            "must not reopen"
+        ))
+        .await,
+        Ok(OpenOutcome::AlreadyStarted)
+    );
+}

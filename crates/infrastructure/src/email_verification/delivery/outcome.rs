@@ -56,7 +56,7 @@ pub(super) async fn record(
     pool: &PgPool,
     permit: &start::Permit,
     key: &VerificationDeliveryKey,
-    clock: &dyn Clock,
+    clock: &ObservedClock<&dyn Clock>,
     outcome: TransportOutcome,
 ) -> Result<(), VerificationError> {
     let mut tx = begin_durable(pool).await?;
@@ -64,9 +64,6 @@ pub(super) async fn record(
         return Err(VerificationError::Unavailable);
     }
     let at = bounded_now(clock)?;
-    if at < permit.started_at() {
-        return Err(VerificationError::Unavailable);
-    }
     let inserted = sqlx::query("INSERT INTO email_verification_delivery_outcomes(verifier,start_transaction_id,outcome,observed_at) VALUES($1,$2::text::xid8,$3,$4)")
         .bind(permit.verifier.as_slice()).bind(permit.transaction_id()).bind(outcome.stored()).bind(at)
         .execute(&mut *tx).await.map_err(|_| VerificationError::Unavailable)?;

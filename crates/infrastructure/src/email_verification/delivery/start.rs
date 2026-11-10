@@ -53,10 +53,6 @@ impl Permit {
     pub(super) fn transaction_id(&self) -> &str {
         &self.transaction_id
     }
-
-    pub(super) fn started_at(&self) -> i64 {
-        self.started_at
-    }
 }
 pub(super) enum InternalClaim {
     New(Box<Permit>),
