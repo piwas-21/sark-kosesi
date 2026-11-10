@@ -361,12 +361,11 @@ async fn callback_runs_after_challenge_lock_is_released(pool: PgPool) {
     let outcome=claim_and_open(&pool,&verifier,time.as_ref(),&key,|identity,bearer| {
         correct.store(exact_callback(identity,bearer,&verifier),Ordering::SeqCst);
         let acquired=std::thread::spawn(move || {
-            use sqlx::Connection;
             let runtime=tokio::runtime::Builder::new_current_thread().enable_all().build();
             let Ok(runtime)=runtime else {return false;};
             runtime.block_on(async move {
-                let Ok(mut connection)=sqlx::PgConnection::connect_with(&options).await else {return false;};
-                let Ok(mut tx)=connection.begin().await else {return false;};
+                let Ok(pool)=sqlx::postgres::PgPoolOptions::new().max_connections(1).connect_with(options).await else {return false;};
+                let Ok(mut tx)=pool.begin().await else {return false;};
                 let acquired=sqlx::query("SELECT verifier FROM email_verification_challenges WHERE verifier=$1 FOR UPDATE NOWAIT").bind(verifier.as_slice()).execute(&mut *tx).await.is_ok();
                 let _=tx.rollback().await;
                 acquired
