@@ -262,8 +262,8 @@ supervision or live provider activation follows from deploying the empty preview
    whole-basket holds and a minimal outbox event in one transaction. Current basket,
    publications, reviewed policy and exact amounts are revalidated; changes require
    fresh acceptance. One quote creates one order and exact retries preserve history.
-   Finish verified-customer payment admission, redemption disposition after
-   cancellation, lifecycle/payment transitions and retention before
+   Finish redemption disposition after cancellation, lifecycle/payment
+   transitions and retention before
    public checkout; seller/legal facts remain required trusted configuration.
    Expose the same-origin API/contracts and checkout UI only with those controls.
 4. The private test-payment domain now models immutable attempt identity, exact
@@ -274,7 +274,10 @@ supervision or live provider activation follows from deploying the empty preview
    Private owned-order attempts now persist exact captured amount/configuration/
    request bytes and their prepared event, with fresh ownership, current commercial
    eligibility and complete existing physically backed holds. Exact effect retries
-   preserve historical receipts without new stock effects. One serialized dispatch
+   preserve historical receipts without new stock effects. Account-bound attempts
+   retain the exact verified order account. Private preparation and history require
+   the same current customer session and guest basket. The native attempt guard
+   checks that association against the accepted quote. One serialized dispatch
    start and reconciliation event commit before a single-use permit; later callers
    reconcile even after key/hold/source expiry. The private test-key HTTP client now
    verifies the authenticated expected profile, sends exact permit bytes once and

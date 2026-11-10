@@ -14,35 +14,72 @@ pub async fn prepare_attempt(
     intent: &PreparationIntent,
     configuration: &Configuration,
 ) -> Result<PreparationReceipt, PaymentStoreError> {
-    let mut scope = guest_baskets::mutation_scope(store, key, csrf).await?;
+    prepare(store, key, csrf, None, effect, intent, configuration).await
+}
+
+/// Prepare a private payment only while both account and basket authority are held.
+pub async fn prepare_verified_attempt(
+    store: &GuestSessionStore,
+    key: &GuestCredential,
+    csrf: &str,
+    customer: &crate::customer_sessions::CustomerSessionToken,
+    effect: &str,
+    intent: &PreparationIntent,
+    configuration: &Configuration,
+) -> Result<PreparationReceipt, PaymentStoreError> {
+    prepare(
+        store,
+        key,
+        csrf,
+        Some(customer),
+        effect,
+        intent,
+        configuration,
+    )
+    .await
+}
+
+async fn prepare(
+    store: &GuestSessionStore,
+    key: &GuestCredential,
+    csrf: &str,
+    customer: Option<&crate::customer_sessions::CustomerSessionToken>,
+    effect: &str,
+    intent: &PreparationIntent,
+    configuration: &Configuration,
+) -> Result<PreparationReceipt, PaymentStoreError> {
+    let (mut scope, session) = if let Some(customer) = customer {
+        let (scope, session) =
+            guest_baskets::verified_scope(store, key, Some(csrf), customer).await?;
+        (scope, Some(session))
+    } else {
+        (guest_baskets::mutation_scope(store, key, csrf).await?, None)
+    };
+    let account = session.as_ref().map(|s| s.account_id());
     if !valid_command_id(effect) || intent.validate().is_err() {
         return Err(PaymentStoreError::InvalidRequest);
     }
     let owner = scope.basket_id().to_owned();
-    if let Some(frozen) = stored::by_effect(scope.transaction(), &owner, effect).await? {
+    if let Some(frozen) = stored::by_effect(scope.transaction(), &owner, effect, account).await? {
         if frozen.snapshot().binding.order_id != intent.order_id {
             return Err(PaymentStoreError::Conflict);
         }
-        checkout_orders::guest_snapshot_in_transaction(
-            scope.transaction(),
-            &owner,
-            &intent.order_id,
-        )
-        .await?;
-        scope.checked_at()?;
+        let at = scope.checked_at()?;
+        check_session(session.as_ref(), at)?;
         scope.rollback().await?;
         return Ok(PreparationReceipt {
             frozen,
             replayed: true,
         });
     }
-    let order = checkout_orders::guest_snapshot_in_transaction(
+    let order = checkout_orders::snapshot_for_account_in_transaction(
         scope.transaction(),
         &owner,
         &intent.order_id,
+        account,
     )
     .await?;
-    if stored::by_order(scope.transaction(), &owner, &intent.order_id)
+    if stored::by_order(scope.transaction(), &owner, &intent.order_id, account)
         .await?
         .is_some()
     {
@@ -56,7 +93,7 @@ pub async fn prepare_attempt(
     let binding = AttemptBinding {
         id: scope.new_id()?,
         order_id: order.identity.id.clone(),
-        basket_id: owner,
+        basket_id: owner.clone(),
         stock_group_id: order.identity.stock_group_id.clone(),
         profile: current.profile,
         configuration_sha256: current.sha256,
@@ -74,12 +111,32 @@ pub async fn prepare_attempt(
         intent,
         effect,
         &event_id,
+        account,
     )
     .await?;
-    proof.check_at(scope.checked_at()?)?;
+    // Restoration verifies the canonical body against the retained snapshot.
+    let retained = stored::by_effect(scope.transaction(), &owner, effect, account).await?;
+    if retained.as_ref().map(FrozenAttempt::snapshot) != Some(frozen.snapshot()) {
+        return Err(PaymentStoreError::InvalidStoredData);
+    }
+    let at = scope.checked_at()?;
+    check_session(session.as_ref(), at)?;
+    proof.check_at(at)?;
     scope.commit().await?;
     Ok(PreparationReceipt {
         frozen,
         replayed: false,
     })
+}
+
+pub(super) fn check_session(
+    session: Option<&crate::customer_sessions::HeldSession>,
+    at: i64,
+) -> Result<(), PaymentStoreError> {
+    if let Some(session) = session {
+        session
+            .check_at(at)
+            .map_err(|_| checkout_orders::OrderStoreError::Denied)?;
+    }
+    Ok(())
 }

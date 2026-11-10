@@ -254,8 +254,11 @@ verified account, and a current credential-revision-bound session through the
 final time check. The account association stays in immutable private storage.
 Verified acceptance requires the exact account-bound quote, held current
 authority and a reciprocal account debit in the order transaction. Guest
-acceptance, guest payment preparation and guest order-link proof issuance
-reject account-bound custody.
+acceptance, guest payment preparation and history, and guest order-link proof
+issuance reject account-bound custody. Private verified payment preparation and
+history require both the retained order account and current guest ownership.
+Native insertion binds the attempt to the quote account. The account association
+stays in the private relational record.
 Public coupon access still requires authenticated checkout and trusted-edge
 abuse controls.
 

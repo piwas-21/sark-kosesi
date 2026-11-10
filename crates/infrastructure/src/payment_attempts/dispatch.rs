@@ -91,7 +91,13 @@ pub async fn start_dispatch(
     .fetch_optional(&mut *tx)
     .await?
     .ok_or(PaymentStoreError::NotFound)?;
-    let frozen = stored::by_id(&mut tx, &owner, attempt_id).await?;
+    let frozen = stored::by_id(
+        &mut tx,
+        &owner,
+        attempt_id,
+        checkout_orders::OrderAccess::Internal,
+    )
+    .await?;
     let previous: Option<(String, i64)> = sqlx::query_as(
         "SELECT left(id,33),started_at FROM payment_dispatch_starts WHERE attempt_id=$1",
     )
