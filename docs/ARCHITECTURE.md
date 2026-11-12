@@ -1664,15 +1664,17 @@ and reconstruct captured allocations against immutable source rows. Private
 contact/seller/order types have no Debug implementation; database error details
 are discarded at this boundary.
 
-Private pre-attempt cancellation requires the owned order, guest CSRF and a
+Private pre-dispatch cancellation requires the owned order, guest CSRF and a
 current session for its account when bound. Cancellation and first payment
-attempt insertion serialize on the same basket row. The native guards read
-after that claim and reject conflicting custody. The cancellation receipt binds
-the original order and exact effect key, commits with a minimal outbox event,
-and rechecks current authority after the writes. Historical reads and replay
-retain the same ownership checks. Existing stock expiry handles the reservation,
-and the original redemption remains part of lifetime usage. Orders with an
-admitted attempt require separate reconciliation and disposition.
+attempt insertion serialize on the same basket row. With an admitted attempt,
+cancellation holds that basket then the attempt row, while dispatch holds the
+attempt row. Read-committed native guards check after the claim so neither can
+commit against the other's winning effect. The receipt binds the exact admitted
+attempt, if present, and effect key, commits with a minimal outbox event, and
+rechecks current authority after the writes. Historical pre-attempt receipts retain
+their original meaning. Existing stock expiry handles the reservation, and the
+original redemption remains part of lifetime usage. A durable dispatch start
+requires separate reconciliation and disposition.
 
 Seller policy is a required trusted server argument with explicit identity, tax
 registration choice, document versions/digests, locale, evidence and validity.

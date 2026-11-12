@@ -130,10 +130,7 @@ async fn guest_cancellation_replays_and_blocks_new_payment_without_stock_changes
     assert_eq!(inventory_and_redemptions(&pool).await, before);
 }
 
-#[sqlx::test(migrator = "MIGRATOR")]
-async fn bound_promoted_cancellation_requires_live_guest_and_account_and_retains_debit(
-    pool: PgPool,
-) {
+async fn bound_promoted_cancellation(pool: PgPool, post_attempt: bool) {
     quote::seed(&pool).await;
     pool.execute("INSERT INTO staff_capabilities VALUES('author','promotion.manage'),('reviewer','promotion.review')").await.expect("independent grants");
     let mut policy = promotion::policy();
@@ -174,6 +171,19 @@ async fn bound_promoted_cancellation_requires_live_guest_and_account_and_retains
     .expect("bound order")
     .snapshot;
     let before = inventory_and_redemptions(&pool).await;
+    if post_attempt {
+        prepare_verified_attempt(
+            &store,
+            &key,
+            &csrf,
+            &customer,
+            "pay",
+            &payment::intent(&placed),
+            &payment::config(),
+        )
+        .await
+        .expect("admitted account attempt");
+    }
     assert!(
         cancel_order(&store, &key, &csrf, "cancel", &placed.identity.id)
             .await
@@ -214,7 +224,7 @@ async fn bound_promoted_cancellation_requires_live_guest_and_account_and_retains
         matches!(result, Err(OrderStoreError::Denied)),
         "expired customer session cannot commit"
     );
-    assert_eq!(counts(&pool).await, (0, 0, 0, 0));
+    assert_eq!(counts(&pool).await, (0, 0, i64::from(post_attempt), 0));
     assert_eq!(inventory_and_redemptions(&pool).await, before);
     time.0.store(1100, Ordering::SeqCst);
     let canceled = cancel_verified_order(
@@ -272,7 +282,7 @@ async fn bound_promoted_cancellation_requires_live_guest_and_account_and_retains
         .await,
         Err(PaymentStoreError::Boundary(OrderStoreError::Conflict))
     ));
-    assert_eq!(counts(&pool).await, (1, 1, 0, 0));
+    assert_eq!(counts(&pool).await, (1, 1, i64::from(post_attempt), 0));
     assert_eq!(inventory_and_redemptions(&pool).await, before);
     let account_id: i64 = sqlx::query_scalar(
         "SELECT promotion_account_id FROM checkout_order_cancellations WHERE order_id=$1",
@@ -331,8 +341,18 @@ async fn bound_promoted_cancellation_requires_live_guest_and_account_and_retains
     );
 }
 
+#[sqlx::test(migrator = "MIGRATOR")]
+async fn bound_pre_attempt_cancellation_preserves_account_authority(pool: PgPool) {
+    bound_promoted_cancellation(pool, false).await;
+}
+
+#[sqlx::test(migrator = "MIGRATOR")]
+async fn bound_undispatched_cancellation_preserves_account_authority(pool: PgPool) {
+    bound_promoted_cancellation(pool, true).await;
+}
+
 #[sqlx::test(migrations = false)]
-async fn a_prepared_or_started_attempt_blocks_cancellation_without_touching_stock(pool: PgPool) {
+async fn upgraded_started_attempt_blocks_cancellation_without_touching_stock(pool: PgPool) {
     MIGRATOR.run_to(55, &pool).await.expect("schema 55");
     let (store, time, session, csrf, placed) = payment::accepted(&pool).await;
     let key = GuestCredential::from_session(&session).expect("owner");
@@ -362,13 +382,10 @@ async fn a_prepared_or_started_attempt_blocks_cancellation_without_touching_stoc
     assert!(restored.replayed);
     assert!(restored.frozen.snapshot() == prepared.frozen.snapshot());
     assert_eq!(restored.frozen.body(), prepared.frozen.body());
-    assert!(matches!(
-        cancel_order(&store, &key, &csrf, "cancel", &placed.identity.id).await,
-        Err(OrderStoreError::Conflict)
-    ));
     let error = sqlx::query("INSERT INTO checkout_order_cancellations(order_id,basket_id,effect_key,canceled_at,event_id) VALUES($1,$2,'native-cancel',1500,'eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee')")
         .bind(&placed.identity.id).bind(&placed.identity.basket_id).execute(&pool).await.expect_err("direct cancellation after payment");
     assert_guard(error, "Cancellation cannot follow a payment attempt");
+    MIGRATOR.run_to(61, &pool).await.expect("schema 61");
     let ids = payment::Ids(AtomicU64::new(10000));
     assert!(matches!(
         start_dispatch(
@@ -439,8 +456,8 @@ async fn competing_payment_and_cancellation(pool: PgPool, cancellation_first: bo
         assert_eq!(counts(&pool).await, (1, 1, 0, 0));
     } else {
         assert!(pay.is_ok(), "first payment commits");
-        assert!(matches!(cancel, Err(OrderStoreError::Conflict)));
-        assert_eq!(counts(&pool).await, (0, 0, 1, 0));
+        assert!(cancel.is_ok(), "undispatched payment can be canceled");
+        assert_eq!(counts(&pool).await, (1, 1, 1, 0));
     }
     assert_eq!(inventory_and_redemptions(&pool).await, before);
 }

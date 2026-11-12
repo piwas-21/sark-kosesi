@@ -1,4 +1,4 @@
-//! Private cancellation of accepted orders that have never prepared an attempt.
+//! Private cancellation before a payment dispatch has started.
 use crate::{
     checkout_orders::{self, OrderStoreError, check_session, identifier},
     customer_sessions::{CustomerSessionToken, HeldSession},
@@ -85,22 +85,26 @@ async fn cancel(
     {
         return Err(OrderStoreError::Conflict);
     }
-    if rows::has_attempt(scope.transaction(), order_id).await? {
-        return Err(OrderStoreError::Conflict);
-    }
+    let attempt = rows::claim_undispatched_attempt(scope.transaction(), order_id).await?;
     let canceled_at = scope.checked_at()?;
     if canceled_at < order.identity.created_at {
+        return Err(OrderStoreError::ClockUnavailable);
+    }
+    if attempt
+        .as_ref()
+        .is_some_and(|(_, created_at)| canceled_at < *created_at)
+    {
         return Err(OrderStoreError::ClockUnavailable);
     }
     let event = scope.new_id()?;
     rows::insert(
         scope.transaction(),
-        &owner,
-        order_id,
+        &order.identity,
         effect,
         account,
         canceled_at,
         &event,
+        attempt.as_ref().map(|(id, _)| id.as_str()),
     )
     .await?;
     sqlx::query("SET CONSTRAINTS require_complete_checkout_cancellation IMMEDIATE")
@@ -114,6 +118,7 @@ async fn cancel(
             effect: effect.into(),
             canceled_at,
             event_id: event,
+            attempt_id: attempt.map(|(id, _)| id),
             current_transaction: true,
         })
     {

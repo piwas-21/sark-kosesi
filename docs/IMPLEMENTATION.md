@@ -262,11 +262,12 @@ supervision or live provider activation follows from deploying the empty preview
    whole-basket holds and a minimal outbox event in one transaction. Current basket,
    publications, reviewed policy and exact amounts are revalidated; changes require
    fresh acceptance. One quote creates one order and exact retries preserve history.
-   An owned order can record a private cancellation before any payment attempt.
-   The immutable receipt and event commit together. Both cancellation and first
-   attempt admission serialize on the owned basket and recheck durable state.
+   An owned order can record a private cancellation before dispatch starts,
+   including after a test attempt is admitted. The immutable receipt and event
+   commit together. Cancellation and admission serialize on the owned basket;
+   cancellation and dispatch serialize on the attempt and recheck durable state.
    Existing holds follow normal expiry and prior promotion usage stays consumed.
-   Finish post-attempt cancellation, redemption disposition, lifecycle/payment
+   Finish post-dispatch disposition, redemption disposition, lifecycle/payment
    transitions and retention before public checkout. Seller and legal facts
    remain required trusted configuration.
    Expose the same-origin API/contracts and checkout UI only with those controls.
