@@ -458,9 +458,13 @@ consumption and verified account establishment share one target budget, with one
 debit per request. Private replacement additionally requires a trusted, immutable,
 bounded and integrity-checked offline password blocklist snapshot; exact NFC
 matches are denied after proof precheck and before Argon2. Snapshot validity is
-rechecked before commit. No corpus is supplied. Obtain and review a real corpus,
-coordinate its delivery, withdrawal and freshness, and complete secure delivery,
-trusted ingress, timing and browser controls before exposing the flow.
+rechecked before commit. No corpus is supplied. Obtain and review a real corpus
+and coordinate its delivery, withdrawal and freshness. A loopback,
+preview-authenticated test-only POST consumer can establish an account
+from a supplied proof with one admission debit; it is disabled unless its test
+origin and dedicated key are both configured. It issues no session or proof.
+Complete secure delivery, trusted ingress, timing and browser controls before
+exposing the flow beyond this test boundary.
 
 Private guest-order linking requires a live guest basket credential and CSRF
 proof to issue a one-use challenge for that exact accepted order. A current

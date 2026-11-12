@@ -1,0 +1,422 @@
+use axum::{
+    Router,
+    body::{Body, to_bytes},
+    http::{Request, StatusCode},
+};
+use commerce_api::{AppState, config::Config, router, router_with_verification};
+use commerce_application::request_context::{Clock, ContextError, Identifiers};
+use commerce_infrastructure::{
+    MIGRATOR,
+    customer_credential_admission::{AdmissionKey, AdmissionLimits},
+    email_verification,
+};
+use sqlx::PgPool;
+use std::{collections::HashMap, sync::Arc};
+use tokio::sync::Semaphore;
+use tower::ServiceExt;
+const PREVIEW: &str = "fixture_preview_key_12345678901234567890";
+const ORIGIN: &str = "https://test.example.invalid";
+const PATH: &str = "/api/test/verification/redeem";
+struct Time;
+impl Clock for Time {
+    fn unix_seconds(&self) -> Result<u64, ContextError> {
+        Ok(1_700_000_000)
+    }
+}
+struct Ids;
+impl Identifiers for Ids {
+    fn next(&self) -> Result<[u8; 16], ContextError> {
+        Ok([1; 16])
+    }
+}
+fn values() -> HashMap<String, String> {
+    [
+        ("APP_ENV", "test"),
+        ("DATABASE_URL", "postgresql://localhost/isolated"),
+        ("PREVIEW_TOKEN", PREVIEW),
+        ("API_BIND", "127.0.0.1:4567"),
+    ]
+    .into_iter()
+    .map(|(k, v)| (k.into(), v.into()))
+    .collect()
+}
+fn enabled() -> HashMap<String, String> {
+    let mut v = values();
+    v.insert("TEST_VERIFICATION_ORIGIN".into(), ORIGIN.into());
+    v.insert("TEST_VERIFICATION_ADMISSION_KEY".into(), "07".repeat(32));
+    v
+}
+fn state(pool: &PgPool) -> AppState {
+    AppState {
+        pool: pool.clone(),
+        preview_token: Arc::from(PREVIEW),
+        capacity: Arc::new(Semaphore::new(32)),
+        clock: Arc::new(Time),
+        identifiers: Arc::new(Ids),
+    }
+}
+fn app(pool: &PgPool) -> Router {
+    router_with_verification(
+        state(pool),
+        None,
+        None,
+        Config::parse(&enabled()).expect("config").verification,
+    )
+    .expect("router")
+}
+fn request(body: String) -> Request<Body> {
+    Request::builder()
+        .method("POST")
+        .uri(PATH)
+        .header("authorization", format!("Bearer {PREVIEW}"))
+        .header("origin", ORIGIN)
+        .header("content-type", "application/json")
+        .body(Body::from(body))
+        .expect("request")
+}
+fn encode(bytes: &[u8; 32]) -> String {
+    bytes.iter().map(|b| format!("{b:02x}")).collect()
+}
+async fn proof(pool: &PgPool, email: &str) -> String {
+    let key = AdmissionKey::new(1, [7; 32]).expect("key");
+    let token = email_verification::issue(
+        pool,
+        email,
+        &Time,
+        &key,
+        AdmissionLimits::new(120, 5).expect("limits"),
+    )
+    .await
+    .expect("issue");
+    encode(token.expose_bytes())
+}
+fn body(email: &str, token: &str) -> String {
+    serde_json::json!({"email":email,"token":token}).to_string()
+}
+async fn effects(pool: &PgPool) -> (i64, i64, i32) {
+    sqlx::query_as("SELECT (SELECT count(*) FROM verified_customer_accounts), (SELECT count(consumed_at) FROM email_verification_challenges), (SELECT admitted FROM customer_credential_admission_scopes WHERE purpose=3)").fetch_one(pool).await.expect("effects")
+}
+async fn checked(response: axum::response::Response) -> (StatusCode, Vec<u8>) {
+    assert_eq!(response.headers()["cache-control"], "private, no-store");
+    assert_eq!(response.headers()["referrer-policy"], "no-referrer");
+    assert!(response.headers().get("set-cookie").is_none());
+    let status = response.status();
+    (
+        status,
+        to_bytes(response.into_body(), 4096)
+            .await
+            .expect("response")
+            .to_vec(),
+    )
+}
+#[test]
+fn configuration_is_disabled_by_default_and_only_enabled_in_test() {
+    assert!(
+        Config::parse(&values())
+            .expect("base")
+            .verification
+            .is_none()
+    );
+    assert!(
+        Config::parse(&enabled())
+            .expect("enabled")
+            .verification
+            .is_some()
+    );
+    for mode in ["local", "staging", "production"] {
+        let mut v = enabled();
+        v.insert("APP_ENV".into(), mode.into());
+        assert!(Config::parse(&v).is_err());
+    }
+    for key in [
+        "TEST_VERIFICATION_ORIGIN",
+        "TEST_VERIFICATION_ADMISSION_KEY",
+    ] {
+        let mut v = enabled();
+        v.remove(key);
+        assert!(Config::parse(&v).is_err());
+    }
+    for key in ["00".repeat(32), "AA".repeat(32), "ab".repeat(31)] {
+        let mut v = enabled();
+        v.insert("TEST_VERIFICATION_ADMISSION_KEY".into(), key);
+        assert!(Config::parse(&v).is_err());
+    }
+    let mut v = enabled();
+    v.insert(
+        "TEST_VERIFICATION_ORIGIN".into(),
+        "http://test.example.invalid".into(),
+    );
+    assert_eq!(
+        Config::parse(&v).err(),
+        Some("Invalid test verification origin")
+    );
+}
+#[sqlx::test(migrator = "MIGRATOR")]
+async fn redemption_is_atomic_and_neutral_on_replay_and_mismatch(pool: PgPool) {
+    let token = proof(&pool, "owner@example.com").await;
+    let app = app(&pool);
+    let wrong = checked(
+        app.clone()
+            .oneshot(request(body("other@example.com", &token)))
+            .await
+            .expect("call"),
+    )
+    .await;
+    assert_eq!(wrong.0, StatusCode::UNAUTHORIZED);
+    assert_eq!(effects(&pool).await, (0, 0, 1));
+    let accepted = checked(
+        app.clone()
+            .oneshot(request(body("owner@example.com", &token)))
+            .await
+            .expect("call"),
+    )
+    .await;
+    assert_eq!(accepted, (StatusCode::NO_CONTENT, vec![]));
+    assert_eq!(effects(&pool).await, (1, 1, 2));
+    let replay = checked(
+        app.clone()
+            .oneshot(request(body("owner@example.com", &token)))
+            .await
+            .expect("call"),
+    )
+    .await;
+    assert_eq!(wrong, replay);
+    assert_eq!(effects(&pool).await, (1, 1, 3));
+    let fresh = proof(&pool, "owner@example.com").await;
+    let duplicate = checked(
+        app.oneshot(request(body("owner@example.com", &fresh)))
+            .await
+            .expect("call"),
+    )
+    .await;
+    assert_eq!(wrong, duplicate);
+    assert_eq!(effects(&pool).await, (1, 1, 4));
+}
+#[sqlx::test(migrator = "MIGRATOR")]
+async fn invalid_inputs_do_not_debit_or_consume(pool: PgPool) {
+    let token = proof(&pool, "owner@example.com").await;
+    let app = app(&pool);
+    let valid = body("owner@example.com", &token);
+    let mut requests = vec![
+        request(format!(
+            "{{\"email\":\"owner@example.com\",\"email\":\"owner@example.com\",\"token\":\"{token}\"}}"
+        )),
+        request(format!(
+            "{{\"email\":\"owner@example.com\",\"token\":\"{token}\",\"extra\":1}}"
+        )),
+        request("[1,2]".into()),
+        request("x".repeat(4097)),
+        request(body("owner@example.com", &token.to_uppercase())),
+    ];
+    let mut absent = request(valid.clone());
+    absent.headers_mut().remove("origin");
+    requests.push(absent);
+    let mut spoof = request(valid.clone());
+    spoof
+        .headers_mut()
+        .insert("origin", "https://evil.invalid".parse().expect("header"));
+    spoof.headers_mut().insert(
+        "x-forwarded-host",
+        "test.example.invalid".parse().expect("header"),
+    );
+    requests.push(spoof);
+    let mut duplicate = request(valid.clone());
+    duplicate
+        .headers_mut()
+        .append("origin", ORIGIN.parse().expect("header"));
+    requests.push(duplicate);
+    let mut query = request(valid);
+    *query.uri_mut() = format!("{PATH}?token=x").parse().expect("uri");
+    requests.push(query);
+    for req in requests {
+        let (status, _) = checked(app.clone().oneshot(req).await.expect("call")).await;
+        assert!(matches!(
+            status,
+            StatusCode::BAD_REQUEST | StatusCode::PAYLOAD_TOO_LARGE | StatusCode::FORBIDDEN
+        ));
+    }
+    assert_eq!(effects(&pool).await, (0, 0, 0));
+    let disabled = router(state(&pool))
+        .oneshot(request(body("owner@example.com", &token)))
+        .await
+        .expect("disabled");
+    assert_eq!(disabled.status(), StatusCode::NOT_FOUND);
+}
+
+#[sqlx::test(migrator = "MIGRATOR")]
+async fn content_type_failures_do_not_debit_or_consume(pool: PgPool) {
+    let token = proof(&pool, "owner@example.com").await;
+    let payload = body("owner@example.com", &token);
+    let app = app(&pool);
+    let mut missing = request(payload.clone());
+    missing.headers_mut().remove("content-type");
+    let mut unsupported = request(payload.clone());
+    unsupported
+        .headers_mut()
+        .insert("content-type", "text/plain".parse().expect("header"));
+    let mut duplicate = request(payload);
+    duplicate
+        .headers_mut()
+        .append("content-type", "application/json".parse().expect("header"));
+    for req in [missing, unsupported, duplicate] {
+        let response = checked(app.clone().oneshot(req).await.expect("call")).await;
+        assert_eq!(
+            response,
+            (
+                StatusCode::UNSUPPORTED_MEDIA_TYPE,
+                br#"{"code":"verification_json_required"}"#.to_vec()
+            )
+        );
+        assert_eq!(effects(&pool).await, (0, 0, 0));
+    }
+}
+
+#[sqlx::test(migrator = "MIGRATOR")]
+async fn truncated_transport_body_is_redacted_and_has_no_effects(pool: PgPool) {
+    use std::{
+        io::{Read, Write},
+        net::{Shutdown, TcpStream},
+        time::Duration,
+    };
+    let token = proof(&pool, "owner@example.com").await;
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
+        .await
+        .expect("loopback");
+    let address = listener.local_addr().expect("address");
+    let router = app(&pool);
+    let server = tokio::spawn(async move { axum::serve(listener, router).await });
+    // A real HTTP premature EOF reaches Bytes extraction as a non-size body error.
+    let payload = body("owner@example.com", &token);
+    let response = tokio::task::spawn_blocking(move || {
+        let mut stream = TcpStream::connect(address).expect("connect");
+        stream.set_read_timeout(Some(Duration::from_secs(3))).expect("deadline");
+        write!(stream, "POST {PATH} HTTP/1.1\r\nHost: localhost\r\nAuthorization: Bearer {PREVIEW}\r\nOrigin: {ORIGIN}\r\nContent-Type: application/json\r\nContent-Length: 4096\r\nConnection: close\r\n\r\n{payload}").expect("partial body");
+        stream.shutdown(Shutdown::Write).expect("premature EOF");
+        let mut response = String::new();
+        stream.read_to_string(&mut response).expect("bounded response");
+        response
+    }).await.expect("transport");
+    assert!(response.starts_with("HTTP/1.1 400 Bad Request"));
+    let lower = response.to_ascii_lowercase();
+    assert!(lower.contains("cache-control: private, no-store"));
+    assert!(lower.contains("referrer-policy: no-referrer"));
+    assert!(response.contains("invalid_verification_request"));
+    assert!(!response.contains("owner@example.com"));
+    assert!(!response.contains(PREVIEW));
+    assert!(!response.contains(&token));
+    assert_eq!(effects(&pool).await, (0, 0, 0));
+    server.abort();
+}
+
+#[sqlx::test(migrator = "MIGRATOR")]
+async fn concurrent_replay_creates_only_one_account(pool: PgPool) {
+    let token = proof(&pool, "owner@example.com").await;
+    let app = app(&pool);
+    let payload = body("owner@example.com", &token);
+    let (a, b) = tokio::join!(
+        app.clone().oneshot(request(payload.clone())),
+        app.oneshot(request(payload))
+    );
+    let a = checked(a.expect("call")).await.0;
+    let b = checked(b.expect("call")).await.0;
+    assert!(
+        (a == StatusCode::NO_CONTENT && b == StatusCode::UNAUTHORIZED)
+            || (b == StatusCode::NO_CONTENT && a == StatusCode::UNAUTHORIZED)
+    );
+    assert_eq!(effects(&pool).await, (1, 1, 2));
+}
+
+struct Earlier;
+impl Clock for Earlier {
+    fn unix_seconds(&self) -> Result<u64, ContextError> {
+        Ok(1_699_998_000)
+    }
+}
+#[sqlx::test(migrator = "MIGRATOR")]
+async fn expiry_throttle_and_storage_failure_are_redacted(pool: PgPool) {
+    let key = AdmissionKey::new(1, [7; 32]).expect("key");
+    let expired = email_verification::issue(
+        &pool,
+        "old@example.com",
+        &Earlier,
+        &key,
+        AdmissionLimits::new(120, 5).expect("limits"),
+    )
+    .await
+    .expect("issue");
+    let app = app(&pool);
+    let denied = checked(
+        app.clone()
+            .oneshot(request(body(
+                "old@example.com",
+                &encode(expired.expose_bytes()),
+            )))
+            .await
+            .expect("call"),
+    )
+    .await;
+    assert_eq!(denied.0, StatusCode::UNAUTHORIZED);
+    let invalid = body("limited@example.com", &"11".repeat(32));
+    for _ in 0..6 {
+        assert_eq!(
+            checked(
+                app.clone()
+                    .oneshot(request(invalid.clone()))
+                    .await
+                    .expect("call")
+            )
+            .await,
+            denied
+        );
+    }
+    assert_eq!(effects(&pool).await, (0, 0, 6));
+    sqlx::query("ALTER TABLE email_verification_challenges RENAME TO unavailable_verification")
+        .execute(&pool)
+        .await
+        .expect("interrupt");
+    let unavailable = checked(
+        app.oneshot(request(body("other@example.com", &"11".repeat(32))))
+            .await
+            .expect("call"),
+    )
+    .await;
+    assert_eq!(unavailable.0, StatusCode::SERVICE_UNAVAILABLE);
+    assert_eq!(unavailable.1, br#"{"code":"verification_unavailable"}"#);
+}
+#[sqlx::test(migrator = "MIGRATOR")]
+async fn auth_and_timeouts_keep_private_headers(pool: PgPool) {
+    let token = proof(&pool, "owner@example.com").await;
+    let app = app(&pool);
+    let mut unauth = request(body("owner@example.com", &token));
+    unauth.headers_mut().remove("authorization");
+    assert_eq!(
+        checked(app.clone().oneshot(unauth).await.expect("call"))
+            .await
+            .0,
+        StatusCode::UNAUTHORIZED
+    );
+    let mut tx = pool.begin().await.expect("transaction");
+    sqlx::query("SELECT verifier FROM email_verification_challenges FOR UPDATE")
+        .fetch_all(&mut *tx)
+        .await
+        .expect("lock");
+    let timed = checked(
+        app.clone()
+            .oneshot(request(body("owner@example.com", &token)))
+            .await
+            .expect("call"),
+    )
+    .await;
+    assert_eq!(timed.0, StatusCode::GATEWAY_TIMEOUT);
+    tx.rollback().await.expect("release");
+    assert_eq!(effects(&pool).await, (0, 0, 1));
+    let get = Request::builder()
+        .uri(PATH)
+        .header("authorization", format!("Bearer {PREVIEW}"))
+        .body(Body::empty())
+        .expect("request");
+    assert_eq!(
+        checked(app.oneshot(get).await.expect("call")).await.0,
+        StatusCode::METHOD_NOT_ALLOWED
+    );
+}

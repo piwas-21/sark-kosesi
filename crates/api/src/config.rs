@@ -5,6 +5,7 @@ pub struct Config {
     pub preview_token: String,
     pub bind: SocketAddr,
     pub guest_origin: Option<crate::guest::GuestOrigin>,
+    pub verification: Option<crate::verification::VerificationConfig>,
     pub callback_profile: Option<crate::callbacks::CallbackProfile>,
 }
 
@@ -52,12 +53,14 @@ impl Config {
             .get("CALLBACK_INTAKE_PROFILE_ID")
             .map(|value| crate::callbacks::CallbackProfile::parse(value))
             .transpose()?;
+        let verification = crate::verification::VerificationConfig::from_env(environment, values)?;
         Ok(Self {
             database_url,
             preview_token,
             bind,
             guest_origin,
             callback_profile,
+            verification,
         })
     }
 }

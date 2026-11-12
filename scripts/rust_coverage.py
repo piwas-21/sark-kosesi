@@ -68,6 +68,7 @@ def validate(document, root, branches=True):
             "crates/infrastructure/src/callback_forwarder.rs",
             "crates/infrastructure/src/callback_forwarder/*.rs",
             "crates/api/src/config.rs",
+            "crates/api/src/verification.rs",
             "crates/api/src/routing.rs",
             "crates/*/src/stock.rs",
             "crates/*/src/holds.rs",

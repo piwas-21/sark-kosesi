@@ -511,6 +511,15 @@ clock failures and expiry after a lock wait also cannot create detached success.
 The separately committing consume primitive cannot bridge a later account write.
 An account identifier grants no login, session, guest-order or production authority.
 
+The optional test-only redemption POST requires preview Bearer authentication, a
+single exact configured HTTPS Origin, bounded closed JSON and a canonical 32-byte
+proof in lowercase hex. Its origin and nonzero admission key must be supplied
+together in test mode; the normal API bind remains loopback-only. It returns no
+identity or credential. Invalid, expired, mismatched, replayed, duplicate and
+throttled proofs share a denial; storage failure has a separate redacted response.
+The shared request timeout can occur after a commit and does not prove rollback.
+This consumer does not provide delivery or establish public abuse or timing safety.
+
 ## Private password setup and recovery custody
 
 Generate each proof from 256 random bits and use a verifier domain separate
