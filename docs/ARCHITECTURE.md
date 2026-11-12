@@ -1697,7 +1697,11 @@ database check attests transaction custody, while Rust verifies token possession
 the database write role is trusted and must not be exposed to untrusted clients.
 The final freshness check follows the insert and any uniqueness wait. The public standalone challenge consumer commits independently and cannot
 be used to establish an account later. No password, session, guest-order link,
-delivery, endpoint or production authority follows from this identity record.
+delivery or production authority follows from this identity record. A default-off
+test-only loopback HTTP consumer invokes this operation once after preview auth and
+exact configured Origin validation. Its dedicated admission key is configuration,
+never request authority; the response carries no account identifier or session.
+Timeouts do not establish whether the account transaction committed.
 
 ### Private customer password credentials
 

@@ -28,6 +28,7 @@ export interface components {
     QuoteResponse: Model.QuoteResponse;
     QuoteView: Model.QuoteView;
     QuotedLine: Model.QuotedLine;
+    RedeemRequest: Model.RedeemRequest;
   };
 }
 
@@ -60,6 +61,9 @@ export interface paths {
   };
   "/api/published/{locale}/products/{sku}": {
     get: operations["product"];
+  };
+  "/api/test/verification/redeem": {
+    post: operations["redeem_test_verification"];
   };
 }
 
@@ -250,6 +254,25 @@ export interface operations {
       400: { headers: { [name: string]: unknown }; content: { "application/json": Model.ApiError; } };
       401: { headers: { [name: string]: unknown }; content: { "application/json": Model.ApiError; } };
       404: { headers: { [name: string]: unknown }; content: { "application/json": Model.ApiError; } };
+      503: { headers: { [name: string]: unknown }; content: { "application/json": Model.ApiError; } };
+      504: { headers: { [name: string]: unknown }; content: { "application/json": Model.ApiError; } };
+    };
+  };
+  "redeem_test_verification": {
+    parameters: {
+      query?: never;
+      header: NonNullable<Model.RedeemTestVerificationData["headers"]>;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody: { content: { "application/json": Model.RedeemRequest; } };
+    responses: {
+      204: { headers: { [name: string]: unknown }; content?: never };
+      400: { headers: { [name: string]: unknown }; content: { "application/json": Model.ApiError; } };
+      401: { headers: { [name: string]: unknown }; content: { "application/json": Model.ApiError; } };
+      403: { headers: { [name: string]: unknown }; content: { "application/json": Model.ApiError; } };
+      413: { headers: { [name: string]: unknown }; content: { "application/json": Model.ApiError; } };
+      415: { headers: { [name: string]: unknown }; content: { "application/json": Model.ApiError; } };
       503: { headers: { [name: string]: unknown }; content: { "application/json": Model.ApiError; } };
       504: { headers: { [name: string]: unknown }; content: { "application/json": Model.ApiError; } };
     };

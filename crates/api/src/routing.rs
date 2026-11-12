@@ -4,9 +4,11 @@ use crate::{
     get_catalogue,
     guest::{self, GuestOrigin, GuestState},
     protected, published, ready,
+    verification::VerificationConfig,
 };
 use axum::{
     Extension, Router,
+    extract::DefaultBodyLimit,
     http::StatusCode,
     middleware,
     routing::{get, post},
@@ -15,7 +17,7 @@ use commerce_application::guest_access::GuestLimits;
 use commerce_infrastructure::guest_baskets::{GuestError, GuestSessionStore};
 use tower_sessions::{SessionManagerLayer, cookie::SameSite};
 pub fn router(state: AppState) -> Router {
-    build(state, None, None)
+    build(state, None, None, None)
 }
 pub fn router_with_guest(state: AppState, origin: GuestOrigin) -> Result<Router, GuestError> {
     router_with_options(state, Some(origin), None)
@@ -25,10 +27,18 @@ pub fn router_with_options(
     guest: Option<GuestOrigin>,
     callback: Option<CallbackProfile>,
 ) -> Result<Router, GuestError> {
+    router_with_verification(state, guest, callback, None)
+}
+pub fn router_with_verification(
+    state: AppState,
+    guest: Option<GuestOrigin>,
+    callback: Option<CallbackProfile>,
+    verification: Option<VerificationConfig>,
+) -> Result<Router, GuestError> {
     let guest = guest
         .map(|origin| guest_router(&state, origin))
         .transpose()?;
-    Ok(build(state, guest, callback))
+    Ok(build(state, guest, callback, verification))
 }
 fn guest_router(state: &AppState, origin: GuestOrigin) -> Result<Router<AppState>, GuestError> {
     let store = GuestSessionStore::new(
@@ -64,6 +74,7 @@ fn build(
     state: AppState,
     guest: Option<Router<AppState>>,
     callback: Option<CallbackProfile>,
+    verification: Option<VerificationConfig>,
 ) -> Router {
     let mut app = Router::new()
         .route("/api/catalogue/{locale}", get(get_catalogue))
@@ -81,6 +92,14 @@ fn build(
     }
     if let Some(profile) = callback {
         app = app.route("/api/callbacks/mollie", callbacks::route(profile));
+    }
+    if let Some(config) = verification {
+        app = app.route(
+            "/api/test/verification/redeem",
+            post(crate::verification::redeem)
+                .layer::<_, std::convert::Infallible>(DefaultBodyLimit::max(4096))
+                .layer(Extension(config)),
+        );
     }
     app.route_layer(middleware::from_fn_with_state(state.clone(), protected))
         .route("/health/live", get(|| async { StatusCode::NO_CONTENT }))

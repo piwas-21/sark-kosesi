@@ -176,6 +176,10 @@ debits before credential work. Password replacement requires an explicitly suppl
 integrity-checked offline blocklist and fails closed on unavailable or expired
 snapshots. Real corpus review, coordinated freshness and withdrawal, secure delivery,
 neutral browser responses and measured overload behavior remain P4 work.
+An optional loopback test-only verification redemption API consumes a supplied
+proof after preview authentication, exact Origin validation and shared admission.
+It issues no session and remains disabled without explicit test configuration;
+it does not establish mailbox delivery or public ingress readiness.
 
 The local room-planner preview combines the rectangle calculator with keyboard
 measurement and rotation controls, a drawn footprint, and text clearance and fit
