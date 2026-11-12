@@ -504,8 +504,26 @@ random source and a synchronously committed nonce reservation bound to the
 exact verifier. Each key has at most one million reservations. A failed issuance
 leaves its nonce burned. Store keys separately from database
 backups and keep plaintext bearers and raw keys out of logs and storage.
-Delivery processing, anti-enumeration, token transport, mailbox delivery and
-recovery remain separate requirements. Private verified account establishment composes the exact
+A separate private start accepts only an exact live envelope with its registered
+key fingerprint and previously committed nonce. It creates one durable record
+and emits no bearer, ciphertext or mailbox. A trusted in-process consumer can
+receive borrowed bearer bytes and the normalized mailbox only after its own new
+start commits, the source is rechecked under lock and the ciphertext and
+recovered verifier authenticate. No transaction spans the callback. Expiry or
+consumption can still occur after the last local check. The caller must keep the
+borrowed values out of logs and storage. A committed start with no separate
+outcome stays unknown; replay cannot reopen it.
+An optional trusted in-process callback returns only accepted, explicit rejection
+or uncertain. An immutable durable row binds that classification to its exact
+earlier start without storing a mailbox, bearer, credentials or provider body.
+Recording happens after the callback, outside its I/O, and does not require the
+challenge to remain live. The database records the trusted caller's classification.
+Provider authentication, mailbox receipt and redemption each require their own
+evidence. The in-process caller and write role remain trusted. A crash or failed recording
+leaves the start unknown and never permits reopening. Acceptance proves neither
+mailbox receipt nor redemption. No provider or retry is installed.
+Anti-enumeration, token transport, mailbox delivery and recovery remain separate
+requirements. Private verified account establishment composes the exact
 challenge consumption and a unique immutable normalized identity in one transaction.
 The database assigns the consumption transaction ID and requires the account insert
 to match; legacy or separately committed consumption cannot be adopted. This attests

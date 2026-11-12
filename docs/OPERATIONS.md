@@ -73,6 +73,9 @@ clone, asynchronous replica promotion or uncertain rollback, provision a fresh
 active encryption key before resuming issuance. Retain earlier keys only under
 approved historical read and retention controls. Rehearse restoration with
 synthetic ciphertext and separately stored keys before activation.
+A delivery start with no provider outcome is ambiguous after interruption.
+Keep it visible as unknown. Define provider idempotency or a reviewed recovery
+policy before connecting transport or retrying any ambiguous delivery.
 
 Incident runbook: contain credentials/access, preserve redacted evidence, stop unsafe fulfilment/payment retries, establish last known good state, reconcile outstanding attempts, restore/roll forward, verify and communicate through approved channels. Rotate exposed keys with provider-specific steps; test revocation and rollback. Retention/deletion apply to logs and backups under the approved privacy policy.
 

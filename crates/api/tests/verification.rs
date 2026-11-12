@@ -8,7 +8,15 @@ use commerce_application::request_context::{Clock, ContextError, Identifiers};
 use commerce_infrastructure::{
     MIGRATOR,
     customer_credential_admission::{AdmissionKey, AdmissionLimits},
-    email_verification,
+    email_verification::{
+        self,
+        delivery::{
+            VerificationDeliveryKey, issue_for_delivery,
+            opening::{OpenOutcome, claim_open_and_record},
+            outcome::{DeliveryState, TransportOutcome, inspect},
+            register_key,
+        },
+    },
 };
 use sqlx::PgPool;
 use std::{collections::HashMap, sync::Arc};
@@ -97,18 +105,72 @@ async fn effects(pool: &PgPool) -> (i64, i64, i32) {
     sqlx::query_as("SELECT (SELECT count(*) FROM verified_customer_accounts), (SELECT count(consumed_at) FROM email_verification_challenges), (SELECT admitted FROM customer_credential_admission_scopes WHERE purpose=3)").fetch_one(pool).await.expect("effects")
 }
 async fn checked(response: axum::response::Response) -> (StatusCode, Vec<u8>) {
-    assert_eq!(response.headers()["cache-control"], "private, no-store");
-    assert_eq!(response.headers()["referrer-policy"], "no-referrer");
+    assert!(
+        response
+            .headers()
+            .get("cache-control")
+            .is_some_and(|v| v == "private, no-store"),
+        "unexpected cache-control header"
+    );
+    assert!(
+        response
+            .headers()
+            .get("referrer-policy")
+            .is_some_and(|v| v == "no-referrer"),
+        "unexpected referrer-policy header"
+    );
     assert!(response.headers().get("set-cookie").is_none());
     let status = response.status();
     (
         status,
         to_bytes(response.into_body(), 4096)
             .await
-            .expect("response")
+            .unwrap_or_else(|_| panic!("response body unavailable"))
             .to_vec(),
     )
 }
+// Keep failure diagnostics independent of untrusted response bytes.
+fn require_empty_success(response: &(StatusCode, Vec<u8>)) {
+    assert!(
+        response.0 == StatusCode::NO_CONTENT,
+        "unexpected success status"
+    );
+    assert!(response.1.is_empty(), "unexpected success body");
+}
+fn require_same_denial(actual: &(StatusCode, Vec<u8>), expected: &(StatusCode, Vec<u8>)) {
+    assert!(actual.0 == expected.0, "denial statuses differ");
+    assert!(actual.1 == expected.1, "denial bodies differ");
+}
+
+#[test]
+fn response_failure_diagnostics_do_not_render_proof_bytes() {
+    let marker = "synthetic-proof-response-control-712093";
+    let response = (StatusCode::NO_CONTENT, marker.as_bytes().to_vec());
+    let denial = (StatusCode::UNAUTHORIZED, b"denied".to_vec());
+    let exposed = (StatusCode::UNAUTHORIZED, marker.as_bytes().to_vec());
+    require_empty_success(&(StatusCode::NO_CONTENT, vec![]));
+    require_same_denial(&denial, &denial);
+    for failure in [
+        std::panic::catch_unwind(|| require_empty_success(&response)),
+        std::panic::catch_unwind(|| require_same_denial(&exposed, &denial)),
+    ] {
+        let payload = failure.expect_err("proof-bearing response must fail");
+        let message = payload
+            .downcast_ref::<&str>()
+            .copied()
+            .or_else(|| payload.downcast_ref::<String>().map(String::as_str))
+            .expect("failure diagnostic");
+        assert!(
+            !message.contains(marker),
+            "proof reached failure diagnostics"
+        );
+        assert!(
+            !message.contains(&format!("{:?}", marker.as_bytes())),
+            "proof bytes reached failure diagnostics"
+        );
+    }
+}
+
 #[test]
 fn configuration_is_disabled_by_default_and_only_enabled_in_test() {
     assert!(
@@ -418,5 +480,147 @@ async fn auth_and_timeouts_keep_private_headers(pool: PgPool) {
     assert_eq!(
         checked(app.oneshot(get).await.expect("call")).await.0,
         StatusCode::METHOD_NOT_ALLOWED
+    );
+}
+
+/// A synthetic in-process handoff joins encrypted custody to the test-only API.
+/// Its accepted outcome is local callback evidence, not mailbox delivery.
+#[sqlx::test(migrator = "MIGRATOR")]
+async fn encrypted_handoff_redeems_exact_proof_once_without_issuing_session(pool: PgPool) {
+    let delivery_key = VerificationDeliveryKey::capture("synthetic-delivery", [41; 32])
+        .expect("synthetic delivery key");
+    let admission_key = AdmissionKey::new(1, [7; 32]).expect("synthetic admission key");
+    let limits = AdmissionLimits::new(120, 5).expect("test limits");
+    register_key(&pool, &Time, &delivery_key)
+        .await
+        .expect("register delivery key");
+    let issued = issue_for_delivery(
+        &pool,
+        "Case+fixture@EXAMPLE.COM",
+        &Time,
+        &admission_key,
+        limits,
+        &delivery_key,
+    )
+    .await
+    .expect("issue encrypted challenge");
+    assert_eq!(
+        inspect(&pool, &issued.verifier).await,
+        Ok(DeliveryState::NotStarted)
+    );
+    let mut handoff = None;
+    assert_eq!(
+        claim_open_and_record(
+            &pool,
+            &issued.verifier,
+            &Time,
+            &delivery_key,
+            |identity, bearer| {
+                handoff = Some((identity.to_owned(), encode(bearer)));
+                TransportOutcome::Accepted
+            }
+        )
+        .await,
+        Ok(OpenOutcome::Opened)
+    );
+    assert_eq!(
+        inspect(&pool, &issued.verifier).await,
+        Ok(DeliveryState::Recorded(TransportOutcome::Accepted))
+    );
+    let (identity, token) = handoff.expect("one synthetic handoff");
+    assert!(
+        identity == "Case+fixture@example.com",
+        "unexpected handoff identity"
+    );
+    let before: (i64, i64, i64, i64, i32, i32, i64, i64) = sqlx::query_as(
+        "SELECT (SELECT count(*) FROM email_verification_delivery_starts),
+         (SELECT count(*) FROM email_verification_delivery_outcomes),
+         (SELECT count(*) FROM verified_customer_accounts),
+         (SELECT count(*) FROM email_verification_challenges WHERE consumed_at IS NOT NULL),
+         (SELECT admitted FROM customer_credential_admission_scopes WHERE purpose=2),
+         (SELECT admitted FROM customer_credential_admission_scopes WHERE purpose=3),
+         (SELECT coalesce(sum(admitted),0) FROM customer_credential_admission_targets WHERE purpose=2),
+         (SELECT coalesce(sum(admitted),0) FROM customer_credential_admission_targets WHERE purpose=3)"
+    ).fetch_one(&pool).await.expect("initial custody and admission");
+    assert_eq!(before, (1, 1, 0, 0, 1, 0, 1, 0));
+    let disabled = router(state(&pool))
+        .oneshot(request(body(&identity, &token)))
+        .await
+        .expect("disabled route");
+    assert_eq!(disabled.status(), StatusCode::NOT_FOUND);
+    assert_eq!(effects(&pool).await, (0, 0, 0));
+    let app = app(&pool);
+    let first = if &token[..2] == "11" { "22" } else { "11" };
+    let invalid_token = format!("{first}{}", &token[2..]);
+    let invalid = checked(
+        app.clone()
+            .oneshot(request(body(&identity, &invalid_token)))
+            .await
+            .expect("invalid request"),
+    )
+    .await;
+    assert_eq!(invalid.0, StatusCode::UNAUTHORIZED);
+    let accepted = checked(
+        app.clone()
+            .oneshot(request(body(&identity, &token)))
+            .await
+            .expect("redeem handoff"),
+    )
+    .await;
+    require_empty_success(&accepted);
+    let replay = checked(
+        app.oneshot(request(body(&identity, &token)))
+            .await
+            .expect("replay handoff"),
+    )
+    .await;
+    require_same_denial(&replay, &invalid);
+    let after: (i64, i64, i64, i64, i32, i32, i64, i64) = sqlx::query_as(
+        "SELECT (SELECT count(*) FROM email_verification_delivery_starts),
+         (SELECT count(*) FROM email_verification_delivery_outcomes),
+         (SELECT count(*) FROM verified_customer_accounts),
+         (SELECT count(*) FROM email_verification_challenges WHERE consumed_at IS NOT NULL),
+         (SELECT admitted FROM customer_credential_admission_scopes WHERE purpose=2),
+         (SELECT admitted FROM customer_credential_admission_scopes WHERE purpose=3),
+         (SELECT coalesce(sum(admitted),0) FROM customer_credential_admission_targets WHERE purpose=2),
+         (SELECT coalesce(sum(admitted),0) FROM customer_credential_admission_targets WHERE purpose=3)"
+    ).fetch_one(&pool).await.expect("final custody and admission");
+    assert_eq!(after, (1, 1, 1, 1, 1, 3, 1, 3));
+    let quotas: (i64, i64, bool) = sqlx::query_as(
+        "SELECT (SELECT count(*) FROM customer_credential_admission_targets WHERE purpose=2),
+         (SELECT count(*) FROM customer_credential_admission_targets WHERE purpose=3),
+         (SELECT bool_and(global_limit=120 AND target_limit=5)
+          FROM customer_credential_admission_scopes WHERE purpose IN (2,3))",
+    )
+    .fetch_one(&pool)
+    .await
+    .expect("one target per purpose and exact limits");
+    assert_eq!(quotas, (1, 1, true));
+    let exact: bool = sqlx::query_scalar(
+        "SELECT EXISTS(SELECT 1 FROM verified_customer_accounts a
+         JOIN email_verification_challenges c ON c.verifier=a.verification_verifier
+         JOIN email_verification_delivery_starts s ON s.verifier=c.verifier
+         JOIN email_verification_delivery_outcomes o ON o.verifier=s.verifier
+         WHERE c.verifier=$1 AND a.email_identity=$2 AND c.email_identity=$2
+         AND c.delivery_mode='envelope' AND c.consumed_at=a.verified_at
+         AND c.consumed_xid IS NOT NULL AND a.xmin::text=c.consumed_xid::text
+         AND o.start_transaction_id=s.transaction_id AND o.outcome='accepted')",
+    )
+    .bind(issued.verifier.as_slice())
+    .bind(&identity)
+    .fetch_one(&pool)
+    .await
+    .expect("exact atomic account and local outcome");
+    assert!(exact);
+    let sessions: (i64, i64) = sqlx::query_as(
+        "SELECT (SELECT count(*) FROM customer_sessions), (SELECT count(*) FROM guest_sessions)",
+    )
+    .fetch_one(&pool)
+    .await
+    .expect("no sessions");
+    assert_eq!(sessions, (0, 0));
+    assert_eq!(
+        inspect(&pool, &issued.verifier).await,
+        Ok(DeliveryState::Recorded(TransportOutcome::Accepted))
     );
 }

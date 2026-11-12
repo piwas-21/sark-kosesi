@@ -1,4 +1,4 @@
-//! Authenticated envelope bytes; no production opening or delivery operation.
+//! Authenticated envelope bytes; no delivery operation.
 use super::*;
 use ring::aead::{AES_256_GCM, Aad, LessSafeKey, Nonce, UnboundKey};
 use zeroize::Zeroizing;
@@ -85,6 +85,43 @@ pub(super) fn seal(
         )
         .map_err(|_| VerificationError::Unavailable)?;
     Ok(std::mem::take(&mut *sealed))
+}
+
+/// Authenticate one bounded envelope and verify its bearer against the challenge.
+pub(super) fn open(
+    key: &VerificationDeliveryKey,
+    context: &Context<'_>,
+    ciphertext: &[u8],
+) -> Result<Zeroizing<[u8; 32]>, VerificationError> {
+    use subtle::ConstantTimeEq;
+    if context.key_id != key.key_id || context.version != VERSION || ciphertext.len() != 48 {
+        return Err(VerificationError::Unavailable);
+    }
+    let cipher = LessSafeKey::new(
+        UnboundKey::new(&AES_256_GCM, key.bytes.as_slice())
+            .map_err(|_| VerificationError::Unavailable)?,
+    );
+    let mut in_place = Zeroizing::new(ciphertext.to_vec());
+    let plaintext = cipher
+        .open_in_place(
+            nonce(context.counter)?,
+            Aad::from(aad(context)?.as_slice()),
+            &mut in_place,
+        )
+        .map_err(|_| VerificationError::Unavailable)?;
+    let plaintext: &[u8; 32] = (&*plaintext)
+        .try_into()
+        .map_err(|_| VerificationError::Unavailable)?;
+    let mut bearer = Zeroizing::new([0_u8; 32]);
+    bearer.copy_from_slice(plaintext);
+    let mut hash = Sha256::new();
+    hash.update(DOMAIN);
+    hash.update(bearer.as_slice());
+    let verifier: [u8; 32] = hash.finalize().into();
+    if !bool::from(verifier.ct_eq(context.verifier)) {
+        return Err(VerificationError::Unavailable);
+    }
+    Ok(bearer)
 }
 
 #[cfg(test)]

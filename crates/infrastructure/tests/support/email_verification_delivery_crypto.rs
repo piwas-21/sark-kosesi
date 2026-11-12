@@ -126,9 +126,34 @@ fn encrypted_bearer_round_trips_only_with_exact_authenticated_context() {
         ..original
     };
     assert!(seal(&key, &future, &token, reservation(&key, &future)).is_err());
+    assert_eq!(
+        super::open(&key, &original, &sealed)
+            .expect("authenticated production opening")
+            .as_slice(),
+        token.expose_bytes().as_slice()
+    );
+    assert!(super::open(&key, &other_key_context, &sealed).is_err());
+    assert!(super::open(&key, &future, &sealed).is_err());
+    assert!(super::open(&key, &original, &sealed[..47]).is_err());
+    let cipher =
+        LessSafeKey::new(UnboundKey::new(&AES_256_GCM, key.bytes.as_slice()).expect("key"));
+    let mut different_bearer = vec![8_u8; 32];
+    cipher
+        .seal_in_place_append_tag(
+            nonce(original.counter).expect("nonce"),
+            Aad::from(aad(&original).expect("aad").as_slice()),
+            &mut different_bearer,
+        )
+        .expect("authenticated other bearer");
+    assert_eq!(
+        open(&key, &original, &different_bearer).expect("valid authentication"),
+        vec![8_u8; 32]
+    );
+    assert!(super::open(&key, &original, &different_bearer).is_err());
     let mut damaged = sealed.clone();
     damaged[0] ^= 1;
     assert!(open(&key, &original, &damaged).is_err());
+    assert!(super::open(&key, &original, &damaged).is_err());
     let mut damaged_tag = sealed.clone();
     damaged_tag[47] ^= 1;
     assert!(open(&key, &original, &damaged_tag).is_err());
