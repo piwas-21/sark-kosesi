@@ -1,5 +1,8 @@
 import hashlib
 import json
+import os
+import shutil
+import subprocess
 import sys
 import tempfile
 import unittest
@@ -9,7 +12,33 @@ from pathlib import Path
 from test_review_policy import report
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "scripts"))
-from gate_policy import validate_checks, validate_receipt, validate_release
+from gate_policy import (
+    read_release_manifest as read_manifest_from_directory,
+)
+from gate_policy import (
+    release_directory,
+    validate_checks,
+    validate_receipt,
+    validate_release_environment,
+)
+from gate_policy import (
+    validate_release as validate_with_directory,
+)
+
+
+def read_release_manifest(root, head):
+    with release_directory(root, head) as directory:
+        return read_manifest_from_directory(directory)
+
+
+def validate_release(config, evidence, head, root, manifest_identity=None):
+    sources = [str(path.relative_to(root)) for path in root.rglob("*") if path.is_file()]
+    validate_release_environment(config, head, sources)
+    with release_directory(root, head) as directory:
+        if manifest_identity is None:
+            _, manifest_identity = read_manifest_from_directory(directory)
+        validate_with_directory(config, evidence, head, sources, manifest_identity, directory)
+
 
 HEAD, BASE = "a" * 40, "b" * 40
 
@@ -86,70 +115,547 @@ class EvidencePolicy(unittest.TestCase):
                 {"stage": "foundation", "productionEnabled": False}, {"head": HEAD}, HEAD, self.root
             )
 
-    def test_application_and_real_evidence_required(self):
-        app = self.root / "apps/storefront"
-        app.mkdir(parents=True)
-        (app / "page.tsx").write_text("export default function Page() {}")
-        crates = self.root / "crates/domain"
-        crates.mkdir(parents=True)
-        (crates / "lib.rs").write_text("pub struct Money(i64);")
-        config = {
+    def release_fixture(self):
+        (self.root / "apps").mkdir()
+        (self.root / "apps/page.tsx").write_text("export default function Page() {}")
+        (self.root / "crates").mkdir()
+        (self.root / "crates/lib.rs").write_text("pub struct Money(i64);")
+        self.release_dir = self.root / ".local/releases" / HEAD
+        self.release_dir.mkdir(parents=True)
+        (self.release_dir / "security.txt").write_bytes(b"security evidence\n")
+        (self.release_dir / "restore.txt").write_bytes(b"restore evidence\n")
+        self.config = {
             "stage": "application",
             "productionEnabled": True,
-            "productionGates": {"security": "passed"},
+            "productionGates": {"security": "passed", "restore": "passed"},
         }
-        evidence = {
+        self.evidence = {
+            "version": 1,
             "head": HEAD,
-            "gates": {"security": {"status": "passed", "evidence": "review.md"}},
+            "gates": {
+                "security": {
+                    "gate": "security",
+                    "head": HEAD,
+                    "status": "passed",
+                    "evidence": "security.txt",
+                    "sha256": hashlib.sha256(b"security evidence\n").hexdigest(),
+                },
+                "restore": {
+                    "gate": "restore",
+                    "head": HEAD,
+                    "status": "passed",
+                    "evidence": "restore.txt",
+                    "sha256": hashlib.sha256(b"restore evidence\n").hexdigest(),
+                },
+            },
         }
-        validate_release(config, evidence, HEAD, self.root)
-        evidence["gates"]["security"]["evidence"] = "missing.md"
-        with self.assertRaises(ValueError):
-            validate_release(config, evidence, HEAD, self.root)
+        (self.release_dir / "evidence.json").write_text(json.dumps(self.evidence))
 
-    def test_release_requires_real_apps_and_each_nonempty_gate(self):
-        config = {
-            "stage": "application",
-            "productionEnabled": True,
-            "productionGates": {"security": "passed"},
-        }
-        evidence = {
-            "head": HEAD,
-            "gates": {"security": {"status": "passed", "evidence": "review.md"}},
-        }
-        with self.assertRaises(ValueError):
-            validate_release(config, evidence, HEAD, self.root)
-        app = self.root / "apps"
-        app.mkdir()
-        (app / "page.tsx").write_text("export const Page = () => null")
-        with self.assertRaises(ValueError):
-            validate_release(config, evidence, HEAD, self.root)
-        crates = self.root / "crates"
-        crates.mkdir()
-        (crates / "lib.rs").write_text("pub struct Money(i64);")
-        for gates in ({}, {"security": "pending"}):
-            with self.assertRaises(ValueError):
-                validate_release({**config, "productionGates": gates}, evidence, HEAD, self.root)
-        (self.root / "review.md").write_text("")
-        with self.assertRaises(ValueError):
-            validate_release(config, evidence, HEAD, self.root)
+    def test_manifest_and_real_evidence_accepted(self):
+        self.release_fixture()
+        evidence, identity = read_release_manifest(self.root, HEAD)
+        validate_release(self.config, evidence, HEAD, self.root, identity)
 
-    def test_path_escape_and_wrong_revision_rejected(self):
+    def test_requires_application_and_passed_gates(self):
+        self.release_fixture()
+        for config in [
+            {**self.config, "productionEnabled": False},
+            {**self.config, "stage": "foundation"},
+            {**self.config, "productionGates": {}},
+            {**self.config, "productionGates": {"security": "pending"}},
+        ]:
+            with self.subTest(config=config), self.assertRaises(ValueError):
+                validate_release(config, self.evidence, HEAD, self.root)
+        (self.root / "apps/page.tsx").unlink()
+        with self.assertRaises(ValueError):
+            validate_release(self.config, self.evidence, HEAD, self.root)
+        (self.root / "apps/page.tsx").write_text("app")
+        (self.root / "crates/lib.rs").unlink()
+        with self.assertRaises(ValueError):
+            validate_release(self.config, self.evidence, HEAD, self.root)
+
+    def test_malformed_stale_and_gate_swapped_manifests_rejected(self):
+        self.release_fixture()
+        for change in [
+            {"version": 2},
+            {"version": True},
+            {"head": BASE},
+            {"extra": 1},
+            {"gates": {}},
+            {"gates": {**self.evidence["gates"], "extra": {}}},
+            {
+                "gates": {
+                    "security": self.evidence["gates"]["restore"],
+                    "restore": self.evidence["gates"]["security"],
+                }
+            },
+        ]:
+            with self.subTest(change=change), self.assertRaises(ValueError):
+                validate_release(self.config, {**self.evidence, **change}, HEAD, self.root)
+        item = self.evidence["gates"]["security"]
+        for change in [
+            {"gate": "restore"},
+            {"head": BASE},
+            {"status": "pending"},
+            {"sha256": "bad"},
+            {"extra": "unexpected"},
+        ]:
+            candidate = {
+                **self.evidence,
+                "gates": {**self.evidence["gates"], "security": {**item, **change}},
+            }
+            with self.subTest(change=change), self.assertRaises(ValueError):
+                validate_release(self.config, candidate, HEAD, self.root)
+        (self.release_dir / "evidence.json").write_text('{"version":1,"version":1}')
+        with self.assertRaises((ValueError, OSError)):
+            read_release_manifest(self.root, HEAD)
+
+    def test_paths_content_and_aliases_rejected(self):
+        self.release_fixture()
+        item = self.evidence["gates"]["security"]
+        (self.release_dir / "blank.txt").write_text("  \n")
+        (self.release_dir / "link.txt").symlink_to("security.txt")
+        os.link(self.release_dir / "restore.txt", self.release_dir / "alias.txt")
+        (self.release_dir / "copy.txt").write_bytes(b"restore evidence\n")
+        os.link(self.release_dir / "evidence.json", self.release_dir / "manifest-alias.txt")
+        for name in [
+            "../security.txt",
+            "/tmp/evidence",
+            "./security.txt",
+            "x//y",
+            "x\\y",
+            "evidence.json",
+            "missing.txt",
+            "link.txt",
+            "blank.txt",
+            "alias.txt",
+            "manifest-alias.txt",
+            "restore.txt",
+            "copy.txt",
+        ]:
+            candidate_item = {**item, "evidence": name}
+            if name in ("alias.txt", "restore.txt", "copy.txt", "manifest-alias.txt", "blank.txt"):
+                candidate_item["sha256"] = hashlib.sha256(
+                    (self.release_dir / name).read_bytes()
+                ).hexdigest()
+            candidate = {
+                **self.evidence,
+                "gates": {**self.evidence["gates"], "security": candidate_item},
+            }
+            with self.subTest(name=name), self.assertRaises((ValueError, OSError)):
+                validate_release(self.config, candidate, HEAD, self.root)
+        (self.release_dir / "security.txt").write_text("changed content")
+        with self.assertRaises(ValueError):
+            validate_release(self.config, self.evidence, HEAD, self.root)
+
+    def test_manifest_and_parent_symlinks_rejected(self):
+        self.release_fixture()
+        manifest = self.release_dir / "evidence.json"
+        manifest.unlink()
+        manifest.symlink_to("security.txt")
+        with self.assertRaises((ValueError, OSError)):
+            read_release_manifest(self.root, HEAD)
+        manifest.unlink()
+        manifest.write_text(json.dumps(self.evidence))
+        (self.release_dir / "nested").symlink_to(self.release_dir, target_is_directory=True)
+        item = self.evidence["gates"]["security"]
+        candidate = {
+            **self.evidence,
+            "gates": {
+                **self.evidence["gates"],
+                "security": {**item, "evidence": "nested/security.txt"},
+            },
+        }
+        with self.assertRaises((ValueError, OSError)):
+            validate_release(self.config, candidate, HEAD, self.root)
+
+    def test_release_directory_symlink_and_swapped_contents_rejected(self):
+        self.release_fixture()
+        security = self.release_dir / "security.txt"
+        restore = self.release_dir / "restore.txt"
+        security_bytes, restore_bytes = security.read_bytes(), restore.read_bytes()
+        security.write_bytes(restore_bytes)
+        restore.write_bytes(security_bytes)
+        with self.assertRaises(ValueError):
+            validate_release(self.config, self.evidence, HEAD, self.root)
+        releases = self.root / ".local/releases"
+        moved = self.root / ".local/moved-releases"
+        releases.rename(moved)
+        releases.symlink_to(moved, target_is_directory=True)
+        with self.assertRaises((ValueError, OSError)):
+            read_release_manifest(self.root, HEAD)
+
+    def test_invalid_head_and_fifo_are_rejected(self):
+        self.release_fixture()
+        with self.assertRaises(ValueError):
+            read_release_manifest(self.root, "../outside")
+        os.mkfifo(self.release_dir / "pipe")
+        item = self.evidence["gates"]["security"]
+        candidate = {
+            **self.evidence,
+            "gates": {**self.evidence["gates"], "security": {**item, "evidence": "pipe"}},
+        }
+        with self.assertRaises(ValueError):
+            validate_release(self.config, candidate, HEAD, self.root)
+
+    def test_revision_directory_is_pinned_across_manifest_and_artifacts(self):
+        self.release_fixture()
+        replacement = self.release_dir.parent / "replacement"
+        replacement.mkdir()
+        (replacement / "evidence.json").write_bytes(b"alternate manifest\n")
+        os.link(replacement / "evidence.json", replacement / "security.txt")
+        (replacement / "restore.txt").write_bytes(b"restore evidence\n")
+        self.evidence["gates"]["security"]["sha256"] = hashlib.sha256(
+            b"alternate manifest\n"
+        ).hexdigest()
+        (self.release_dir / "evidence.json").write_text(json.dumps(self.evidence))
+        with release_directory(self.root, HEAD) as directory:
+            evidence, identity = read_manifest_from_directory(directory)
+            self.release_dir.rename(self.release_dir.parent / "original")
+            replacement.rename(self.release_dir)
+            # The replacement's artifact is its own manifest and matches the claimed digest.
+            self.assertTrue(
+                os.path.samefile(
+                    self.release_dir / "security.txt", self.release_dir / "evidence.json"
+                )
+            )
+            with self.assertRaisesRegex(ValueError, "Reused or changed"):
+                validate_with_directory(
+                    self.config,
+                    evidence,
+                    HEAD,
+                    ["apps/page.tsx", "crates/lib.rs"],
+                    identity,
+                    directory,
+                )
+
+    def test_cli_redacts_hostile_paths_and_invalid_manifest_bytes(self):
+        self.release_fixture()
+        repo = Path(__file__).resolve().parents[2]
+        scripts = self.root / "scripts"
+        scripts.mkdir()
+        for name in (
+            "release_readiness.py",
+            "gate_policy.py",
+            "audit_github.py",
+            "review_policy.py",
+        ):
+            shutil.copy(repo / "scripts" / name, scripts / name)
+        config_dir = self.root / "config"
+        config_dir.mkdir()
+        (config_dir / "delivery.json").write_text(json.dumps(self.config))
+        fake_bin = self.root / "bin"
+        fake_bin.mkdir()
+        git = fake_bin / "git"
+        git.write_text(
+            f'#!/bin/sh\n[ "$1" = --no-replace-objects ] || exit 1\nshift\ncase "$1" in\nrev-parse) printf \'%s\\n\' {HEAD} ;;\n'
+            "show) cat config/delivery.json ;;\nstatus) : ;;\n"
+            'ls-tree) printf "100644 blob abc\\tapps/page.tsx\\0'
+            '100644 blob abc\\tcrates/lib.rs\\0" ;;\nesac\n'
+        )
+        git.chmod(0o755)
+        env = {**os.environ, "PATH": f"{fake_bin}:{os.environ['PATH']}"}
+        manifest = self.release_dir / "evidence.json"
+        sentinel = "HOSTILE_EVIDENCE_SENTINEL"
+        bad_path = json.loads(json.dumps(self.evidence))
+        bad_path["gates"]["security"]["evidence"] = sentinel
+        bad_encoding = json.loads(json.dumps(self.evidence))
+        bad_encoding["gates"]["security"]["evidence"] = sentinel + "\ud800"
+        for contents in (
+            json.dumps(bad_path).encode(),
+            json.dumps(bad_encoding).encode(),
+            b'"' + sentinel.encode() + b'\xff"',
+        ):
+            with self.subTest(contents=contents):
+                manifest.write_bytes(contents)
+                result = subprocess.run(
+                    [sys.executable, str(scripts / "release_readiness.py")],
+                    cwd=self.root,
+                    env=env,
+                    text=True,
+                    capture_output=True,
+                    check=False,
+                )
+                self.assertNotEqual(result.returncode, 0)
+                self.assertIn("Release blocked:", result.stderr)
+                self.assertNotIn(sentinel, result.stderr + result.stdout)
+
+    def test_review_path_escape_rejected(self):
         with self.assertRaises(ValueError):
             validate_receipt({**self.receipt, "report": "../outside.md"}, HEAD, BASE, self.root)
-        app = self.root / "apps"
-        app.mkdir()
-        (app / "app.ts").write_text("export const x = 1")
-        crates = self.root / "crates/domain"
-        crates.mkdir(parents=True)
-        (crates / "lib.rs").write_text("pub struct Money(i64);")
-        config = {
+
+
+class ReleaseSourcePolicy(unittest.TestCase):
+    def setUp(self):
+        # The pre-push hook exports Git variables for the real worktree.
+        self.environment = {
+            key: value for key, value in os.environ.items() if not key.startswith("GIT_")
+        }
+        self.temp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.temp.cleanup)
+        self.root = Path(self.temp.name) / "release"
+        self.root.mkdir()
+        repo = Path(__file__).resolve().parents[2]
+        for directory in ("scripts", "config", "apps", "crates"):
+            (self.root / directory).mkdir()
+        for name in ("release_readiness.py", "gate_policy.py", "review_policy.py"):
+            shutil.copy(repo / "scripts" / name, self.root / "scripts" / name)
+        (self.root / "scripts/audit_github.py").write_text(
+            "import os\nfrom pathlib import Path\nROOT = Path(__file__).resolve().parents[1]\n"
+            "def audit(config):\n"
+            '    if os.environ.get("CHANGE_DURING_AUDIT"):\n'
+            '        (ROOT / "apps/page.tsx").write_text("changed during audit")\n'
+        )
+        (self.root / ".gitignore").write_text(".local/\n__pycache__/\n")
+        (self.root / "apps/page.tsx").write_text("export default function Page() {}\n")
+        (self.root / "crates/lib.rs").write_text("pub struct Money(i64);\n")
+        self.config = {
             "stage": "application",
             "productionEnabled": True,
             "productionGates": {"security": "passed"},
         }
-        with self.assertRaises(ValueError):
-            validate_release(config, {"head": BASE}, HEAD, self.root)
+        (self.root / "config/delivery.json").write_text(json.dumps(self.config))
+        self.git("init", "-q")
+        self.git("add", ".")
+        self.git(
+            "-c",
+            "user.name=Fixture",
+            "-c",
+            "user.email=fixture@example.invalid",
+            "commit",
+            "-qm",
+            "fixture",
+        )
+        self.head = self.git("rev-parse", "HEAD").strip()
+        directory = self.root / ".local/releases" / self.head
+        directory.mkdir(parents=True)
+        (directory / "security.txt").write_bytes(b"security evidence\n")
+        (directory / "evidence.json").write_text(
+            json.dumps(
+                {
+                    "version": 1,
+                    "head": self.head,
+                    "gates": {
+                        "security": {
+                            "gate": "security",
+                            "head": self.head,
+                            "status": "passed",
+                            "evidence": "security.txt",
+                            "sha256": hashlib.sha256(b"security evidence\n").hexdigest(),
+                        }
+                    },
+                }
+            )
+        )
+
+    def git(self, *args):
+        return subprocess.run(
+            ["git", *args],
+            cwd=self.root,
+            env=self.environment,
+            text=True,
+            capture_output=True,
+            check=True,
+        ).stdout
+
+    def cli(self, **environment):
+        return subprocess.run(
+            [sys.executable, str(self.root / "scripts/release_readiness.py")],
+            cwd=self.root,
+            env={**self.environment, **environment},
+            text=True,
+            capture_output=True,
+            check=False,
+        )
+
+    def test_clean_revision_with_ignored_evidence_passes(self):
+        result = self.cli()
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn(self.head, result.stdout)
+
+    def test_hook_environment_cannot_redirect_release(self):
+        foreign = Path(self.temp.name) / "foreign"
+        self.git("init", "-q", str(foreign))
+        result = self.cli(
+            GIT_DIR=str(foreign / ".git"),
+            GIT_WORK_TREE=str(foreign),
+            GIT_INDEX_FILE=str(foreign / ".git/index"),
+        )
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn(self.head, result.stdout)
+        self.assertEqual(self.git("-C", str(foreign), "status", "--porcelain=v1"), "")
+
+    def check_replaced_revision(self, disabled):
+        replacement = self.head
+        if disabled:
+            (self.root / "config/delivery.json").write_text(
+                json.dumps({**self.config, "productionEnabled": False})
+            )
+            self.git("add", "config/delivery.json")
+        else:
+            self.git("rm", "apps/page.tsx", "crates/lib.rs")
+        self.git(
+            "-c",
+            "user.name=Fixture",
+            "-c",
+            "user.email=fixture@example.invalid",
+            "commit",
+            "-qm",
+            "original blocked revision",
+        )
+        original = self.git("rev-parse", "HEAD").strip()
+        original_evidence = self.root / ".local/releases" / original
+        original_evidence.mkdir(parents=True)
+        old_evidence = self.root / ".local/releases" / replacement
+        shutil.copy(old_evidence / "security.txt", original_evidence / "security.txt")
+        manifest = json.loads((old_evidence / "evidence.json").read_text())
+        manifest["head"] = original
+        manifest["gates"]["security"]["head"] = original
+        (original_evidence / "evidence.json").write_text(json.dumps(manifest))
+        self.git("replace", original, replacement)
+        self.git("checkout", "--detach", "-f", original)
+        self.assertEqual(self.git("rev-parse", "HEAD").strip(), original)
+        self.assertEqual(self.git("status", "--porcelain=v1"), "")
+        self.assertTrue(
+            json.loads(self.git("show", "HEAD:config/delivery.json"))["productionEnabled"]
+        )
+        self.assertIn("apps/page.tsx", self.git("ls-tree", "-r", "--name-only", "HEAD"))
+        if disabled:
+            self.assertFalse(
+                json.loads(self.git("--no-replace-objects", "show", "HEAD:config/delivery.json"))[
+                    "productionEnabled"
+                ]
+            )
+        else:
+            self.assertNotIn(
+                "apps/page.tsx",
+                self.git("--no-replace-objects", "ls-tree", "-r", "--name-only", "HEAD"),
+            )
+        result = self.cli()
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("Release source is changed or uncommitted", result.stderr)
+        self.assertNotIn("Release evidence and server protection present", result.stdout)
+
+    def test_replacement_cannot_enable_disabled_revision(self):
+        self.check_replaced_revision(disabled=True)
+
+    def test_replacement_cannot_supply_absent_application(self):
+        self.check_replaced_revision(disabled=False)
+
+    def test_ignored_files_cannot_replace_committed_application(self):
+        self.git("rm", "apps/page.tsx", "crates/lib.rs")
+        (self.root / ".gitignore").write_text(
+            ".local/\n__pycache__/\napps/ghost.ts\ncrates/ghost.rs\n"
+        )
+        (self.root / "apps.ts").write_text("wrong root")
+        (self.root / "crates.rs").write_text("wrong root")
+        self.git("add", ".gitignore", "apps.ts", "crates.rs")
+        self.git(
+            "-c",
+            "user.name=Fixture",
+            "-c",
+            "user.email=fixture@example.invalid",
+            "commit",
+            "-qm",
+            "remove application",
+        )
+        (self.root / "apps").mkdir(exist_ok=True)
+        (self.root / "crates").mkdir(exist_ok=True)
+        (self.root / "apps/ghost.ts").write_text("ignored app")
+        (self.root / "crates/ghost.rs").write_text("ignored rust")
+        result = self.cli()
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("Production application is absent", result.stderr)
+        (self.root / "apps/page.tsx").write_text("tracked app")
+        self.git("add", "apps/page.tsx")
+        self.git(
+            "-c",
+            "user.name=Fixture",
+            "-c",
+            "user.email=fixture@example.invalid",
+            "commit",
+            "-qm",
+            "restore app only",
+        )
+        result = self.cli()
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("Rust commerce application is absent", result.stderr)
+
+    def test_committed_symlinks_do_not_count_as_application(self):
+        self.git("rm", "apps/page.tsx", "crates/lib.rs")
+        (self.root / "apps").mkdir(exist_ok=True)
+        (self.root / "crates").mkdir(exist_ok=True)
+        (self.root / "apps/page.tsx").symlink_to("missing")
+        (self.root / "crates/lib.rs").symlink_to("missing")
+        self.git("add", "apps/page.tsx", "crates/lib.rs")
+        self.git(
+            "-c",
+            "user.name=Fixture",
+            "-c",
+            "user.email=fixture@example.invalid",
+            "commit",
+            "-qm",
+            "replace application with links",
+        )
+        result = self.cli()
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("Production application is absent", result.stderr)
+
+    def test_unstaged_staged_and_untracked_changes_are_rejected_without_paths(self):
+        for name in ("config/delivery.json", "apps/page.tsx"):
+            path = self.root / name
+            original = path.read_text()
+            for staged in (False, True):
+                with self.subTest(name=name, staged=staged):
+                    path.write_text(original + "\nHOSTILE_SOURCE_SENTINEL\n")
+                    if staged:
+                        self.git("add", name)
+                    result = self.cli()
+                    self.assertNotEqual(result.returncode, 0)
+                    self.assertIn("Release source is changed or uncommitted", result.stderr)
+                    self.assertNotIn(name, result.stderr + result.stdout)
+                    self.assertNotIn("HOSTILE_SOURCE_SENTINEL", result.stderr + result.stdout)
+                    self.git("restore", "--staged", name)
+                    path.write_text(original)
+        (self.root / "apps/untracked.ts").write_text("source")
+        self.assertNotEqual(self.cli().returncode, 0)
+
+    def test_change_during_audit_is_rejected(self):
+        result = self.cli(CHANGE_DURING_AUDIT="1")
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("Release source is changed or uncommitted", result.stderr)
+        self.assertNotIn("Release evidence and server protection present", result.stdout)
+
+    def test_index_flags_cannot_hide_source_changes(self):
+        for flag in ("assume-unchanged", "skip-worktree"):
+            with self.subTest(flag=flag):
+                self.git("update-index", f"--{flag}", "apps/page.tsx")
+                (self.root / "apps/page.tsx").write_text("hidden change")
+                result = self.cli()
+                self.assertNotEqual(result.returncode, 0)
+                self.assertIn("Release source is changed or uncommitted", result.stderr)
+                self.git("update-index", f"--no-{flag}", "apps/page.tsx")
+                (self.root / "apps/page.tsx").write_text("export default function Page() {}\n")
+
+    def test_disabled_revision_fails_before_audit(self):
+        config = {**self.config, "productionEnabled": False}
+        (self.root / "config/delivery.json").write_text(json.dumps(config))
+        self.git("add", "config/delivery.json")
+        self.git(
+            "-c",
+            "user.name=Fixture",
+            "-c",
+            "user.email=fixture@example.invalid",
+            "commit",
+            "-qm",
+            "disable",
+        )
+        result = self.cli(CHANGE_DURING_AUDIT="1")
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("Production is disabled", result.stderr)
+        self.assertEqual(
+            (self.root / "apps/page.tsx").read_text(), "export default function Page() {}\n"
+        )
 
 
 if __name__ == "__main__":

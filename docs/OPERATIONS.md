@@ -28,7 +28,34 @@ Metrics/logs remain exportable to free self-hosted tools through open formats; a
 
 ## Release gates
 
-`npm run release:check` intentionally fails during foundation. P7 requires application stage, productionEnabled and evidence for every production gate bound to the exact release SHA. Evidence lives in ignored local/secured CI artifacts; product docs contain current readiness, not customer data or session history.
+`npm run release:check` remains blocked while production is disabled. P7 requires application stage, `productionEnabled`, every configured production gate passed, and the server protection audit. The manifest is `.local/releases/<full-HEAD>/evidence.json`, with one entry for each and only each key in `config/delivery.json`'s `productionGates`. For example, with an illustrative two-gate configuration:
+
+```json
+{
+  "version": 1,
+  "head": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+  "gates": {
+    "securityAssessment": {
+      "gate": "securityAssessment",
+      "head": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "status": "passed",
+      "evidence": "security.txt",
+      "sha256": "<lowercase SHA-256 of security.txt bytes>"
+    },
+    "restoreAndRollback": {
+      "gate": "restoreAndRollback",
+      "head": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "status": "passed",
+      "evidence": "restore.txt",
+      "sha256": "<lowercase SHA-256 of restore.txt bytes>"
+    }
+  }
+}
+```
+
+Replace the illustrative head and digest placeholders with `git rev-parse HEAD` and `shasum -a 256` of each actual artifact. Paths are relative to the manifest's revision directory; use distinct nonblank regular files, with no symlinks, traversal, hard-link aliases, duplicate content, or reference to the manifest itself. Extra or missing fields and gates are rejected. Keep the manifest and evidence in ignored local storage or secured CI artifacts; do not include customer data in product docs. Then run `npm run release:check` from the reviewed revision. A new commit requires new revision-bound evidence and manifest.
+
+The check reads delivery policy and application-file presence from the committed revision and requires the same clean source and index before and after evidence validation and the server audit. Only committed regular files count as application source. Untracked files also block it unless ignored; ignored local evidence remains usable. Keep source and evidence stable throughout validation: these checks do not prevent a concurrent writer from changing and restoring files between checks, or from changing an opened evidence file. The check verifies the declared binding and file integrity; it does not authenticate who produced evidence or judge its substance. Qualified humans must review each artifact and the actual provider, deployment, recovery and physical fulfilment acceptance before activation.
 
 Before release: all required CI and independent reviews; populated Sonar with zero issues/hotspots; application/security/performance/discovery evidence; real market/provider/product/legal acceptance; isolated restore and compatible rollback. Create a release PR develop → main; no direct push. Build immutable digest-tagged images from the reviewed revision, sign/attest provenance, deploy staging and verify served version/health/routes before production. Add the deployment workflow only when these gates are real; merging foundation does not deploy anything.
 

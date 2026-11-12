@@ -19,8 +19,9 @@ def pages(endpoint):
     return [item for page in values for item in page]
 
 
-def audit():
-    config = json.loads((ROOT / "config/delivery.json").read_text())
+def audit(config=None):
+    if config is None:
+        config = json.loads((ROOT / "config/delivery.json").read_text())
     repo = config["repository"]
     info = gh_json("api", f"repos/{repo}")
     if info.get("default_branch") != "develop":
