@@ -443,7 +443,7 @@ in-process consumer. A failed or interrupted opening does not restore the start.
 An optional trusted synthetic callback records one bounded accepted, explicit
 rejection or uncertain result against the exact earlier start, after releasing all
 database locks. A start without a recorded result remains unknown, and the
-envelope stays closed. Results remain historical after expiry or consumption.
+envelope cannot be reopened. Results remain historical after expiry or consumption.
 The database records the trusted caller's classification. Provider authentication,
 mailbox receipt and redemption each require their own evidence. A provider,
 retry policy and reconciliation remain separately reviewed work.
@@ -453,8 +453,8 @@ identity in the same transaction; the database binds consumption and insertion t
 the same transaction, with legacy consumed proofs ineligible. Rust verifies bearer
 possession; the database write role remains trusted. Replay and duplicate identities deny without
 consuming another proof. A final fresh-clock check follows all writes and waits.
-The identifier grants no login, session, guest-order or other authority. Delivery
-processing, key operation, mailbox acceptance and anti-enumeration remain required. Migrations 0034
+The identifier grants no login, session, guest-order or other authority. Production
+delivery operations, key operation, mailbox acceptance and anti-enumeration remain required. Migrations 0034
 and 0035 must land after the separately reserved 0033 late-stock migration; no
 deployed migration state is implied.
 
