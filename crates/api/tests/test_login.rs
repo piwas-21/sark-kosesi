@@ -125,6 +125,22 @@ fn assert_private_headers(response: &axum::response::Response) {
         "referrer policy required"
     );
 }
+fn assert_distinct_cookies(first: &str, second: &str) {
+    assert!(
+        first != second,
+        "separate logins must issue distinct cookies"
+    );
+}
+fn assert_same_denial(
+    actual: &(StatusCode, Vec<u8>),
+    expected: &(StatusCode, Vec<u8>),
+    message: &str,
+) {
+    assert!(actual == expected, "{message}");
+}
+fn assert_body(actual: &[u8], expected: &[u8], message: &str) {
+    assert!(actual == expected, "{message}");
+}
 async fn response_parts(response: axum::response::Response) -> (StatusCode, Vec<u8>) {
     assert_private_headers(&response);
     assert!(response.headers().get(SET_COOKIE).is_none());
@@ -171,6 +187,68 @@ fn bearer(header: &str) -> CustomerSessionToken {
         bytes[index] = digit(pair[0]) * 16 + digit(pair[1]);
     }
     CustomerSessionToken::from_bytes(bytes)
+}
+
+#[test]
+fn secret_adjacent_failure_diagnostics_do_not_render_synthetic_values() {
+    let marker = "synthetic-login-secret-control-712093";
+    let denial = (StatusCode::UNAUTHORIZED, b"denied".to_vec());
+    let exposed = (StatusCode::UNAUTHORIZED, marker.as_bytes().to_vec());
+    let response = |cache: &str, referrer: &str| {
+        axum::response::Response::builder()
+            .header("cache-control", cache)
+            .header("referrer-policy", referrer)
+            .body(Body::empty())
+            .expect("synthetic response")
+    };
+    assert_private_headers(&response("private, no-store", "no-referrer"));
+    assert_distinct_cookies(marker, "different");
+    assert_same_denial(&denial, &denial, "same denial required");
+    assert_body(b"denied", b"denied", "generic body required");
+    let byte_rendering = format!("{:?}", marker.as_bytes());
+    let failures = [
+        std::panic::catch_unwind(|| assert_distinct_cookies(marker, marker)),
+        std::panic::catch_unwind(|| {
+            bearer(&format!("{marker}=value"));
+        }),
+        std::panic::catch_unwind(|| assert_private_headers(&response(marker, "no-referrer"))),
+        std::panic::catch_unwind(|| assert_private_headers(&response("private, no-store", marker))),
+        std::panic::catch_unwind(|| assert_same_denial(&exposed, &denial, "same denial required")),
+        std::panic::catch_unwind(|| {
+            assert_body(marker.as_bytes(), b"denied", "generic body required")
+        }),
+    ];
+    for failure in failures {
+        let payload = failure.expect_err("synthetic mismatch must fail");
+        let message = payload
+            .downcast_ref::<&str>()
+            .copied()
+            .or_else(|| payload.downcast_ref::<String>().map(String::as_str))
+            .expect("failure diagnostic");
+        assert!(
+            !message.contains(marker),
+            "synthetic secret reached diagnostics"
+        );
+        assert!(
+            !message.contains(&byte_rendering),
+            "synthetic bytes reached diagnostics"
+        );
+    }
+    // Positive controls prove the diagnostic checks detect both representations.
+    let literal = std::panic::catch_unwind(|| assert_eq!(marker, "different"))
+        .expect_err("literal control must fail");
+    let bytes = std::panic::catch_unwind(|| assert_eq!(marker.as_bytes(), b"different"))
+        .expect_err("byte control must fail");
+    assert!(
+        literal
+            .downcast_ref::<String>()
+            .is_some_and(|m| m.contains(marker))
+    );
+    assert!(
+        bytes
+            .downcast_ref::<String>()
+            .is_some_and(|m| m.contains(&byte_rendering))
+    );
 }
 
 #[test]
@@ -245,10 +323,7 @@ async fn valid_login_sets_only_a_bound_expiring_cookie_and_replay_issues_a_disti
                 .is_empty()
         );
     }
-    assert!(
-        cookies[0] != cookies[1],
-        "separate logins must issue distinct cookies"
-    );
+    assert_distinct_cookies(&cookies[0], &cookies[1]);
     assert_eq!(counts(&pool).await, (2, 2));
     for token in &tokens {
         assert_eq!(
@@ -288,37 +363,39 @@ async fn invalid_unknown_and_throttled_credentials_share_denial_without_cookie(p
             .expect("unknown"),
     )
     .await;
-    assert!(
-        wrong == unknown,
-        "wrong and unknown credentials must receive the same denial"
+    assert_same_denial(
+        &wrong,
+        &unknown,
+        "wrong and unknown credentials must receive the same denial",
     );
     assert_eq!(wrong.0, StatusCode::UNAUTHORIZED);
-    assert!(
-        wrong.1 == br#"{"code":"login_denied"}"#,
-        "credential denial body must be generic"
+    assert_body(
+        &wrong.1,
+        br#"{"code":"login_denied"}"#,
+        "credential denial body must be generic",
     );
     for _ in 0..4 {
-        assert!(
-            response_parts(
+        assert_same_denial(
+            &response_parts(
                 app.clone()
                     .oneshot(request(body(EMAIL, "incorrect password long")))
                     .await
-                    .expect("denied")
+                    .expect("denied"),
             )
-            .await
-                == wrong,
-            "repeated invalid credentials must receive the same denial"
+            .await,
+            &wrong,
+            "repeated invalid credentials must receive the same denial",
         );
     }
-    assert!(
-        response_parts(
+    assert_same_denial(
+        &response_parts(
             app.oneshot(request(body(EMAIL, PASSWORD)))
                 .await
-                .expect("limited")
+                .expect("limited"),
         )
-        .await
-            == wrong,
-        "throttled credentials must receive the same denial"
+        .await,
+        &wrong,
+        "throttled credentials must receive the same denial",
     );
     assert_eq!(counts(&pool).await, (6, 0));
 }
@@ -501,9 +578,10 @@ async fn admission_wait_hits_shared_deadline_without_issuing_a_cookie(pool: PgPo
         .expect("response");
     let (status, payload) = response_parts(response).await;
     assert_eq!(status, StatusCode::GATEWAY_TIMEOUT);
-    assert!(
-        payload == br#"{"code":"dependency_timeout"}"#,
-        "deadline body must be generic"
+    assert_body(
+        &payload,
+        br#"{"code":"dependency_timeout"}"#,
+        "deadline body must be generic",
     );
     blocker.rollback().await.expect("release admission");
     assert_eq!(counts(&pool).await, (0, 0));
