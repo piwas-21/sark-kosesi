@@ -288,3 +288,63 @@ async fn legacy_cancellation_survives_upgrade_with_null_attempt_and_exact_replay
     assert!(receipt.replayed);
     assert_eq!(receipt.canceled_at, 1500);
 }
+
+#[sqlx::test(migrator = "MIGRATOR")]
+async fn damaged_attempt_identifiers_cannot_create_or_replay_cancellation(pool: PgPool) {
+    let (store, _, session, csrf, order) = payment::accepted(&pool).await;
+    let key = GuestCredential::from_session(&session).expect("owner");
+    let prepared = prepare_attempt(
+        &store,
+        &key,
+        &csrf,
+        "pay",
+        &payment::intent(&order),
+        &payment::config(),
+    )
+    .await
+    .expect("attempt");
+    let id = prepared.frozen.snapshot().binding.id.clone();
+    // Model a damaged import with broken checks and references in an isolated DB.
+    pool.execute("ALTER TABLE payment_attempts DROP CONSTRAINT payment_attempts_id_check, DROP CONSTRAINT payment_attempts_key_binding").await.expect("test-only damage setup");
+    async fn change_id(pool: &PgPool, old: &str, new: &str, order: &str) {
+        let mut tx = pool.begin().await.expect("isolated damaged import");
+        tx.execute("SET LOCAL session_replication_role = replica")
+            .await
+            .expect("disable test-only triggers");
+        sqlx::query("UPDATE payment_attempts SET id=$2, idempotency_key='piwas-test-payment-'||$2 WHERE id=$1")
+            .bind(old).bind(new).execute(&mut *tx).await.expect("replace imported attempt id");
+        sqlx::query("UPDATE checkout_order_cancellations SET attempt_id=$2 WHERE attempt_id=$1")
+            .bind(old)
+            .bind(new)
+            .execute(&mut *tx)
+            .await
+            .expect("replace imported receipt reference");
+        sqlx::query("UPDATE commerce_outbox SET payload=jsonb_set(payload,'{attempt_id}',to_jsonb($2::text)) WHERE aggregate_id=$1 AND kind='payment.attempt_prepared.v1'")
+            .bind(order).bind(new).execute(&mut *tx).await.expect("replace imported prepared event reference");
+        tx.commit().await.expect("commit damaged import");
+    }
+    change_id(&pool, &id, "bad", &order.identity.id).await;
+    assert!(matches!(
+        cancel_order(&store, &key, &csrf, "cancel", &order.identity.id).await,
+        Err(OrderStoreError::InvalidStoredData)
+    ));
+    change_id(&pool, "bad", &id, &order.identity.id).await;
+    assert!(
+        !cancel_order(&store, &key, &csrf, "cancel", &order.identity.id)
+            .await
+            .expect("intact positive control")
+            .replayed
+    );
+    change_id(&pool, &id, "bad", &order.identity.id).await;
+    assert!(matches!(
+        owned_cancellation(&store, &key, &order.identity.id).await,
+        Err(OrderStoreError::InvalidStoredData)
+    ));
+    change_id(&pool, "bad", &id, &order.identity.id).await;
+    assert!(
+        cancel_order(&store, &key, &csrf, "cancel", &order.identity.id)
+            .await
+            .expect("restored exact replay")
+            .replayed
+    );
+}
