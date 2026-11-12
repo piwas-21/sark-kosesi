@@ -331,19 +331,32 @@ async fn late_receipt_is_recovered_without_another_request(pool: PgPool) {
         gate.store(true, Ordering::SeqCst);
     };
     let (result, ()) = tokio::join!(first, expire);
-    assert!(result.is_err());
+    assert!(matches!(result, Err(RecoveryError::LeaseLost)));
     let count: i64 = sqlx::query_scalar("SELECT count(*) FROM payment_reversal_observations")
         .fetch_one(&pool)
         .await
         .expect("receipt");
     assert_eq!(count, 1);
-    run_batch(&pool, time.as_ref(), &ids, &client, 1)
+    // A plain receipt read does not wait for the failed finish transaction's rollback.
+    let mut fence = pool.begin().await.expect("late receipt rollback fence");
+    sqlx::query("SELECT id FROM payment_attempts WHERE id=$1 FOR UPDATE")
+        .bind(&job.attempt_id)
+        .fetch_one(&mut *fence)
         .await
-        .expect("receipt recovery");
+        .expect("failed finish released attempt");
+    fence.rollback().await.expect("release recovery fence");
+    assert_eq!(
+        run_batch(&pool, time.as_ref(), &ids, &client, 1)
+            .await
+            .expect("receipt recovery")
+            .processed,
+        1
+    );
     let saved = read_job(&pool, &job.id)
         .await
         .expect("job")
         .expect("present");
+    assert_eq!(saved.state, "observed");
     assert_ne!(saved.review_reason.as_deref(), Some("uncertain"));
     assert_eq!(server.count(), 3);
 }
@@ -845,16 +858,44 @@ async fn lease_expiring_before_io_sends_no_request(pool: PgPool) {
             .await
             .is_err()
     );
-    assert!(
-        run_batch(&pool, &ExpiringClock(AtomicU64::new(0)), &ids, &client, 1)
-            .await
-            .is_err()
-    );
+    assert!(matches!(
+        run_batch(&pool, &ExpiringClock(AtomicU64::new(0)), &ids, &client, 1).await,
+        Err(RecoveryError::LeaseLost)
+    ));
     assert_eq!(server.count(), 1);
     time.0.store(1560, Ordering::SeqCst);
-    run_batch(&pool, time.as_ref(), &ids, &client, 1)
+    // The failed pre-I/O authorization drops its attempt-locked transaction;
+    // wait for that queued rollback before a SKIP LOCKED recovery pass.
+    let mut fence = pool.begin().await.expect("authorization rollback fence");
+    sqlx::query("SELECT id FROM payment_attempts WHERE id=$1 FOR UPDATE")
+        .bind(&job.attempt_id)
+        .fetch_one(&mut *fence)
         .await
-        .expect("park");
+        .expect("authorization released attempt");
+    let leased: (String, Option<i64>) =
+        sqlx::query_as("SELECT state,lease_until FROM reversal_item_jobs WHERE id=$1")
+            .bind(&job.id)
+            .fetch_one(&mut *fence)
+            .await
+            .expect("committed lease");
+    assert_eq!(leased, ("leased".into(), Some(1560)));
+    assert_eq!(
+        run_batch(&pool, time.as_ref(), &ids, &client, 1)
+            .await
+            .expect("locked recovery pass")
+            .processed,
+        0,
+        "SKIP LOCKED cannot recover while the attempt is held"
+    );
+    fence.rollback().await.expect("release recovery fence");
+    assert_eq!(
+        run_batch(&pool, time.as_ref(), &ids, &client, 1)
+            .await
+            .expect("park")
+            .processed,
+        1
+    );
+    assert_eq!(server.count(), 1);
     assert_eq!(
         read_job(&pool, &job.id)
             .await
