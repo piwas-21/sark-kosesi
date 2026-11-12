@@ -77,6 +77,9 @@ pub async fn start_dispatch(
             .map_err(|_| PaymentStoreError::ClockUnavailable)?,
     );
     let mut tx = pool.begin().await?;
+    sqlx::query("SET TRANSACTION ISOLATION LEVEL READ COMMITTED")
+        .execute(&mut *tx)
+        .await?;
     sqlx::query("SET LOCAL lock_timeout='1s';")
         .execute(&mut *tx)
         .await?;
@@ -116,6 +119,11 @@ pub async fn start_dispatch(
         tx.rollback().await?;
         return Ok(DispatchOutcome::Reconcile { frozen, started_at });
     }
+    crate::checkout_cancellations::ensure_not_canceled(
+        &mut tx,
+        &frozen.snapshot().binding.order_id,
+    )
+    .await?;
     let order = checkout_orders::snapshot_in_transaction(
         &mut tx,
         &owner,
