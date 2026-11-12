@@ -339,7 +339,10 @@ class EvidencePolicy(unittest.TestCase):
         fake_bin = self.root / "bin"
         fake_bin.mkdir()
         git = fake_bin / "git"
-        git.write_text(f"#!/bin/sh\nprintf '%s\\n' {HEAD}\n")
+        git.write_text(
+            f"#!/bin/sh\ncase \"$1\" in\nrev-parse) printf '%s\\n' {HEAD} ;;\n"
+            "show) cat config/delivery.json ;;\nstatus) : ;;\nesac\n"
+        )
         git.chmod(0o755)
         env = {**os.environ, "PATH": f"{fake_bin}:{os.environ['PATH']}"}
         manifest = self.release_dir / "evidence.json"
@@ -367,22 +370,144 @@ class EvidencePolicy(unittest.TestCase):
                 self.assertIn("Release blocked:", result.stderr)
                 self.assertNotIn(sentinel, result.stderr + result.stdout)
 
-    def test_release_cli_blocked_before_audit_when_disabled(self):
+    def test_review_path_escape_rejected(self):
+        with self.assertRaises(ValueError):
+            validate_receipt({**self.receipt, "report": "../outside.md"}, HEAD, BASE, self.root)
+
+
+class ReleaseSourcePolicy(unittest.TestCase):
+    def setUp(self):
+        self.temp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.temp.cleanup)
+        self.root = Path(self.temp.name)
         repo = Path(__file__).resolve().parents[2]
-        result = subprocess.run(
-            [sys.executable, str(repo / "scripts/release_readiness.py")],
-            cwd=repo,
+        for directory in ("scripts", "config", "apps", "crates"):
+            (self.root / directory).mkdir()
+        for name in ("release_readiness.py", "gate_policy.py", "review_policy.py"):
+            shutil.copy(repo / "scripts" / name, self.root / "scripts" / name)
+        (self.root / "scripts/audit_github.py").write_text(
+            "import os\nfrom pathlib import Path\nROOT = Path(__file__).resolve().parents[1]\n"
+            "def audit(config):\n"
+            '    if os.environ.get("CHANGE_DURING_AUDIT"):\n'
+            '        (ROOT / "apps/page.tsx").write_text("changed during audit")\n'
+        )
+        (self.root / ".gitignore").write_text(".local/\n__pycache__/\n")
+        (self.root / "apps/page.tsx").write_text("export default function Page() {}\n")
+        (self.root / "crates/lib.rs").write_text("pub struct Money(i64);\n")
+        self.config = {
+            "stage": "application",
+            "productionEnabled": True,
+            "productionGates": {"security": "passed"},
+        }
+        (self.root / "config/delivery.json").write_text(json.dumps(self.config))
+        self.git("init", "-q")
+        self.git("add", ".")
+        self.git(
+            "-c",
+            "user.name=Fixture",
+            "-c",
+            "user.email=fixture@example.invalid",
+            "commit",
+            "-qm",
+            "fixture",
+        )
+        self.head = self.git("rev-parse", "HEAD").strip()
+        directory = self.root / ".local/releases" / self.head
+        directory.mkdir(parents=True)
+        (directory / "security.txt").write_bytes(b"security evidence\n")
+        (directory / "evidence.json").write_text(
+            json.dumps(
+                {
+                    "version": 1,
+                    "head": self.head,
+                    "gates": {
+                        "security": {
+                            "gate": "security",
+                            "head": self.head,
+                            "status": "passed",
+                            "evidence": "security.txt",
+                            "sha256": hashlib.sha256(b"security evidence\n").hexdigest(),
+                        }
+                    },
+                }
+            )
+        )
+
+    def git(self, *args):
+        return subprocess.run(
+            ["git", *args], cwd=self.root, text=True, capture_output=True, check=True
+        ).stdout
+
+    def cli(self, **environment):
+        return subprocess.run(
+            [sys.executable, str(self.root / "scripts/release_readiness.py")],
+            cwd=self.root,
+            env={**os.environ, **environment},
             text=True,
             capture_output=True,
             check=False,
         )
+
+    def test_clean_revision_with_ignored_evidence_passes(self):
+        result = self.cli()
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn(self.head, result.stdout)
+
+    def test_unstaged_staged_and_untracked_changes_are_rejected_without_paths(self):
+        for name in ("config/delivery.json", "apps/page.tsx"):
+            path = self.root / name
+            original = path.read_text()
+            for staged in (False, True):
+                with self.subTest(name=name, staged=staged):
+                    path.write_text(original + "\nHOSTILE_SOURCE_SENTINEL\n")
+                    if staged:
+                        self.git("add", name)
+                    result = self.cli()
+                    self.assertNotEqual(result.returncode, 0)
+                    self.assertIn("Release source is changed or uncommitted", result.stderr)
+                    self.assertNotIn(name, result.stderr + result.stdout)
+                    self.assertNotIn("HOSTILE_SOURCE_SENTINEL", result.stderr + result.stdout)
+                    self.git("restore", "--staged", name)
+                    path.write_text(original)
+        (self.root / "apps/untracked.ts").write_text("source")
+        self.assertNotEqual(self.cli().returncode, 0)
+
+    def test_change_during_audit_is_rejected(self):
+        result = self.cli(CHANGE_DURING_AUDIT="1")
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("Release source is changed or uncommitted", result.stderr)
+        self.assertNotIn("Release evidence and server protection present", result.stdout)
+
+    def test_index_flags_cannot_hide_source_changes(self):
+        for flag in ("assume-unchanged", "skip-worktree"):
+            with self.subTest(flag=flag):
+                self.git("update-index", f"--{flag}", "apps/page.tsx")
+                (self.root / "apps/page.tsx").write_text("hidden change")
+                result = self.cli()
+                self.assertNotEqual(result.returncode, 0)
+                self.assertIn("Release source is changed or uncommitted", result.stderr)
+                self.git("update-index", f"--no-{flag}", "apps/page.tsx")
+                (self.root / "apps/page.tsx").write_text("export default function Page() {}\n")
+
+    def test_disabled_revision_fails_before_audit(self):
+        config = {**self.config, "productionEnabled": False}
+        (self.root / "config/delivery.json").write_text(json.dumps(config))
+        self.git("add", "config/delivery.json")
+        self.git(
+            "-c",
+            "user.name=Fixture",
+            "-c",
+            "user.email=fixture@example.invalid",
+            "commit",
+            "-qm",
+            "disable",
+        )
+        result = self.cli(CHANGE_DURING_AUDIT="1")
         self.assertNotEqual(result.returncode, 0)
         self.assertIn("Production is disabled", result.stderr)
-        self.assertNotIn("GitHub", result.stderr)
-
-    def test_review_path_escape_rejected(self):
-        with self.assertRaises(ValueError):
-            validate_receipt({**self.receipt, "report": "../outside.md"}, HEAD, BASE, self.root)
+        self.assertEqual(
+            (self.root / "apps/page.tsx").read_text(), "export default function Page() {}\n"
+        )
 
 
 if __name__ == "__main__":

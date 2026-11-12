@@ -11,15 +11,34 @@ from gate_policy import (
     validate_release_environment,
 )
 
+
+def git(*args):
+    return subprocess.run(
+        ["git", *args], cwd=ROOT, check=True, text=True, capture_output=True
+    ).stdout
+
+
+def require_clean_revision(head):
+    tracked = git("ls-files", "-v", "-z").split("\0")
+    if (
+        git("rev-parse", "HEAD").strip() != head
+        or git("status", "--porcelain=v1", "--untracked-files=all", "--ignore-submodules=none")
+        or any(entry and not entry.startswith("H ") for entry in tracked)
+    ):
+        raise ValueError("Release source is changed or uncommitted")
+
+
 if __name__ == "__main__":
     try:
-        config = json.loads((ROOT / "config/delivery.json").read_text())
-        head = subprocess.check_output(["git", "rev-parse", "HEAD"], cwd=ROOT, text=True).strip()
+        head = git("rev-parse", "HEAD").strip()
+        config = json.loads(git("show", f"{head}:config/delivery.json"))
+        require_clean_revision(head)
         validate_release_environment(config, head, ROOT)
         with release_directory(ROOT, head) as directory:
             evidence, manifest_identity = read_release_manifest(directory)
             validate_release(config, evidence, head, ROOT, manifest_identity, directory)
-        audit()
+        audit(config)
+        require_clean_revision(head)
         print(
             f"Release evidence and server protection present for {head}; review evidence content before activation."
         )
