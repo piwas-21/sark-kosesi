@@ -18,6 +18,20 @@ def git(*args):
     ).stdout
 
 
+def committed_sources(head):
+    entries = git("ls-tree", "-r", "-z", "--full-tree", head, "--", "apps", "crates")
+    sources = []
+    for entry in entries.split("\0"):
+        if entry:
+            metadata, separator, path = entry.partition("\t")
+            fields = metadata.split(" ")
+            if not separator or len(fields) != 3:
+                raise ValueError("Release source inventory is invalid")
+            if fields[0] in ("100644", "100755") and fields[1] == "blob":
+                sources.append(path)
+    return sources
+
+
 def require_clean_revision(head):
     tracked = git("ls-files", "-v", "-z").split("\0")
     if (
@@ -33,10 +47,11 @@ if __name__ == "__main__":
         head = git("rev-parse", "HEAD").strip()
         config = json.loads(git("show", f"{head}:config/delivery.json"))
         require_clean_revision(head)
-        validate_release_environment(config, head, ROOT)
+        sources = committed_sources(head)
+        validate_release_environment(config, head, sources)
         with release_directory(ROOT, head) as directory:
             evidence, manifest_identity = read_release_manifest(directory)
-            validate_release(config, evidence, head, ROOT, manifest_identity, directory)
+            validate_release(config, evidence, head, sources, manifest_identity, directory)
         audit(config)
         require_clean_revision(head)
         print(

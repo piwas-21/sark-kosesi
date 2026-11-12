@@ -32,11 +32,12 @@ def read_release_manifest(root, head):
 
 
 def validate_release(config, evidence, head, root, manifest_identity=None):
-    validate_release_environment(config, head, root)
+    sources = [str(path.relative_to(root)) for path in root.rglob("*") if path.is_file()]
+    validate_release_environment(config, head, sources)
     with release_directory(root, head) as directory:
         if manifest_identity is None:
             _, manifest_identity = read_manifest_from_directory(directory)
-        validate_with_directory(config, evidence, head, root, manifest_identity, directory)
+        validate_with_directory(config, evidence, head, sources, manifest_identity, directory)
 
 
 HEAD, BASE = "a" * 40, "b" * 40
@@ -319,7 +320,14 @@ class EvidencePolicy(unittest.TestCase):
                 )
             )
             with self.assertRaisesRegex(ValueError, "Reused or changed"):
-                validate_with_directory(self.config, evidence, HEAD, self.root, identity, directory)
+                validate_with_directory(
+                    self.config,
+                    evidence,
+                    HEAD,
+                    ["apps/page.tsx", "crates/lib.rs"],
+                    identity,
+                    directory,
+                )
 
     def test_cli_redacts_hostile_paths_and_invalid_manifest_bytes(self):
         self.release_fixture()
@@ -341,7 +349,9 @@ class EvidencePolicy(unittest.TestCase):
         git = fake_bin / "git"
         git.write_text(
             f"#!/bin/sh\ncase \"$1\" in\nrev-parse) printf '%s\\n' {HEAD} ;;\n"
-            "show) cat config/delivery.json ;;\nstatus) : ;;\nesac\n"
+            "show) cat config/delivery.json ;;\nstatus) : ;;\n"
+            'ls-tree) printf "100644 blob abc\\tapps/page.tsx\\0'
+            '100644 blob abc\\tcrates/lib.rs\\0" ;;\nesac\n'
         )
         git.chmod(0o755)
         env = {**os.environ, "PATH": f"{fake_bin}:{os.environ['PATH']}"}
@@ -452,6 +462,65 @@ class ReleaseSourcePolicy(unittest.TestCase):
         result = self.cli()
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertIn(self.head, result.stdout)
+
+    def test_ignored_files_cannot_replace_committed_application(self):
+        self.git("rm", "apps/page.tsx", "crates/lib.rs")
+        (self.root / ".gitignore").write_text(
+            ".local/\n__pycache__/\napps/ghost.ts\ncrates/ghost.rs\n"
+        )
+        (self.root / "apps.ts").write_text("wrong root")
+        (self.root / "crates.rs").write_text("wrong root")
+        self.git("add", ".gitignore", "apps.ts", "crates.rs")
+        self.git(
+            "-c",
+            "user.name=Fixture",
+            "-c",
+            "user.email=fixture@example.invalid",
+            "commit",
+            "-qm",
+            "remove application",
+        )
+        (self.root / "apps").mkdir(exist_ok=True)
+        (self.root / "crates").mkdir(exist_ok=True)
+        (self.root / "apps/ghost.ts").write_text("ignored app")
+        (self.root / "crates/ghost.rs").write_text("ignored rust")
+        result = self.cli()
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("Production application is absent", result.stderr)
+        (self.root / "apps/page.tsx").write_text("tracked app")
+        self.git("add", "apps/page.tsx")
+        self.git(
+            "-c",
+            "user.name=Fixture",
+            "-c",
+            "user.email=fixture@example.invalid",
+            "commit",
+            "-qm",
+            "restore app only",
+        )
+        result = self.cli()
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("Rust commerce application is absent", result.stderr)
+
+    def test_committed_symlinks_do_not_count_as_application(self):
+        self.git("rm", "apps/page.tsx", "crates/lib.rs")
+        (self.root / "apps").mkdir(exist_ok=True)
+        (self.root / "crates").mkdir(exist_ok=True)
+        (self.root / "apps/page.tsx").symlink_to("missing")
+        (self.root / "crates/lib.rs").symlink_to("missing")
+        self.git("add", "apps/page.tsx", "crates/lib.rs")
+        self.git(
+            "-c",
+            "user.name=Fixture",
+            "-c",
+            "user.email=fixture@example.invalid",
+            "commit",
+            "-qm",
+            "replace application with links",
+        )
+        result = self.cli()
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("Production application is absent", result.stderr)
 
     def test_unstaged_staged_and_untracked_changes_are_rejected_without_paths(self):
         for name in ("config/delivery.json", "apps/page.tsx"):

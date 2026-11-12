@@ -126,15 +126,14 @@ def evidence_digest(artifact):
     return digest.hexdigest()
 
 
-def validate_release_environment(config, head, root):
-    root = root.resolve()
+def validate_release_environment(config, head, sources):
     if config.get("stage") != "application" or config.get("productionEnabled") is not True:
         raise ValueError("Production is disabled or application stage is incomplete")
     if not any(
-        p.is_file() and p.suffix in (".ts", ".tsx", ".js") for p in (root / "apps").rglob("*")
+        p.startswith("apps/") and PurePosixPath(p).suffix in (".ts", ".tsx", ".js") for p in sources
     ):
         raise ValueError("Production application is absent")
-    if not any((root / "crates").rglob("*.rs")):
+    if not any(p.startswith("crates/") and PurePosixPath(p).suffix == ".rs" for p in sources):
         raise ValueError("Rust commerce application is absent")
     gates = config.get("productionGates")
     if (
@@ -148,8 +147,8 @@ def validate_release_environment(config, head, root):
     return gates
 
 
-def validate_release(config, evidence, head, root, manifest_identity, directory):
-    gates = validate_release_environment(config, head, root)
+def validate_release(config, evidence, head, sources, manifest_identity, directory):
+    gates = validate_release_environment(config, head, sources)
     if (
         not isinstance(evidence, dict)
         or set(evidence) != {"version", "head", "gates"}
