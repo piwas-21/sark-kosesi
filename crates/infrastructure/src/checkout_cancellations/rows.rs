@@ -90,14 +90,15 @@ pub(super) async fn claim_undispatched_attempt(
 
 pub(super) async fn insert(
     tx: &mut Transaction<'_, Postgres>,
-    owner: &str,
-    order_id: &str,
+    order: &OrderIdentity,
     effect: &str,
     account: Option<i64>,
     canceled_at: i64,
     event: &str,
     attempt_id: Option<&str>,
 ) -> Result<(), OrderStoreError> {
+    let owner = &order.basket_id;
+    let order_id = &order.id;
     sqlx::query("INSERT INTO checkout_order_cancellations(order_id,basket_id,effect_key,promotion_account_id,canceled_at,event_id,attempt_id) VALUES($1,$2,$3,$4,$5,$6,$7)")
         .bind(order_id).bind(owner).bind(effect).bind(account).bind(canceled_at).bind(event).bind(attempt_id)
         .execute(&mut **tx).await?;

@@ -99,8 +99,7 @@ async fn cancel(
     let event = scope.new_id()?;
     rows::insert(
         scope.transaction(),
-        &owner,
-        order_id,
+        &order.identity,
         effect,
         account,
         canceled_at,
