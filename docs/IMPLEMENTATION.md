@@ -427,17 +427,19 @@ all nine CI gates and the approved courtyard visual source/baselines.
 
 Private SQLx custody issues a random challenge for a narrowly normalized mailbox
 and consumes it once under purpose, identity and fresh-clock checks. Its fixed
-15-minute expiry is checked after lock waits and again before commit; raw bearer
-bytes are returned to the trusted caller only. The schema and scope are specified
-in [security](SECURITY.md#private-email-verification-challenge-custody). This is
-no public registration, delivery or guest linking. A private account operation now
+15-minute expiry is checked after lock waits and again before commit. The direct
+issuer returns its bearer to the trusted caller. The delivery issuer commits a
+nonce reservation before encryption, then commits the challenge and its encrypted
+envelope together. Its receipt omits the bearer. The schema and scope are
+specified in [security](SECURITY.md#private-email-verification-challenge-custody).
+A private account operation now
 locks and consumes that exact proof and inserts one unique immutable normalized
 identity in the same transaction; the database binds consumption and insertion to
 the same transaction, with legacy consumed proofs ineligible. Rust verifies bearer
 possession; the database write role remains trusted. Replay and duplicate identities deny without
 consuming another proof. A final fresh-clock check follows all writes and waits.
-The identifier grants no login, session, guest-order or other authority. Secure
-delivery, anti-enumeration and abuse controls remain required. Migrations 0034
+The identifier grants no login, session, guest-order or other authority. Delivery
+processing, key operation, mailbox acceptance and anti-enumeration remain required. Migrations 0034
 and 0035 must land after the separately reserved 0033 late-stock migration; no
 deployed migration state is implied.
 
@@ -458,9 +460,13 @@ consumption and verified account establishment share one target budget, with one
 debit per request. Private replacement additionally requires a trusted, immutable,
 bounded and integrity-checked offline password blocklist snapshot; exact NFC
 matches are denied after proof precheck and before Argon2. Snapshot validity is
-rechecked before commit. No corpus is supplied. Obtain and review a real corpus,
-coordinate its delivery, withdrawal and freshness, and complete secure delivery,
-trusted ingress, timing and browser controls before exposing the flow.
+rechecked before commit. No corpus is supplied. Obtain and review a real corpus
+and coordinate its delivery, withdrawal and freshness. A loopback,
+preview-authenticated test-only POST consumer can establish an account
+from a supplied proof with one admission debit; it is disabled unless its test
+origin and dedicated key are both configured. It issues no session or proof.
+Complete secure delivery, trusted ingress, timing and browser controls before
+exposing the flow beyond this test boundary.
 
 Private guest-order linking requires a live guest basket credential and CSRF
 proof to issue a one-use challenge for that exact accepted order. A current

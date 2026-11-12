@@ -784,6 +784,15 @@ custody, start expiry, pending replay, historical result binding, and rollback
 when the reciprocal event is suppressed or altered. Keep provider acceptance
 separate from this evidence.
 
+### Private verification delivery envelopes
+
+Use isolated PostgreSQL to race reservations under one key and verify one
+admission debit per issuance. Exercise paired challenge/envelope writes, legacy
+challenge upgrade, nonce reuse and key-alias refusal, and expiry or rewind after
+an actual write wait. Assert that a failed challenge write leaves its reserved
+nonce burned. Exercise authenticated ciphertext and context tampering and
+check that stored envelope fields omit plaintext and duplicate mailbox data.
+
 ### Private password credential custody
 
 Use isolated PostgreSQL with two verified accounts and actual Argon2id
