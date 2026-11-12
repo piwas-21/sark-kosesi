@@ -188,6 +188,9 @@ An optional loopback test-only verification redemption API consumes a supplied
 proof after preview authentication, exact Origin validation and shared admission.
 It issues no session and remains disabled without explicit test configuration.
 Mailbox delivery and public ingress readiness still require acceptance.
+An optional private test-only password login uses admitted credential checks
+and returns the issued session only in a secure host-only cookie. It has no
+session-reading or logout route and does not establish public login readiness.
 
 The local room-planner preview combines the rectangle calculator with keyboard
 measurement and rotation controls, a drawn footprint, and text clearance and fit

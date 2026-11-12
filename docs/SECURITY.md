@@ -598,6 +598,15 @@ successor without extending the original expiry. Flush completion before the
 last clock check. Logout revokes the current bearer. Browser cookies, Origin
 and CSRF integration remain separate.
 
+An optional default-off test-mode login POST requires preview authentication,
+one exact configured HTTPS Origin, closed bounded JSON and a separately configured
+admission key. Existing login admission commits before credential lookup or Argon2.
+Unknown mailboxes, wrong passwords and exhausted quota share a denial. Success
+returns only a Secure, HttpOnly, host-only SameSite=Lax session cookie bounded by
+the original expiry. Responses and logs contain no bearer, password or account ID.
+The request deadline may follow a committed session without delivering its cookie.
+No public timing, trusted-edge abuse or session-read policy follows from this test.
+
 ## Private guest-order linking
 
 Use distinct proof and customer-session bearers. The issuer checks a live

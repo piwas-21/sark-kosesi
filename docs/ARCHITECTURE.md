@@ -1778,6 +1778,13 @@ authority in their own transaction. Rotation revokes the old bearer and
 inserts one successor with the original expiry in a single transaction. Native
 same-transaction custody and a deferred check bind both effects. Complete
 secure delivery, blocklist, abuse limits and browser integration separately.
+An optional test-only loopback login adapter requires preview authentication,
+an exact HTTPS Origin and a separate admission key. The existing admitted login
+performs quota debit before credential lookup and hashing. A successful response
+sets a Secure, HttpOnly, host-only SameSite=Lax cookie bounded by the issued
+session expiry and carries no account or bearer in its body. Failures carry no
+cookie; an HTTP timeout can follow a committed session without returning it.
+This adapter supplies no session-read route, logout or public ingress authority.
 
 ### Private guest-order linking
 

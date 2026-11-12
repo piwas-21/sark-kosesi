@@ -1,6 +1,6 @@
 #![forbid(unsafe_code)]
 use commerce_api::{
-    AppState, PREVIEW_REQUEST_CAPACITY, config::Config, contract, router_with_verification,
+    AppState, PREVIEW_REQUEST_CAPACITY, config::Config, contract, router_with_test_login,
 };
 use commerce_infrastructure::runtime::{SecureIdentifiers, SystemClock};
 use commerce_infrastructure::{MIGRATOR, connect};
@@ -30,11 +30,12 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         clock: Arc::new(SystemClock),
         identifiers: Arc::new(SecureIdentifiers),
     };
-    let app = router_with_verification(
+    let app = router_with_test_login(
         state,
         config.guest_origin,
         config.callback_profile,
         config.verification,
+        config.test_login,
     )
     .map_err(|_| std::io::Error::other("API configuration invalid"))?;
     axum::serve(listener, app)

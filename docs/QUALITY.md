@@ -833,6 +833,12 @@ rotation, incorrect revision and mismatched successor. Apply the critical
 95% native line and branch policy to the session adapter. Browser and mailbox
 acceptance require separate evidence.
 
+For the default-off test login adapter, exercise exact Origin and preview
+authentication, closed and truncated request bodies, admitted quota denial,
+the real request deadline and redacted errors. Verify the returned host-only
+cookie against the live session, original expiry and password-revision reset;
+no failure may return a cookie. This does not establish public timing safety.
+
 ### Private guest-order links
 
 Use isolated PostgreSQL with actual accepted guest orders and verified

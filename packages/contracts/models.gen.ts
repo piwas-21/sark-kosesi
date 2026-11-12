@@ -63,6 +63,17 @@ export type GuestLine = {
 
 export type ImageBytes = Blob | File;
 
+export type LoginRequest = {
+    /**
+     * Exact mailbox under the private identity normalization policy.
+     */
+    email: string;
+    /**
+     * Password input; the private credential policy also bounds UTF-8 bytes.
+     */
+    password: string;
+};
+
 export type Material = {
     fibres: Array<Fibre>;
     kind: 'cover';
@@ -480,6 +491,37 @@ export type ProductResponses = {
 };
 
 export type ProductResponse = ProductResponses[keyof ProductResponses];
+
+export type TestCustomerLoginData = {
+    body: LoginRequest;
+    headers: {
+        Origin: string;
+    };
+    path?: never;
+    query?: never;
+    url: '/api/test/customer/login';
+};
+
+export type TestCustomerLoginErrors = {
+    400: ApiError;
+    401: ApiError;
+    403: ApiError;
+    413: ApiError;
+    415: ApiError;
+    503: ApiError;
+    504: ApiError;
+};
+
+export type TestCustomerLoginError = TestCustomerLoginErrors[keyof TestCustomerLoginErrors];
+
+export type TestCustomerLoginResponses = {
+    /**
+     * Session issued in an HttpOnly Secure SameSite=Lax host-only cookie
+     */
+    204: void;
+};
+
+export type TestCustomerLoginResponse = TestCustomerLoginResponses[keyof TestCustomerLoginResponses];
 
 export type RedeemTestVerificationData = {
     body: RedeemRequest;

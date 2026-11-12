@@ -481,6 +481,11 @@ and coordinate its delivery, withdrawal and freshness. A loopback,
 preview-authenticated test-only POST consumer can establish an account
 from a supplied proof with one admission debit; it is disabled unless its test
 origin and dedicated key are both configured. It issues no session or proof.
+An independent default-off test-only login POST requires preview authentication,
+an exact HTTPS Origin and a separate admission key. It performs the admitted
+password login and returns the resulting session only in a secure host-only,
+HttpOnly SameSite=Lax cookie with the original session expiry. Its empty response
+contains no identity; no session-read or logout route is installed.
 Complete secure delivery, trusted ingress, timing and browser controls before
 exposing the flow beyond this test boundary.
 

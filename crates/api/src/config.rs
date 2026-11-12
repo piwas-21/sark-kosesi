@@ -6,6 +6,7 @@ pub struct Config {
     pub bind: SocketAddr,
     pub guest_origin: Option<crate::guest::GuestOrigin>,
     pub verification: Option<crate::verification::VerificationConfig>,
+    pub test_login: Option<crate::test_login::LoginConfig>,
     pub callback_profile: Option<crate::callbacks::CallbackProfile>,
 }
 
@@ -54,6 +55,14 @@ impl Config {
             .map(|value| crate::callbacks::CallbackProfile::parse(value))
             .transpose()?;
         let verification = crate::verification::VerificationConfig::from_env(environment, values)?;
+        let test_login = crate::test_login::LoginConfig::from_env(environment, values)?;
+        if test_login.is_some()
+            && verification.is_some()
+            && values.get("TEST_LOGIN_ADMISSION_KEY")
+                == values.get("TEST_VERIFICATION_ADMISSION_KEY")
+        {
+            return Err("Test login and verification require separate admission keys");
+        }
         Ok(Self {
             database_url,
             preview_token,
@@ -61,6 +70,7 @@ impl Config {
             guest_origin,
             callback_profile,
             verification,
+            test_login,
         })
     }
 }
