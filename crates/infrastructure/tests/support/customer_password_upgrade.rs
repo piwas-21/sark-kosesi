@@ -2,6 +2,7 @@ use super::*;
 
 #[sqlx::test(migrations = false)]
 async fn schema39_preserves_existing_verified_identities_and_pending_proofs(pool: PgPool) {
+    let _case = PASSWORD_CASE.lock().await;
     MIGRATOR.run_to(38, &pool).await.expect("schema 38");
     let time = clock();
     let established = "existing-customer@example.com";

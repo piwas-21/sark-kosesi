@@ -18,6 +18,10 @@ use sha2::{Digest, Sha256};
 use sqlx::PgPool;
 use std::sync::atomic::{AtomicU64, Ordering};
 
+// Isolate unrelated test cases from the production two-slot hashing budget.
+// Operations spawned within a case still race on the actual production semaphore.
+static PASSWORD_CASE: tokio::sync::Mutex<()> = tokio::sync::Mutex::const_new(());
+
 struct TestClock(AtomicU64);
 impl Clock for TestClock {
     fn unix_seconds(&self) -> Result<u64, ContextError> {
@@ -50,6 +54,7 @@ async fn counts(pool: &PgPool) -> (i64, i64) {
 
 #[sqlx::test(migrator = "MIGRATOR")]
 async fn blocked_precheck_releases_the_connection_without_spending_proof(pool: PgPool) {
+    let _case = PASSWORD_CASE.lock().await;
     let time = clock();
     let email = "locked-precheck@example.com";
     account(&pool, email, &time).await;
@@ -78,6 +83,7 @@ async fn blocked_precheck_releases_the_connection_without_spending_proof(pool: P
 
 #[sqlx::test(migrator = "MIGRATOR")]
 async fn exact_proof_sets_and_resets_only_current_argon2_credential(pool: PgPool) {
+    let _case = PASSWORD_CASE.lock().await;
     let time = clock();
     let id = account(&pool, "Case+tag@EXAMPLE.COM", &time).await;
     let token = customer_passwords::issue(&pool, "Case+tag@example.com", &time)
@@ -162,6 +168,7 @@ async fn exact_proof_sets_and_resets_only_current_argon2_credential(pool: PgPool
 
 #[sqlx::test(migrator = "MIGRATOR")]
 async fn invalid_proofs_and_identities_leave_valid_proof_usable(pool: PgPool) {
+    let _case = PASSWORD_CASE.lock().await;
     let time = clock();
     account(&pool, "Case@example.com", &time).await;
     account(&pool, "other@example.com", &time).await;
@@ -244,6 +251,7 @@ async fn invalid_proofs_and_identities_leave_valid_proof_usable(pool: PgPool) {
 
 #[sqlx::test(migrator = "MIGRATOR")]
 async fn same_proof_has_one_winner_and_sibling_is_stale(pool: PgPool) {
+    let _case = PASSWORD_CASE.lock().await;
     let time = clock();
     account(&pool, "a@example.com", &time).await;
     let proof = customer_passwords::issue(&pool, "a@example.com", &time)
@@ -292,6 +300,7 @@ async fn same_proof_has_one_winner_and_sibling_is_stale(pool: PgPool) {
 
 #[sqlx::test(migrator = "MIGRATOR")]
 async fn suppressed_credential_write_rolls_back_consumption(pool: PgPool) {
+    let _case = PASSWORD_CASE.lock().await;
     let time = clock();
     account(&pool, "a@example.com", &time).await;
     let proof = customer_passwords::issue(&pool, "a@example.com", &time)
@@ -358,6 +367,7 @@ async fn wait_for_password_lock(
 
 #[sqlx::test(migrator = "MIGRATOR")]
 async fn waiting_for_challenge_lock_does_not_extend_expiry(pool: PgPool) {
+    let _case = PASSWORD_CASE.lock().await;
     use std::sync::Arc;
     let time = Arc::new(clock());
     account(&pool, "a@example.com", &time).await;
@@ -409,6 +419,7 @@ async fn waiting_for_challenge_lock_does_not_extend_expiry(pool: PgPool) {
 
 #[sqlx::test(migrator = "MIGRATOR")]
 async fn native_sql_requires_exact_same_transaction_change_and_revision(pool: PgPool) {
+    let _case = PASSWORD_CASE.lock().await;
     let time = clock();
     let first = account(&pool, "first@example.com", &time).await;
     let second = account(&pool, "second@example.com", &time).await;
@@ -507,6 +518,7 @@ async fn native_sql_requires_exact_same_transaction_change_and_revision(pool: Pg
 
 #[sqlx::test(migrator = "MIGRATOR")]
 async fn password_nfc_preserves_spaces_and_bounds_both_input_and_normalized_bytes(pool: PgPool) {
+    let _case = PASSWORD_CASE.lock().await;
     let time = clock();
     let id = account(&pool, "unicode@example.com", &time).await;
     let proof = customer_passwords::issue(&pool, "unicode@example.com", &time)
@@ -587,6 +599,7 @@ async fn password_nfc_preserves_spaces_and_bounds_both_input_and_normalized_byte
 
 #[sqlx::test(migrator = "MIGRATOR")]
 async fn expiry_after_credential_insert_rolls_back_both_writes(pool: PgPool) {
+    let _case = PASSWORD_CASE.lock().await;
     use std::sync::Arc;
     let time = Arc::new(clock());
     account(&pool, "fenced@example.com", &time).await;

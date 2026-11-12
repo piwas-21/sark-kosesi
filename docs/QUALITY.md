@@ -807,6 +807,11 @@ Synthetic opening evidence does not establish message delivery.
 
 ### Private password credential custody
 
+Within the password integration test binary, serialize independent cases that
+use the shared production Argon2 capacity so unrelated fixtures cannot exhaust
+it. Preserve concurrent operations within a case and test actual capacity
+exhaustion separately; do not change the production limit or timeout.
+
 Use isolated PostgreSQL with two verified accounts and actual Argon2id
 verification. Exercise registration-token misuse, wrong account, wrong or
 expired proof, replacement, simultaneous redemption and stale sibling proofs.
