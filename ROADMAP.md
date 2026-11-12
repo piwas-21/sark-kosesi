@@ -192,6 +192,10 @@ External blockers: final brand/domain, real product specification/media, market/
 The [EU destination readiness register](docs/MARKET-READINESS.md) tracks the
 qualified evidence still needed for each of the 27 disabled destinations.
 
+The release check validates a revision-bound manifest and distinct hashed evidence
+files through a pinned directory. Human review and actual provider, deployment,
+recovery and fulfilment acceptance remain necessary before activation.
+
 The repository is public and the protection audit passes. Current-revision CI
 remains mandatory, including successful evidence uploads, browser acceptance and
 populated Sonar/CodeQL results; do not merge based on local checks alone.
