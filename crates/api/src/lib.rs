@@ -6,9 +6,10 @@ pub mod config;
 pub mod contract;
 pub mod guest;
 mod routing;
-pub use routing::{router, router_with_guest, router_with_options};
+pub use routing::{router, router_with_guest, router_with_options, router_with_verification};
 pub mod published;
 pub mod published_types;
+pub mod verification;
 
 use axum::{
     Json,
@@ -131,6 +132,7 @@ async fn bounded(State(state): State<AppState>, request: Request, next: Next) ->
     for (key, value) in [
         ("cache-control", "private, no-store"),
         ("x-robots-tag", "noindex, nofollow"),
+        ("referrer-policy", "no-referrer"),
         ("x-content-type-options", "nosniff"),
     ] {
         response

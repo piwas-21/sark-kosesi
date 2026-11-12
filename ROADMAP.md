@@ -175,9 +175,13 @@ email verification, enrolment and password proof operations commit both
 debits before credential work. Password replacement requires an explicitly supplied,
 integrity-checked offline blocklist and fails closed on unavailable or expired
 snapshots. Private email-verification issuance can now commit the challenge and
-its encrypted delivery envelope together. Real corpus review, key and retention
-operations, message delivery, neutral browser responses and measured overload
-behavior remain P4 work.
+its encrypted delivery envelope together. Real corpus review, coordinated
+freshness and withdrawal, key and retention operations, message delivery,
+neutral browser responses and measured overload behavior remain P4 work.
+An optional loopback test-only verification redemption API consumes a supplied
+proof after preview authentication, exact Origin validation and shared admission.
+It issues no session and remains disabled without explicit test configuration.
+Mailbox delivery and public ingress readiness still require acceptance.
 
 The local room-planner preview combines the rectangle calculator with keyboard
 measurement and rotation controls, a drawn footprint, and text clearance and fit

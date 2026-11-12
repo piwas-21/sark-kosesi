@@ -177,6 +177,17 @@ export type QuotedLine = {
     vat_basis_points: number;
 };
 
+export type RedeemRequest = {
+    /**
+     * Mailbox bound to the proof; normalized by the account primitive.
+     */
+    email: string;
+    /**
+     * Exactly 32 bearer bytes encoded as 64 lowercase hexadecimal characters.
+     */
+    token: string;
+};
+
 export type IntakeData = {
     body: CallbackForm;
     path?: never;
@@ -469,3 +480,34 @@ export type ProductResponses = {
 };
 
 export type ProductResponse = ProductResponses[keyof ProductResponses];
+
+export type RedeemTestVerificationData = {
+    body: RedeemRequest;
+    headers: {
+        Origin: string;
+    };
+    path?: never;
+    query?: never;
+    url: '/api/test/verification/redeem';
+};
+
+export type RedeemTestVerificationErrors = {
+    400: ApiError;
+    401: ApiError;
+    403: ApiError;
+    413: ApiError;
+    415: ApiError;
+    503: ApiError;
+    504: ApiError;
+};
+
+export type RedeemTestVerificationError = RedeemTestVerificationErrors[keyof RedeemTestVerificationErrors];
+
+export type RedeemTestVerificationResponses = {
+    /**
+     * Account established; no session issued
+     */
+    204: void;
+};
+
+export type RedeemTestVerificationResponse = RedeemTestVerificationResponses[keyof RedeemTestVerificationResponses];
