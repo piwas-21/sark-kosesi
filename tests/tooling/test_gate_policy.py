@@ -348,7 +348,7 @@ class EvidencePolicy(unittest.TestCase):
         fake_bin.mkdir()
         git = fake_bin / "git"
         git.write_text(
-            f"#!/bin/sh\ncase \"$1\" in\nrev-parse) printf '%s\\n' {HEAD} ;;\n"
+            f'#!/bin/sh\n[ "$1" = --no-replace-objects ] || exit 1\nshift\ncase "$1" in\nrev-parse) printf \'%s\\n\' {HEAD} ;;\n'
             "show) cat config/delivery.json ;;\nstatus) : ;;\n"
             'ls-tree) printf "100644 blob abc\\tapps/page.tsx\\0'
             '100644 blob abc\\tcrates/lib.rs\\0" ;;\nesac\n'
@@ -462,6 +462,63 @@ class ReleaseSourcePolicy(unittest.TestCase):
         result = self.cli()
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertIn(self.head, result.stdout)
+
+    def check_replaced_revision(self, disabled):
+        replacement = self.head
+        if disabled:
+            (self.root / "config/delivery.json").write_text(
+                json.dumps({**self.config, "productionEnabled": False})
+            )
+            self.git("add", "config/delivery.json")
+        else:
+            self.git("rm", "apps/page.tsx", "crates/lib.rs")
+        self.git(
+            "-c",
+            "user.name=Fixture",
+            "-c",
+            "user.email=fixture@example.invalid",
+            "commit",
+            "-qm",
+            "original blocked revision",
+        )
+        original = self.git("rev-parse", "HEAD").strip()
+        original_evidence = self.root / ".local/releases" / original
+        original_evidence.mkdir(parents=True)
+        old_evidence = self.root / ".local/releases" / replacement
+        shutil.copy(old_evidence / "security.txt", original_evidence / "security.txt")
+        manifest = json.loads((old_evidence / "evidence.json").read_text())
+        manifest["head"] = original
+        manifest["gates"]["security"]["head"] = original
+        (original_evidence / "evidence.json").write_text(json.dumps(manifest))
+        self.git("replace", original, replacement)
+        self.git("checkout", "--detach", "-f", original)
+        self.assertEqual(self.git("rev-parse", "HEAD").strip(), original)
+        self.assertEqual(self.git("status", "--porcelain=v1"), "")
+        self.assertTrue(
+            json.loads(self.git("show", "HEAD:config/delivery.json"))["productionEnabled"]
+        )
+        self.assertIn("apps/page.tsx", self.git("ls-tree", "-r", "--name-only", "HEAD"))
+        if disabled:
+            self.assertFalse(
+                json.loads(self.git("--no-replace-objects", "show", "HEAD:config/delivery.json"))[
+                    "productionEnabled"
+                ]
+            )
+        else:
+            self.assertNotIn(
+                "apps/page.tsx",
+                self.git("--no-replace-objects", "ls-tree", "-r", "--name-only", "HEAD"),
+            )
+        result = self.cli()
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("Release source is changed or uncommitted", result.stderr)
+        self.assertNotIn("Release evidence and server protection present", result.stdout)
+
+    def test_replacement_cannot_enable_disabled_revision(self):
+        self.check_replaced_revision(disabled=True)
+
+    def test_replacement_cannot_supply_absent_application(self):
+        self.check_replaced_revision(disabled=False)
 
     def test_ignored_files_cannot_replace_committed_application(self):
         self.git("rm", "apps/page.tsx", "crates/lib.rs")

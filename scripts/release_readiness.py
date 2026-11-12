@@ -14,7 +14,7 @@ from gate_policy import (
 
 def git(*args):
     return subprocess.run(
-        ["git", *args], cwd=ROOT, check=True, text=True, capture_output=True
+        ["git", "--no-replace-objects", *args], cwd=ROOT, check=True, text=True, capture_output=True
     ).stdout
 
 
