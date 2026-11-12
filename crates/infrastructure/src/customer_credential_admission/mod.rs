@@ -7,6 +7,7 @@ use commerce_application::request_context::Clock;
 use commerce_domain::{checkout_quotes::MAX_QUOTE_UNIX_SECONDS, email_identity::normalize_email};
 use ring::hmac;
 use sqlx::PgPool;
+use subtle::ConstantTimeEq;
 use zeroize::Zeroizing;
 
 use self::state::Scope;
@@ -43,6 +44,11 @@ pub struct AdmissionKey {
     bytes: Zeroizing<[u8; 32]>,
 }
 impl AdmissionKey {
+    /// Compare a separate custody key without exposing admission key material.
+    pub(crate) fn matches_secret(&self, candidate: &[u8; 32]) -> bool {
+        bool::from(self.bytes.as_slice().ct_eq(candidate.as_slice()))
+    }
+
     pub fn new(version: i32, key: [u8; 32]) -> Option<Self> {
         let bytes = Zeroizing::new(key);
         if version < 1 || bytes.iter().all(|byte| *byte == 0) {

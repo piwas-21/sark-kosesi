@@ -657,7 +657,7 @@ async fn exact_enrollment_replays_and_concurrent_workers_do_not_duplicate_gets(p
         "page-two",
     )
     .await;
-    assert!(
+    assert!(matches!(
         enroll(
             &pool,
             time.as_ref(),
@@ -668,9 +668,18 @@ async fn exact_enrollment_replays_and_concurrent_workers_do_not_duplicate_gets(p
                 ..intent()
             }
         )
+        .await,
+        Err(RecoveryError::Conflict)
+    ));
+    // Fence the rejected enrollment's asynchronously queued rollback before a
+    // worker uses SKIP LOCKED to find the otherwise due item.
+    let mut fence = pool.begin().await.expect("rejected enrollment fence");
+    sqlx::query("SELECT id FROM payment_attempts WHERE id=$1 FOR UPDATE")
+        .bind(&job.attempt_id)
+        .fetch_one(&mut *fence)
         .await
-        .is_err()
-    );
+        .expect("rejected enrollment released attempt");
+    fence.rollback().await.expect("release fence");
     let mut first = Box::pin(run_batch(&pool, time.as_ref(), &ids, &client, 1));
     tokio::select! {
         result = &mut first => match result {

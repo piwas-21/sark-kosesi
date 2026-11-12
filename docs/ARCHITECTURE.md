@@ -1689,6 +1689,16 @@ message.
 
 ### Private verified customer identity
 
+Private issue-for-delivery claims the existing email-verification quota once.
+It reserves a nonce against a separate versioned key and the exact verifier in
+an independently committed transaction. AES-256-GCM seals the bearer before
+the challenge transaction. Authenticated data binds the purpose, normalized
+identity, verifier, creation and expiry, envelope version, key and nonce.
+The challenge and ciphertext commit together under reciprocal native guards,
+with exact readback and a final observed-clock expiry check. The receipt omits
+the bearer and the envelope stores no duplicate mailbox. Legacy direct issuance
+retains its private trusted-caller contract.
+
 A private PostgreSQL operation locks and consumes an exact email challenge while
 inserting a unique immutable customer identity and its verification reference in
 one transaction. A database-assigned transaction ID on the consumption must match

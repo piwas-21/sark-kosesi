@@ -40,6 +40,13 @@ For a quiescent non-selling preview only, the [staging runbook](../deploy/stagin
 
 Proposed service targets: database RPO <=15 minutes and RTO <=4 hours, subject to a measured rehearsal and approved hosting capacity. Encrypted off-host DB/backups, WAL/PITR where needed, media backups and independently stored keys. Alert on age/failure; restore to a fresh isolated environment, verify row counts/constraints, representative orders/stock and private media, then measure elapsed time. A successful backup job is not restore evidence.
 
+Use each verification delivery key in one database allocation domain. Reserve
+nonces with `fsync=on` and synchronous commit before encrypting. After a restore,
+clone, asynchronous replica promotion or uncertain rollback, provision a fresh
+active encryption key before resuming issuance. Retain earlier keys only under
+approved historical read and retention controls. Rehearse restoration with
+synthetic ciphertext and separately stored keys before activation.
+
 Incident runbook: contain credentials/access, preserve redacted evidence, stop unsafe fulfilment/payment retries, establish last known good state, reconcile outstanding attempts, restore/roll forward, verify and communicate through approved channels. Rotate exposed keys with provider-specific steps; test revocation and rollback. Retention/deletion apply to logs and backups under the approved privacy policy.
 
 Final operational acceptance checks real emails, sandbox methods plus separately authorized live payment/refund, warehouse pick/pack/carrier/return rehearsal, correct VAT/invoice/credit documents, all intended markets, public crawl/index policies and device accessibility. Report what was actually measured; passing source tests does not prove delivery, payout, parcel fit or indexing.
