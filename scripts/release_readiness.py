@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 import json
+import os
 import subprocess
 import sys
 
@@ -13,8 +14,15 @@ from gate_policy import (
 
 
 def git(*args):
+    # A caller's hook or alternate index must not redirect this checkout.
+    environment = {key: value for key, value in os.environ.items() if not key.startswith("GIT_")}
     return subprocess.run(
-        ["git", "--no-replace-objects", *args], cwd=ROOT, check=True, text=True, capture_output=True
+        ["git", "--no-replace-objects", *args],
+        cwd=ROOT,
+        env=environment,
+        check=True,
+        text=True,
+        capture_output=True,
     ).stdout
 
 

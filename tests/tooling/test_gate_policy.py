@@ -387,9 +387,14 @@ class EvidencePolicy(unittest.TestCase):
 
 class ReleaseSourcePolicy(unittest.TestCase):
     def setUp(self):
+        # The pre-push hook exports Git variables for the real worktree.
+        self.environment = {
+            key: value for key, value in os.environ.items() if not key.startswith("GIT_")
+        }
         self.temp = tempfile.TemporaryDirectory()
         self.addCleanup(self.temp.cleanup)
-        self.root = Path(self.temp.name)
+        self.root = Path(self.temp.name) / "release"
+        self.root.mkdir()
         repo = Path(__file__).resolve().parents[2]
         for directory in ("scripts", "config", "apps", "crates"):
             (self.root / directory).mkdir()
@@ -445,14 +450,19 @@ class ReleaseSourcePolicy(unittest.TestCase):
 
     def git(self, *args):
         return subprocess.run(
-            ["git", *args], cwd=self.root, text=True, capture_output=True, check=True
+            ["git", *args],
+            cwd=self.root,
+            env=self.environment,
+            text=True,
+            capture_output=True,
+            check=True,
         ).stdout
 
     def cli(self, **environment):
         return subprocess.run(
             [sys.executable, str(self.root / "scripts/release_readiness.py")],
             cwd=self.root,
-            env={**os.environ, **environment},
+            env={**self.environment, **environment},
             text=True,
             capture_output=True,
             check=False,
@@ -462,6 +472,18 @@ class ReleaseSourcePolicy(unittest.TestCase):
         result = self.cli()
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertIn(self.head, result.stdout)
+
+    def test_hook_environment_cannot_redirect_release(self):
+        foreign = Path(self.temp.name) / "foreign"
+        self.git("init", "-q", str(foreign))
+        result = self.cli(
+            GIT_DIR=str(foreign / ".git"),
+            GIT_WORK_TREE=str(foreign),
+            GIT_INDEX_FILE=str(foreign / ".git/index"),
+        )
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn(self.head, result.stdout)
+        self.assertEqual(self.git("-C", str(foreign), "status", "--porcelain=v1"), "")
 
     def check_replaced_revision(self, disabled):
         replacement = self.head
