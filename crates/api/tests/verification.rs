@@ -105,18 +105,72 @@ async fn effects(pool: &PgPool) -> (i64, i64, i32) {
     sqlx::query_as("SELECT (SELECT count(*) FROM verified_customer_accounts), (SELECT count(consumed_at) FROM email_verification_challenges), (SELECT admitted FROM customer_credential_admission_scopes WHERE purpose=3)").fetch_one(pool).await.expect("effects")
 }
 async fn checked(response: axum::response::Response) -> (StatusCode, Vec<u8>) {
-    assert_eq!(response.headers()["cache-control"], "private, no-store");
-    assert_eq!(response.headers()["referrer-policy"], "no-referrer");
+    assert!(
+        response
+            .headers()
+            .get("cache-control")
+            .is_some_and(|v| v == "private, no-store"),
+        "unexpected cache-control header"
+    );
+    assert!(
+        response
+            .headers()
+            .get("referrer-policy")
+            .is_some_and(|v| v == "no-referrer"),
+        "unexpected referrer-policy header"
+    );
     assert!(response.headers().get("set-cookie").is_none());
     let status = response.status();
     (
         status,
         to_bytes(response.into_body(), 4096)
             .await
-            .expect("response")
+            .unwrap_or_else(|_| panic!("response body unavailable"))
             .to_vec(),
     )
 }
+// Keep failure diagnostics independent of untrusted response bytes.
+fn require_empty_success(response: &(StatusCode, Vec<u8>)) {
+    assert!(
+        response.0 == StatusCode::NO_CONTENT,
+        "unexpected success status"
+    );
+    assert!(response.1.is_empty(), "unexpected success body");
+}
+fn require_same_denial(actual: &(StatusCode, Vec<u8>), expected: &(StatusCode, Vec<u8>)) {
+    assert!(actual.0 == expected.0, "denial statuses differ");
+    assert!(actual.1 == expected.1, "denial bodies differ");
+}
+
+#[test]
+fn response_failure_diagnostics_do_not_render_proof_bytes() {
+    let marker = "synthetic-proof-response-control-712093";
+    let response = (StatusCode::NO_CONTENT, marker.as_bytes().to_vec());
+    let denial = (StatusCode::UNAUTHORIZED, b"denied".to_vec());
+    let exposed = (StatusCode::UNAUTHORIZED, marker.as_bytes().to_vec());
+    require_empty_success(&(StatusCode::NO_CONTENT, vec![]));
+    require_same_denial(&denial, &denial);
+    for failure in [
+        std::panic::catch_unwind(|| require_empty_success(&response)),
+        std::panic::catch_unwind(|| require_same_denial(&exposed, &denial)),
+    ] {
+        let payload = failure.expect_err("proof-bearing response must fail");
+        let message = payload
+            .downcast_ref::<&str>()
+            .copied()
+            .or_else(|| payload.downcast_ref::<String>().map(String::as_str))
+            .expect("failure diagnostic");
+        assert!(
+            !message.contains(marker),
+            "proof reached failure diagnostics"
+        );
+        assert!(
+            !message.contains(&format!("{:?}", marker.as_bytes())),
+            "proof bytes reached failure diagnostics"
+        );
+    }
+}
+
 #[test]
 fn configuration_is_disabled_by_default_and_only_enabled_in_test() {
     assert!(
@@ -474,7 +528,10 @@ async fn encrypted_handoff_redeems_exact_proof_once_without_issuing_session(pool
         Ok(DeliveryState::Recorded(TransportOutcome::Accepted))
     );
     let (identity, token) = handoff.expect("one synthetic handoff");
-    assert_eq!(identity, "Case+fixture@example.com");
+    assert!(
+        identity == "Case+fixture@example.com",
+        "unexpected handoff identity"
+    );
     let before: (i64, i64, i64, i64, i32, i32, i64, i64) = sqlx::query_as(
         "SELECT (SELECT count(*) FROM email_verification_delivery_starts),
          (SELECT count(*) FROM email_verification_delivery_outcomes),
@@ -510,14 +567,14 @@ async fn encrypted_handoff_redeems_exact_proof_once_without_issuing_session(pool
             .expect("redeem handoff"),
     )
     .await;
-    assert_eq!(accepted, (StatusCode::NO_CONTENT, vec![]));
+    require_empty_success(&accepted);
     let replay = checked(
         app.oneshot(request(body(&identity, &token)))
             .await
             .expect("replay handoff"),
     )
     .await;
-    assert_eq!(replay, invalid);
+    require_same_denial(&replay, &invalid);
     let after: (i64, i64, i64, i64, i32, i32, i64, i64) = sqlx::query_as(
         "SELECT (SELECT count(*) FROM email_verification_delivery_starts),
          (SELECT count(*) FROM email_verification_delivery_outcomes),
