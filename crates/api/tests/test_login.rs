@@ -109,26 +109,48 @@ async fn account(pool: &PgPool, time: &Time) {
 async fn counts(pool: &PgPool) -> (i32, i64) {
     sqlx::query_as("SELECT (SELECT admitted FROM customer_credential_admission_scopes WHERE purpose=1),(SELECT count(*) FROM customer_sessions)").fetch_one(pool).await.expect("admission and sessions")
 }
+fn assert_private_headers(response: &axum::response::Response) {
+    assert!(
+        response
+            .headers()
+            .get("cache-control")
+            .is_some_and(|v| v == "private, no-store"),
+        "private cache policy required"
+    );
+    assert!(
+        response
+            .headers()
+            .get("referrer-policy")
+            .is_some_and(|v| v == "no-referrer"),
+        "referrer policy required"
+    );
+}
 async fn response_parts(response: axum::response::Response) -> (StatusCode, Vec<u8>) {
-    assert_eq!(response.headers()["cache-control"], "private, no-store");
-    assert_eq!(response.headers()["referrer-policy"], "no-referrer");
+    assert_private_headers(&response);
     assert!(response.headers().get(SET_COOKIE).is_none());
     (
         response.status(),
         to_bytes(response.into_body(), 4096)
             .await
-            .expect("body")
+            .unwrap_or_else(|_| panic!("response body unavailable"))
             .to_vec(),
     )
 }
 fn bearer(header: &str) -> CustomerSessionToken {
-    let cookie = Cookie::parse(header.to_owned()).expect("cookie");
-    assert_eq!(cookie.name(), "__Host-piwas-customer");
+    let cookie =
+        Cookie::parse(header.to_owned()).unwrap_or_else(|_| panic!("invalid response cookie"));
+    assert!(
+        cookie.name() == "__Host-piwas-customer",
+        "customer cookie name required"
+    );
     assert_eq!(cookie.secure(), Some(true));
     assert_eq!(cookie.http_only(), Some(true));
     assert_eq!(cookie.same_site(), Some(SameSite::Lax));
-    assert_eq!(cookie.path(), Some("/"));
-    assert_eq!(cookie.domain(), None);
+    assert!(cookie.path() == Some("/"), "customer cookie path required");
+    assert!(
+        cookie.domain().is_none(),
+        "customer cookie must be host-only"
+    );
     assert_eq!(cookie.max_age(), None);
     assert_eq!(
         cookie
@@ -206,22 +228,27 @@ async fn valid_login_sets_only_a_bound_expiring_cookie_and_replay_issues_a_disti
             .await
             .expect("login");
         assert_eq!(response.status(), StatusCode::NO_CONTENT);
-        assert_eq!(response.headers()["cache-control"], "private, no-store");
-        assert_eq!(response.headers()["referrer-policy"], "no-referrer");
+        assert_private_headers(&response);
         let header = response.headers().get(SET_COOKIE).expect("one cookie");
         assert!(header.is_sensitive());
         assert_eq!(response.headers().get_all(SET_COOKIE).iter().count(), 1);
-        let cookie = header.to_str().expect("ASCII cookie").to_owned();
+        let cookie = header
+            .to_str()
+            .unwrap_or_else(|_| panic!("invalid cookie encoding"))
+            .to_owned();
         tokens.push(bearer(&cookie));
         cookies.push(cookie);
         assert!(
             to_bytes(response.into_body(), 4096)
                 .await
-                .expect("body")
+                .unwrap_or_else(|_| panic!("response body unavailable"))
                 .is_empty()
         );
     }
-    assert_ne!(cookies[0], cookies[1]);
+    assert!(
+        cookies[0] != cookies[1],
+        "separate logins must issue distinct cookies"
+    );
     assert_eq!(counts(&pool).await, (2, 2));
     for token in &tokens {
         assert_eq!(
@@ -261,29 +288,37 @@ async fn invalid_unknown_and_throttled_credentials_share_denial_without_cookie(p
             .expect("unknown"),
     )
     .await;
-    assert_eq!(wrong, unknown);
+    assert!(
+        wrong == unknown,
+        "wrong and unknown credentials must receive the same denial"
+    );
     assert_eq!(wrong.0, StatusCode::UNAUTHORIZED);
-    assert_eq!(wrong.1, br#"{"code":"login_denied"}"#);
+    assert!(
+        wrong.1 == br#"{"code":"login_denied"}"#,
+        "credential denial body must be generic"
+    );
     for _ in 0..4 {
-        assert_eq!(
+        assert!(
             response_parts(
                 app.clone()
                     .oneshot(request(body(EMAIL, "incorrect password long")))
                     .await
                     .expect("denied")
             )
-            .await,
-            wrong
+            .await
+                == wrong,
+            "repeated invalid credentials must receive the same denial"
         );
     }
-    assert_eq!(
+    assert!(
         response_parts(
             app.oneshot(request(body(EMAIL, PASSWORD)))
                 .await
                 .expect("limited")
         )
-        .await,
-        wrong
+        .await
+            == wrong,
+        "throttled credentials must receive the same denial"
     );
     assert_eq!(counts(&pool).await, (6, 0));
 }
@@ -411,7 +446,11 @@ async fn password_change_invalidates_the_issued_customer_cookie(pool: PgPool) {
         .await
         .expect("login");
     assert_eq!(response.status(), StatusCode::NO_CONTENT);
-    let token = bearer(response.headers()[SET_COOKIE].to_str().expect("cookie"));
+    let token = bearer(
+        response.headers()[SET_COOKIE]
+            .to_str()
+            .unwrap_or_else(|_| panic!("invalid cookie encoding")),
+    );
     assert!(
         customer_sessions::authenticate(&pool, &token, time.as_ref())
             .await
@@ -456,10 +495,16 @@ async fn admission_wait_hits_shared_deadline_without_issuing_a_cookie(pool: PgPo
             tokio::time::sleep(std::time::Duration::from_millis(5)).await;
         }
     }).await.expect("actual admission lock wait");
-    let response = worker.await.expect("worker").expect("response");
+    let response = worker
+        .await
+        .unwrap_or_else(|_| panic!("login worker failed"))
+        .expect("response");
     let (status, payload) = response_parts(response).await;
     assert_eq!(status, StatusCode::GATEWAY_TIMEOUT);
-    assert_eq!(payload, br#"{"code":"dependency_timeout"}"#);
+    assert!(
+        payload == br#"{"code":"dependency_timeout"}"#,
+        "deadline body must be generic"
+    );
     blocker.rollback().await.expect("release admission");
     assert_eq!(counts(&pool).await, (0, 0));
     let response = app
@@ -492,9 +537,9 @@ async fn truncated_transport_body_is_redacted_and_debits_nothing(pool: PgPool) {
         write!(stream, "POST {PATH} HTTP/1.1\r\nHost: localhost\r\nAuthorization: Bearer {PREVIEW}\r\nOrigin: {ORIGIN}\r\nContent-Type: application/json\r\nContent-Length: 4096\r\nConnection: close\r\n\r\n{}", body(EMAIL, PASSWORD)).expect("partial body");
         stream.shutdown(Shutdown::Write).expect("premature EOF");
         let mut response = String::new();
-        stream.read_to_string(&mut response).expect("bounded response");
+        stream.read_to_string(&mut response).unwrap_or_else(|_| panic!("bounded response unavailable"));
         response
-    }).await.expect("transport");
+    }).await.unwrap_or_else(|_| panic!("transport task failed"));
     assert!(response.starts_with("HTTP/1.1 400 Bad Request"));
     assert!(response.contains("invalid_login_request"));
     assert!(!response.contains(EMAIL));

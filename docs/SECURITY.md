@@ -603,7 +603,8 @@ one exact configured HTTPS Origin, closed bounded JSON and a separately configur
 admission key. Existing login admission commits before credential lookup or Argon2.
 Unknown mailboxes, wrong passwords and exhausted quota share a denial. Success
 returns only a Secure, HttpOnly, host-only SameSite=Lax session cookie bounded by
-the original expiry. Responses and logs contain no bearer, password or account ID.
+the original expiry. Response bodies and logs contain no bearer, password or
+account ID; the session bearer is present in the sensitive Set-Cookie header.
 The request deadline may follow a committed session without delivering its cookie.
 No public timing, trusted-edge abuse or session-read policy follows from this test.
 
