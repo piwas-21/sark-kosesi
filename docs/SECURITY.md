@@ -102,7 +102,7 @@ Debug/Serialize implementation. These tests prove the authorization consumer,
 not a completed MFA ceremony: installation seeds no staff authority, and no staff
 login/MFA/session issuer, cookie mutation route or admin write endpoint exists.
 A separate private self-revocation primitive invalidates only the supplied staff
-bearer and returns no account or grant information. With a valid clock, unknown and already-revoked
+bearer and returns only closed failure categories, without database diagnostics, account or grant information. With a valid clock, unknown and already-revoked
 bearers return the same successful result. It needs neither an active grant nor
 recent MFA because it cannot create authority; held session locks serialize the
 change with privileged operations. It does not provide an HTTP endpoint, a
