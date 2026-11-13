@@ -69,6 +69,7 @@ fn embedded_manifest_is_exact_closed_and_environment_independent() {
             command
                 .env("APP_ENV", "production")
                 .env("DATABASE_URL", "not-a-database-url")
+                .env("TOKIO_WORKER_THREADS", "not-a-number")
                 .env("PREVIEW_TOKEN", "synthetic-secret-never-print");
         }
         let output = command.output().expect("run manifest command");
@@ -121,4 +122,30 @@ fn embedded_manifest_is_exact_closed_and_environment_independent() {
         .expect("run invalid command");
     assert!(!extra.status.success());
     assert!(extra.stdout.is_empty());
+}
+
+#[test]
+fn existing_openapi_and_server_startup_dispatch_are_preserved() {
+    let openapi = Command::new(env!("CARGO_BIN_EXE_commerce-api"))
+        .args(["openapi", "previously-ignored"])
+        .env_clear()
+        .env("TOKIO_WORKER_THREADS", "not-a-number")
+        .output()
+        .expect("run openapi command");
+    assert!(openapi.status.success());
+    assert_eq!(
+        openapi.stdout,
+        fs::read(
+            PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../packages/contracts/openapi.json")
+        )
+        .expect("committed contract")
+    );
+    let server = Command::new(env!("CARGO_BIN_EXE_commerce-api"))
+        .env_clear()
+        .env("APP_ENV", "production")
+        .env("TOKIO_WORKER_THREADS", "1")
+        .output()
+        .expect("run server entry");
+    assert!(!server.status.success());
+    assert!(String::from_utf8_lossy(&server.stderr).contains("production is disabled"));
 }

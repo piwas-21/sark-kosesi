@@ -9,8 +9,7 @@ use commerce_infrastructure::{MIGRATOR, connect};
 use std::sync::Arc;
 use tokio::sync::Semaphore;
 
-#[tokio::main]
-async fn main() -> Result<(), Box<dyn std::error::Error>> {
+fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut arguments = std::env::args_os();
     arguments.next();
     let first = arguments.next();
@@ -27,6 +26,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         println!("{}", contract::openapi()?);
         return Ok(());
     }
+    run_server()
+}
+
+#[tokio::main]
+async fn run_server() -> Result<(), Box<dyn std::error::Error>> {
     tracing_subscriber::fmt().json().init();
     let config = Config::parse(&std::env::vars().collect()).map_err(std::io::Error::other)?;
     let pool = connect(&config.database_url)
