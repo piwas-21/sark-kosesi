@@ -131,7 +131,8 @@ with effect-key replay. A validated open tip can restore a same-key continuation
 An explicit test-profile supervisor now admits bounded page operations from an
 authenticated paid observation. Durable starts, exact receipt recovery and fenced
 checkpoints keep uncertain work visible for review. Explicit local/test worker
-commands enroll, run a bounded pass and inspect scan state. A separate item
+commands enroll, run a bounded pass and inspect scan state, including the
+validated presence or absence of the exact late page for an uncertain stop. A separate item
 supervisor binds one candidate position to an exact authenticated refund or
 chargeback observation. Private finance staff can now prepare one immutable
 test-mode execution proposal per reservation. It preserves the reserved SKU and

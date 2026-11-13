@@ -837,6 +837,11 @@ review operation history and exact-effect late-receipt absence/presence;
 damaged custody and over-cap history fail closed.
 Check that inspection changes no custody and makes no provider request.
 
+The local/test reversal-page inspection tests an uncertain stop before and after
+its exact late page, the attempt claim, source-clock boundary, damaged operation
+and event, and mismatched credential. It must preserve the stopped checkpoint,
+redact provider identity and perform no provider request.
+
 ### Private customer sessions
 
 For optional synchronizer custody, use real PostgreSQL to verify exact session

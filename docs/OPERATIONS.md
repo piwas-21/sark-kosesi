@@ -187,7 +187,10 @@ Both commands require the same dedicated `MOLLIE_TEST_API_KEY` and
 rejected. `commerce-worker --inspect-reversal-scan <job-id>` uses PostgreSQL to
 report validated state, generation, failure count and review reason. Provider
 credentials and provider network access are unnecessary for inspection. Batch
-output reports the number of processed steps. Inspect the enrolled job and its
+output reports the number of processed steps. For an uncertain stop, inspection
+also reports whether that operation's validated late page is present; other
+states report `not_applicable`. It does not advance the scan or prove provider
+history complete. Inspect the enrolled job and its
 private evidence for review stops or retries. An ended or capped scan leaves
 provider history unresolved. Review recovery, scheduling, financial and
 inventory transitions, provider sandbox acceptance and deployment remain open.

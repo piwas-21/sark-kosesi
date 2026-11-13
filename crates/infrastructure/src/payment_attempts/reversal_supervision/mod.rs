@@ -5,11 +5,13 @@ use crate::mollie::{ReversalKind, VerifiedReconciliationClient};
 use commerce_application::request_context::{Clock, Identifiers};
 use commerce_domain::payment_attempts::PaymentStatus;
 use sqlx::PgPool;
+mod inspection;
 mod jobs;
 mod rows;
 pub mod runner;
 mod transitions;
 mod validate;
+pub use inspection::{Inspection, inspect};
 pub use runner::run_batch;
 
 #[derive(Clone, PartialEq, Eq)]
