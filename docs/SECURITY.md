@@ -29,8 +29,9 @@ caller-selected account. It retains only stable merchant SKU identities, uses
 a bounded account-specific bucket and returns currently publishable identities
 only. Database guards serialize and cap native membership changes; they do not
 authenticate native SQL callers or prove publication. An unavailable saved
-entry is hidden and remains removable. A bucket remains after clearing to
-preserve revision ordering. Export, deletion, retention and browser CSRF and
+entry is hidden and remains removable. Session validity is rechecked after
+bucket and source waits before reporting revision conflict or capacity. A bucket
+remains after clearing to preserve revision ordering. Export, deletion, retention and browser CSRF and
 abuse controls require separate implementation and review before exposure.
 
 ## P1 verification scope

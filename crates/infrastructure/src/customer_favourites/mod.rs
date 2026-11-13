@@ -134,12 +134,17 @@ pub async fn set(
     let account = session.account_id();
     let revision = bucket(&mut tx, account).await?;
     let skus = saved(&mut tx, account).await?;
+    // The bucket and membership reads may have waited beyond session expiry.
+    session.check_at(now(&observed)?).map_err(session_failure)?;
     let present = skus.iter().any(|saved| saved == sku);
     let eligible = if desired {
         let products =
             published_catalogue::load_eligible(&mut tx, &observed, locale, &[sku.to_owned()])
                 .await
                 .map_err(failure)?;
+        // Publication and media claims may also wait; never expose a result
+        // derived from them or from private membership with expired authority.
+        session.check_at(now(&observed)?).map_err(session_failure)?;
         if products.len() != 1 {
             return Err(FavouriteError::Unavailable);
         }
@@ -209,6 +214,7 @@ pub async fn clear_all(
     let account = session.account_id();
     let revision = bucket(&mut tx, account).await?;
     let skus = saved(&mut tx, account).await?;
+    session.check_at(now(&observed)?).map_err(session_failure)?;
     if !skus.is_empty() {
         if revision != expected_revision {
             return Err(FavouriteError::Conflict);

@@ -25,6 +25,78 @@ impl Clock for MovingClock {
     }
 }
 
+#[derive(Clone, Copy)]
+enum WaitingAction {
+    Set { desired: bool, revision: i64 },
+    Clear { revision: i64 },
+}
+
+async fn expired_while_waiting(
+    pool: &PgPool,
+    account: i64,
+    token: &CustomerSessionToken,
+    action: WaitingAction,
+    source_lock: bool,
+) -> Result<i64, FavouriteError> {
+    let mut held = pool.begin().await.expect("hold serialization claim");
+    let pattern = if source_lock {
+        sqlx::query("SELECT sku FROM catalogue_variants WHERE sku='SET-FILLED' FOR UPDATE")
+            .execute(&mut *held)
+            .await
+            .expect("lock catalogue source");
+        "SELECT sku FROM catalogue_variants WHERE sku=ANY%"
+    } else {
+        sqlx::query(
+            "SELECT revision FROM customer_favourite_buckets WHERE account_id=$1 FOR UPDATE",
+        )
+        .bind(account)
+        .execute(&mut *held)
+        .await
+        .expect("lock account bucket");
+        "SELECT revision FROM customer_favourite_buckets%"
+    };
+    let moving = std::sync::Arc::new(MovingClock(std::sync::atomic::AtomicU64::new(1100)));
+    let waiting_clock = moving.clone();
+    let waiting_pool = pool.clone();
+    let waiting_token = CustomerSessionToken::from_bytes(*token.expose_bytes());
+    let waiting = tokio::spawn(async move {
+        match action {
+            WaitingAction::Set { desired, revision } => {
+                customer_favourites::set(
+                    &waiting_pool,
+                    &waiting_token,
+                    &*waiting_clock,
+                    Locale::Nl,
+                    "SET-FILLED",
+                    desired,
+                    revision,
+                )
+                .await
+            }
+            WaitingAction::Clear { revision } => {
+                customer_favourites::clear_all(
+                    &waiting_pool,
+                    &waiting_token,
+                    &*waiting_clock,
+                    revision,
+                )
+                .await
+            }
+        }
+    });
+    tokio::time::timeout(std::time::Duration::from_millis(800), async {
+        loop {
+            let count: i64 = sqlx::query_scalar("SELECT count(*) FROM pg_stat_activity WHERE datname=current_database() AND wait_event_type='Lock' AND query LIKE $1")
+                .bind(pattern).fetch_one(pool).await.expect("observe waiting operation");
+            if count == 1 { break; }
+            tokio::time::sleep(std::time::Duration::from_millis(10)).await;
+        }
+    }).await.expect("operation reached held claim");
+    moving.0.store(44300, std::sync::atomic::Ordering::SeqCst);
+    held.commit().await.expect("release claim");
+    waiting.await.expect("operation task")
+}
+
 async fn account(pool: &PgPool, email: &str) -> (i64, CustomerSessionToken) {
     let clock = FixedClock(1100);
     let proof = email_verification::issue(pool, email, &clock)
@@ -156,42 +228,64 @@ async fn session_owned_versioned_membership_tracks_current_publication(pool: PgP
         customer_favourites::set(&pool, &first, &clock, Locale::Nl, "SET-FILLED", true, 4).await,
         Ok(5)
     );
-    // Hold the serialization claim until the session expires. A pre-lock check
-    // alone would incorrectly commit a mutation after the wait.
-    let mut held = pool.begin().await.expect("hold account bucket");
-    sqlx::query("SELECT revision FROM customer_favourite_buckets WHERE account_id=$1 FOR UPDATE")
-        .bind(first_id)
-        .execute(&mut *held)
-        .await
-        .expect("lock bucket");
-    let moving = std::sync::Arc::new(MovingClock(std::sync::atomic::AtomicU64::new(1100)));
-    let waiting_clock = moving.clone();
-    let waiting_pool = pool.clone();
-    let waiting_token = CustomerSessionToken::from_bytes(*first.expose_bytes());
-    let waiting = tokio::spawn(async move {
+    // Stale set and clear operations must not expose the current revision once
+    // the customer session expires while waiting for the bucket.
+    assert_eq!(
+        customer_favourites::set(&pool, &first, &clock, Locale::Nl, "SET-FILLED", false, 4).await,
+        Err(FavouriteError::Conflict)
+    );
+    assert_eq!(
+        customer_favourites::clear_all(&pool, &first, &clock, 4).await,
+        Err(FavouriteError::Conflict)
+    );
+    for action in [
+        WaitingAction::Set {
+            desired: false,
+            revision: 4,
+        },
+        WaitingAction::Clear { revision: 4 },
+        WaitingAction::Set {
+            desired: false,
+            revision: 5,
+        },
+    ] {
+        assert_eq!(
+            expired_while_waiting(&pool, first_id, &first, action, false).await,
+            Err(FavouriteError::Denied)
+        );
+    }
+    // Publication claims can block after the first authority check as well.
+    assert_eq!(
+        expired_while_waiting(
+            &pool,
+            first_id,
+            &first,
+            WaitingAction::Set {
+                desired: true,
+                revision: 5
+            },
+            true
+        )
+        .await,
+        Err(FavouriteError::Denied)
+    );
+    // Expiry after a successful write must still roll that write back.
+    let expiry_after_write = StepClock {
+        calls: AtomicUsize::new(0),
+        after: 3,
+        value: Ok(44300),
+    };
+    assert_eq!(
         customer_favourites::set(
-            &waiting_pool,
-            &waiting_token,
-            &*waiting_clock,
+            &pool,
+            &first,
+            &expiry_after_write,
             Locale::Nl,
             "SET-FILLED",
             false,
-            5,
+            5
         )
-        .await
-    });
-    tokio::time::timeout(std::time::Duration::from_millis(800), async {
-        loop {
-            let count: i64 = sqlx::query_scalar("SELECT count(*) FROM pg_stat_activity WHERE datname=current_database() AND wait_event_type='Lock' AND query LIKE 'SELECT revision FROM customer_favourite_buckets%'")
-                .fetch_one(&pool).await.expect("observe waiting writer");
-            if count == 1 { break; }
-            tokio::time::sleep(std::time::Duration::from_millis(10)).await;
-        }
-    }).await.expect("writer reached the held bucket");
-    moving.0.store(44300, std::sync::atomic::Ordering::SeqCst);
-    held.commit().await.expect("release bucket");
-    assert_eq!(
-        waiting.await.expect("writer task"),
+        .await,
         Err(FavouriteError::Denied)
     );
     let after_expiry = customer_favourites::list(&pool, &first, &clock, Locale::Nl)
@@ -212,12 +306,55 @@ async fn session_owned_versioned_membership_tracks_current_publication(pool: PgP
 async fn native_capacity_serializes_competing_final_inserts_and_rejects_fixture(pool: PgPool) {
     let _fixture = media_seed(&pool).await;
     let (id, token) = account(&pool, "cap@example.test").await;
-    approve(&pool).await;
+    // Keep publication rights active beyond session expiry so this test can
+    // distinguish an expired session from the otherwise observable capacity.
+    rights(
+        &pool,
+        1,
+        &MediaRightsChange::Grant {
+            use_scope: MediaUse::ProductPhotography,
+            valid_from: 1100,
+            term: RightsTerm::Until {
+                expires_at: 100_000,
+            },
+            permission_ref: "isolated long permission".into(),
+        },
+    )
+    .await;
+    let mut selection = selected();
+    selection.image.rights_revision = 2;
+    facts_review(
+        &pool,
+        selection.facts,
+        0,
+        FactDecision::Approved,
+        "facts-approved",
+    )
+    .await;
+    image_review(
+        &pool,
+        &selection.image,
+        0,
+        ImageDecision::Approved,
+        "image-approved",
+    )
+    .await;
+    copy_draft(&pool, Locale::Nl, 1, None, 0, "copy-nl").await;
+    copy_review(
+        &pool,
+        Locale::Nl,
+        1,
+        0,
+        TranslationDecision::Approved,
+        "copy-nl-approved",
+    )
+    .await;
+    let long_choice = PublicationChoice::Activate { selection };
     record_publication(
         &pool,
         &author(),
         &FixedClock(1100),
-        request("activate", &choice()),
+        request("activate", &long_choice),
     )
     .await
     .expect("activate");
@@ -302,6 +439,20 @@ async fn native_capacity_serializes_competing_final_inserts_and_rejects_fixture(
         )
         .await,
         Err(FavouriteError::Capacity)
+    );
+    assert_eq!(
+        expired_while_waiting(
+            &pool,
+            id,
+            &token,
+            WaitingAction::Set {
+                desired: true,
+                revision: 25
+            },
+            false
+        )
+        .await,
+        Err(FavouriteError::Denied)
     );
     assert!(
         sqlx::query("UPDATE customer_favourite_buckets SET revision=0 WHERE account_id=$1")
