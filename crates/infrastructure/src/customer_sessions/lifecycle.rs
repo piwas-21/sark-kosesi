@@ -88,6 +88,36 @@ pub(crate) async fn claim_session(
         .map(HeldSession)
 }
 
+/// Claims one live session and validates its own immutable synchronizer binding.
+pub(crate) async fn claim_session_with_csrf(
+    tx: &mut Transaction<'_, Postgres>,
+    token: &CustomerSessionToken,
+    csrf: &CustomerCsrfToken,
+    clock: &dyn Clock,
+) -> Result<HeldSession, SessionError> {
+    let verifier = token.verifier();
+    let row = claim(tx, &verifier, false, clock).await?;
+    check_csrf(tx, &verifier, &row.created_xid, csrf).await?;
+    Ok(HeldSession(row))
+}
+
+async fn check_csrf(
+    tx: &mut Transaction<'_, Postgres>,
+    verifier: &[u8; 32],
+    created_xid: &str,
+    csrf: &CustomerCsrfToken,
+) -> Result<(), SessionError> {
+    use subtle::ConstantTimeEq;
+    let saved: Option<Vec<u8>> = sqlx::query_scalar("SELECT csrf_digest FROM customer_session_csrf WHERE session_verifier=$1 AND created_xid::text=$2")
+        .bind(verifier.as_slice()).bind(created_xid).fetch_optional(&mut **tx)
+        .await.map_err(|_| SessionError::Unavailable)?;
+    let digest = csrf.digest();
+    if !saved.is_some_and(|saved| bool::from(saved.as_slice().ct_eq(digest.as_slice()))) {
+        return Err(SessionError::Denied);
+    }
+    Ok(())
+}
+
 /// Returns a detached snapshot, not authority held through a later operation.
 pub async fn authenticate(
     pool: &PgPool,
@@ -184,14 +214,7 @@ async fn logout_inner(
     let mut tx = begin(pool).await?;
     let row = claim(&mut tx, &verifier, true, &observed).await?;
     if let Some(csrf) = csrf {
-        use subtle::ConstantTimeEq;
-        let saved: Option<Vec<u8>> = sqlx::query_scalar("SELECT csrf_digest FROM customer_session_csrf WHERE session_verifier=$1 AND created_xid::text=$2")
-            .bind(verifier.as_slice()).bind(&row.created_xid).fetch_optional(&mut *tx)
-            .await.map_err(|_| SessionError::Unavailable)?;
-        let digest = csrf.digest();
-        if !saved.is_some_and(|saved| bool::from(saved.as_slice().ct_eq(digest.as_slice()))) {
-            return Err(SessionError::Denied);
-        }
+        check_csrf(&mut tx, &verifier, &row.created_xid, csrf).await?;
     }
     let captured = now(&observed)?;
     if !row.active(captured) {
