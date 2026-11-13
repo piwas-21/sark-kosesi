@@ -8,7 +8,7 @@ use sqlx::{PgPool, Postgres, Transaction};
 use std::time::Duration;
 use zeroize::Zeroizing;
 
-pub(crate) use lifecycle::{HeldSession, claim_session};
+pub(crate) use lifecycle::{HeldSession, claim_session, claim_session_with_csrf};
 pub use lifecycle::{authenticate, logout, logout_with_csrf, rotate};
 pub use login::{login, login_with_csrf};
 
