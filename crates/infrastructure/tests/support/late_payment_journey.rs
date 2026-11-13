@@ -11,6 +11,18 @@ use crate::{
 };
 use commerce_domain::{late_stock::Outcome, payment_attempts::recognition::State};
 
+async fn original_hold(pool: &PgPool, group: &str) -> (String, String, i64) {
+    let rows = sqlx::query_as(
+        "SELECT id,state,expires_at FROM stock_holds WHERE basket_group_id=$1 ORDER BY id",
+    )
+    .bind(group)
+    .fetch_all(pool)
+    .await
+    .expect("exact original group members");
+    let [hold]: [_; 1] = rows.try_into().expect("one original hold");
+    hold
+}
+
 #[sqlx::test(migrator = "MIGRATOR")]
 async fn lost_create_reply_recovers_exact_late_payment_and_allocates_stock_once(pool: PgPool) {
     let (store, time, session, csrf, order) = crate::payment_test_fixture::accepted(&pool).await;
@@ -69,6 +81,11 @@ async fn lost_create_reply_recovers_exact_late_payment_and_allocates_stock_once(
             .is_none()
     );
 
+    let group = &order.identity.stock_group_id;
+    let (original_id, state, expires_at) = original_hold(&pool, group).await;
+    assert_eq!(state, "active");
+    assert_eq!(expires_at, order.identity.hold_expires_at);
+    assert!((1501..5000).contains(&expires_at));
     time.0.store(5000, Ordering::SeqCst);
     assert_eq!(
         expire_due_holds(&pool, 5000, 25)
@@ -78,6 +95,10 @@ async fn lost_create_reply_recovers_exact_late_payment_and_allocates_stock_once(
             expired: 1,
             failed: 0
         }
+    );
+    assert_eq!(
+        original_hold(&pool, group).await,
+        (original_id, "expired".into(), expires_at)
     );
     assert!(matches!(
         start_dispatch(&pool, time.as_ref(), &ids, attempt, client.configuration()).await,
@@ -181,6 +202,24 @@ async fn lost_create_reply_recovers_exact_late_payment_and_allocates_stock_once(
             ]
         );
         assert_eq!(requests[1].body, frozen.body().as_bytes());
+        let body: Value = serde_json::from_slice(&requests[1].body).expect("observed POST JSON");
+        assert_eq!(body["amount"], json!({"currency":"EUR","value":"382.45"}));
+        assert_eq!(body["sequenceType"], "oneoff");
+        assert_eq!(body["method"], "ideal");
+        assert_eq!(
+            body["metadata"],
+            json!({"schema_version":1,"order_id":order.identity.id,"attempt_id":attempt})
+        );
+        for private_field in [
+            "profileId",
+            "testmode",
+            "email",
+            "billingAddress",
+            "shippingAddress",
+            "credential",
+        ] {
+            assert!(body.get(private_field).is_none());
+        }
         assert_eq!(
             requests[1].header("Idempotency-Key"),
             Some(format!("piwas-test-payment-{attempt}").as_str())
