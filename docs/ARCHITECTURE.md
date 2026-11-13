@@ -1536,6 +1536,13 @@ operations with no new HTTP route. P4 must supply genuine login/MFA verification
 session issuance, cookie/CSRF controls and revocation endpoints before admin use;
 the current tests use labelled session attestations in disposable databases.
 
+A separate private self-revocation operation hashes the supplied bearer and locks
+only its exact session row. Missing and already-revoked tokens are successful
+no-ops; stale MFA or expiry does not prevent relinquishing authority. The row
+claim serializes with existing staff-operation claims. This does not issue or
+authenticate a session, create a browser route or enforce a database-wide
+revocation policy against other trusted writers.
+
 Public catalogue HTML is cacheable by explicit locale/product version. Private cart, account, admin and quote data are never shared-cache responses. Invalidation follows publication/price/stock changes. Public facts and JSON-LD come from the same approved catalogue projection.
 
 Room planning starts with local dimensions and a calibrated 2D footprint. A photo overlay is an explicitly approximate visual aid. Camera AR is deferred until measured product assets/device support and accessibility fallback are proven. Default room images stay on-device; opt-in persistence uses private storage, quotas, expiry and deletion.

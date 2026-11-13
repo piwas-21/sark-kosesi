@@ -834,6 +834,13 @@ Measure proof freshness after an actual lock wait. Check that only the current
 hash remains and that the stored challenge verifier differs from the bearer
 and registration verifier. These checks establish private credential custody.
 
+### Private staff self-revocation
+
+Use isolated PostgreSQL for exact and repeated bearer revocation, missing, expired
+and stale-MFA sessions, other-session isolation, clock failure and both lock
+orderings against a real guarded operation. Confirm no session issuance, grant,
+stock or unrelated-session mutation. This is not browser logout or MFA issuance.
+
 ### Private reversal-item review inspection
 
 Use isolated PostgreSQL to test dedicated grant, revocation, stale MFA and an

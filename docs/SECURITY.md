@@ -101,6 +101,12 @@ confirmation. Tokens are hashed at rest and have no
 Debug/Serialize implementation. These tests prove the authorization consumer,
 not a completed MFA ceremony: installation seeds no staff authority, and no staff
 login/MFA/session issuer, cookie mutation route or admin write endpoint exists.
+A separate private self-revocation primitive invalidates only the supplied staff
+bearer and returns no account or grant information. Unknown and already-revoked
+bearers return the same successful result. It needs neither an active grant nor
+recent MFA because it cannot create authority; held session locks serialize the
+change with privileged operations. It does not provide an HTTP endpoint, a
+logout CSRF policy, or native protection from other trusted database writers.
 P4 owns those controls and P6/P7 own operational acceptance. Guarded draft price
 writes require explicit confirmation, immutable evidence/reason/actor history,
 optimistic revision checks and idempotency. Late expiry rolls back draft changes;

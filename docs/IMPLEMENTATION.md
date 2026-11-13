@@ -70,7 +70,9 @@ Server-side staff session/grant consumers now separate catalogue/BOM inspection
 from warehouse mutations. They require an enabled account, matching capability,
 unrevoked/unexpired session and recent MFA attestation, with locks held through
 the operation and clock checks after lock waits. Warehouse changes require explicit confirmation; audit identity comes
-from the session. Installation has no staff authority. Actual login/MFA/session
+from the session. A private bearer-only self-revocation primitive can invalidate
+an existing session without issuing new authority. Installation has no staff
+authority. Actual login/MFA/session
 issuance and HTTP mutations remain P4 work; no preview token grants staff access.
 
 Draft price history now uses the catalogue capability guard. Each immutable
