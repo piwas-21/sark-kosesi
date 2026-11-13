@@ -62,6 +62,24 @@ def digest_file(path):
     return digest.hexdigest()
 
 
+def source_state(root):
+    # Hooks can inherit a foreign worktree, index, or Git object directory.
+    environment = {key: value for key, value in os.environ.items() if not key.startswith("GIT_")}
+    git = ["git", "--no-replace-objects", "-C", str(root)]
+
+    def read(*args):
+        return run(*git, *args, env=environment).stdout
+
+    revision = read("rev-parse", "HEAD").strip()
+    tracked = read("ls-files", "-v", "-z").split("\0")
+    clean = not read(
+        "status", "--porcelain=v1", "--untracked-files=all", "--ignore-submodules=none"
+    )
+    clean = clean and all(not entry or entry.startswith("H ") for entry in tracked)
+    clean = clean and read("rev-parse", "HEAD").strip() == revision
+    return revision, clean
+
+
 class Snapshot:
     def __init__(self, binaries, env):
         self.binaries = binaries
@@ -158,9 +176,7 @@ def main():
     version = run(str(binaries / "pg_dump"), "--version").stdout.strip()
     if not re.match(r"pg_dump \(PostgreSQL\) 18\.", version):
         raise ValueError("Native PostgreSQL 18 is required")
-    git = ["git", "--no-replace-objects", "-C", str(ROOT)]
-    revision = run(*git, "rev-parse", "HEAD").stdout.strip()
-    clean_before = not run(*git, "status", "--porcelain", "--untracked-files=all").stdout
+    revision, clean_before = source_state(ROOT)
     database = "sark_restore_" + secrets.token_hex(16)
     started = time.monotonic()
     with owned_directory() as root:
@@ -173,7 +189,7 @@ def main():
                 psql(binaries, pg_env(url), f'CREATE DATABASE "{database}"')
                 urls.append(url.rsplit("/", 1)[0] + "/" + database)
             env = {
-                **os.environ,
+                **{key: value for key, value in os.environ.items() if not key.startswith("GIT_")},
                 "RESTORE_FIXTURE_DATABASE_URL": urls[0],
                 "RESTORE_FIXTURE_DATABASE_NAME": database,
             }
@@ -276,8 +292,8 @@ def main():
                 )
                 if rejected.returncode == 0:
                     raise RuntimeError("Corrupt archive parser negative control failed")
-            unchanged = run(*git, "rev-parse", "HEAD").stdout.strip() == revision
-            clean_after = not run(*git, "status", "--porcelain", "--untracked-files=all").stdout
+            final_revision, clean_after = source_state(ROOT)
+            unchanged = final_revision == revision
             report = {
                 "source_revision": revision,
                 "source_clean_at_checks": clean_before and clean_after and unchanged,
