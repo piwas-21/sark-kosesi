@@ -849,6 +849,10 @@ actual attempt-lock wait through staff expiry. Validate the complete bounded
 review operation history and exact-effect late-receipt absence/presence;
 damaged custody and over-cap history fail closed.
 Check that inspection changes no custody and makes no provider request.
+For the separate local/test worker, verify exact command routing, non-terminal
+32-byte input with EOF, short/long input, an open pipe that exceeds the deadline,
+and credential redaction. An isolated database checks the authorized absent
+result and denied capability, revocation, expiry and stale MFA without effects.
 
 The local/test reversal-page inspection tests an uncertain stop before and after
 its exact late page, the attempt claim, source-clock boundary, damaged operation
