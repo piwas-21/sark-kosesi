@@ -99,6 +99,7 @@ class RustCoverage(unittest.TestCase):
             ("crates/infrastructure/src/holds/mod.rs", True),
             ("crates/application/src/staff_access.rs", False),
             ("crates/infrastructure/src/staff_access.rs", False),
+            ("crates/infrastructure/src/staff_access/revocation.rs", False),
             ("crates/infrastructure/src/staff_operations.rs", False),
             ("crates/infrastructure/src/catalogue_prices.rs", False),
             ("crates/domain/src/catalogue_authoring.rs", False),

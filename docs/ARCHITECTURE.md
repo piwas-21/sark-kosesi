@@ -1549,7 +1549,7 @@ session issuance, cookie/CSRF controls and revocation endpoints before admin use
 the current tests use labelled session attestations in disposable databases.
 
 A separate private self-revocation operation hashes the supplied bearer and locks
-only its exact session row. Missing and already-revoked tokens are successful
+only its exact session row. With a valid clock, missing and already-revoked tokens are successful
 no-ops; stale MFA or expiry does not prevent relinquishing authority. The row
 claim serializes with existing staff-operation claims. This does not issue or
 authenticate a session, create a browser route or enforce a database-wide
