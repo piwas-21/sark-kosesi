@@ -641,6 +641,45 @@ async fn unavailable_retries_are_bounded_and_malformed_response_is_reviewed(pool
         .await
         .is_ok_and(|value| value.is_some_and(|summary| summary.late_receipt_present))
     );
+    // Non-capped review reasons must also reject damaged over-cap histories.
+    let current_count: i64 = sqlx::query_scalar(
+        "SELECT count(*) FROM payment_reversal_observations WHERE attempt_id=$1",
+    )
+    .bind(&job.attempt_id)
+    .fetch_one(&pool)
+    .await
+    .expect("healthy observation count");
+    assert!(current_count < 129);
+    pool.execute("ALTER TABLE payment_reversal_observations DISABLE TRIGGER USER")
+        .await
+        .expect("disable isolated observation guards");
+    sqlx::query("INSERT INTO payment_reversal_observations(id,attempt_id,order_id,effect_key,payment_id,child_id,phase,amount_minor,credential_fingerprint,source_created_seconds,source_created_nanos,source_reversed_seconds,source_reversed_nanos,recorded_at,event_id,transaction_id) SELECT lpad(to_hex(1000000+n),32,'0'),o.attempt_id,o.order_id,'synthetic-overflow-'||n,o.payment_id,o.child_id,o.phase,o.amount_minor,o.credential_fingerprint,o.source_created_seconds,o.source_created_nanos,o.source_reversed_seconds,o.source_reversed_nanos,o.recorded_at,lpad(to_hex(2000000+n),32,'0'),o.transaction_id FROM (SELECT * FROM payment_reversal_observations WHERE attempt_id=$1 LIMIT 1) o CROSS JOIN generate_series(1,$2::integer) n")
+        .bind(&job.attempt_id).bind((129-current_count) as i32).execute(&pool).await.expect("inject over-cap history");
+    pool.execute("ALTER TABLE payment_reversal_observations ENABLE TRIGGER USER")
+        .await
+        .expect("restore observation guards");
+    assert_eq!(
+        crate::payment_attempts::reversal_item_supervision::review::inspect(
+            &pool,
+            &crate::staff_access::SessionToken::from_bytes([11; 32]),
+            time.as_ref(),
+            &job.id
+        )
+        .await,
+        Err(crate::payment_attempts::reversal_item_supervision::review::ReviewError::Unavailable)
+    );
+    pool.execute("ALTER TABLE payment_reversal_observations DISABLE TRIGGER USER; DELETE FROM payment_reversal_observations WHERE effect_key LIKE 'synthetic-overflow-%'; ALTER TABLE payment_reversal_observations ENABLE TRIGGER USER")
+        .await.expect("repair over-cap history");
+    assert!(
+        crate::payment_attempts::reversal_item_supervision::review::inspect(
+            &pool,
+            &crate::staff_access::SessionToken::from_bytes([11; 32]),
+            time.as_ref(),
+            &job.id
+        )
+        .await
+        .is_ok_and(|value| value.is_some_and(|summary| summary.late_receipt_present))
+    );
     assert_eq!(malformed.count(), 3);
 }
 

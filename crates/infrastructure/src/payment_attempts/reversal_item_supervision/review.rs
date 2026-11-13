@@ -131,11 +131,9 @@ async fn validated(
         }
         previous_finished = Some(finished);
     }
-    if reason == Reason::ObservationLimit {
-        let (count, _) = super::super::reversals::rows::history(tx, &job.attempt_id).await?;
-        if count != 128 {
-            return Err(RecoveryError::InvalidStoredData);
-        }
+    let (count, _) = super::super::reversals::rows::history(tx, &job.attempt_id).await?;
+    if count > 128 || (reason == Reason::ObservationLimit && count != 128) {
+        return Err(RecoveryError::InvalidStoredData);
     }
     let mut late_receipt_present = false;
     for operation in &history {
