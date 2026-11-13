@@ -407,7 +407,10 @@ supervision or live provider activation follows from deploying the empty preview
    start, and checks the matching page receipt before restoring a checkpoint.
    Expired starts without evidence go to review. Returned transport failures
    use bounded retries. Explicit local/test worker commands enroll, run one
-   bounded pass and inspect a scan without exposing provider identifiers.
+   bounded pass and inspect a scan without exposing provider identifiers. For an
+   uncertain stop, the inspection also validates the exact stopped operation and
+   reports whether its late page is present. This detached result grants no
+   retry or financial authority and cannot prove complete provider history.
    A separate item supervisor enrolls a verified page position and its paid
    original. It commits each operation before fetching the exact child and
    checkpoints only against the matching authenticated journal receipt. A private,
