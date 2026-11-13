@@ -993,6 +993,95 @@
         ]
       }
     },
+    "/api/test/customer/favourites/{locale}": {
+      "get": {
+        "tags": [
+          "crate::test_favourites"
+        ],
+        "operationId": "test_customer_favourites",
+        "parameters": [
+          {
+            "name": "locale",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "Origin",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Current private favourites for the cookie owner",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TestFavouriteList"
+                }
+              }
+            }
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "504": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "customer_test": [],
+            "preview": []
+          }
+        ]
+      }
+    },
     "/api/test/customer/login": {
       "post": {
         "tags": [
@@ -2072,6 +2161,43 @@
           }
         },
         "additionalProperties": false
+      },
+      "TestFavouriteItem": {
+        "type": "object",
+        "required": [
+          "sku",
+          "publication_revision"
+        ],
+        "properties": {
+          "publication_revision": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "sku": {
+            "type": "string"
+          }
+        }
+      },
+      "TestFavouriteList": {
+        "type": "object",
+        "required": [
+          "revision",
+          "items"
+        ],
+        "properties": {
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/TestFavouriteItem"
+            }
+          },
+          "revision": {
+            "type": "string",
+            "description": "Decimal representation avoids losing a PostgreSQL bigint in JavaScript.",
+            "maxLength": 19,
+            "pattern": "^(0|[1-9][0-9]*)$"
+          }
+        }
       },
       "TestSessionProof": {
         "type": "object",

@@ -12,6 +12,7 @@ pub use routing::{
 };
 pub mod published;
 pub mod published_types;
+mod test_favourites;
 pub mod test_login;
 mod test_login_input;
 mod test_session;

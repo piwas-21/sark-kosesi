@@ -30,6 +30,8 @@ export interface components {
     QuoteView: Model.QuoteView;
     QuotedLine: Model.QuotedLine;
     RedeemRequest: Model.RedeemRequest;
+    TestFavouriteItem: Model.TestFavouriteItem;
+    TestFavouriteList: Model.TestFavouriteList;
     TestSessionProof: Model.TestSessionProof;
   };
 }
@@ -63,6 +65,9 @@ export interface paths {
   };
   "/api/published/{locale}/products/{sku}": {
     get: operations["product"];
+  };
+  "/api/test/customer/favourites/{locale}": {
+    get: operations["test_customer_favourites"];
   };
   "/api/test/customer/login": {
     post: operations["test_customer_login"];
@@ -265,6 +270,23 @@ export interface operations {
       400: { headers: { [name: string]: unknown }; content: { "application/json": Model.ApiError; } };
       401: { headers: { [name: string]: unknown }; content: { "application/json": Model.ApiError; } };
       404: { headers: { [name: string]: unknown }; content: { "application/json": Model.ApiError; } };
+      503: { headers: { [name: string]: unknown }; content: { "application/json": Model.ApiError; } };
+      504: { headers: { [name: string]: unknown }; content: { "application/json": Model.ApiError; } };
+    };
+  };
+  "test_customer_favourites": {
+    parameters: {
+      query?: never;
+      header: NonNullable<Model.TestCustomerFavouritesData["headers"]>;
+      path: NonNullable<Model.TestCustomerFavouritesData["path"]>;
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      200: { headers: { [name: string]: unknown }; content: { "application/json": Model.TestFavouriteList; } };
+      400: { headers: { [name: string]: unknown }; content: { "application/json": Model.ApiError; } };
+      401: { headers: { [name: string]: unknown }; content: { "application/json": Model.ApiError; } };
+      403: { headers: { [name: string]: unknown }; content: { "application/json": Model.ApiError; } };
       503: { headers: { [name: string]: unknown }; content: { "application/json": Model.ApiError; } };
       504: { headers: { [name: string]: unknown }; content: { "application/json": Model.ApiError; } };
     };
