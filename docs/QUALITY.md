@@ -867,6 +867,17 @@ and competing requests must fail closed. Lost responses do not prove non-commit.
 Check no-store headers and redacted diagnostics for the synchronizer and cookie.
 These controls do not establish a public browser or trusted-ingress policy.
 
+### Whole-variant shipment quantities
+
+Use independently specified accepted-order quantities to test partial and final
+proposals in canonical quote order, including a covers-only variant and a
+promoted order. Reject incomplete or duplicate prior counts, unknown or duplicate
+proposed SKUs, zero proposals, excess counts, arithmetic overflow and malformed
+orders. The check neither tests warehouse custody nor proves parcel contents or
+delivery; future persistent shipment operations need separate authorization,
+concurrency, retry and physical fulfilment tests. The whole-variant quantity
+module is included in the critical Rust coverage policy.
+
 ### Private customer favourites
 
 Use isolated PostgreSQL to check customer ownership, revision and capacity races,
