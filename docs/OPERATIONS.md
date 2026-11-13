@@ -207,9 +207,14 @@ one bounded pass; `REVERSAL_PAGE_BATCH` defaults to 10 and accepts 1–25 steps.
 Both commands require the same dedicated `MOLLIE_TEST_API_KEY` and
 `MOLLIE_TEST_PROFILE_ID` as payment reconciliation. Production and live keys are
 rejected. `commerce-worker --inspect-reversal-scan <job-id>` uses PostgreSQL to
-report validated state, generation, failure count and review reason. Provider
+report the stored state, generation and review reason after source validation.
+For states other than an uncertain stop it also reports the stored failure count. Provider
 credentials and provider network access are unnecessary for inspection. Batch
-output reports the number of processed steps. Inspect the enrolled job and its
+output reports the number of processed steps. For an uncertain stop, inspection
+also reports whether that operation's validated late page is present; other
+states report `not_applicable`. For uncertain stops it omits the failure count:
+inspection does not reconstruct prior operations. It does not advance the scan or prove provider
+history complete. Inspect the enrolled job and its
 private evidence for review stops or retries. An ended or capped scan leaves
 provider history unresolved. Review recovery, scheduling, financial and
 inventory transitions, provider sandbox acceptance and deployment remain open.

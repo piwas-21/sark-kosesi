@@ -141,17 +141,36 @@ where
     Ok(())
 }
 pub(super) async fn inspect(pool: &PgPool, id: &str) -> Result<()> {
-    let job = reversal_supervision::read_job(pool, id)
+    let inspection = reversal_supervision::inspect(pool, id)
         .await
         .map_err(|_| Error::other("reversal scan inspection unavailable"))?
         .ok_or_else(|| Error::other("reversal scan not found"))?;
-    tracing::info!(
-        code = "reversal_scan_state",
-        state = job.state,
-        generation = job.generation,
-        failures = job.failures,
-        reason = job.review_reason.as_deref().unwrap_or("none")
-    );
+    let job = inspection.job;
+    let late_page = match inspection.late_page_present {
+        None => "not_applicable",
+        Some(false) => "absent",
+        Some(true) => "present",
+    };
+    if inspection.late_page_present.is_some() {
+        // An uncertain stop validates its current operation, not every earlier
+        // generation; do not report an unproven consecutive failure count.
+        tracing::info!(
+            code = "reversal_scan_state",
+            state = job.state,
+            generation = job.generation,
+            reason = job.review_reason.as_deref().unwrap_or("none"),
+            late_page
+        );
+    } else {
+        tracing::info!(
+            code = "reversal_scan_state",
+            state = job.state,
+            generation = job.generation,
+            failures = job.failures,
+            reason = job.review_reason.as_deref().unwrap_or("none"),
+            late_page
+        );
+    }
     Ok(())
 }
 #[cfg(test)]
