@@ -67,6 +67,22 @@ For a quiescent non-selling preview only, the [staging runbook](../deploy/stagin
 
 Proposed service targets: database RPO <=15 minutes and RTO <=4 hours, subject to a measured rehearsal and approved hosting capacity. Encrypted off-host DB/backups, WAL/PITR where needed, media backups and independently stored keys. Alert on age/failure; restore to a fresh isolated environment, verify row counts/constraints, representative orders/stock and private media, then measure elapsed time. A successful backup job is not restore evidence.
 
+For a bounded local diagnostic, `P1_POSTGRES_BIN=/path/to/postgresql18/bin python3
+scripts/rehearse_restore.py` creates two disposable loopback-only native clusters.
+It uses the embedded project migrations and existing synthetic order, stock and
+encrypted verification fixtures. A single exported source snapshot supplies both
+the custom-format dump and full per-table row counts and canonical content hashes;
+the restore must match, including SQLx migration history and checksums. It tests
+that altered restored content and a corrupt archive are detected. Its redacted
+output records source revision, clean-source checks, archive and comparison hashes,
+tool version and elapsed time. Run it from a clean reviewed revision with a bounded
+owned Cargo target and sufficient disk; stopped temporary clusters are removed, and
+a cluster that cannot be stopped is retained for inspection. The comparison covers
+public tables and migration rows, not complete schema/constraint or sequence state.
+This synthetic test does not exercise staging images, media, key rotation, shared
+proxy or router switching, off-host backups, live data, provider recovery, or the
+production RPO/RTO. It cannot by itself pass the restore and rollback release gate.
+
 Use each verification delivery key in one database allocation domain. Reserve
 nonces with `fsync=on` and synchronous commit before encrypting. After a restore,
 clone, asynchronous replica promotion or uncertain rollback, provision a fresh
