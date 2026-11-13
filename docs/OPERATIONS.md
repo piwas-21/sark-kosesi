@@ -77,7 +77,9 @@ also compares public sequence `last_value` and `is_called`, with the exercised
 synthetic stock sequence as an altered-state negative control. PostgreSQL sequences
 are not MVCC-snapshotted: this comparison relies on the exclusively owned source
 having no other client writers. The runner checks for other clients and unchanged
-sequence state around the dump; it cannot detect a change reversed between checks.
+sequence state around the dump. A held named extra client must be observed and
+rejected, and its closure must restore quiescence. The runner cannot detect a
+change reversed between checks.
 It also tests that altered restored content and a corrupt archive are detected. Its redacted
 output records source revision, clean-source checks, archive and comparison hashes,
 tool version and elapsed time. Run it from a clean reviewed revision with a bounded

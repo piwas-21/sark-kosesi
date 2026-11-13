@@ -10,6 +10,7 @@ from pathlib import Path
 from unittest.mock import patch
 
 from rehearse_restore import (
+    OtherSourceClients,
     digest_file,
     owned_directory,
     pg_env,
@@ -49,8 +50,17 @@ class RestoreRehearsalSafety(unittest.TestCase):
                 return self.count
 
         require_quiescent_source(SyntheticSnapshot("0"))
-        with self.assertRaises(RuntimeError):
+        with self.assertRaises(OtherSourceClients):
             require_quiescent_source(SyntheticSnapshot("1"))
+        with self.assertRaisesRegex(RuntimeError, "client count is invalid"):
+            require_quiescent_source(SyntheticSnapshot("invalid"))
+
+        class BrokenSnapshot(SyntheticSnapshot):
+            def query(self, _sql):
+                raise RuntimeError("synthetic database error")
+
+        with self.assertRaisesRegex(RuntimeError, "synthetic database error"):
+            require_quiescent_source(BrokenSnapshot("0"))
 
     def test_owned_directory_removes_only_stopped_clusters(self):
         with owned_directory() as directory:

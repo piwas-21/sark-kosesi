@@ -6,6 +6,7 @@ import json
 import os
 import re
 import secrets
+import selectors
 import shutil
 import subprocess
 import sys
@@ -21,6 +22,10 @@ MAX_TABLES = 300
 MAX_ROWS = 20000
 MAX_TABLE_BYTES = 64 * 1024 * 1024
 MAX_SEQUENCES = 300
+
+
+class OtherSourceClients(RuntimeError):
+    """The owned source is not quiescent."""
 
 
 @contextmanager
@@ -213,14 +218,70 @@ def sequence_inventory(snapshot):
     return result
 
 
-def require_quiescent_source(snapshot):
+def source_other_clients(snapshot):
     other_clients = snapshot.query(
         "SELECT count(*) FROM pg_catalog.pg_stat_activity "
         "WHERE datname=pg_catalog.current_database() AND backend_type='client backend' "
         f"AND pid NOT IN (pg_catalog.pg_backend_pid(),{snapshot.pid})"
     ).strip()
-    if other_clients != "0":
-        raise RuntimeError("Synthetic source has another database client")
+    if not re.fullmatch(r"0|[1-9][0-9]*", other_clients):
+        raise RuntimeError("Synthetic source client count is invalid")
+    return int(other_clients)
+
+
+def require_quiescent_source(snapshot):
+    if source_other_clients(snapshot):
+        raise OtherSourceClients("Synthetic source has another database client")
+
+
+def exercise_quiescence_control(snapshot):
+    # The named client is held open, and its real backend identity must be visible
+    # before interpreting the specific non-quiescent rejection as a success.
+    require_quiescent_source(snapshot)
+    client = subprocess.Popen(
+        [str(snapshot.binaries / "psql"), "-XAtq", "-v", "ON_ERROR_STOP=1"],
+        stdin=subprocess.PIPE,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.DEVNULL,
+        env={**snapshot.env, "PGAPPNAME": "sark-restore-extra-client"},
+        text=True,
+    )
+    try:
+        client.stdin.write("SELECT pg_catalog.pg_backend_pid();\n")
+        client.stdin.flush()
+        with selectors.DefaultSelector() as selector:
+            selector.register(client.stdout, selectors.EVENT_READ)
+            if not selector.select(timeout=10):
+                raise RuntimeError("Synthetic control client did not start")
+        pid = client.stdout.readline().strip()
+        if not re.fullmatch(r"[1-9][0-9]*", pid):
+            raise RuntimeError("Synthetic control client identity is invalid")
+        observed = snapshot.query(
+            "SELECT count(*) FROM pg_catalog.pg_stat_activity "
+            "WHERE datname=pg_catalog.current_database() AND backend_type='client backend' "
+            f"AND pid={pid} AND application_name='sark-restore-extra-client'"
+        ).strip()
+        if observed != "1" or source_other_clients(snapshot) != 1:
+            raise RuntimeError("Synthetic control client was not uniquely observed")
+        try:
+            require_quiescent_source(snapshot)
+        except OtherSourceClients:
+            pass
+        else:
+            raise RuntimeError("Synthetic extra-client negative control failed")
+    finally:
+        client.stdin.close()
+        try:
+            status = client.wait(timeout=10)
+        except subprocess.TimeoutExpired:
+            client.kill()
+            client.wait(timeout=10)
+            raise RuntimeError("Synthetic control client did not stop") from None
+        finally:
+            client.stdout.close()
+        if status:
+            raise RuntimeError("Synthetic control client failed")
+    require_quiescent_source(snapshot)
 
 
 def main():
@@ -273,7 +334,7 @@ def main():
                 raise RuntimeError("Synthetic migration and fixture command failed")
             archive = root / "synthetic.dump"
             with Snapshot(binaries, pg_env(urls[0])) as source:
-                require_quiescent_source(source)
+                exercise_quiescence_control(source)
                 sequences_before = sequence_inventory(source)
                 control_sequence = '"public"."stock_movements_sequence_seq"'
                 control_state = sequences_before.get(control_sequence)
@@ -399,6 +460,7 @@ def main():
                 ).hexdigest(),
                 "source_sequence_quiescence": "owned source; no other clients at checks; before/after state unchanged",
                 "changed_sequence_detected": True,
+                "extra_client_rejected": True,
                 "archive_sha256": archive_hash,
                 "restore_seconds": restore_seconds,
                 "total_seconds": round(time.monotonic() - started, 3),
