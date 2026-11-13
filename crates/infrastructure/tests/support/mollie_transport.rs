@@ -981,6 +981,9 @@ mod identity_ownership;
 #[path = "payment_reconciliation.rs"]
 mod reconciliation_cases;
 
+#[path = "late_payment_journey.rs"]
+mod late_payment_journey;
+
 #[path = "payment_recovery_operators.rs"]
 mod operator_cases;
 
