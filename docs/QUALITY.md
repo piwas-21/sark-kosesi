@@ -893,6 +893,11 @@ Check session expiry after a lock wait and before commit; verify upgrade from th
 prior schema preserves session, favourite and catalogue authority. Confirm the
 operations create no stock movement, order outbox event or message. These tests
 are not notification delivery, retention or browser acceptance.
+For the separately enabled test GET, verify owner isolation, withdrawn and
+untranslated publication, exact Origin and cookie enforcement, disabled configuration,
+revocation/rotation and expiry after a bucket wait. Check its permitted first-read
+bucket initialization and unchanged subscriptions, stock, outbox and delivery
+state. These checks do not establish a working alert or public browser flow.
 
 ### Private guest-order links
 

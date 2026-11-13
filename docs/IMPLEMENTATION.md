@@ -458,8 +458,12 @@ account, independent from favourites and marketing. A 25-entry engineering cap,
 serialized account revision and unique activation generation bound concurrent
 changes and stale replays. New opt-ins require current publication in the chosen
 locale but do not require a particular stock state. A customer can unsubscribe
-an unpublished SKU or clear all active entries. No address, alert message,
-stock transition, outbox, delivery or HTTP route is created. Current opt-in time
+an unpublished SKU or clear all active entries. A separately enabled test-only
+GET uses preview authentication, the configured Origin and the customer cookie
+to return current published SKU identities and a decimal bucket revision. It
+may initialize an empty bucket; it does not change subscriptions, move stock,
+create an order event or send a message. No public account route is installed.
+Current opt-in time
 is retained only while subscribed; this is not consent history. Alert scheduling,
 delivery idempotency and cancellation ordering, retention, locale, recurrence,
 privacy export/deletion, guest enrollment and abuse controls remain P4 work.
