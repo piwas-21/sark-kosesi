@@ -676,6 +676,11 @@ Read linked orders only under live account and session claims. Filter the
 link by the session account, validate its exact consumed proof and accepted
 order, and check session time again before returning. Keep buyer, delivery
 address, payment and fulfilment details out of the history projection.
+The separately enabled test-only history transport requires preview authority,
+the exact Origin and the customer cookie on every bounded page. Cursor fields
+are positions rather than credentials. Query values can appear in proxy access
+logs; review log redaction before any public browser exposure. This transport
+does not issue or deliver a link proof or establish public abuse controls.
 
 ### Private credential admission
 

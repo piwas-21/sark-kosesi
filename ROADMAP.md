@@ -174,7 +174,9 @@ password login issues revocable, revision-bound sessions. Rotation preserves the
 original expiry. A private guest-order link requires an order-specific proof
 issued to the guest basket owner and a current customer session for the verified
 buyer mailbox. Private detail and bounded history reads return the linked
-order's captured items and amounts under live customer authority. Private
+order's captured items and amounts under live customer authority. An independently
+enabled test-only history route exposes bounded linked guest orders to the current
+session; linking and safe proof delivery remain separate. Private
 credential admission provides shared purpose and mailbox quotas. A private
 session variant binds a synchronizer digest to issuance and protects revocation
 under the same session claim. The separately enabled test transport is described

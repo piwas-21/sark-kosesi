@@ -924,6 +924,10 @@ for exact captured totals and absence of buyer details. Assert that later
 withdrawal and newer Dutch source copy preserve accepted titles, while altered
 captured titles and missing, mismatched or rejected source reviews fail closed.
 Browser and delivery acceptance remain open.
+For the test-only history route, use actual isolated linked guest orders to
+check ownership, closed cursor parsing, same-time keyset ties, final empty page,
+invalid session and Origin, damaged reciprocal evidence and private output.
+Verify that reading creates no order, proof, link, stock or outbox changes.
 
 Test credential admission against isolated PostgreSQL from separate pools.
 Assert exact independent target and global caps, domain-case normalization,
