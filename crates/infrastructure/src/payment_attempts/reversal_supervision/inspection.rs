@@ -2,6 +2,7 @@
 use super::*;
 
 pub struct Inspection {
+    /// The stored checkpoint; prior operation history is not reconstructed.
     pub job: Job,
     /// Presence is inspected only for an uncertain stop.
     pub late_page_present: Option<bool>,
@@ -46,6 +47,11 @@ async fn late_page(
     frozen: &FrozenAttempt,
     started: i64,
 ) -> Result<bool, RecoveryError> {
+    // An uncertain outcome preserves the prior pending checkpoint's failures.
+    // Pending admits fewer than three, and this operation is a new generation.
+    if job.failures >= 3 || job.failures >= job.generation {
+        return Err(RecoveryError::InvalidStoredData);
+    }
     let operation: Option<(String, i64)> = sqlx::query_as(
         "SELECT left(id,33),started_at FROM reversal_scan_operations WHERE job_id=$1 AND generation=$2 AND outcome='uncertain' AND predecessor_id IS NOT DISTINCT FROM $3 AND finished_at=$4 AND started_at>=$5 AND lease_until=started_at+60 AND finished_at>=lease_until AND page_id IS NULL AND start_xid IS NOT NULL AND finish_xid IS NOT NULL AND start_xid<>finish_xid",
     )
@@ -59,6 +65,20 @@ async fn late_page(
     let (effect, operation_started) = operation.ok_or(RecoveryError::InvalidStoredData)?;
     if !identifier(&effect) {
         return Err(RecoveryError::InvalidStoredData);
+    }
+    if let Some(tip) = &job.tip_page_id {
+        // `validate::tip` has already verified this row and its entire ancestry
+        // under the attempt claim. It must also predate this operation's start.
+        let recorded_at: Option<i64> = sqlx::query_scalar(
+            "SELECT recorded_at FROM payment_reversal_pages WHERE id=$1 AND attempt_id=$2",
+        )
+        .bind(tip)
+        .bind(&job.attempt_id)
+        .fetch_optional(&mut **tx)
+        .await?;
+        if recorded_at.is_none_or(|at| at > operation_started) {
+            return Err(RecoveryError::InvalidStoredData);
+        }
     }
     let page =
         super::super::reversal_pages::rows::load(tx, frozen, started, Some(&effect), None).await?;

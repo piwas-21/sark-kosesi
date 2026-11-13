@@ -151,14 +151,26 @@ pub(super) async fn inspect(pool: &PgPool, id: &str) -> Result<()> {
         Some(false) => "absent",
         Some(true) => "present",
     };
-    tracing::info!(
-        code = "reversal_scan_state",
-        state = job.state,
-        generation = job.generation,
-        failures = job.failures,
-        reason = job.review_reason.as_deref().unwrap_or("none"),
-        late_page
-    );
+    if inspection.late_page_present.is_some() {
+        // An uncertain stop validates its current operation, not every earlier
+        // generation; do not report an unproven consecutive failure count.
+        tracing::info!(
+            code = "reversal_scan_state",
+            state = job.state,
+            generation = job.generation,
+            reason = job.review_reason.as_deref().unwrap_or("none"),
+            late_page
+        );
+    } else {
+        tracing::info!(
+            code = "reversal_scan_state",
+            state = job.state,
+            generation = job.generation,
+            failures = job.failures,
+            reason = job.review_reason.as_deref().unwrap_or("none"),
+            late_page
+        );
+    }
     Ok(())
 }
 #[cfg(test)]

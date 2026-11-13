@@ -533,6 +533,8 @@ async fn expired_inflight_start_parks_first_and_late_page_remains_durable(pool: 
     let server = Server::start(vec![
         profile(),
         Reply::Json(200, payment(frozen.snapshot())),
+        page(Some("re_NEXT")),
+        Reply::Json(200, payment(frozen.snapshot())),
         Reply::GateJson(gate.clone(), body),
     ]);
     let client = local(&server)
@@ -572,11 +574,14 @@ async fn expired_inflight_start_parks_first_and_late_page_remains_durable(pool: 
             .late_page_present,
         None
     );
+    run_batch(&pool, time.as_ref(), &ids, &client, 1)
+        .await
+        .expect("record predecessor");
     let first = run_batch(&pool, time.as_ref(), &ids, &client, 1);
     let logs = Arc::new(Mutex::new(Vec::new()));
     let recover = async {
         tokio::time::timeout(Duration::from_secs(2), async {
-            while server.count() < 3 {
+            while server.count() < 5 {
                 tokio::time::sleep(Duration::from_millis(2)).await;
             }
         })
@@ -599,6 +604,55 @@ async fn expired_inflight_start_parks_first_and_late_page_remains_durable(pool: 
             .expect("job");
         assert_eq!(inspection.late_page_present, Some(false));
         assert!(inspection.job == stopped);
+        assert_eq!(stopped.generation, 2);
+        assert!(stopped.tip_page_id.is_some());
+        // The existing predecessor is equal to the operation start in this
+        // fixture. Moving it one second forward remains before the stop but
+        // makes it impossible for that operation to have used it.
+        pool.execute("ALTER TABLE payment_reversal_pages DISABLE TRIGGER USER; ALTER TABLE commerce_outbox DISABLE TRIGGER USER")
+            .await.expect("isolate predecessor control");
+        sqlx::query("UPDATE payment_reversal_pages p SET recorded_at=o.started_at+1 FROM reversal_scan_operations o JOIN reversal_scan_jobs j ON j.id=o.job_id WHERE o.job_id=$1 AND o.generation=2 AND p.id=j.tip_page_id")
+            .bind(&job.id).execute(&pool).await.expect("late predecessor");
+        sqlx::query("UPDATE commerce_outbox e SET created_at=p.recorded_at,payload=payment_reversal_page_event(p) FROM payment_reversal_pages p JOIN reversal_scan_jobs j ON p.id=j.tip_page_id WHERE j.id=$1 AND e.id=p.event_id")
+            .bind(&job.id).execute(&pool).await.expect("rebind predecessor event");
+        assert!(matches!(
+            inspect(&pool, &job.id).await,
+            Err(RecoveryError::InvalidStoredData)
+        ));
+        sqlx::query("UPDATE payment_reversal_pages p SET recorded_at=o.started_at FROM reversal_scan_operations o JOIN reversal_scan_jobs j ON j.id=o.job_id WHERE o.job_id=$1 AND o.generation=2 AND p.id=j.tip_page_id")
+            .bind(&job.id).execute(&pool).await.expect("predecessor at start");
+        sqlx::query("UPDATE commerce_outbox e SET created_at=p.recorded_at,payload=payment_reversal_page_event(p) FROM payment_reversal_pages p JOIN reversal_scan_jobs j ON p.id=j.tip_page_id WHERE j.id=$1 AND e.id=p.event_id")
+            .bind(&job.id).execute(&pool).await.expect("restore predecessor event");
+        assert_eq!(
+            inspect(&pool, &job.id)
+                .await
+                .expect("equal predecessor time")
+                .expect("job")
+                .late_page_present,
+            Some(false)
+        );
+        pool.execute("ALTER TABLE payment_reversal_pages ENABLE TRIGGER USER; ALTER TABLE commerce_outbox ENABLE TRIGGER USER; ALTER TABLE reversal_scan_jobs DISABLE TRIGGER USER")
+            .await.expect("isolate failure count controls");
+        for failures in [2, 3] {
+            sqlx::query("UPDATE reversal_scan_jobs SET failures=$2 WHERE id=$1")
+                .bind(&job.id)
+                .bind(failures)
+                .execute(&pool)
+                .await
+                .expect("corrupt failure count");
+            assert!(matches!(
+                inspect(&pool, &job.id).await,
+                Err(RecoveryError::InvalidStoredData)
+            ));
+        }
+        sqlx::query("UPDATE reversal_scan_jobs SET failures=0 WHERE id=$1")
+            .bind(&job.id)
+            .execute(&pool)
+            .await
+            .expect("restore failures");
+        pool.execute("ALTER TABLE reversal_scan_jobs ENABLE TRIGGER USER")
+            .await
+            .expect("restore job guard");
         crate::mollie::reversal_worker_fixture::inspect(&pool, &job.id)
             .with_subscriber(worker_entry::Capture(logs.clone()))
             .await
@@ -606,7 +660,7 @@ async fn expired_inflight_start_parks_first_and_late_page_remains_durable(pool: 
         let after: (i64, i64, i64) = sqlx::query_as("SELECT (SELECT count(*) FROM reversal_scan_operations),(SELECT count(*) FROM payment_reversal_pages),(SELECT count(*) FROM commerce_outbox)")
             .fetch_one(&pool).await.expect("after inspection");
         assert_eq!(before, after);
-        assert_eq!(server.count(), 3, "inspection does not contact provider");
+        assert_eq!(server.count(), 5, "inspection does not contact provider");
         gate.store(true, Ordering::SeqCst);
     };
     let (result, ()) = tokio::join!(first, recover);
@@ -617,13 +671,13 @@ async fn expired_inflight_start_parks_first_and_late_page_remains_durable(pool: 
             .fetch_one(&pool)
             .await
             .expect("page evidence");
-    assert_eq!(count, 1);
+    assert_eq!(count, 2);
     let stopped = read_job(&pool, &job.id)
         .await
         .expect("custody")
         .expect("job");
     assert_eq!(stopped.review_reason.as_deref(), Some("uncertain"));
-    assert_eq!(server.count(), 3);
+    assert_eq!(server.count(), 5);
     let inspection = inspect(&pool, &job.id)
         .await
         .expect("late page")
@@ -647,7 +701,7 @@ async fn expired_inflight_start_parks_first_and_late_page_remains_durable(pool: 
             }));
         }
         for event in events.iter() {
-            assert_eq!(event.len(), 6, "only the redacted scan state is emitted");
+            assert_eq!(event.len(), 5, "only the redacted scan state is emitted");
             for (_, value) in event {
                 assert!(!value.contains(PAYMENT));
                 assert!(!value.contains(&job.id));
@@ -655,7 +709,7 @@ async fn expired_inflight_start_parks_first_and_late_page_remains_durable(pool: 
             }
         }
     }
-    assert_eq!(server.count(), 3, "inspection does not contact provider");
+    assert_eq!(server.count(), 5, "inspection does not contact provider");
     let mut lock = pool.begin().await.expect("attempt lock");
     sqlx::query("SELECT id FROM payment_attempts WHERE id=$1 FOR UPDATE")
         .bind(&job.attempt_id)
@@ -688,9 +742,9 @@ async fn expired_inflight_start_parks_first_and_late_page_remains_durable(pool: 
     // the original operation's start boundary. Rebind the synthetic event.
     pool.execute("ALTER TABLE payment_reversal_pages DISABLE TRIGGER USER; ALTER TABLE commerce_outbox DISABLE TRIGGER USER")
         .await.expect("isolate source clock controls");
-    sqlx::query("UPDATE payment_reversal_pages p SET recorded_at=o.started_at FROM reversal_scan_operations o WHERE o.job_id=$1 AND p.effect_key=o.id")
+    sqlx::query("UPDATE payment_reversal_pages p SET recorded_at=o.started_at FROM reversal_scan_operations o WHERE o.job_id=$1 AND o.generation=2 AND p.effect_key=o.id")
         .bind(&job.id).execute(&pool).await.expect("at operation start");
-    sqlx::query("UPDATE commerce_outbox e SET created_at=p.recorded_at,payload=payment_reversal_page_event(p) FROM payment_reversal_pages p JOIN reversal_scan_operations o ON p.effect_key=o.id WHERE o.job_id=$1 AND e.id=p.event_id")
+    sqlx::query("UPDATE commerce_outbox e SET created_at=p.recorded_at,payload=payment_reversal_page_event(p) FROM payment_reversal_pages p JOIN reversal_scan_operations o ON p.effect_key=o.id WHERE o.job_id=$1 AND o.generation=2 AND e.id=p.event_id")
         .bind(&job.id).execute(&pool).await.expect("rebind event");
     assert_eq!(
         inspect(&pool, &job.id)
@@ -700,59 +754,65 @@ async fn expired_inflight_start_parks_first_and_late_page_remains_durable(pool: 
             .late_page_present,
         Some(true)
     );
-    sqlx::query("UPDATE payment_reversal_pages p SET recorded_at=o.started_at-1 FROM reversal_scan_operations o WHERE o.job_id=$1 AND p.effect_key=o.id")
+    sqlx::query("UPDATE payment_reversal_pages p SET recorded_at=o.started_at-1 FROM reversal_scan_operations o WHERE o.job_id=$1 AND o.generation=2 AND p.effect_key=o.id")
         .bind(&job.id).execute(&pool).await.expect("before operation start");
-    sqlx::query("UPDATE commerce_outbox e SET created_at=p.recorded_at,payload=payment_reversal_page_event(p) FROM payment_reversal_pages p JOIN reversal_scan_operations o ON p.effect_key=o.id WHERE o.job_id=$1 AND e.id=p.event_id")
+    sqlx::query("UPDATE commerce_outbox e SET created_at=p.recorded_at,payload=payment_reversal_page_event(p) FROM payment_reversal_pages p JOIN reversal_scan_operations o ON p.effect_key=o.id WHERE o.job_id=$1 AND o.generation=2 AND e.id=p.event_id")
         .bind(&job.id).execute(&pool).await.expect("rebind earlier event");
     assert!(matches!(
         inspect(&pool, &job.id).await,
         Err(RecoveryError::InvalidStoredData)
     ));
-    sqlx::query("UPDATE payment_reversal_pages p SET recorded_at=o.started_at FROM reversal_scan_operations o WHERE o.job_id=$1 AND p.effect_key=o.id")
+    sqlx::query("UPDATE payment_reversal_pages p SET recorded_at=o.started_at FROM reversal_scan_operations o WHERE o.job_id=$1 AND o.generation=2 AND p.effect_key=o.id")
         .bind(&job.id).execute(&pool).await.expect("restore page");
-    sqlx::query("UPDATE commerce_outbox e SET created_at=p.recorded_at,payload=payment_reversal_page_event(p) FROM payment_reversal_pages p JOIN reversal_scan_operations o ON p.effect_key=o.id WHERE o.job_id=$1 AND e.id=p.event_id")
+    sqlx::query("UPDATE commerce_outbox e SET created_at=p.recorded_at,payload=payment_reversal_page_event(p) FROM payment_reversal_pages p JOIN reversal_scan_operations o ON p.effect_key=o.id WHERE o.job_id=$1 AND o.generation=2 AND e.id=p.event_id")
         .bind(&job.id).execute(&pool).await.expect("restore event");
-    sqlx::query("UPDATE commerce_outbox e SET payload='{}'::jsonb FROM payment_reversal_pages p JOIN reversal_scan_operations o ON p.effect_key=o.id WHERE o.job_id=$1 AND e.id=p.event_id")
+    sqlx::query("UPDATE commerce_outbox e SET payload='{}'::jsonb FROM payment_reversal_pages p JOIN reversal_scan_operations o ON p.effect_key=o.id WHERE o.job_id=$1 AND o.generation=2 AND e.id=p.event_id")
         .bind(&job.id).execute(&pool).await.expect("damage event");
     assert!(matches!(
         inspect(&pool, &job.id).await,
         Err(RecoveryError::InvalidStoredData)
     ));
-    sqlx::query("UPDATE commerce_outbox e SET payload=payment_reversal_page_event(p) FROM payment_reversal_pages p JOIN reversal_scan_operations o ON p.effect_key=o.id WHERE o.job_id=$1 AND e.id=p.event_id")
+    sqlx::query("UPDATE commerce_outbox e SET payload=payment_reversal_page_event(p) FROM payment_reversal_pages p JOIN reversal_scan_operations o ON p.effect_key=o.id WHERE o.job_id=$1 AND o.generation=2 AND e.id=p.event_id")
         .bind(&job.id).execute(&pool).await.expect("restore event");
-    sqlx::query("UPDATE payment_reversal_pages p SET credential_fingerprint=repeat('a',64) FROM reversal_scan_operations o WHERE o.job_id=$1 AND p.effect_key=o.id")
+    sqlx::query("UPDATE payment_reversal_pages p SET credential_fingerprint=repeat('a',64) FROM reversal_scan_operations o WHERE o.job_id=$1 AND o.generation=2 AND p.effect_key=o.id")
         .bind(&job.id).execute(&pool).await.expect("wrong credential");
-    sqlx::query("UPDATE commerce_outbox e SET payload=payment_reversal_page_event(p) FROM payment_reversal_pages p JOIN reversal_scan_operations o ON p.effect_key=o.id WHERE o.job_id=$1 AND e.id=p.event_id")
+    sqlx::query("UPDATE commerce_outbox e SET payload=payment_reversal_page_event(p) FROM payment_reversal_pages p JOIN reversal_scan_operations o ON p.effect_key=o.id WHERE o.job_id=$1 AND o.generation=2 AND e.id=p.event_id")
         .bind(&job.id).execute(&pool).await.expect("rebind wrong credential");
     assert!(matches!(
         inspect(&pool, &job.id).await,
         Err(RecoveryError::InvalidStoredData)
     ));
-    sqlx::query("UPDATE payment_reversal_pages p SET credential_fingerprint=j.credential_fingerprint FROM reversal_scan_operations o JOIN reversal_scan_jobs j ON j.id=o.job_id WHERE o.job_id=$1 AND p.effect_key=o.id")
+    sqlx::query("UPDATE payment_reversal_pages p SET credential_fingerprint=j.credential_fingerprint FROM reversal_scan_operations o JOIN reversal_scan_jobs j ON j.id=o.job_id WHERE o.job_id=$1 AND o.generation=2 AND p.effect_key=o.id")
         .bind(&job.id).execute(&pool).await.expect("restore credential");
-    sqlx::query("UPDATE commerce_outbox e SET payload=payment_reversal_page_event(p) FROM payment_reversal_pages p JOIN reversal_scan_operations o ON p.effect_key=o.id WHERE o.job_id=$1 AND e.id=p.event_id")
+    sqlx::query("UPDATE commerce_outbox e SET payload=payment_reversal_page_event(p) FROM payment_reversal_pages p JOIN reversal_scan_operations o ON p.effect_key=o.id WHERE o.job_id=$1 AND o.generation=2 AND e.id=p.event_id")
         .bind(&job.id).execute(&pool).await.expect("restore event");
     pool.execute("ALTER TABLE payment_reversal_pages ENABLE TRIGGER USER; ALTER TABLE commerce_outbox ENABLE TRIGGER USER; ALTER TABLE reversal_scan_operations DISABLE TRIGGER USER")
         .await.expect("isolate operation control");
-    sqlx::query("UPDATE reversal_scan_operations SET outcome='invalid' WHERE job_id=$1")
-        .bind(&job.id)
-        .execute(&pool)
-        .await
-        .expect("wrong operation outcome");
+    sqlx::query(
+        "UPDATE reversal_scan_operations SET outcome='invalid' WHERE job_id=$1 AND generation=2",
+    )
+    .bind(&job.id)
+    .execute(&pool)
+    .await
+    .expect("wrong operation outcome");
     assert!(matches!(
         inspect(&pool, &job.id).await,
         Err(RecoveryError::InvalidStoredData)
     ));
-    sqlx::query("UPDATE reversal_scan_operations SET outcome='uncertain' WHERE job_id=$1")
-        .bind(&job.id)
-        .execute(&pool)
-        .await
-        .expect("restore operation outcome");
-    sqlx::query("UPDATE reversal_scan_operations SET finish_xid=start_xid WHERE job_id=$1")
-        .bind(&job.id)
-        .execute(&pool)
-        .await
-        .expect("damage transaction proof");
+    sqlx::query(
+        "UPDATE reversal_scan_operations SET outcome='uncertain' WHERE job_id=$1 AND generation=2",
+    )
+    .bind(&job.id)
+    .execute(&pool)
+    .await
+    .expect("restore operation outcome");
+    sqlx::query(
+        "UPDATE reversal_scan_operations SET finish_xid=start_xid WHERE job_id=$1 AND generation=2",
+    )
+    .bind(&job.id)
+    .execute(&pool)
+    .await
+    .expect("damage transaction proof");
     assert!(matches!(
         inspect(&pool, &job.id).await,
         Err(RecoveryError::InvalidStoredData)
