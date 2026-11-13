@@ -184,6 +184,14 @@ lookup identifiers. Pending without a receipt stays unresolved; complete
 describes one historical GET. This command cannot fetch, retry, reconcile a
 balance, or authorize a refund.
 
+`commerce-worker --inspect-paid-parent-set <attempt-id>` inspects the bounded
+stored set under the attempt lock without provider credentials. It emits only
+operation, pending and complete counts and a deterministic SHA-256 digest bound
+to the current received recognition and all validated operation/receipt states.
+The digest is a detached snapshot: re-inspect after any new observation, start or
+late receipt. It does not attest provider-history completeness or authorize a
+financial action. A stale or damaged source fails closed.
+
 ## Private reversal-page supervision
 
 In an isolated local/test environment, `commerce-worker --enroll-reversal-scan

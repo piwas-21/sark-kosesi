@@ -389,8 +389,10 @@ supervision or live provider activation follows from deploying the empty preview
    retains four independent optional provider aggregates with a reciprocal
    event. Effect replay restores the operation or result. A read-only local/test
    worker command reports the exact stored operation's state and which optional
-   totals are present, without contacting Mollie. Net balance remains
-   unresolved. One private,
+   totals are present, without contacting Mollie. A second read-only command
+   validates and digests the bounded operation and receipt set under the attempt
+   lock with current received recognition; later changes invalidate that snapshot.
+   Net balance remains unresolved. One private,
    payment-specific test-profile list page now provides bounded reversal identity
    hints and a scoped continuation after verifying the same paid original.
    Every page retains the frozen attempt, payment, reversal kind, actual key
