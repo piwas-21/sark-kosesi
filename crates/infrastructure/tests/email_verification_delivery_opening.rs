@@ -232,6 +232,17 @@ async fn wait_for(pool: &PgPool, sql: &'static str) {
     .await
     .expect("expected actual lock wait");
 }
+// The caller controls whether the transaction's activity snapshot is refreshed.
+async fn blocked_waiters(connection: &mut PgConnection, blocking_pid: i32) -> Vec<i32> {
+    sqlx::query_scalar(
+        "SELECT pid FROM pg_stat_activity WHERE datname=current_database() AND wait_event_type='Lock' AND $1=ANY(pg_blocking_pids(pid)) AND query LIKE '%email_verification_challenges%FOR UPDATE%' ORDER BY pid LIMIT 2",
+    )
+    .bind(blocking_pid)
+    .fetch_all(&mut *connection)
+    .await
+    .expect("observe exact blocking transaction")
+}
+
 // The observed waiter must be blocked by the specific transaction we hold.
 async fn wait_for_blocked(
     connection: &mut PgConnection,
@@ -243,13 +254,12 @@ async fn wait_for_blocked(
     let mut expected_waiting = false;
     let observed = tokio::time::timeout(std::time::Duration::from_secs(2), async {
         loop {
-            let waiters: Vec<i32> = sqlx::query_scalar(
-                "SELECT pid FROM pg_stat_activity WHERE datname=current_database() AND wait_event_type='Lock' AND $1=ANY(pg_blocking_pids(pid)) AND query LIKE '%email_verification_challenges%FOR UPDATE%' ORDER BY pid LIMIT 2",
-            )
-            .bind(blocking_pid)
-            .fetch_all(&mut *connection)
-            .await
-            .expect("observe exact blocking transaction");
+            // pg_stat_activity retains its first snapshot for this transaction.
+            sqlx::query("SELECT pg_stat_clear_snapshot()")
+                .execute(&mut *connection)
+                .await
+                .expect("refresh activity snapshot");
+            let waiters = blocked_waiters(connection, blocking_pid).await;
             observed_waiters = waiters.len();
             expected_waiting = waiters.contains(&expected_pid);
             assert!(observed_waiters <= 1, "ambiguous waiter at {phase}");
@@ -325,6 +335,57 @@ async fn consumption_queued_before_fresh_open_denies_callback_but_keeps_start(po
         1,
         "start precedes subsequent consumption"
     );
+}
+
+#[sqlx::test(migrator = "MIGRATOR")]
+async fn activity_snapshot_must_refresh_to_observe_a_later_wait(pool: PgPool) {
+    let (_, _, verifier) = fixture(&pool).await;
+    let mut blocker = pool.begin().await.expect("source blocker");
+    let blocker_pid: i32 = sqlx::query_scalar("SELECT pg_backend_pid()")
+        .fetch_one(&mut *blocker)
+        .await
+        .expect("blocker PID");
+    sqlx::query("SELECT verifier FROM email_verification_challenges WHERE verifier=$1 FOR UPDATE")
+        .bind(verifier.as_slice())
+        .execute(&mut *blocker)
+        .await
+        .expect("hold source");
+    // Capture activity before the waiter starts, in the same blocker transaction.
+    assert!(blocked_waiters(&mut blocker, blocker_pid).await.is_empty());
+    let (sender, receiver) = tokio::sync::oneshot::channel();
+    let worker_pool = pool.clone();
+    let waiter = tokio::spawn(async move {
+        let mut tx = worker_pool.begin().await.expect("waiter transaction");
+        sqlx::query("SET LOCAL lock_timeout='3s'")
+            .execute(&mut *tx)
+            .await
+            .expect("test wait budget");
+        let pid: i32 = sqlx::query_scalar("SELECT pg_backend_pid()")
+            .fetch_one(&mut *tx)
+            .await
+            .expect("waiter PID");
+        sender.send(pid).expect("test receiver");
+        sqlx::query(
+            "SELECT verifier FROM email_verification_challenges WHERE verifier=$1 FOR UPDATE",
+        )
+        .bind(verifier.as_slice())
+        .execute(&mut *tx)
+        .await
+        .expect("source after release");
+        tx.rollback().await.expect("waiter rollback");
+    });
+    let waiter_pid = receiver.await.expect("waiter identity");
+    // A different connection proves the exact waiter is already blocked.
+    let mut monitor = pool.acquire().await.expect("independent monitor");
+    wait_for_blocked(&mut monitor, blocker_pid, waiter_pid, "independent monitor").await;
+    assert!(
+        blocked_waiters(&mut blocker, blocker_pid).await.is_empty(),
+        "transaction snapshot is stale"
+    );
+    // The refreshed blocker observation now sees the same exact wait.
+    wait_for_blocked(&mut blocker, blocker_pid, waiter_pid, "refreshed monitor").await;
+    blocker.rollback().await.expect("release source");
+    waiter.await.expect("waiter task");
 }
 
 #[sqlx::test(migrator = "MIGRATOR")]
