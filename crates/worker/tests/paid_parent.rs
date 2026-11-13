@@ -43,6 +43,14 @@ fn production_and_malformed_commands_stop_before_database_or_provider() {
         assert!(!output.status.success());
         assert!(output_text(&output).contains("production is disabled"));
         assert_redacted(&output, &[database, attempt, effect]);
+        let output = command(&["--inspect-paid-parent-set", attempt])
+            .env("APP_ENV", environment)
+            .env("DATABASE_URL", database)
+            .output()
+            .expect("worker set");
+        assert!(!output.status.success());
+        assert!(output_text(&output).contains("production is disabled"));
+        assert_redacted(&output, &[database, attempt]);
     }
     let long_effect = "x".repeat(129);
     for args in [
@@ -58,6 +66,9 @@ fn production_and_malformed_commands_stop_before_database_or_provider() {
         vec!["--inspect-paid-parent", attempt, ""],
         vec!["--inspect-paid-parent", attempt, "invalid_effect"],
         vec!["--inspect-paid-parent", attempt, long_effect.as_str()],
+        vec!["--inspect-paid-parent-set"],
+        vec!["--inspect-paid-parent-set", "invalid-attempt"],
+        vec!["--inspect-paid-parent-set", attempt, "extra"],
     ] {
         let output = command(&args)
             .env("DATABASE_URL", database)
@@ -105,5 +116,14 @@ async fn unknown_attempt_inspection_needs_no_provider_config_and_changes_no_rows
             database_snapshot(&pool).await == before,
             "inspection must not modify persisted rows"
         );
+        let output = command(&["--inspect-paid-parent-set", attempt])
+            .env("APP_ENV", environment)
+            .env("DATABASE_URL", &database)
+            .output()
+            .expect("worker set");
+        assert!(!output.status.success());
+        assert!(output_text(&output).contains("paid-parent evidence set unavailable"));
+        assert_redacted(&output, &[database.as_str(), attempt]);
+        assert!(database_snapshot(&pool).await == before);
     }
 }

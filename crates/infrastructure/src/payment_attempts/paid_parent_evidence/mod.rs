@@ -5,8 +5,10 @@ use crate::mollie::{ReversalTotals, VerifiedReconciliationClient};
 use commerce_application::request_context::{Clock, Identifiers, ObservedClock};
 use sqlx::PgPool;
 mod rows;
+mod set;
 mod source;
 mod transport;
+pub use set::{SetInspection, inspect_set};
 use source::{claim_attempt, paid_identity, validate_source};
 pub use transport::{Fetched, Permit, fetch};
 
