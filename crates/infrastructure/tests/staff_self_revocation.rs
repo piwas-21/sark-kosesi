@@ -89,6 +89,11 @@ async fn exact_revoke_replays_without_disclosure_and_preserves_other_sessions(po
     assert_eq!(revoked_at(&pool, 1).await, Some(2001));
     assert!(revoke_self(&pool, &token(1), &Time(2002)).await.is_ok());
     assert_eq!(revoked_at(&pool, 1).await, Some(2001));
+    // A clock earlier than this existing revocation fails closed instead of clamping.
+    assert!(matches!(
+        revoke_self(&pool, &token(1), &Time(2000)).await,
+        Err(StaffError::ClockUnavailable)
+    ));
     assert_eq!(revoked_at(&pool, 2).await, None);
     assert_eq!(revoked_at(&pool, 3).await, None);
     // Expired and never-MFA-verified sessions can also relinquish authority.
@@ -129,6 +134,29 @@ async fn clock_failure_or_backward_observation_cannot_revoke(pool: PgPool) {
         Err(StaffError::ClockUnavailable)
     ));
     assert_eq!(revoked_at(&pool, 1).await, None);
+}
+
+#[sqlx::test(migrator = "MIGRATOR")]
+async fn failed_or_altered_write_rolls_back(pool: PgPool) {
+    seed(&pool).await;
+    pool.execute("CREATE FUNCTION suppress_revoke() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN RETURN NULL; END $$; CREATE TRIGGER suppress_revoke BEFORE UPDATE ON staff_sessions FOR EACH ROW EXECUTE FUNCTION suppress_revoke()")
+        .await.expect("synthetic suppression");
+    assert!(matches!(
+        revoke_self(&pool, &token(1), &Time(1100)).await,
+        Err(StaffError::Denied)
+    ));
+    assert_eq!(revoked_at(&pool, 1).await, None);
+    pool.execute("DROP TRIGGER suppress_revoke ON staff_sessions; CREATE FUNCTION alter_revoke() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN NEW.revoked_at := NEW.revoked_at + 1; RETURN NEW; END $$; CREATE TRIGGER alter_revoke BEFORE UPDATE ON staff_sessions FOR EACH ROW EXECUTE FUNCTION alter_revoke()")
+        .await.expect("synthetic altered result");
+    assert!(matches!(
+        revoke_self(&pool, &token(1), &Time(1100)).await,
+        Err(StaffError::Denied)
+    ));
+    assert_eq!(revoked_at(&pool, 1).await, None);
+    pool.execute("DROP TRIGGER alter_revoke ON staff_sessions")
+        .await
+        .expect("restore");
+    assert!(revoke_self(&pool, &token(1), &Time(1100)).await.is_ok());
 }
 
 #[sqlx::test(migrator = "MIGRATOR")]

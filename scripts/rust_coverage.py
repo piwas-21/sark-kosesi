@@ -81,6 +81,7 @@ def validate(document, root, branches=True):
             "crates/*/src/holds/*.rs",
             "crates/*/src/holds/basket/*.rs",
             "crates/*/src/staff_access.rs",
+            "crates/*/src/staff_access/*.rs",
             "crates/domain/src/email_identity.rs",
             "crates/infrastructure/src/email_verification.rs",
             "crates/infrastructure/src/email_verification/delivery/*.rs",

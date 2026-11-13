@@ -12,7 +12,7 @@ fn now(clock: &dyn Clock) -> Result<i64, StaffError> {
 }
 
 /// Revoke only the exact supplied bearer. Missing and already-revoked tokens are
-/// indistinguishable successful no-ops. MFA freshness and capability are not
+/// successful no-ops when the clock is valid. MFA freshness and capability are not
 /// required to relinquish authority; this does not authenticate a staff actor.
 pub async fn revoke_self(
     pool: &PgPool,
