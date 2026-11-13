@@ -258,6 +258,31 @@ async fn transport_rejects_wrong_authority_and_never_exposes_private_state(pool:
     let mut options = read(FAVOURITES, &cookie);
     *options.method_mut() = axum::http::Method::OPTIONS;
     assert_result(&app, options, StatusCode::METHOD_NOT_ALLOWED).await;
+    let buckets: i64 = sqlx::query_scalar("SELECT count(*) FROM customer_favourite_buckets")
+        .fetch_one(&pool)
+        .await
+        .expect("bucket count before valid read");
+    assert_eq!(buckets, 0);
+    pool.execute("CREATE FUNCTION test_favourite_bucket_fault() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN RAISE EXCEPTION 'synthetic storage fault'; END $$; CREATE TRIGGER test_favourite_bucket_fault BEFORE INSERT ON customer_favourite_buckets FOR EACH ROW EXECUTE FUNCTION test_favourite_bucket_fault()")
+        .await.expect("install isolated storage fault");
+    let unavailable = assert_result(
+        &app,
+        read(FAVOURITES, &cookie),
+        StatusCode::SERVICE_UNAVAILABLE,
+    )
+    .await;
+    let text = String::from_utf8(unavailable).expect("error UTF-8");
+    assert!(!text.contains(&cookie));
+    assert!(!text.contains(PREVIEW));
+    assert!(!text.contains("synthetic storage fault"));
+    pool.execute("DROP FUNCTION test_favourite_bucket_fault() CASCADE")
+        .await
+        .expect("remove isolated storage fault");
+    let recovered = assert_result(&app, read(FAVOURITES, &cookie), StatusCode::OK).await;
+    assert_eq!(
+        serde_json::from_slice::<serde_json::Value>(&recovered).expect("JSON"),
+        serde_json::json!({"revision":"0","items":[]})
+    );
     customer_sessions::logout(&pool, &token, time.as_ref())
         .await
         .expect("revoke");
@@ -268,7 +293,7 @@ async fn transport_rejects_wrong_authority_and_never_exposes_private_state(pool:
         .fetch_one(&pool)
         .await
         .expect("bucket count");
-    assert_eq!(buckets, 0);
+    assert_eq!(buckets, 1);
 }
 
 #[sqlx::test(migrator = "MIGRATOR")]
