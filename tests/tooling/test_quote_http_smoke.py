@@ -213,6 +213,50 @@ class QuoteHttpSmoke(unittest.TestCase):
                 smoke.main()
         drain.assert_called_once_with(child)
 
+    def test_signal_during_cleanup_is_reported_after_database_stops(self):
+        for stage in ("drain", "stop"):
+            directory = None
+            calls = []
+
+            class Child:
+                def wait(self, timeout=None):
+                    return 0
+
+            def fake_cluster(path, _binaries):
+                nonlocal directory
+                directory = path
+                (path / "data").mkdir()
+                (path / "data/postmaster.pid").write_text("fake")
+                return "postgresql://fixture"
+
+            def fake_run(*args, _calls=calls, _stage=stage, **_kwargs):
+                _calls.append(args)
+                if "stop" in args:
+                    if _stage == "stop":
+                        os.kill(os.getpid(), smoke.signal.SIGTERM)
+                    (Path(args[2]) / "postmaster.pid").unlink()
+                return subprocess.CompletedProcess(args, 0, "postgres (PostgreSQL) 18.1", "")
+
+            def fake_drain(_child, _stage=stage):
+                if _stage == "drain":
+                    os.kill(os.getpid(), smoke.signal.SIGTERM)
+                return True
+
+            with (
+                self.subTest(stage=stage),
+                patch.dict(os.environ, {"P1_POSTGRES_BIN": "/fixture/bin"}, clear=True),
+                patch.object(sys, "argv", ["quote_http_smoke.py"]),
+                patch.object(smoke, "native_cluster", side_effect=fake_cluster),
+                patch.object(smoke.subprocess, "Popen", return_value=Child()),
+                patch.object(smoke, "drain_group", side_effect=fake_drain),
+                patch.object(smoke, "run", side_effect=fake_run),
+            ):
+                with self.assertRaisesRegex(InterruptedError, "interrupted"):
+                    smoke.main()
+            self.assertEqual(calls[-1][-2:], ("-m", "fast"))
+            self.assertIsNotNone(directory)
+            self.assertFalse(directory.exists())
+
     def test_leader_exit_does_not_hide_stubborn_group(self):
         class Child:
             pid = 12345
@@ -256,6 +300,37 @@ class QuoteHttpSmoke(unittest.TestCase):
                 with self.assertRaisesRegex(RuntimeError, "startup unconfirmed"):
                     smoke.main()
             self.assertTrue(directory.exists())
+
+    def test_failed_native_startup_stops_existing_pid_and_retains_directory(self):
+        with tempfile.TemporaryDirectory(prefix="quote-smoke-unit-") as parent:
+            directory = Path(parent) / "owned"
+            directory.mkdir()
+            calls = []
+
+            def fake_cluster(path, _binaries):
+                (path / "data").mkdir()
+                (path / "data/postmaster.pid").write_text("fake")
+                raise RuntimeError("authentication control failed")
+
+            def fake_run(*args, **_kwargs):
+                calls.append(args)
+                if "stop" in args:
+                    (Path(args[2]) / "postmaster.pid").unlink()
+                return subprocess.CompletedProcess(args, 0, "postgres (PostgreSQL) 18.1", "")
+
+            with (
+                patch.dict(os.environ, {"P1_POSTGRES_BIN": "/fixture/bin"}, clear=True),
+                patch.object(sys, "argv", ["quote_http_smoke.py"]),
+                patch.object(smoke.tempfile, "mkdtemp", return_value=str(directory)),
+                patch.object(smoke, "native_cluster", side_effect=fake_cluster),
+                patch.object(smoke, "run", side_effect=fake_run),
+            ):
+                with self.assertRaisesRegex(RuntimeError, "startup unconfirmed"):
+                    smoke.main()
+            self.assertEqual(len(calls), 2)
+            self.assertEqual(calls[1][-2:], ("-m", "fast"))
+            self.assertTrue(directory.exists())
+            self.assertFalse((directory / "data/postmaster.pid").exists())
 
     def test_unknown_group_retains_cluster_without_stopping_it(self):
         with tempfile.TemporaryDirectory(prefix="quote-smoke-unit-") as parent:

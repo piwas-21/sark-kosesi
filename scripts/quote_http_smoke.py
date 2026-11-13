@@ -142,7 +142,8 @@ def run_smoke(stop):
                 if time.monotonic() >= deadline:
                     raise RuntimeError("Quote smoke exceeded its deadline")
                 try:
-                    return child.wait(timeout=0.2)
+                    result = child.wait(timeout=0.2)
+                    break
                 except subprocess.TimeoutExpired:
                     continue
         finally:
@@ -150,8 +151,6 @@ def run_smoke(stop):
     finally:
         if not drained:
             raise RuntimeError(f"Owned process group not drained; retained {directory}")
-        if not startup_confirmed:
-            raise RuntimeError(f"Owned PostgreSQL startup unconfirmed; retained {directory}")
         pidfile = directory / "data/postmaster.pid"
         if pidfile.exists():
             # A stop failure must not erase a potentially live cluster.
@@ -161,7 +160,12 @@ def run_smoke(stop):
                 raise RuntimeError(f"Owned PostgreSQL stop failed; retained {directory}") from None
         if pidfile.exists():
             raise RuntimeError(f"Owned PostgreSQL stop unconfirmed; retained {directory}")
+        if not startup_confirmed:
+            raise RuntimeError(f"Owned PostgreSQL startup unconfirmed; retained {directory}")
         shutil.rmtree(directory)
+    # A signal received while draining or stopping PostgreSQL is still failure.
+    stop.check()
+    return result
 
 
 if __name__ == "__main__":

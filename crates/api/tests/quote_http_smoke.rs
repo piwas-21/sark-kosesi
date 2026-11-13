@@ -257,6 +257,19 @@ fn require_basket(value: &serde_json::Value) {
     );
 }
 
+fn wrong_csrf(value: &str) -> String {
+    assert!(
+        value.len() == 64
+            && value
+                .bytes()
+                .all(|byte| byte.is_ascii_digit() || (b'a'..=b'f').contains(&byte)),
+        "invalid session proof"
+    );
+    let mut bytes = value.as_bytes().to_vec();
+    bytes[0] = if bytes[0] == b'0' { b'1' } else { b'0' };
+    String::from_utf8(bytes).expect("ASCII session proof")
+}
+
 fn require_quote(value: &serde_json::Value) {
     assert!(
         value["replayed"] == false
@@ -291,6 +304,25 @@ fn invalid_http_json_diagnostics_do_not_echo_private_values() {
         assert!(!diagnostic.contains("private-token-marker"));
         assert!(!diagnostic.contains("private-cookie-marker"));
         assert!(!diagnostic.contains("private-csrf-marker"));
+    }
+}
+
+#[test]
+fn invalid_session_proofs_fail_without_echoing_private_values() {
+    for value in ["", "🔒private-csrf-marker"] {
+        let failure = std::panic::catch_unwind(|| wrong_csrf(value)).expect_err("invalid proof");
+        let diagnostic = failure
+            .downcast_ref::<&str>()
+            .copied()
+            .or_else(|| failure.downcast_ref::<String>().map(String::as_str))
+            .expect("static diagnostic");
+        assert_eq!(diagnostic, "invalid session proof");
+        assert!(!diagnostic.contains("private-csrf-marker"));
+    }
+    for value in ["0".repeat(64), "f".repeat(64)] {
+        let invalid = wrong_csrf(&value);
+        assert_ne!(invalid, value);
+        assert_eq!(invalid.len(), 64);
     }
 }
 
@@ -368,6 +400,7 @@ async fn owned_quote_http_smoke() {
     let session: serde_json::Value = serde_json::from_str(&body).expect("session JSON");
     assert!(session["revision"] == 0, "invalid session revision");
     let csrf = session["csrf_token"].as_str().expect("session proof");
+    let invalid_csrf = wrong_csrf(csrf);
     let basket = r#"{"expected_revision":0,"effect_key":"smoke-basket","lines":[{"sku":"SET-FILLED","quantity":3}]}"#;
     let (status, _, body) = server.request(
         &bearer,
@@ -381,8 +414,6 @@ async fn owned_quote_http_smoke() {
     let receipt: serde_json::Value = serde_json::from_str(&body).expect("basket JSON");
     require_basket(&receipt);
     let quote = r#"{"expected_basket_revision":1,"effect_key":"smoke-quote","country":"NL","postcode":"1234 AB"}"#;
-    let mut invalid_csrf = csrf.to_owned();
-    invalid_csrf.replace_range(0..1, if csrf.starts_with('0') { "1" } else { "0" });
     let (denied, _, _) = server.request(
         &bearer,
         "POST",
