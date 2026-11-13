@@ -23,6 +23,12 @@ Read [architecture](ARCHITECTURE.md), [product](PRODUCT.md), [quality](QUALITY.m
 
 P1 acceptance activates application CI; it does not activate payment or establish release readiness. Missing business inputs can remain pending while tests use clearly isolated fixtures.
 
+The API binary also supports `migration-manifest`, a configuration-free command
+that reports its compiled migration metadata without opening a database. Compare
+the actual image's output with independently collected SQLx records and retain
+image identity; a matching manifest does not replace isolated startup and rollback
+evidence.
+
 ## P2 work packages
 
 1. Verify expiry supervision before operational stock use. Provider recovery
