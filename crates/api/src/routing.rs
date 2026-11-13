@@ -4,6 +4,7 @@ use crate::{
     get_catalogue,
     guest::{self, GuestOrigin, GuestState},
     protected, published, ready,
+    test_login::LoginConfig,
     verification::VerificationConfig,
 };
 use axum::{
@@ -17,7 +18,7 @@ use commerce_application::guest_access::GuestLimits;
 use commerce_infrastructure::guest_baskets::{GuestError, GuestSessionStore};
 use tower_sessions::{SessionManagerLayer, cookie::SameSite};
 pub fn router(state: AppState) -> Router {
-    build(state, None, None, None)
+    build(state, None, None, None, None)
 }
 pub fn router_with_guest(state: AppState, origin: GuestOrigin) -> Result<Router, GuestError> {
     router_with_options(state, Some(origin), None)
@@ -35,10 +36,19 @@ pub fn router_with_verification(
     callback: Option<CallbackProfile>,
     verification: Option<VerificationConfig>,
 ) -> Result<Router, GuestError> {
+    router_with_test_login(state, guest, callback, verification, None)
+}
+pub fn router_with_test_login(
+    state: AppState,
+    guest: Option<GuestOrigin>,
+    callback: Option<CallbackProfile>,
+    verification: Option<VerificationConfig>,
+    login: Option<LoginConfig>,
+) -> Result<Router, GuestError> {
     let guest = guest
         .map(|origin| guest_router(&state, origin))
         .transpose()?;
-    Ok(build(state, guest, callback, verification))
+    Ok(build(state, guest, callback, verification, login))
 }
 fn guest_router(state: &AppState, origin: GuestOrigin) -> Result<Router<AppState>, GuestError> {
     let store = GuestSessionStore::new(
@@ -75,6 +85,7 @@ fn build(
     guest: Option<Router<AppState>>,
     callback: Option<CallbackProfile>,
     verification: Option<VerificationConfig>,
+    login: Option<LoginConfig>,
 ) -> Router {
     let mut app = Router::new()
         .route("/api/catalogue/{locale}", get(get_catalogue))
@@ -97,6 +108,14 @@ fn build(
         app = app.route(
             "/api/test/verification/redeem",
             post(crate::verification::redeem)
+                .layer::<_, std::convert::Infallible>(DefaultBodyLimit::max(4096))
+                .layer(Extension(config)),
+        );
+    }
+    if let Some(config) = login {
+        app = app.route(
+            "/api/test/customer/login",
+            post(crate::test_login::login)
                 .layer::<_, std::convert::Infallible>(DefaultBodyLimit::max(4096))
                 .layer(Extension(config)),
         );

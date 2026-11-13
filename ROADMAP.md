@@ -170,7 +170,9 @@ original expiry. A private guest-order link requires an order-specific proof
 issued to the guest basket owner and a current customer session for the verified
 buyer mailbox. Private detail and bounded history reads return the linked
 order's captured items and amounts under live customer authority. Private
-credential admission provides shared purpose and mailbox quotas. Login,
+credential admission provides shared purpose and mailbox quotas. A private
+session variant binds a synchronizer digest to issuance and protects revocation
+under the same session claim; browser transport and CSRF policy remain open. Login,
 email verification, enrolment and password proof operations commit both
 debits before credential work. Password replacement requires an explicitly supplied,
 integrity-checked offline blocklist and fails closed on unavailable or expired
@@ -188,6 +190,9 @@ An optional loopback test-only verification redemption API consumes a supplied
 proof after preview authentication, exact Origin validation and shared admission.
 It issues no session and remains disabled without explicit test configuration.
 Mailbox delivery and public ingress readiness still require acceptance.
+An optional private test-only password login uses admitted credential checks
+and returns the issued session only in a secure host-only cookie. It has no
+session-reading or logout route and does not establish public login readiness.
 
 The local room-planner preview combines the rectangle calculator with keyboard
 measurement and rotation controls, a drawn footprint, and text clearance and fit

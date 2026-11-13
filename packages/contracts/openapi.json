@@ -993,6 +993,107 @@
         ]
       }
     },
+    "/api/test/customer/login": {
+      "post": {
+        "tags": [
+          "crate::test_login"
+        ],
+        "operationId": "test_customer_login",
+        "parameters": [
+          {
+            "name": "Origin",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/LoginRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "204": {
+            "description": "Session issued in an HttpOnly Secure SameSite=Lax host-only cookie"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "413": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "415": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "504": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "preview": []
+          }
+        ]
+      }
+    },
     "/api/test/verification/redeem": {
       "post": {
         "tags": [
@@ -1283,6 +1384,26 @@
       "ImageBytes": {
         "type": "string",
         "format": "binary"
+      },
+      "LoginRequest": {
+        "type": "object",
+        "required": [
+          "email",
+          "password"
+        ],
+        "properties": {
+          "email": {
+            "type": "string",
+            "description": "Exact mailbox under the private identity normalization policy.",
+            "maxLength": 254
+          },
+          "password": {
+            "type": "string",
+            "description": "Password input; the private credential policy also bounds UTF-8 bytes.",
+            "maxLength": 256
+          }
+        },
+        "additionalProperties": false
       },
       "Material": {
         "oneOf": [

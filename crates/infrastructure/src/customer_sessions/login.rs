@@ -3,7 +3,8 @@ use commerce_domain::email_identity::normalize_email;
 use sqlx::PgPool;
 
 use super::{
-    CustomerIdentity, CustomerSessionToken, IssuedSession, LIFETIME, SessionError, begin, now,
+    CustomerCsrfToken, CustomerIdentity, CustomerSessionToken, IssuedCsrfSession, IssuedSession,
+    LIFETIME, SessionError, begin, now,
 };
 use crate::{
     customer_credential_admission::{
@@ -38,6 +39,35 @@ pub async fn login(
     key: &AdmissionKey,
     limits: AdmissionLimits,
 ) -> Result<IssuedSession, SessionError> {
+    let (session, _) = login_inner(pool, email, password, clock, key, limits, false).await?;
+    Ok(session)
+}
+
+/// Trusted private issuance returning a fresh session-bound synchronizer once.
+pub async fn login_with_csrf(
+    pool: &PgPool,
+    email: &str,
+    password: &str,
+    clock: &dyn Clock,
+    key: &AdmissionKey,
+    limits: AdmissionLimits,
+) -> Result<IssuedCsrfSession, SessionError> {
+    let (session, csrf) = login_inner(pool, email, password, clock, key, limits, true).await?;
+    Ok(IssuedCsrfSession {
+        session,
+        csrf: csrf.ok_or(SessionError::Unavailable)?,
+    })
+}
+
+async fn login_inner(
+    pool: &PgPool,
+    email: &str,
+    password: &str,
+    clock: &dyn Clock,
+    key: &AdmissionKey,
+    limits: AdmissionLimits,
+    bind_csrf: bool,
+) -> Result<(IssuedSession, Option<CustomerCsrfToken>), SessionError> {
     let observed = ObservedClock::new(clock, 0);
     admit(
         pool,
@@ -104,18 +134,37 @@ pub async fn login(
     if stored != Some((true,)) {
         return Err(SessionError::Unavailable);
     }
+    let csrf = if bind_csrf {
+        let csrf = CustomerCsrfToken::random()?;
+        let digest = csrf.digest();
+        let inserted = sqlx::query("INSERT INTO customer_session_csrf(session_verifier,csrf_digest,created_xid) VALUES ($1,$2,NULL)")
+            .bind(verifier.as_slice()).bind(digest.as_slice()).execute(&mut *tx)
+            .await.map_err(|_| SessionError::Unavailable)?;
+        let exact: bool = sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM customer_session_csrf WHERE session_verifier=$1 AND csrf_digest=$2 AND created_xid=pg_current_xact_id())")
+            .bind(verifier.as_slice()).bind(digest.as_slice()).fetch_one(&mut *tx)
+            .await.map_err(|_| SessionError::Unavailable)?;
+        if inserted.rows_affected() != 1 || !exact {
+            return Err(SessionError::Unavailable);
+        }
+        Some(csrf)
+    } else {
+        None
+    };
     if now(&observed)? >= expires {
         return Err(SessionError::Denied);
     }
     tx.commit().await.map_err(|_| SessionError::Unavailable)?;
-    Ok(IssuedSession {
-        token,
-        identity: CustomerIdentity {
-            account_id: initial.account_id,
-            credential_revision: current.revision,
-            expires_at: expires,
+    Ok((
+        IssuedSession {
+            token,
+            identity: CustomerIdentity {
+                account_id: initial.account_id,
+                credential_revision: current.revision,
+                expires_at: expires,
+            },
         },
-    })
+        csrf,
+    ))
 }
 
 #[cfg(test)]

@@ -468,7 +468,11 @@ cannot overwrite a newer credential. Private login verifies the password outside
 the transaction and claims the account before rechecking the exact hash and
 revision. Session claims require the same current credential revision. Rotation
 consumes the old bearer and issues one replacement within the original 12-hour
-window. Logout revokes the current bearer. The private login entry point commits
+window. Logout revokes the current bearer. An optional private login variant
+returns an independent synchronizer once and commits its immutable digest with
+the exact session. Protected logout checks both under the session claim; legacy
+bearer-only callers remain compatible and rotated successors are unbound.
+HTTP transport and Origin/CSRF integration remain separate. The private login entry point commits
 its purpose and target quota debit before lookup or hashing and carries the same
 observed clock through issuance. Verification and password proof operations also
 commit admission before accessing proof or credential state. Standalone proof
@@ -481,6 +485,11 @@ and coordinate its delivery, withdrawal and freshness. A loopback,
 preview-authenticated test-only POST consumer can establish an account
 from a supplied proof with one admission debit; it is disabled unless its test
 origin and dedicated key are both configured. It issues no session or proof.
+An independent default-off test-only login POST requires preview authentication,
+an exact HTTPS Origin and a separate admission key. It performs the admitted
+password login and returns the resulting session only in a secure host-only,
+HttpOnly SameSite=Lax cookie with the original session expiry. Its empty response
+contains no identity; no session-read or logout route is installed.
 Complete secure delivery, trusted ingress, timing and browser controls before
 exposing the flow beyond this test boundary.
 

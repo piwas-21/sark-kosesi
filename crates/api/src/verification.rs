@@ -51,7 +51,7 @@ impl VerificationConfig {
         }
     }
 }
-fn decode_hex(value: &str) -> Option<[u8; 32]> {
+pub(crate) fn decode_hex(value: &str) -> Option<[u8; 32]> {
     if value.len() != 64
         || !value
             .bytes()

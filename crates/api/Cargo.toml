@@ -34,6 +34,7 @@ tracing-subscriber.workspace = true
 utoipa.workspace = true
 tower-sessions.workspace = true
 url.workspace = true
+zeroize.workspace = true
 
 [dev-dependencies]
 sha2.workspace = true

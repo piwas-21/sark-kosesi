@@ -265,6 +265,7 @@ dependencies = [
  "tracing-subscriber",
  "url",
  "utoipa",
+ "zeroize",
 ]
 
 [[package]]

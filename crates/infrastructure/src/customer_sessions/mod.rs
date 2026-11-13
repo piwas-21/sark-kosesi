@@ -9,8 +9,8 @@ use std::time::Duration;
 use zeroize::Zeroizing;
 
 pub(crate) use lifecycle::{HeldSession, claim_session};
-pub use lifecycle::{authenticate, logout, rotate};
-pub use login::login;
+pub use lifecycle::{authenticate, logout, logout_with_csrf, rotate};
+pub use login::{login, login_with_csrf};
 
 const DOMAIN: &[u8] = b"piwas:customer-session:verifier:v1\0";
 const LIFETIME: i64 = 43_200;
@@ -35,6 +35,35 @@ impl CustomerSessionToken {
         getrandom::fill(token.0.as_mut()).map_err(|_| SessionError::Unavailable)?;
         Ok(token)
     }
+}
+
+/// Independent synchronizer proof; only its domain-separated digest is stored.
+pub struct CustomerCsrfToken(Zeroizing<[u8; 32]>);
+impl CustomerCsrfToken {
+    pub fn from_bytes(bytes: [u8; 32]) -> Self {
+        Self(Zeroizing::new(bytes))
+    }
+    pub fn expose_bytes(&self) -> &[u8; 32] {
+        &self.0
+    }
+    fn random() -> Result<Self, SessionError> {
+        let mut token = Self::from_bytes([0; 32]);
+        getrandom::fill(token.0.as_mut()).map_err(|_| SessionError::Unavailable)?;
+        Ok(token)
+    }
+    fn digest(&self) -> [u8; 32] {
+        Sha256::new()
+            .chain_update(b"piwas:customer-session:csrf:v1\0")
+            .chain_update(self.expose_bytes())
+            .finalize()
+            .into()
+    }
+}
+
+/// Both proofs are returned once to a trusted caller, never logged or persisted.
+pub struct IssuedCsrfSession {
+    pub session: IssuedSession,
+    pub csrf: CustomerCsrfToken,
 }
 
 #[derive(Debug, PartialEq, Eq)]
