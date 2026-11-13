@@ -873,10 +873,10 @@ Use independently specified accepted-order quantities to test partial and final
 proposals in canonical quote order, including a covers-only variant and a
 promoted order. Reject incomplete or duplicate prior counts, unknown or duplicate
 proposed SKUs, zero proposals, excess counts, arithmetic overflow and malformed
-orders. The check neither tests warehouse custody nor proves parcel contents or
-delivery; future persistent shipment operations need separate authorization,
-concurrency, retry and physical fulfilment tests. The whole-variant quantity
-module is included in the critical Rust coverage policy.
+orders. Persistent shipment operations will need authorization, concurrency and
+retry tests, plus physical checks for warehouse custody, parcel contents and
+delivery. The whole-variant quantity module is included in the critical Rust
+coverage policy.
 
 ### Private customer favourites
 
