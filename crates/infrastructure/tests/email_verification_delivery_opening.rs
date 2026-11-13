@@ -402,7 +402,16 @@ async fn expiry_while_fresh_open_waits_for_challenge_denies_callback(pool: PgPoo
     resume.notify_one();
     tokio::select! {
         () = wait_for_blocked(&mut blocker, blocker_pid, selected_pid, "fresh opening") => {},
-        _ = &mut opening => panic!("opening completed before actual source wait"),
+        result = &mut opening => {
+            let outcome = match result {
+                Ok(Ok(OpenOutcome::Opened)) => "opened",
+                Ok(Ok(OpenOutcome::AlreadyStarted)) => "already_started",
+                Ok(Err(VerificationError::Denied)) => "denied",
+                Ok(Err(VerificationError::Unavailable)) => "unavailable",
+                Err(_) => "task_failed",
+            };
+            panic!("opening completed before actual source wait: {outcome}");
+        },
     }
     time.0.store(1900, Ordering::SeqCst);
     blocker
