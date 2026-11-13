@@ -613,6 +613,12 @@ distributed abuse controls.
 
 ## Private reversal-item review inspection
 
+The separately bounded review inbox requires the same `reversal.review` grant
+and recent MFA. Its single candidate is rechecked against the attempt-locked
+proof; empty and corrupt results remain subject to a final staff-time check. Its
+live cursor grants no recovery or financial authority and can miss earlier changes
+until refreshed. No provider identifier, route or grant is exposed by this scan.
+
 One exact review stop can be inspected with a dedicated unseeded `reversal.review`
 grant and fresh MFA. Staff and attempt claims are held while source, complete
 bounded operation history and each exact-effect late receipt are validated; time

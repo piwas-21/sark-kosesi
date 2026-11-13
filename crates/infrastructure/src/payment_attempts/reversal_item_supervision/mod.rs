@@ -4,6 +4,7 @@ use super::*;
 use crate::mollie::{ReversalKind, VerifiedReconciliationClient};
 use commerce_application::request_context::{Clock, Identifiers};
 use sqlx::PgPool;
+pub mod inbox;
 mod jobs;
 pub mod review;
 mod rows;

@@ -671,6 +671,11 @@ closed reason, generation and whether any late receipt exists. No provider
 identifiers, network access, state changes or financial or recovery authority
 follow from this detached summary. Migration 0064
 follows separately reserved migrations 0062 and 0063.
+A separate private inbox scans at most one review-state candidate by the indexed
+`(updated_at, id)` key, then revalidates its complete custody and exact candidate
+binding under one attempt claim. A live cursor requires refresh for earlier changes.
+The same held staff authority is rechecked even for empty or damaged results; the
+summary and cursor do not grant provider, retry, payment or fulfilment authority.
 
 Order, payment, fulfilment and return states are separate. Late paid payments after reservation expiry attempt atomic reallocation; failure creates a visible finance/support exception and recovery/refund process. Payment success cannot be discarded because stock expired. Partial refunds cannot exceed captured less refunded amounts; preserve tax/discount allocation and credit-document links. A refund does not automatically restock goods. Chargebacks are finance events.
 
