@@ -137,6 +137,12 @@ rendering require fresh human approval. Normal gates never update the binding.
 
 Critical cases: last shared foam component contested by two orders; covers-only reserves no foam; payment-create timeout and late paid after expiry; duplicated/reordered webhooks; partial refund/tax/discount rounding; coupon exhaustion; expired guest token; cross-customer access; worker crash after provider acceptance; duplicate restock mail; incomplete translation/private-cache leak. Mutation testing on financial/authorization invariants must demonstrate that the test detects the intended defect, not just a textual mutation.
 
+An isolated PostgreSQL and loopback journey verifies a create request whose
+reply is lost, real hold expiry, GET-only discovery and exact payment fetch,
+explicit gross recognition, and one late allocation with immutable replay. The
+instrument verifies the exact request count and methods. Provider sandbox and
+physical fulfilment acceptance remain separate.
+
 Translation history and review adapters retain the 95% critical line/branch gates.
 Isolated PostgreSQL cases cover role separation, self-review, stale specification/
 source/target revisions, full effect intent, competing editors/reviewers, expiry
