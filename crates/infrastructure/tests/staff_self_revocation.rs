@@ -180,6 +180,51 @@ async fn database_diagnostic_is_closed_and_rolls_back(pool: PgPool) {
 }
 
 #[sqlx::test(migrator = "MIGRATOR")]
+async fn closed_pool_and_missing_table_fail_closed(pool: PgPool) {
+    seed(&pool).await;
+    let disconnected =
+        sqlx::postgres::PgPoolOptions::new().connect_lazy_with((*pool.connect_options()).clone());
+    disconnected.close().await;
+    assert_eq!(
+        revoke_self(&disconnected, &token(1), &Time(1100)).await,
+        Err(RevocationError::Unavailable)
+    );
+    pool.execute("ALTER TABLE staff_sessions RENAME TO unavailable_staff_sessions")
+        .await
+        .expect("isolate missing table");
+    assert_eq!(
+        revoke_self(&pool, &token(1), &Time(1100)).await,
+        Err(RevocationError::Unavailable)
+    );
+    pool.execute("ALTER TABLE unavailable_staff_sessions RENAME TO staff_sessions")
+        .await
+        .expect("restore table");
+    assert_eq!(revoked_at(&pool, 1).await, None);
+    assert_eq!(revoked_at(&pool, 2).await, None);
+    assert!(revoke_self(&pool, &token(1), &Time(1100)).await.is_ok());
+}
+
+#[sqlx::test(migrator = "MIGRATOR")]
+async fn deferred_commit_error_is_redacted_and_does_not_revoke(pool: PgPool) {
+    seed(&pool).await;
+    pool.execute("CREATE FUNCTION fail_revoke_commit() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN RAISE EXCEPTION 'SYNTHETIC_COMMIT_SECRET' USING DETAIL='SYNTHETIC_COMMIT_DETAIL'; END $$; CREATE CONSTRAINT TRIGGER fail_revoke_commit AFTER UPDATE ON staff_sessions DEFERRABLE INITIALLY DEFERRED FOR EACH ROW EXECUTE FUNCTION fail_revoke_commit()")
+        .await.expect("synthetic commit failure");
+    let error = revoke_self(&pool, &token(1), &Time(1100))
+        .await
+        .expect_err("commit must fail");
+    assert_eq!(error, RevocationError::Unavailable);
+    let diagnostic = format!("{error:?}");
+    assert!(!diagnostic.contains("SYNTHETIC_COMMIT_SECRET"));
+    assert!(!diagnostic.contains("SYNTHETIC_COMMIT_DETAIL"));
+    assert_eq!(revoked_at(&pool, 1).await, None);
+    assert_eq!(revoked_at(&pool, 2).await, None);
+    pool.execute("DROP TRIGGER fail_revoke_commit ON staff_sessions")
+        .await
+        .expect("restore");
+    assert!(revoke_self(&pool, &token(1), &Time(1100)).await.is_ok());
+}
+
+#[sqlx::test(migrator = "MIGRATOR")]
 async fn active_operation_finishes_before_waiting_revocation(pool: PgPool) {
     seed(&pool).await;
     let mut block = pool.begin().await.expect("stock blocker");
