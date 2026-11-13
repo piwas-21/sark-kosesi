@@ -61,6 +61,20 @@ Before release: all required CI and independent reviews; populated Sonar with ze
 
 Migrations follow expand/contract. Apply backward-compatible schema before switching services; test old/new code coexistence. Prove actual startup compatibility between each image's embedded migration manifest and the stored versions/checksums: an older SQLx migrator can reject newer history even when its queries still work. Irreversible data migrations need explicit backup/recovery design and approval. Roll back images only if that compatibility is proven; never delete migration history, reverse migrations or reset financial data to force an old image to start. Production requires its own compatible migration, coexistence and recovery plan. Reconcile provider outcomes after incidents before retrying financial effects.
 
+The API executable accepts `migration-manifest` without configuration, filesystem
+access or a database connection. Its JSON object has `schema_version: 1`, the
+compiled SQLx `ignore_missing` policy and ordered `migrations` entries containing
+a decimal-string `version`, `kind` (`simple`, `reversible_up` or
+`reversible_down`) and lowercase SHA-384 `checksum_sha384`. Both members of a
+reversible pair may have the same version. Extra arguments fail. Capture the
+output from the exact image and bind it to a separately verified image digest;
+the output does not attest its own provenance. Compare applied successful
+`_sqlx_migrations` versions and checksums, report candidate-only forward
+migrations as pending, and reject dirty records, checksum differences or applied
+versions absent from a binary whose `ignore_missing` is false. A manifest is not
+proof that pending migrations run, that queries remain compatible, or that an
+image starts or can roll back. Older binaries may not provide this command.
+
 For a quiescent non-selling preview only, the [staging runbook](../deploy/staging/README.md#rollback) permits a consistent snapshot restored into a separate owned project/database while preserving the old database and containers. Verify restore integrity, private startup and exclusive router ownership before switching. If business writes occur after the snapshot, require reviewed catch-up/reconciliation before cutover or rollback; a snapshot must not discard those writes.
 
 ## Recovery and acceptance
@@ -193,9 +207,14 @@ one bounded pass; `REVERSAL_PAGE_BATCH` defaults to 10 and accepts 1–25 steps.
 Both commands require the same dedicated `MOLLIE_TEST_API_KEY` and
 `MOLLIE_TEST_PROFILE_ID` as payment reconciliation. Production and live keys are
 rejected. `commerce-worker --inspect-reversal-scan <job-id>` uses PostgreSQL to
-report validated state, generation, failure count and review reason. Provider
+report the stored state, generation and review reason after source validation.
+For states other than an uncertain stop it also reports the stored failure count. Provider
 credentials and provider network access are unnecessary for inspection. Batch
-output reports the number of processed steps. Inspect the enrolled job and its
+output reports the number of processed steps. For an uncertain stop, inspection
+also reports whether that operation's validated late page is present; other
+states report `not_applicable`. For uncertain stops it omits the failure count:
+inspection does not reconstruct prior operations. It does not advance the scan or prove provider
+history complete. Inspect the enrolled job and its
 private evidence for review stops or retries. An ended or capped scan leaves
 provider history unresolved. Review recovery, scheduling, financial and
 inventory transitions, provider sandbox acceptance and deployment remain open.

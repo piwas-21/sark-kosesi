@@ -43,6 +43,10 @@ entry is hidden and remains removable. Session validity is rechecked after
 bucket and source waits before reporting revision conflict or capacity. A bucket
 remains after clearing to preserve revision ordering. Export, deletion, retention and browser CSRF and
 abuse controls require separate implementation and review before exposure.
+The independently opted-in test-only GET requires preview authentication, exact
+test Origin and the issued customer cookie. Its existing list primitive may
+initialize the empty bucket. Private no-store responses and a disabled-by-default
+route do not establish public ingress, privacy retention or browser acceptance.
 
 ## Private restock opt-in boundary
 

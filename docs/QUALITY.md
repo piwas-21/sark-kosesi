@@ -51,6 +51,11 @@ No fake commands or passing jobs before code exists. Pin the following free tool
 
 Rust line/region coverage runs on the pinned stable release. Rust branch instrumentation currently requires nightly in cargo-llvm-cov: P1 must pin a separate tested nightly toolchain for the branch-coverage job and run `cargo +<pinned-nightly> llvm-cov --branch`. Production builds remain on stable. Missing branch data fails the coverage gate; do not report it as 100% or silently substitute line coverage. See the [upstream coverage requirements](https://github.com/taiki-e/cargo-llvm-cov#readme).
 
+The API migration-manifest CLI test runs without configuration or a database,
+compares the entire compiled output with independently hashed migration files,
+and rejects synthetic omissions, duplicates, altered checksums, wrong types and
+missing-version policy. This verifies the CLI contract, not an image or rollback.
+
 `python3 scripts/check_app_coverage.py --report REPORT.lcov --package OWNED_SOURCE_DIRECTORY`
 validates TypeScript LCOV from the actual coverage generator. Invoke it separately for each
 maintained package source directory, and add `--critical SOURCE_FILE` for each
@@ -841,6 +846,11 @@ For the separate local/test worker, verify exact command routing, non-terminal
 and credential redaction. An isolated database checks the authorized absent
 result and denied capability, revocation, expiry and stale MFA without effects.
 
+The local/test reversal-page inspection tests an uncertain stop before and after
+its exact late page, the attempt claim, source-clock boundary, damaged operation
+and event, and mismatched credential. It must preserve the stopped checkpoint,
+redact provider identity and perform no provider request.
+
 ### Private customer sessions
 
 For optional synchronizer custody, use real PostgreSQL to verify exact session
@@ -879,6 +889,10 @@ and rollback after suppressed or altered writes. Upgrade from schema 0062 with
 live bearer-only and CSRF-bound sessions and a published catalogue, then verify
 that session and publication authority survive the addition of migration 0063.
 These checks do not establish browser CSRF, account deletion or public ingress.
+The separately enabled test-only GET additionally exercises real login cookies,
+customer isolation, live publication and session checks, first-read bucket
+initialization, invalid credentials and private response headers. It is not a
+public browser or privacy-policy acceptance test.
 
 ### Private restock opt-in custody
 

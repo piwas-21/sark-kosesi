@@ -23,6 +23,12 @@ Read [architecture](ARCHITECTURE.md), [product](PRODUCT.md), [quality](QUALITY.m
 
 P1 acceptance activates application CI; it does not activate payment or establish release readiness. Missing business inputs can remain pending while tests use clearly isolated fixtures.
 
+The API binary also supports `migration-manifest`, a configuration-free command
+that reports its compiled migration metadata without opening a database. Compare
+the actual image's output with independently collected SQLx records and retain
+image identity; a matching manifest does not replace isolated startup and rollback
+evidence.
+
 ## P2 work packages
 
 1. Verify expiry supervision before operational stock use. Provider recovery
@@ -401,7 +407,10 @@ supervision or live provider activation follows from deploying the empty preview
    start, and checks the matching page receipt before restoring a checkpoint.
    Expired starts without evidence go to review. Returned transport failures
    use bounded retries. Explicit local/test worker commands enroll, run one
-   bounded pass and inspect a scan without exposing provider identifiers.
+   bounded pass and inspect a scan without exposing provider identifiers. For an
+   uncertain stop, the inspection also validates the exact stopped operation and
+   reports whether its late page is present. This detached result grants no
+   retry or financial authority and cannot prove complete provider history.
    A separate item supervisor enrolls a verified page position and its paid
    original. It commits each operation before fetching the exact child and
    checkpoints only against the matching authenticated journal receipt. A private,
@@ -442,8 +451,10 @@ bucket. Mutations require the current bucket revision unless already satisfied;
 actual membership changes advance it. Adds require the current eligible
 publication in the selected locale. Listing rechecks that projection and returns
 only the current SKU and publication revision. Unavailable entries remain stored
-but are hidden; removal and clear include them. This is an internal primitive,
-not an HTTP endpoint. It does not provide export, account deletion, browser
+but are hidden; removal and clear include them. A separately enabled test-only
+GET uses preview authentication, the exact test Origin and the issued customer
+cookie to read this projection. It can initialize the empty bucket on first read;
+its decimal revision avoids JavaScript integer precision loss. It does not provide export, account deletion, browser
 controls or production abuse and retention policy. Migration 0063 follows the
 customer-session CSRF migration 0062.
 

@@ -199,6 +199,19 @@ export type RedeemRequest = {
     token: string;
 };
 
+export type TestFavouriteItem = {
+    publication_revision: number;
+    sku: string;
+};
+
+export type TestFavouriteList = {
+    items: Array<TestFavouriteItem>;
+    /**
+     * Decimal representation avoids losing a PostgreSQL bigint in JavaScript.
+     */
+    revision: string;
+};
+
 export type TestSessionProof = {
     /**
      * One independent synchronizer encoded as 64 lowercase hexadecimal characters.
@@ -498,6 +511,37 @@ export type ProductResponses = {
 };
 
 export type ProductResponse = ProductResponses[keyof ProductResponses];
+
+export type TestCustomerFavouritesData = {
+    body?: never;
+    headers: {
+        Origin: string;
+    };
+    path: {
+        locale: string;
+    };
+    query?: never;
+    url: '/api/test/customer/favourites/{locale}';
+};
+
+export type TestCustomerFavouritesErrors = {
+    400: ApiError;
+    401: ApiError;
+    403: ApiError;
+    503: ApiError;
+    504: ApiError;
+};
+
+export type TestCustomerFavouritesError = TestCustomerFavouritesErrors[keyof TestCustomerFavouritesErrors];
+
+export type TestCustomerFavouritesResponses = {
+    /**
+     * Current private favourites for the cookie owner
+     */
+    200: TestFavouriteList;
+};
+
+export type TestCustomerFavouritesResponse = TestCustomerFavouritesResponses[keyof TestCustomerFavouritesResponses];
 
 export type TestCustomerLoginData = {
     body: LoginRequest;

@@ -551,6 +551,12 @@ scan for review and preserves any late page as separate historical evidence.
 Transport failures that return to the worker retry after 60 seconds and stop
 after three consecutive failures.
 
+The local/test scan inspection claims the attempt, revalidates the paid source
+and current tip, then checks an uncertain stop's exact operation and any page
+recorded under that operation's effect key. It validates the page's ancestry,
+event and frozen scope. The redacted result reports presence or absence only for
+that stop; a page remains evidence, not a scan continuation or financial decision.
+
 The independent item supervisor enrolls one exact candidate ordinal from a
 validated page and its authenticated paid original. The job freezes the actual
 test-key fingerprint, so a newly verified key uses evidence from its own scan.
@@ -1826,8 +1832,11 @@ claim current publication sources using the existing projection. Recheck the
 session after bucket and publication waits before returning private-state errors,
 and recheck session and image rights at the final observed time. Only current SKU and
 publication revision leave the private read; hidden entries remain removable.
-The database writer is trusted for session and publication authority. No HTTP
-route or customer erasure workflow is installed.
+The database writer is trusted for session and publication authority. A separately
+enabled test-only GET uses preview authority, exact configured Origin and the
+issued customer cookie to call this operation directly. It returns only the
+bounded eligible projection and decimal revision, and may initialize an empty
+bucket. It does not install public ingress or a customer erasure workflow.
 
 ### Private restock opt-in
 
