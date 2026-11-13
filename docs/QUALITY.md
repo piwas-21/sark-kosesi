@@ -822,6 +822,13 @@ Measure proof freshness after an actual lock wait. Check that only the current
 hash remains and that the stored challenge verifier differs from the bearer
 and registration verifier. These checks establish private credential custody.
 
+### Private reversal-item review inspection
+
+Use isolated PostgreSQL to test dedicated grant, revocation, stale MFA and an
+actual attempt-lock wait through staff expiry. Validate the exact review
+checkpoint and late-receipt absence/presence; damaged custody fails closed.
+Check that inspection changes no custody and makes no provider request.
+
 ### Private customer sessions
 
 For optional synchronizer custody, use real PostgreSQL to verify exact session

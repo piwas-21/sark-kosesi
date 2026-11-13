@@ -595,6 +595,15 @@ channel. No corpus or grant of production readiness is included. Public recovery
 also requires secure delivery, uniform responses and timing, safe transport and
 distributed abuse controls.
 
+## Private reversal-item review inspection
+
+One exact review stop can be inspected with a dedicated unseeded `reversal.review`
+grant and fresh MFA. Staff and attempt claims are held while source, checkpoint
+and any late receipt are validated; time is rechecked after waits. The detached
+summary contains only a closed reason, generation and late-receipt presence.
+It authorizes neither provider access, retry nor any financial action. Public
+operator access, audit operations and provider reconciliation remain separate.
+
 ## Private customer sessions
 
 Issue 256-bit random bearers after verifying the exact current credential.

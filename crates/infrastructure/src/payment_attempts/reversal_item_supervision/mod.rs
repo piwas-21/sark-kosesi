@@ -5,6 +5,7 @@ use crate::mollie::{ReversalKind, VerifiedReconciliationClient};
 use commerce_application::request_context::{Clock, Identifiers};
 use sqlx::PgPool;
 mod jobs;
+pub mod review;
 mod rows;
 pub mod runner;
 mod transitions;

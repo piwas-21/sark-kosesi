@@ -364,6 +364,7 @@ async fn late_receipt_is_recovered_without_another_request(pool: PgPool) {
 #[sqlx::test(migrator = "MIGRATOR")]
 async fn unavailable_retries_are_bounded_and_malformed_response_is_reviewed(pool: PgPool) {
     let (time, frozen, ids, paid) = reversal_supervision_cases::fixture(&pool).await;
+    staff_review_cases::staff(&pool).await;
     let page = page_fixture(
         &pool,
         time.as_ref(),
@@ -419,6 +420,13 @@ async fn unavailable_retries_are_bounded_and_malformed_response_is_reviewed(pool
         .await
         .expect("stopped pass");
     assert_eq!(server.count(), 4);
+    assert_eq!(crate::payment_attempts::reversal_item_supervision::review::inspect(
+        &pool, &crate::staff_access::SessionToken::from_bytes([11;32]), time.as_ref(), &job.id
+    ).await, Ok(Some(crate::payment_attempts::reversal_item_supervision::review::Summary {
+        reason: crate::payment_attempts::reversal_item_supervision::review::Reason::RetryExhausted,
+        generation: 3, late_receipt_present: false,
+    })));
+    assert_eq!(server.count(), 4);
 
     let second = page_fixture(
         &pool,
@@ -463,11 +471,29 @@ async fn unavailable_retries_are_bounded_and_malformed_response_is_reviewed(pool
         .expect("present");
     assert_eq!(saved.review_reason.as_deref(), Some("invalid"));
     assert_eq!(malformed.count(), 3);
+    assert_eq!(
+        crate::payment_attempts::reversal_item_supervision::review::inspect(
+            &pool,
+            &crate::staff_access::SessionToken::from_bytes([11; 32]),
+            time.as_ref(),
+            &job.id
+        )
+        .await,
+        Ok(Some(
+            crate::payment_attempts::reversal_item_supervision::review::Summary {
+                reason: crate::payment_attempts::reversal_item_supervision::review::Reason::Invalid,
+                generation: 1,
+                late_receipt_present: false,
+            }
+        ))
+    );
+    assert_eq!(malformed.count(), 3);
 }
 
 #[sqlx::test(migrator = "MIGRATOR")]
 async fn exhausted_observation_capacity_stops_before_provider_io(pool: PgPool) {
     let (time, frozen, ids, paid) = reversal_supervision_cases::fixture(&pool).await;
+    staff_review_cases::staff(&pool).await;
     let page = page_fixture(
         &pool,
         time.as_ref(),
@@ -525,6 +551,13 @@ async fn exhausted_observation_capacity_stops_before_provider_io(pool: PgPool) {
         .expect("job")
         .expect("present");
     assert_eq!(saved.review_reason.as_deref(), Some("observation_limit"));
+    assert_eq!(server.count(), 3);
+    assert_eq!(crate::payment_attempts::reversal_item_supervision::review::inspect(
+        &pool, &crate::staff_access::SessionToken::from_bytes([11;32]), time.as_ref(), &job.id
+    ).await, Ok(Some(crate::payment_attempts::reversal_item_supervision::review::Summary {
+        reason: crate::payment_attempts::reversal_item_supervision::review::Reason::ObservationLimit,
+        generation: 1, late_receipt_present: false,
+    })));
     assert_eq!(server.count(), 3);
 }
 
@@ -964,3 +997,6 @@ async fn failed_observation_write_below_capacity_stops_as_invalid(pool: PgPool) 
     );
     assert_eq!(server.count(), 3);
 }
+
+#[path = "mollie_reversal_item_staff_review.rs"]
+mod staff_review_cases;
