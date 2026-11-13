@@ -32,6 +32,27 @@ jobs:
           .local/venv/bin/pip install --require-hashes -r requirements-dev.txt
           echo "$PWD/.local/venv/bin" >> "$GITHUB_PATH"
       - run: npm run check
+      - name: Verify distinct loopback bindings for parallel staging previews
+        shell: bash
+        run: |
+          for fixture in current candidate; do
+            case "$fixture" in
+              current) override=""; port=45972 ;;
+              candidate) override=45973; port=45973 ;;
+            esac
+            STAGING_WEB_LOOPBACK_PORT="$override" docker compose \
+              --project-name "sark-staging-fixture-$fixture" \
+              --env-file deploy/staging/.env.example \
+              --file deploy/staging/compose.yml config --format json |
+              jq -e --arg port "$port" '
+                (.services.web.ports | length == 1) and
+                (.services.web.ports[0] |
+                  .host_ip == "127.0.0.1" and .published == $port and
+                  .target == 3000 and .protocol == "tcp") and
+                (.services.web.labels["traefik.enable"] == "false") and
+                (.services.web.labels["traefik.http.services.sark-preview.loadbalancer.server.port"] == "3000")
+              '
+          done
   secrets:
     name: Secret scan
     runs-on: ubuntu-24.04

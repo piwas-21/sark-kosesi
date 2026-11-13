@@ -13,6 +13,7 @@ COPY apps/web/package.json ./apps/web/package.json
 COPY packages/design/package.json ./packages/design/package.json
 COPY packages/contracts/package.json ./packages/contracts/package.json
 COPY packages/room-fit/package.json ./packages/room-fit/package.json
+COPY packages/room-draft/package.json ./packages/room-draft/package.json
 RUN npm ci --ignore-scripts
 COPY apps/web ./apps/web
 COPY packages ./packages
