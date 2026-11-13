@@ -8,6 +8,7 @@ mod paid_parent;
 mod payments;
 mod reversal_items;
 mod reversal_pages;
+mod staff_reversal_review;
 
 #[derive(PartialEq, Eq)]
 enum Mode {
@@ -19,6 +20,7 @@ enum Mode {
     ReversalItems,
     EnrollReversalItem(reversal_items::Enrollment),
     InspectReversalItem(String),
+    ReviewReversalItem(String),
     EnrollReversal(reversal_pages::Enrollment),
     InspectReversal(String),
     InspectPaidParent(paid_parent::Inspection),
@@ -43,6 +45,11 @@ fn parse_mode(args: &[String]) -> Result<Mode, std::io::Error> {
             if argument == "--inspect-reversal-item" && reversal_pages::identifier(job) =>
         {
             Ok(Mode::InspectReversalItem(job.clone()))
+        }
+        [argument, job]
+            if argument == "--review-reversal-item" && reversal_pages::identifier(job) =>
+        {
+            Ok(Mode::ReviewReversalItem(job.clone()))
         }
         [argument, attempt, observation, kind, effect] if argument == "--enroll-reversal-scan" => {
             reversal_pages::Enrollment::parse(attempt, observation, kind, effect)
@@ -93,6 +100,12 @@ async fn main() -> Result<(), std::io::Error> {
         return Err(std::io::Error::other("production is disabled"));
     }
     let mode = mode()?;
+    // Read before any DB or provider configuration; never accept a token argument.
+    let review_token = if matches!(mode, Mode::ReviewReversalItem(_)) {
+        Some(staff_reversal_review::read_token()?)
+    } else {
+        None
+    };
     let limit = if mode == Mode::Expire {
         batch_limit()?
     } else {
@@ -127,6 +140,11 @@ async fn main() -> Result<(), std::io::Error> {
         Mode::ReversalItems => reversal_items::run(&pool, None).await?,
         Mode::EnrollReversalItem(intent) => reversal_items::run(&pool, Some(intent)).await?,
         Mode::InspectReversalItem(id) => reversal_items::inspect(&pool, &id).await?,
+        Mode::ReviewReversalItem(id) => {
+            let token =
+                review_token.ok_or_else(|| std::io::Error::other("staff review unavailable"))?;
+            staff_reversal_review::inspect(&pool, &token, &id).await?
+        }
         Mode::EnrollReversal(intent) => reversal_pages::run(&pool, Some(intent)).await?,
         Mode::InspectReversal(id) => reversal_pages::inspect(&pool, &id).await?,
         Mode::InspectPaidParent(intent) => paid_parent::inspect(&pool, intent).await?,
@@ -166,6 +184,10 @@ mod tests {
             parse_mode(&args(&["--inspect-reversal-item", id])),
             Ok(Mode::InspectReversalItem(_))
         ));
+        assert!(matches!(
+            parse_mode(&args(&["--review-reversal-item", id])),
+            Ok(Mode::ReviewReversalItem(_))
+        ));
         for command in [
             vec!["--reconcile-reversal-items", "extra"],
             vec!["--enroll-reversal-item", id, id, id, "0", "key"],
@@ -174,6 +196,8 @@ mod tests {
             vec!["--enroll-reversal-item", id, id, "bad", "1", "key"],
             vec!["--enroll-reversal-item", id, id, id, "1", "bad_key"],
             vec!["--inspect-reversal-item", "bad"],
+            vec!["--review-reversal-item", "bad"],
+            vec!["--review-reversal-item", id, "token"],
         ] {
             assert!(parse_mode(&args(&command)).is_err());
         }
