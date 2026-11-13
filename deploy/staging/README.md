@@ -36,6 +36,11 @@ No expiry worker, admin authority, merchant data or test fixtures are seeded.
    proxy/network before creating any resources. Do not restart or reconfigure
    existing applications. Set the hostname and exact accepted commit in a private
    environment file; generate independent passwords/tokens and leave ingress false.
+   Set `STAGING_WEB_LOOPBACK_PORT` to a distinct unused host port in a candidate
+   project's private file when the current preview must stay running. The
+   default is 45972. The host binding stays on 127.0.0.1, and the container and
+   Traefik service still use port 3000. Check existing container mappings and
+   host listeners before starting either project.
 3. Build immutable local image tags from that exact source, sequentially. Rust
    job and Node heap settings alone do not bound a shared host. Verify the actual
    driver's kernel memory/CPU/swap/process limits, including a `RUN` descendant
@@ -180,7 +185,9 @@ For a quiescent non-selling preview, preserve the old database, volume and
 containers and restore a consistent private backup into a new owned Compose
 project/database. Before starting its database, check exact rendered volume and
 network names, ownership labels, loopback port and fixed Traefik router/service
-name collisions. Keep candidate ingress disabled; verify the actual isolated
+name collisions. Use the candidate's distinct loopback port for private host
+probes and keep the original project's port assignment for rollback.
+Keep candidate ingress disabled; verify the actual isolated
 backend/volume identity before restoring. Compare restored per-table counts and
 content hashes with the same consistent snapshot; record archive hashes and
 migration checksums. Apply forward migrations only in the clone.
