@@ -16,6 +16,7 @@ pub mod catalogue_prices;
 pub mod customer_credential_admission;
 pub mod customer_favourites;
 pub mod customer_passwords;
+pub mod customer_restock;
 pub mod customer_sessions;
 pub mod email_verification;
 pub mod factual_review;

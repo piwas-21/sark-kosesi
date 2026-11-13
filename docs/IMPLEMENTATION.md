@@ -441,6 +441,20 @@ not an HTTP endpoint. It does not provide export, account deletion, browser
 controls or production abuse and retention policy. Migration 0063 follows the
 customer-session CSRF migration 0062.
 
+## P4 private restock opt-in custody
+
+An explicit private subscription retains one current merchant SKU per verified
+account, independent from favourites and marketing. A 25-entry engineering cap,
+serialized account revision and unique activation generation bound concurrent
+changes and stale replays. New opt-ins require current publication in the chosen
+locale but do not require a particular stock state. A customer can unsubscribe
+an unpublished SKU or clear all active entries. No address, alert message,
+stock transition, outbox, delivery or HTTP route is created. Current opt-in time
+is retained only while subscribed; this is not consent history. Alert scheduling,
+delivery idempotency and cancellation ordering, retention, locale, recurrence,
+privacy export/deletion, guest enrollment and abuse controls remain P4 work.
+Migration 0065 follows the separately queued 0062–0064 migrations.
+
 ## P4 email verification foundation
 
 Private SQLx custody issues a random challenge for a narrowly normalized mailbox

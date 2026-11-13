@@ -34,6 +34,18 @@ bucket and source waits before reporting revision conflict or capacity. A bucket
 remains after clearing to preserve revision ordering. Export, deletion, retention and browser CSRF and
 abuse controls require separate implementation and review before exposure.
 
+## Private restock opt-in boundary
+
+Only the current verified customer session can change that account's active
+subscriptions. Subscribe is an explicit request for a current merchant variant;
+it does not imply marketing consent. A stale revision cannot silently restore a
+cancelled subscription, and the owned bucket serializes native membership and
+capacity. The database writer remains trusted for session and publication
+authority. Hidden entries can be removed without disclosing unpublished facts.
+The current row and opt-in timestamp are not an immutable consent audit. Browser
+CSRF, abuse limits, retention, privacy export/deletion and delivery consent and
+cancellation guarantees require separate design and acceptance before exposure.
+
 ## P1 verification scope
 
 ASVS level 2 is the inventory target. The implemented trust boundaries are the
