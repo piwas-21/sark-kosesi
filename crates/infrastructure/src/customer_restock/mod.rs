@@ -1,4 +1,4 @@
-//! Private restock opt-in custody. No notification, transport or HTTP route.
+//! Private restock opt-in custody. No notification delivery or public account route.
 use crate::{
     customer_sessions::{self, CustomerSessionToken},
     published_catalogue,
