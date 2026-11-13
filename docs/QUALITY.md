@@ -875,6 +875,10 @@ and rollback after suppressed or altered writes. Upgrade from schema 0062 with
 live bearer-only and CSRF-bound sessions and a published catalogue, then verify
 that session and publication authority survive the addition of migration 0063.
 These checks do not establish browser CSRF, account deletion or public ingress.
+The separately enabled test-only GET additionally exercises real login cookies,
+customer isolation, live publication and session checks, first-read bucket
+initialization, invalid credentials and private response headers. It is not a
+public browser or privacy-policy acceptance test.
 
 ### Private restock opt-in custody
 
