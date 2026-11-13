@@ -1,5 +1,5 @@
 //! Revocation removes authority; it never issues or refreshes a staff session.
-use super::SessionToken;
+use super::{SessionToken, begin};
 use commerce_application::request_context::{Clock, ObservedClock};
 use sqlx::PgPool;
 
@@ -29,20 +29,7 @@ pub async fn revoke_self(
     let observed = ObservedClock::new(clock, 0);
     now(&observed)?;
     let digest = token.digest();
-    let mut tx = pool
-        .begin()
-        .await
-        .map_err(|_| RevocationError::Unavailable)?;
-    sqlx::query("SET TRANSACTION ISOLATION LEVEL READ COMMITTED")
-        .execute(&mut *tx)
-        .await
-        .map_err(|_| RevocationError::Unavailable)?;
-    sqlx::query("SET LOCAL lock_timeout='1s'")
-        .execute(&mut *tx)
-        .await
-        .map_err(|_| RevocationError::Unavailable)?;
-    sqlx::query("SET LOCAL statement_timeout='2s'")
-        .execute(&mut *tx)
+    let mut tx = begin(pool)
         .await
         .map_err(|_| RevocationError::Unavailable)?;
     let row: Option<(i64, Option<i64>)> = sqlx::query_as(
