@@ -338,3 +338,35 @@ async fn another_customer_cannot_remove_the_owners_subscription(pool: PgPool) {
         .fetch_one(&pool).await.expect("owner row");
     assert_eq!(rows, (1, 1));
 }
+
+#[sqlx::test(migrator = "MIGRATOR")]
+async fn storage_failure_is_redacted_and_has_no_partial_mutation(pool: PgPool) {
+    let _case = LOGIN_CASE.lock().await;
+    let _fixture = catalogue::media_seed(&pool).await;
+    let (app, cookie, proof, _) = setup(&pool).await;
+    let before = effects(&pool).await;
+    pool.execute("CREATE FUNCTION test_restock_mutation_fault() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN RAISE EXCEPTION 'synthetic storage detail'; END $$; CREATE TRIGGER test_restock_mutation_fault BEFORE INSERT ON customer_restock_buckets FOR EACH ROW EXECUTE FUNCTION test_restock_mutation_fault()")
+        .await.expect("install isolated fault");
+    let result = response(
+        &app,
+        mutate(URL, &cookie, &proof, &payload(true, "0")),
+        StatusCode::SERVICE_UNAVAILABLE,
+    )
+    .await;
+    assert_eq!(result, br#"{"code":"restock_unavailable"}"#);
+    let counts: (i64, i64) = sqlx::query_as("SELECT (SELECT count(*) FROM customer_restock_buckets),(SELECT count(*) FROM customer_restock_subscriptions)")
+        .fetch_one(&pool).await.expect("no partial state");
+    assert_eq!(counts, (0, 0));
+    assert_eq!(effects(&pool).await, before);
+    pool.execute("DROP FUNCTION test_restock_mutation_fault() CASCADE")
+        .await
+        .expect("remove isolated fault");
+    let result = response(
+        &app,
+        mutate(URL, &cookie, &proof, &payload(true, "0")),
+        StatusCode::OK,
+    )
+    .await;
+    assert_eq!(result, br#"{"revision":"1"}"#);
+    assert_eq!(effects(&pool).await, before);
+}
