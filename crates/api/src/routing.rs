@@ -119,6 +119,12 @@ fn build(
                 get(crate::test_linked_orders::list).layer(Extension(config.clone())),
             );
         }
+        if config.restock_transport {
+            app = app.route(
+                "/api/test/customer/restock/{locale}",
+                get(crate::test_restock::list).layer(Extension(config.clone())),
+            );
+        }
         if config.favourites_transport {
             app = app.route(
                 "/api/test/customer/favourites/{locale}",

@@ -1864,6 +1864,11 @@ stock projection is not a transition claim or a reservation. Account email is
 not copied. No notification event or transport is installed; future delivery
 must separately establish generation-aware deduplication and cancellation/start
 ordering. Current rows are not an audit or deletion/export policy.
+An independently opted-in test-only GET projects only current published SKU and
+publication revision plus the decimal bucket revision for the current session.
+The underlying list may initialize an empty account bucket; it cannot subscribe,
+dispatch an alert or change stock. Preview authentication and the exact test
+Origin apply, and public ingress and browser controls remain separate work.
 
 ### Private guest-order linking
 
