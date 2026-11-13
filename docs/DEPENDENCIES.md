@@ -112,6 +112,17 @@ loading ESLint. Re-evaluate the patch and dependency closure when a compatible
 upstream release lands. Production release requires a fresh dependency and image
 review.
 
+The separate [GHSA-c859-jr93-m5j4](https://github.com/isaacs/minimatch/security/advisories/GHSA-c859-jr93-m5j4)
+also affects the locked development copy, `minimatch` 10.2.6: `escape()` can
+produce a glob with unintended matching semantics. The backport above addresses
+GHSA-g3hv-75wg-m249 and does not fix this `escape()` advisory. Review of the
+installed locked consumers found ESLint and `@eslint/config-array` constructing
+`Minimatch`, and `@typescript-eslint/typescript-estree` calling `minimatch()`;
+no current call to `escape()` was identified in those consumers or the tracked
+application and lint paths. Recheck usage and the advisory on dependency, lint
+configuration or build-path changes. This is a source and installed-graph review;
+the runtime image has not been inspected for this assessment.
+
 The contract generator uses `@hey-api/openapi-ts` 0.97.3 (MIT) for schema and
 parameter types. The upstream parser 1.4.2 exact-pins vulnerable `js-yaml` 4.1.1;
 a narrow development-only npm override selects the same-major security release
