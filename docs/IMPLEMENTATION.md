@@ -503,7 +503,8 @@ window. Logout revokes the current bearer. An optional private login variant
 returns an independent synchronizer once and commits its immutable digest with
 the exact session. Protected logout checks both under the session claim; legacy
 bearer-only callers remain compatible and rotated successors are unbound.
-HTTP transport and Origin/CSRF integration remain separate. The private login entry point commits
+The separately enabled test-only HTTP and Origin/CSRF transport is described below;
+public browser ingress and production CSRF policy remain open. The private login entry point commits
 its purpose and target quota debit before lookup or hashing and carries the same
 observed clock through issuance. Verification and password proof operations also
 commit admission before accessing proof or credential state. Standalone proof
@@ -520,7 +521,12 @@ An independent default-off test-only login POST requires preview authentication,
 an exact HTTPS Origin and a separate admission key. It performs the admitted
 password login and returns the resulting session only in a secure host-only,
 HttpOnly SameSite=Lax cookie with the original session expiry. Its empty response
-contains no identity; no session-read or logout route is installed.
+contains no identity and its bearer-only session cannot use protected logout.
+An independently enabled test-only login returns a bound synchronizer once in a
+no-store response and the session in the same kind of cookie. Its paired logout
+requires the exact Origin, one cookie and one matching proof. Only committed
+revocation returns a removal cookie; a lost response can leave revocation committed,
+and a duplicate request is denied. No session-read or public route is installed.
 Complete secure delivery, trusted ingress, timing and browser controls before
 exposing the flow beyond this test boundary.
 

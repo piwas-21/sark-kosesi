@@ -1798,7 +1798,13 @@ performs quota debit before credential lookup and hashing. A successful response
 sets a Secure, HttpOnly, host-only SameSite=Lax cookie bounded by the issued
 session expiry and carries no account or bearer in its body. Failures carry no
 cookie; an HTTP timeout can follow a committed session without returning it.
-This adapter supplies no session-read route, logout or public ingress authority.
+The original adapter supplies no synchronizer and its cookie cannot use protected
+logout. A separately enabled test login issues a bound synchronizer once in a
+no-store response and the bearer only in the secure cookie. Paired test logout
+requires preview authorization, exact Origin, one canonical customer cookie and
+one matching proof, and clears the cookie only after revocation commits. A lost
+response can follow commit; duplicate logout denies rather than claiming a receipt.
+Neither adapter grants session-read or public ingress authority.
 
 ### Private customer favourites
 
