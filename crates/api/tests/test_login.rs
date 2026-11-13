@@ -1192,3 +1192,6 @@ async fn bound_login_cookie_clock_failure_keeps_committed_unreturned_session(poo
 
 #[path = "support/test_favourites.rs"]
 mod favourites;
+
+#[path = "support/test_restock.rs"]
+mod restock;
