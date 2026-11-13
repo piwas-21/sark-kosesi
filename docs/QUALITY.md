@@ -844,6 +844,12 @@ and registration verifier. These checks establish private credential custody.
 
 ### Private reversal-item review inspection
 
+The review inbox scans at most one indexed candidate per call. Check stable
+keyset ordering and equal-time ties, cursor bounds and refresh, held-attempt
+expiry, changed or corrupt candidate custody, denied staff, and unchanged
+provider, payment and outbox effects. Verify both bounded query shapes can use
+the partial index without requiring the optimizer to select it on small tables.
+
 Use isolated PostgreSQL to test dedicated grant, revocation, stale MFA and an
 actual attempt-lock wait through staff expiry. Validate the complete bounded
 review operation history and exact-effect late-receipt absence/presence;

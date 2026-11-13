@@ -1237,3 +1237,6 @@ async fn failed_observation_write_below_capacity_stops_as_invalid(pool: PgPool) 
 
 #[path = "mollie_reversal_item_staff_review.rs"]
 mod staff_review_cases;
+
+#[path = "mollie_reversal_item_review_inbox.rs"]
+mod review_inbox_cases;

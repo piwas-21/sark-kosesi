@@ -34,7 +34,7 @@ struct Operation {
     receipt_absent: bool,
 }
 
-fn staff_error(error: StaffError) -> ReviewError {
+pub(super) fn staff_error(error: StaffError) -> ReviewError {
     match error {
         StaffError::Denied => ReviewError::Denied,
         _ => ReviewError::Unavailable,
@@ -119,13 +119,13 @@ pub async fn inspect(
         .rollback()
         .await
         .map_err(|_| ReviewError::Unavailable)?;
-    Ok(result)
+    Ok(result.map(|(_, summary)| summary))
 }
 
-async fn validated(
+pub(super) async fn validated(
     tx: &mut Transaction<'_, Postgres>,
     id: &str,
-) -> Result<Option<Summary>, RecoveryError> {
+) -> Result<Option<(Job, Summary)>, RecoveryError> {
     let Some((job, frozen, started)) = inspected(tx, id).await? else {
         return Ok(None);
     };
@@ -160,11 +160,12 @@ async fn validated(
         .await?
         .is_some();
     }
-    Ok(Some(Summary {
+    let summary = Summary {
         reason,
         generation: job.generation,
         late_receipt_present,
-    }))
+    };
+    Ok(Some((job, summary)))
 }
 
 #[cfg(test)]
