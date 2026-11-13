@@ -428,6 +428,11 @@ supervision or live provider activation follows from deploying the empty preview
    sandbox outcomes, concurrency, cent allocations and crash recovery without
    duplicate effects.
 
+A pure whole-variant shipment quantity check compares an accepted order's
+captured SKU quantities with complete caller-supplied prior counts and a bounded
+proposal. Before dispatch, persist authenticated fulfilment history and record
+physical package evidence for the components in each shipment.
+
 Trusted whole-basket reservation primitives now provide immutable manifests,
 exact fresh child bindings and aggregated component claims in one transaction.
 Historical retries preserve terminal members; expiry still uses the existing
