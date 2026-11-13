@@ -8,7 +8,7 @@ use sqlx::{PgPool, Postgres, Transaction};
 use zeroize::Zeroize;
 
 mod revocation;
-pub use revocation::revoke_self;
+pub use revocation::{RevocationError, revoke_self};
 
 // Intentionally no Debug/Serialize: a bearer credential is never response/log data.
 pub struct SessionToken([u8; 32]);

@@ -3,7 +3,7 @@ use commerce_application::request_context::{Clock, ContextError};
 use commerce_domain::inventory::WarehouseChange;
 use commerce_infrastructure::{
     MIGRATOR,
-    staff_access::{SessionToken, StaffError, revoke_self},
+    staff_access::{RevocationError, SessionToken, StaffError, revoke_self},
     staff_operations::{StaffWarehouseRequest, warehouse_change},
 };
 use sqlx::{Executor, PgPool};
@@ -92,7 +92,7 @@ async fn exact_revoke_replays_without_disclosure_and_preserves_other_sessions(po
     // A clock earlier than this existing revocation fails closed instead of clamping.
     assert!(matches!(
         revoke_self(&pool, &token(1), &Time(2000)).await,
-        Err(StaffError::ClockUnavailable)
+        Err(RevocationError::ClockUnavailable)
     ));
     assert_eq!(revoked_at(&pool, 2).await, None);
     assert_eq!(revoked_at(&pool, 3).await, None);
@@ -119,19 +119,19 @@ async fn clock_failure_or_backward_observation_cannot_revoke(pool: PgPool) {
     seed(&pool).await;
     assert!(matches!(
         revoke_self(&pool, &token(1), &Backward(AtomicUsize::new(0))).await,
-        Err(StaffError::ClockUnavailable)
+        Err(RevocationError::ClockUnavailable)
     ));
     assert!(matches!(
         revoke_self(&pool, &token(1), &Time(999)).await,
-        Err(StaffError::ClockUnavailable)
+        Err(RevocationError::ClockUnavailable)
     ));
     assert!(matches!(
         revoke_self(&pool, &token(1), &Time(u64::MAX)).await,
-        Err(StaffError::ClockUnavailable)
+        Err(RevocationError::ClockUnavailable)
     ));
     assert!(matches!(
         revoke_self(&pool, &token(1), &LateBackward(AtomicUsize::new(0))).await,
-        Err(StaffError::ClockUnavailable)
+        Err(RevocationError::ClockUnavailable)
     ));
     assert_eq!(revoked_at(&pool, 1).await, None);
 }
@@ -143,17 +143,37 @@ async fn failed_or_altered_write_rolls_back(pool: PgPool) {
         .await.expect("synthetic suppression");
     assert!(matches!(
         revoke_self(&pool, &token(1), &Time(1100)).await,
-        Err(StaffError::Denied)
+        Err(RevocationError::Unavailable)
     ));
     assert_eq!(revoked_at(&pool, 1).await, None);
     pool.execute("DROP TRIGGER suppress_revoke ON staff_sessions; CREATE FUNCTION alter_revoke() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN NEW.revoked_at := NEW.revoked_at + 1; RETURN NEW; END $$; CREATE TRIGGER alter_revoke BEFORE UPDATE ON staff_sessions FOR EACH ROW EXECUTE FUNCTION alter_revoke()")
         .await.expect("synthetic altered result");
     assert!(matches!(
         revoke_self(&pool, &token(1), &Time(1100)).await,
-        Err(StaffError::Denied)
+        Err(RevocationError::Unavailable)
     ));
     assert_eq!(revoked_at(&pool, 1).await, None);
     pool.execute("DROP TRIGGER alter_revoke ON staff_sessions")
+        .await
+        .expect("restore");
+    assert!(revoke_self(&pool, &token(1), &Time(1100)).await.is_ok());
+}
+
+#[sqlx::test(migrator = "MIGRATOR")]
+async fn database_diagnostic_is_closed_and_rolls_back(pool: PgPool) {
+    seed(&pool).await;
+    pool.execute("CREATE FUNCTION fail_revoke() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN RAISE EXCEPTION 'SYNTHETIC_SECRET_MARKER' USING DETAIL = 'SYNTHETIC_PRIVATE_DETAIL'; END $$; CREATE TRIGGER fail_revoke BEFORE UPDATE ON staff_sessions FOR EACH ROW EXECUTE FUNCTION fail_revoke()")
+        .await.expect("synthetic error trigger");
+    let error = revoke_self(&pool, &token(1), &Time(1100))
+        .await
+        .expect_err("write must fail");
+    assert_eq!(error, RevocationError::Unavailable);
+    let diagnostic = format!("{error:?}");
+    assert!(!diagnostic.contains("SYNTHETIC_SECRET_MARKER"));
+    assert!(!diagnostic.contains("SYNTHETIC_PRIVATE_DETAIL"));
+    assert_eq!(revoked_at(&pool, 1).await, None);
+    assert_eq!(revoked_at(&pool, 2).await, None);
+    pool.execute("DROP TRIGGER fail_revoke ON staff_sessions")
         .await
         .expect("restore");
     assert!(revoke_self(&pool, &token(1), &Time(1100)).await.is_ok());
