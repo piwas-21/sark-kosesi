@@ -671,6 +671,26 @@ async fn expired_inflight_start_parks_first_and_late_page_remains_durable(pool: 
         }
     }
     assert_eq!(server.count(), 5, "inspection does not contact provider");
+    server.inspect(|requests| {
+        assert_eq!(requests.len(), 5);
+        assert!(
+            requests
+                .iter()
+                .all(|request| request.method == "GET" && request.body.is_empty())
+        );
+        assert_eq!(requests[0].path, "/v2/profiles/me");
+        assert_eq!(requests[1].path, format!("/v2/payments/{PAYMENT}"));
+        assert_eq!(
+            requests[2].path,
+            format!("/v2/payments/{PAYMENT}/refunds?limit=10")
+        );
+        assert_eq!(requests[3].path, format!("/v2/payments/{PAYMENT}"));
+        assert_eq!(
+            requests[4].path,
+            format!("/v2/payments/{PAYMENT}/refunds?limit=10&from=re_NEXT")
+        );
+    });
+    let requests_before_corruption = server.count();
     assert_eq!(stopped.generation, 2);
     assert!(stopped.tip_page_id.is_some());
     // Moving the existing predecessor one second beyond the operation
@@ -847,7 +867,7 @@ async fn expired_inflight_start_parks_first_and_late_page_remains_durable(pool: 
     ));
     assert_eq!(
         server.count(),
-        3,
+        requests_before_corruption,
         "corrupt custody cannot trigger a provider call"
     );
 }
