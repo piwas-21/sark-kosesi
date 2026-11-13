@@ -2,7 +2,7 @@
 use super::*;
 use crate::payment_attempts::{
     observations::record_verified,
-    reversal_supervision::{EnrollIntent, enroll, read_job, run_batch},
+    reversal_supervision::{EnrollIntent, RecoveryError, enroll, read_job, run_batch},
 };
 use std::sync::{
     Arc,
@@ -310,7 +310,7 @@ async fn late_page_is_durable_and_recovered_without_another_provider_read(pool: 
         gate.store(true, Ordering::SeqCst);
     };
     let (result, ()) = tokio::join!(first, expire);
-    assert!(result.is_err(), "expired fence cannot finish");
+    assert!(matches!(result, Err(RecoveryError::LeaseLost)));
     let count: i64 =
         sqlx::query_scalar("SELECT count(*) FROM payment_reversal_pages WHERE attempt_id=$1")
             .bind(&job.attempt_id)
@@ -318,9 +318,21 @@ async fn late_page_is_durable_and_recovered_without_another_provider_read(pool: 
             .await
             .expect("pages");
     assert_eq!(count, 1, "late verified page remains durable");
-    run_batch(&pool, time.as_ref(), &ids, &client, 1)
+    // A plain page read does not wait for the failed finish transaction's rollback.
+    let mut fence = pool.begin().await.expect("late page rollback fence");
+    sqlx::query("SELECT id FROM payment_attempts WHERE id=$1 FOR UPDATE")
+        .bind(&job.attempt_id)
+        .fetch_one(&mut *fence)
         .await
-        .expect("recover receipt");
+        .expect("failed finish released attempt");
+    fence.rollback().await.expect("release recovery fence");
+    assert_eq!(
+        run_batch(&pool, time.as_ref(), &ids, &client, 1)
+            .await
+            .expect("recover receipt")
+            .processed,
+        1
+    );
     let recovered = read_job(&pool, &job.id)
         .await
         .expect("custody")
