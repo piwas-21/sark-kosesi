@@ -20,6 +20,10 @@ payment reconciler and cannot consume or reallocate a late paid order.
 
 Use only reviewed free self-hostable libraries/tools; retain licences/notices and produce an SBOM for release images. Exact direct dependencies and committed lockfiles; actions commit-pinned and images digest-pinned. Weekly update PRs, prompt security updates, no automatic major upgrades. Rebuild reproducibly, run contract/migration/regression checks and retain image provenance. Reject unknown/restrictive licences until reviewed; no dependency that requires a paid service to keep checkout working.
 
+Keep all CodeQL action steps on the same commit. Dependabot groups their version
+updates; review the resulting pins together and require fresh populated analysis
+for each configured language before merging.
+
 ## Environments and credentials
 
 Compose runs independent storefront, Rust API/worker, PostgreSQL and storage services. The current non-selling staging deployment uses the existing Traefik/Coolify TLS proxy; future production ingress needs its own reviewed policy. No public DB/admin debug port. Separate sandbox/staging/production secrets, profiles, sender and storage; least-privilege credentials with documented rotation and revocation. Inject secrets at runtime; verify logs/artifacts never disclose them. Access is audited and MFA protected. Use small bounded production-safe health endpoints without customer data.
