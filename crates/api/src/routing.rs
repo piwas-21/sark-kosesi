@@ -113,6 +113,12 @@ fn build(
         );
     }
     if let Some(config) = login {
+        if config.restock_transport {
+            app = app.route(
+                "/api/test/customer/restock/{locale}",
+                get(crate::test_restock::list).layer(Extension(config.clone())),
+            );
+        }
         if config.favourites_transport {
             app = app.route(
                 "/api/test/customer/favourites/{locale}",
