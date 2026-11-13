@@ -46,7 +46,6 @@ pub struct Entry {
 #[derive(sqlx::FromRow)]
 struct Candidate {
     id: String,
-    attempt_id: String,
     updated_at: i64,
 }
 
@@ -81,10 +80,10 @@ async fn examine(
     after: Option<&Cursor>,
 ) -> Result<Option<Entry>, ReviewError> {
     let candidate: Option<Candidate> = if let Some(cursor) = after {
-        sqlx::query_as("SELECT left(id,33) AS id,left(attempt_id,33) AS attempt_id,updated_at FROM reversal_item_jobs WHERE state='review' AND (updated_at,id COLLATE \"C\")>($1,$2 COLLATE \"C\") ORDER BY updated_at,id COLLATE \"C\" LIMIT 1")
+        sqlx::query_as("SELECT left(id,33) AS id,updated_at FROM reversal_item_jobs WHERE state='review' AND (updated_at,id COLLATE \"C\")>($1,$2 COLLATE \"C\") ORDER BY updated_at,id COLLATE \"C\" LIMIT 1")
             .bind(cursor.updated_at).bind(&cursor.job_id).fetch_optional(&mut **tx).await
     } else {
-        sqlx::query_as("SELECT left(id,33) AS id,left(attempt_id,33) AS attempt_id,updated_at FROM reversal_item_jobs WHERE state='review' ORDER BY updated_at,id COLLATE \"C\" LIMIT 1")
+        sqlx::query_as("SELECT left(id,33) AS id,updated_at FROM reversal_item_jobs WHERE state='review' ORDER BY updated_at,id COLLATE \"C\" LIMIT 1")
             .fetch_optional(&mut **tx).await
     }.map_err(|_| ReviewError::Unavailable)?;
     let Some(candidate) = candidate else {
@@ -92,17 +91,11 @@ async fn examine(
     };
     let position =
         Cursor::new(candidate.updated_at, &candidate.id).map_err(|_| ReviewError::Unavailable)?;
-    if !identifier(&candidate.attempt_id) {
-        return Err(ReviewError::Unavailable);
-    }
     let (job, summary) = review::validated(tx, &candidate.id)
         .await
         .map_err(|_| ReviewError::Unavailable)?
         .ok_or(ReviewError::Unavailable)?;
-    if job.id != candidate.id
-        || job.attempt_id != candidate.attempt_id
-        || job.updated_at != candidate.updated_at
-    {
+    if job.updated_at != candidate.updated_at {
         return Err(ReviewError::Unavailable);
     }
     Ok(Some(Entry { position, summary }))
