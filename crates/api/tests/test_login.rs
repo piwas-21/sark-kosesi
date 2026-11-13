@@ -11,7 +11,7 @@ use commerce_api::{AppState, config::Config, router, router_with_test_login};
 use commerce_application::request_context::{Clock, ContextError, Identifiers};
 use commerce_infrastructure::{
     MIGRATOR,
-    customer_sessions::{self, CustomerSessionToken, SessionError},
+    customer_sessions::{self, CustomerCsrfToken, CustomerSessionToken, SessionError},
 };
 use sqlx::{Executor, PgPool};
 use std::{
@@ -325,7 +325,17 @@ async fn valid_login_sets_only_a_bound_expiring_cookie_and_replay_issues_a_disti
     }
     assert_distinct_cookies(&cookies[0], &cookies[1]);
     assert_eq!(counts(&pool).await, (2, 2));
+    let bindings: i64 = sqlx::query_scalar("SELECT count(*) FROM customer_session_csrf")
+        .fetch_one(&pool)
+        .await
+        .expect("count private synchronizers");
+    assert_eq!(bindings, 0);
+    let unrelated = CustomerCsrfToken::from_bytes([17; 32]);
     for token in &tokens {
+        assert_eq!(
+            customer_sessions::logout_with_csrf(&pool, token, &unrelated, time.as_ref()).await,
+            Err(SessionError::Denied)
+        );
         assert_eq!(
             customer_sessions::authenticate(&pool, token, time.as_ref())
                 .await
