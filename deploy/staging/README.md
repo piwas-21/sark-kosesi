@@ -28,6 +28,10 @@ No expiry worker, admin authority, merchant data or test fixtures are seeded.
 
 ## Build and start
 
+The web build copies each locked workspace manifest before `npm ci` so that
+workspace dependency changes invalidate the install layer. Keep those copies in
+sync when adding or changing workspaces.
+
 1. Use accepted `develop` source whose complete tree matches the independently
    reviewed feature and all nine current-head gates. Keep `productionEnabled=false`.
    Before upgrading an existing database, prove migration/startup compatibility
