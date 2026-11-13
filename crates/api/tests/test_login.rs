@@ -1189,3 +1189,6 @@ async fn bound_login_cookie_clock_failure_keeps_committed_unreturned_session(poo
         .expect("binding count");
     assert_eq!(bound, 1);
 }
+
+#[path = "support/test_favourites.rs"]
+mod favourites;

@@ -444,8 +444,10 @@ bucket. Mutations require the current bucket revision unless already satisfied;
 actual membership changes advance it. Adds require the current eligible
 publication in the selected locale. Listing rechecks that projection and returns
 only the current SKU and publication revision. Unavailable entries remain stored
-but are hidden; removal and clear include them. This is an internal primitive,
-not an HTTP endpoint. It does not provide export, account deletion, browser
+but are hidden; removal and clear include them. A separately enabled test-only
+GET uses preview authentication, the exact test Origin and the issued customer
+cookie to read this projection. It can initialize the empty bucket on first read;
+its decimal revision avoids JavaScript integer precision loss. It does not provide export, account deletion, browser
 controls or production abuse and retention policy. Migration 0063 follows the
 customer-session CSRF migration 0062.
 

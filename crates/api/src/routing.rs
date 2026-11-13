@@ -113,6 +113,12 @@ fn build(
         );
     }
     if let Some(config) = login {
+        if config.favourites_transport {
+            app = app.route(
+                "/api/test/customer/favourites/{locale}",
+                get(crate::test_favourites::list).layer(Extension(config.clone())),
+            );
+        }
         if config.csrf_transport {
             app = app
                 .route(

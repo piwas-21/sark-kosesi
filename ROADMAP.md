@@ -204,6 +204,9 @@ A private favourites primitive keeps up to 25 stable merchant SKUs per verified
 account. Live session authority and current publication are rechecked; withdrawn
 entries are hidden but can be removed or cleared. Browser controls, privacy
 export/deletion and production abuse controls remain P4 work.
+A separately opted-in test-only GET exposes that same owned projection to a
+preview-authenticated caller with the configured Origin and customer cookie.
+It can initialize the account's empty favourites bucket; it is not public ingress.
 A separate private restock opt-in primitive retains a bounded active subscription
 per account and merchant variant; cancellation does not depend on publication.
 It sends no messages and does not detect stock transitions. Alert delivery,

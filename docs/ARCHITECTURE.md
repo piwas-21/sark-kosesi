@@ -1826,8 +1826,11 @@ claim current publication sources using the existing projection. Recheck the
 session after bucket and publication waits before returning private-state errors,
 and recheck session and image rights at the final observed time. Only current SKU and
 publication revision leave the private read; hidden entries remain removable.
-The database writer is trusted for session and publication authority. No HTTP
-route or customer erasure workflow is installed.
+The database writer is trusted for session and publication authority. A separately
+enabled test-only GET uses preview authority, exact configured Origin and the
+issued customer cookie to call this operation directly. It returns only the
+bounded eligible projection and decimal revision, and may initialize an empty
+bucket. It does not install public ingress or a customer erasure workflow.
 
 ### Private restock opt-in
 
