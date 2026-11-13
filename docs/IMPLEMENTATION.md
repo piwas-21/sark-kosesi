@@ -424,6 +424,19 @@ No public guest checkout route, provider calls, payment acceptance or production
 activation follows from these private primitives. Preserve
 all nine CI gates and the approved courtyard visual source/baselines.
 
+## P4 private favourites
+
+A verified customer can privately retain up to 25 merchant SKUs. Each operation
+holds live account and session claims and serializes on an account-specific
+bucket. Mutations require the current bucket revision unless already satisfied;
+actual membership changes advance it. Adds require the current eligible
+publication in the selected locale. Listing rechecks that projection and returns
+only the current SKU and publication revision. Unavailable entries remain stored
+but are hidden; removal and clear include them. This is an internal primitive,
+not an HTTP endpoint. It does not provide export, account deletion, browser
+controls or production abuse and retention policy. Migration 0063 follows the
+customer-session CSRF migration 0062.
+
 ## P4 email verification foundation
 
 Private SQLx custody issues a random challenge for a narrowly normalized mailbox

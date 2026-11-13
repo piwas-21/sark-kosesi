@@ -22,6 +22,18 @@ crate removes the unused SQLite dependency affected by
 [RUSTSEC-2026-0459](https://rustsec.org/advisories/RUSTSEC-2026-0459.html).
 Failed audits preserve their JSON report separately from passing evidence.
 
+## Private favourites boundary
+
+The private SQLx operation accepts only a current customer session, never a
+caller-selected account. It retains only stable merchant SKU identities, uses
+a bounded account-specific bucket and returns currently publishable identities
+only. Database guards serialize and cap native membership changes; they do not
+authenticate native SQL callers or prove publication. An unavailable saved
+entry is hidden and remains removable. Session validity is rechecked after
+bucket and source waits before reporting revision conflict or capacity. A bucket
+remains after clearing to preserve revision ordering. Export, deletion, retention and browser CSRF and
+abuse controls require separate implementation and review before exposure.
+
 ## P1 verification scope
 
 ASVS level 2 is the inventory target. The implemented trust boundaries are the

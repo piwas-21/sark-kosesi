@@ -1791,6 +1791,20 @@ session expiry and carries no account or bearer in its body. Failures carry no
 cookie; an HTTP timeout can follow a committed session without returning it.
 This adapter supplies no session-read route, logout or public ingress authority.
 
+### Private customer favourites
+
+Hold current account and session claims before locking the per-account favourite
+bucket. The database serializes membership changes on that bucket, enforces a
+25-SKU cap and excludes fixture identities. The monotonic revision survives an
+empty list, preventing a stale change from undoing a later one. A satisfied
+request is a no-op rather than a durable command receipt. For adds and reads,
+claim current publication sources using the existing projection. Recheck the
+session after bucket and publication waits before returning private-state errors,
+and recheck session and image rights at the final observed time. Only current SKU and
+publication revision leave the private read; hidden entries remain removable.
+The database writer is trusted for session and publication authority. No HTTP
+route or customer erasure workflow is installed.
+
 ### Private guest-order linking
 
 Issue a 15-minute order-link proof only after checking the live guest basket
