@@ -32,6 +32,13 @@ The web build copies each locked workspace manifest before `npm ci` so that
 workspace dependency changes invalidate the install layer. Keep those copies in
 sync when adding or changing workspaces.
 
+Final API, web and callback-edge stages use a pinned Debian runtime with UID and
+GID 1000. The web and edge copy only the pinned Node executable and its licence
+from the Node image; npm, Yarn and Corepack are build tools, not intentionally
+copied as global runtime tools. Verify the built images, their standalone app
+dependencies, non-root startup and health checks before using them. Source checks
+alone do not prove image contents or runtime compatibility.
+
 1. Use accepted `develop` source whose complete tree matches the independently
    reviewed feature and all nine current-head gates. Keep `productionEnabled=false`.
    Before upgrading an existing database, prove migration/startup compatibility
