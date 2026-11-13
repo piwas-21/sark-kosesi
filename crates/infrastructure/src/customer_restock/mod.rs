@@ -1,6 +1,6 @@
 //! Private restock opt-in custody. No notification, transport or HTTP route.
 use crate::{
-    customer_sessions::{self, CustomerSessionToken},
+    customer_sessions::{self, CustomerCsrfToken, CustomerSessionToken},
     published_catalogue,
 };
 use commerce_application::{
@@ -82,7 +82,16 @@ pub async fn subscribe(
     sku: &str,
     expected_revision: i64,
 ) -> Result<i64, RestockError> {
-    set(pool, token, clock, Some(locale), sku, expected_revision).await
+    set(
+        pool,
+        token,
+        None,
+        clock,
+        Some(locale),
+        sku,
+        expected_revision,
+    )
+    .await
 }
 /// Cancel one opt-in, including a now-unpublished variant known to the owner.
 pub async fn unsubscribe(
@@ -92,11 +101,46 @@ pub async fn unsubscribe(
     sku: &str,
     expected_revision: i64,
 ) -> Result<i64, RestockError> {
-    set(pool, token, clock, None, sku, expected_revision).await
+    set(pool, token, None, clock, None, sku, expected_revision).await
 }
+/// Opt in only under the exact live session's bound synchronizer.
+pub async fn subscribe_with_csrf(
+    pool: &PgPool,
+    token: &CustomerSessionToken,
+    csrf: &CustomerCsrfToken,
+    clock: &dyn Clock,
+    locale: Locale,
+    sku: &str,
+    expected_revision: i64,
+) -> Result<i64, RestockError> {
+    set(
+        pool,
+        token,
+        Some(csrf),
+        clock,
+        Some(locale),
+        sku,
+        expected_revision,
+    )
+    .await
+}
+
+/// Cancel an opt-in, including a hidden SKU, with the bound synchronizer.
+pub async fn unsubscribe_with_csrf(
+    pool: &PgPool,
+    token: &CustomerSessionToken,
+    csrf: &CustomerCsrfToken,
+    clock: &dyn Clock,
+    sku: &str,
+    expected_revision: i64,
+) -> Result<i64, RestockError> {
+    set(pool, token, Some(csrf), clock, None, sku, expected_revision).await
+}
+
 async fn set(
     pool: &PgPool,
     token: &CustomerSessionToken,
+    csrf: Option<&CustomerCsrfToken>,
     clock: &dyn Clock,
     locale: Option<Locale>,
     sku: &str,
@@ -110,9 +154,13 @@ async fn set(
     let mut tx = customer_sessions::begin(pool)
         .await
         .map_err(session_failure)?;
-    let session = customer_sessions::claim_session(&mut tx, token, &observed)
-        .await
-        .map_err(session_failure)?;
+    let session = match csrf {
+        Some(csrf) => {
+            customer_sessions::claim_session_with_csrf(&mut tx, token, csrf, &observed).await
+        }
+        None => customer_sessions::claim_session(&mut tx, token, &observed).await,
+    }
+    .map_err(session_failure)?;
     let account = session.account_id();
     let revision = bucket(&mut tx, account).await?;
     let mut expected = saved(&mut tx, account, revision).await?;

@@ -459,7 +459,9 @@ serialized account revision and unique activation generation bound concurrent
 changes and stale replays. New opt-ins require current publication in the chosen
 locale but do not require a particular stock state. A customer can unsubscribe
 an unpublished SKU or clear all active entries. No address, alert message,
-stock transition, outbox, delivery or HTTP route is created. Current opt-in time
+stock transition, outbox, delivery or HTTP route is created. Separate subscribe
+and unsubscribe adapters bind the session synchronizer inside the bucket transaction;
+HTTP exposure and its complete browser protections remain future work. Current opt-in time
 is retained only while subscribed; this is not consent history. Alert scheduling,
 delivery idempotency and cancellation ordering, retention, locale, recurrence,
 privacy export/deletion, guest enrollment and abuse controls remain P4 work.

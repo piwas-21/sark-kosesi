@@ -44,10 +44,12 @@ Only the current verified customer session can change that account's active
 subscriptions. Subscribe is an explicit request for a current merchant variant;
 it does not imply marketing consent. A stale revision cannot silently restore a
 cancelled subscription, and the owned bucket serializes native membership and
-capacity. The database writer remains trusted for session and publication
+capacity. The synchronizer-bound subscribe and unsubscribe adapters verify the exact live
+session binding under the same transaction as the bucket change; existing trusted
+callers remain separate. The database writer remains trusted for session and publication
 authority. Hidden entries can be removed without disclosing unpublished facts.
 The current row and opt-in timestamp are not an immutable consent audit. Browser
-CSRF, abuse limits, retention, privacy export/deletion and delivery consent and
+routing and complete CSRF enforcement, abuse limits, retention, privacy export/deletion and delivery consent and
 cancellation guarantees require separate design and acceptance before exposure.
 
 ## P1 verification scope
