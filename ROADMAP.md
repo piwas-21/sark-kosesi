@@ -319,5 +319,8 @@ one scarcity case generation. It retains the original review case and records a
 digest-bound allocation or a fresh still-scarce assessment. Release and prior
 consumption cases stay stopped. Complete actual proxy/resource-limit/no-bypass
 and TLS/provider acceptance before public activation, remaining operator
-dispositions and separate order/fulfilment/refund/invoice transitions. A pure domain
-plan or matched synthetic response is not dispatch or payment authority.
+dispositions and separate order/fulfilment/refund/invoice transitions. A pure
+whole-variant quantity check now bounds a shipment proposal against an accepted
+order and caller-supplied prior counts. Shipment history, package contents and
+dispatch authority still need evidence. Dispatch and payment require separate
+authorization.

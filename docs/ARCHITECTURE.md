@@ -674,6 +674,17 @@ follows separately reserved migrations 0062 and 0063.
 
 Order, payment, fulfilment and return states are separate. Late paid payments after reservation expiry attempt atomic reallocation; failure creates a visible finance/support exception and recovery/refund process. Payment success cannot be discarded because stock expired. Partial refunds cannot exceed captured less refunded amounts; preserve tax/discount allocation and credit-document links. A refund does not automatically restock goods. Chargebacks are finance events.
 
+A pure shipment quantity check validates the accepted order and accounts only
+for complete sellable variant units. Its caller supplies a complete prior count
+for every captured SKU and a positive proposed count for each selected SKU. The
+check rejects duplicates, unknowns, incomplete prior counts, overflow and totals
+above the original ordered quantities. Output follows captured quote order.
+Picking, dispatch and stock consumption require a later fulfilment transaction.
+It must authenticate staff, lock and reconstruct complete committed history, bind
+idempotent effects, revalidate order/payment/stock state and persist its event.
+A variant may need multiple physical packages. Accounting for a whole unit then
+requires custody of its packages and components.
+
 Write domain changes and outbox events in one transaction. Workers claim leases using PostgreSQL, retry with backoff and stable effect identifiers, and recover abandoned leases. Emails, stock alerts and fulfilment requests are idempotent. Record provider acceptance separately from customer delivery. Failed jobs are visible and replayable only through bounded, audited admin actions.
 
 ### Initial test-attempt model
