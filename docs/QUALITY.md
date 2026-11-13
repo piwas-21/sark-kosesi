@@ -862,6 +862,15 @@ live bearer-only and CSRF-bound sessions and a published catalogue, then verify
 that session and publication authority survive the addition of migration 0063.
 These checks do not establish browser CSRF, account deletion or public ingress.
 
+### Private restock opt-in custody
+
+Use isolated PostgreSQL for explicit opt-in, owner isolation, generation and
+stale replay, hidden cancellation, account capacity and real concurrent writers.
+Check session expiry after a lock wait and before commit; verify upgrade from the
+prior schema preserves session, favourite and catalogue authority. Confirm the
+operations create no stock movement, order outbox event or message. These tests
+are not notification delivery, retention or browser acceptance.
+
 ### Private guest-order links
 
 Use isolated PostgreSQL with actual accepted guest orders and verified

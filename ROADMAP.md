@@ -197,6 +197,10 @@ A private favourites primitive keeps up to 25 stable merchant SKUs per verified
 account. Live session authority and current publication are rechecked; withdrawn
 entries are hidden but can be removed or cleared. Browser controls, privacy
 export/deletion and production abuse controls remain P4 work.
+A separate private restock opt-in primitive retains a bounded active subscription
+per account and merchant variant; cancellation does not depend on publication.
+It sends no messages and does not detect stock transitions. Alert delivery,
+retention and cancellation policy remain open.
 
 The local room-planner preview combines the rectangle calculator with keyboard
 measurement and rotation controls, a drawn footprint, and text clearance and fit

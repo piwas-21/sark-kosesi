@@ -1814,6 +1814,22 @@ publication revision leave the private read; hidden entries remain removable.
 The database writer is trusted for session and publication authority. No HTTP
 route or customer erasure workflow is installed.
 
+### Private restock opt-in
+
+An explicit trusted call claims the live account and session, then serializes
+its private subscription bucket before claiming current publication sources.
+A current merchant SKU can have one active opt-in per account. The native bucket
+advances for each actual insert or delete; a new row receives that revision as
+its immutable generation and records its opt-in time. Unchanged requests do not
+advance it, while a stale request cannot reverse a later change. Native guards
+bound active rows to 25 and reject fixture identities. Final reads compare the
+complete bounded state and recheck the session and current image rights.
+Unavailable publication is hidden, but unsubscribe and clear still work. The
+stock projection is not a transition claim or a reservation. Account email is
+not copied. No notification event or transport is installed; future delivery
+must separately establish generation-aware deduplication and cancellation/start
+ordering. Current rows are not an audit or deletion/export policy.
+
 ### Private guest-order linking
 
 Issue a 15-minute order-link proof only after checking the live guest basket
