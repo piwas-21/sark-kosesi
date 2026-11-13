@@ -212,6 +212,19 @@ export type TestFavouriteList = {
     revision: string;
 };
 
+export type TestRestockItem = {
+    publication_revision: number;
+    sku: string;
+};
+
+export type TestRestockList = {
+    items: Array<TestRestockItem>;
+    /**
+     * Decimal representation avoids losing a PostgreSQL bigint in JavaScript.
+     */
+    revision: string;
+};
+
 export type TestSessionProof = {
     /**
      * One independent synchronizer encoded as 64 lowercase hexadecimal characters.
@@ -604,6 +617,37 @@ export type TestCustomerLoginWithCsrfResponses = {
 };
 
 export type TestCustomerLoginWithCsrfResponse = TestCustomerLoginWithCsrfResponses[keyof TestCustomerLoginWithCsrfResponses];
+
+export type TestCustomerRestockData = {
+    body?: never;
+    headers: {
+        Origin: string;
+    };
+    path: {
+        locale: string;
+    };
+    query?: never;
+    url: '/api/test/customer/restock/{locale}';
+};
+
+export type TestCustomerRestockErrors = {
+    400: ApiError;
+    401: ApiError;
+    403: ApiError;
+    503: ApiError;
+    504: ApiError;
+};
+
+export type TestCustomerRestockError = TestCustomerRestockErrors[keyof TestCustomerRestockErrors];
+
+export type TestCustomerRestockResponses = {
+    /**
+     * Current published restock subscriptions for the cookie owner
+     */
+    200: TestRestockList;
+};
+
+export type TestCustomerRestockResponse = TestCustomerRestockResponses[keyof TestCustomerRestockResponses];
 
 export type TestCustomerLogoutData = {
     body?: never;
