@@ -26,6 +26,7 @@ pub struct LoginConfig {
     pub(crate) key: Arc<AdmissionKey>,
     pub(crate) limits: AdmissionLimits,
     pub(crate) csrf_transport: bool,
+    pub(crate) favourites_transport: bool,
 }
 impl LoginConfig {
     pub fn from_env(
@@ -37,11 +38,17 @@ impl LoginConfig {
             Some("1") if environment == Some("test") => true,
             _ => return Err("Invalid test login CSRF transport"),
         };
+        let favourites_transport = match values.get("TEST_FAVOURITES_TRANSPORT").map(String::as_str)
+        {
+            None => false,
+            Some("1") if environment == Some("test") => true,
+            _ => return Err("Invalid test favourites transport"),
+        };
         match (
             values.get("TEST_LOGIN_ORIGIN"),
             values.get("TEST_LOGIN_ADMISSION_KEY"),
         ) {
-            (None, None) if !csrf_transport => Ok(None),
+            (None, None) if !csrf_transport && !favourites_transport => Ok(None),
             (Some(origin), Some(key)) if environment == Some("test") => {
                 let origin = GuestOrigin::parse(origin).map_err(|_| "Invalid test login origin")?;
                 let bytes = decode_hex(key).ok_or("Invalid test login admission key")?;
@@ -53,6 +60,7 @@ impl LoginConfig {
                     key: Arc::new(key),
                     limits,
                     csrf_transport,
+                    favourites_transport,
                 }))
             }
             _ => Err("Test login requires test mode, origin and admission key"),

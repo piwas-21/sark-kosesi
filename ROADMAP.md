@@ -8,6 +8,9 @@ support deterministic diagnostics and generated request correlation. Real
 source/coverage/audit, PostgreSQL, component/browser/accessibility, approved visual,
 performance and discovery gates are required from the first application PR.
 Current-revision CI, independent review and the merge gate remain mandatory.
+The API's offline migration-manifest command reports the compiled SQLx migration
+versions, types, checksums and missing-version policy. It does not prove image
+provenance, database state or startup compatibility.
 
 Product families, separable variants, shared cover/foam components and sealed,
 immutable BOM revisions are implemented behind the existing read-only preview.
@@ -132,7 +135,8 @@ with effect-key replay. A validated open tip can restore a same-key continuation
 An explicit test-profile supervisor now admits bounded page operations from an
 authenticated paid observation. Durable starts, exact receipt recovery and fenced
 checkpoints keep uncertain work visible for review. Explicit local/test worker
-commands enroll, run a bounded pass and inspect scan state. A separate item
+commands enroll, run a bounded pass and inspect scan state, including the
+validated presence or absence of the exact late page for an uncertain stop. A separate item
 supervisor binds one candidate position to an exact authenticated refund or
 chargeback observation. Private finance staff can now prepare one immutable
 test-mode execution proposal per reservation. It preserves the reserved SKU and
@@ -201,6 +205,9 @@ A private favourites primitive keeps up to 25 stable merchant SKUs per verified
 account. Live session authority and current publication are rechecked; withdrawn
 entries are hidden but can be removed or cleared. Browser controls, privacy
 export/deletion and production abuse controls remain P4 work.
+A separately opted-in test-only GET exposes that same owned projection to a
+preview-authenticated caller with the configured Origin and customer cookie.
+It can initialize the account's empty favourites bucket; it is not public ingress.
 A separate private restock opt-in primitive retains a bounded active subscription
 per account and merchant variant; cancellation does not depend on publication.
 It sends no messages and does not detect stock transitions. Alert delivery,
