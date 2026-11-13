@@ -193,6 +193,10 @@ Mailbox delivery and public ingress readiness still require acceptance.
 An optional private test-only password login uses admitted credential checks
 and returns the issued session only in a secure host-only cookie. It has no
 session-reading or logout route and does not establish public login readiness.
+A private favourites primitive keeps up to 25 stable merchant SKUs per verified
+account. Live session authority and current publication are rechecked; withdrawn
+entries are hidden but can be removed or cleared. Browser controls, privacy
+export/deletion and production abuse controls remain P4 work.
 
 The local room-planner preview combines the rectangle calculator with keyboard
 measurement and rotation controls, a drawn footprint, and text clearance and fit
