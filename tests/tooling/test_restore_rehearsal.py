@@ -15,12 +15,35 @@ from rehearse_restore import (
     owned_directory,
     pg_env,
     require_quiescent_source,
+    run_fixture,
     sequence_inventory,
     source_state,
 )
 
 
 class RestoreRehearsalSafety(unittest.TestCase):
+    def test_fixture_requires_exact_selected_success(self):
+        from types import SimpleNamespace
+
+        with patch("rehearse_restore.subprocess.run") as run:
+            run.return_value = SimpleNamespace(
+                returncode=0, stdout=b"test result: ok. 1 passed; 0 failed;"
+            )
+            run_fixture({}, "verify_restored_keys")
+            self.assertIn(
+                "mollie::tests::restore_rehearsal::verify_restored_keys", run.call_args.args[0]
+            )
+            for result in (
+                SimpleNamespace(returncode=1, stdout=b"test result: ok. 1 passed; 0 failed;"),
+                SimpleNamespace(returncode=0, stdout=b"test result: ok. 11 passed; 0 failed;"),
+                SimpleNamespace(returncode=0, stdout=b"test result: ok. 0 passed; 0 failed;"),
+            ):
+                run.return_value = result
+                with self.assertRaises(RuntimeError):
+                    run_fixture({}, "verify_restored_keys")
+            with self.assertRaises(ValueError):
+                run_fixture({}, "foreign_fixture")
+
     def test_sequence_inventory_quotes_identifiers_and_preserves_called_state(self):
         class SyntheticSnapshot:
             def query(self, sql):

@@ -87,7 +87,15 @@ owned Cargo target and sufficient disk; stopped temporary clusters are removed, 
 a cluster that cannot be stopped is retained for inspection. The comparison covers
 public tables, migration rows and public sequence values, not complete schema,
 constraint definitions or sequence configuration.
-This synthetic test does not exercise staging images, media, key rotation, shared
+After comparing the restored tables, the synthetic fixture supplies separately
+held, hardcoded test keys to the trusted in-process opening path. It verifies an
+unclaimed restored envelope with its original key, rejects an incorrect key and
+does not reopen a start already committed before the dump. It then registers a
+distinct fresh synthetic key and issues and opens a new synthetic envelope in the
+restored copy. Only the copy is modified by these checks. This is not a general
+historical reader, mailbox delivery, actual key custody or automatic detection of
+a restored database; operators must still provision the fresh active key.
+This synthetic test does not exercise staging images, media, operational key rotation, shared
 proxy or router switching, off-host backups, live data, provider recovery, or the
 production RPO/RTO. It cannot by itself pass the restore and rollback release gate.
 

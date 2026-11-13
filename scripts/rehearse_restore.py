@@ -234,6 +234,32 @@ def require_quiescent_source(snapshot):
         raise OtherSourceClients("Synthetic source has another database client")
 
 
+def run_fixture(env, name):
+    if name not in ("seed_synthetic", "verify_restored_keys"):
+        raise ValueError("Unexpected synthetic fixture")
+    result = subprocess.run(
+        [
+            "cargo",
+            "test",
+            "--locked",
+            "-p",
+            "commerce-infrastructure",
+            "--lib",
+            f"mollie::tests::restore_rehearsal::{name}",
+            "--",
+            "--ignored",
+            "--exact",
+        ],
+        cwd=ROOT,
+        env=env,
+        capture_output=True,
+        timeout=1200,
+        check=False,
+    )
+    if result.returncode or not re.search(rb"test result: ok\. 1 passed; 0 failed;", result.stdout):
+        raise RuntimeError("Synthetic restore fixture command failed")
+
+
 def exercise_quiescence_control(snapshot):
     # The named client is held open, and its real backend identity must be visible
     # before interpreting the specific non-quiescent rejection as a success.
@@ -311,27 +337,7 @@ def main():
                 "RESTORE_FIXTURE_DATABASE_URL": urls[0],
                 "RESTORE_FIXTURE_DATABASE_NAME": database,
             }
-            result = subprocess.run(
-                [
-                    "cargo",
-                    "test",
-                    "--locked",
-                    "-p",
-                    "commerce-infrastructure",
-                    "--lib",
-                    "mollie::tests::restore_rehearsal::seed_synthetic",
-                    "--",
-                    "--ignored",
-                    "--exact",
-                ],
-                cwd=ROOT,
-                env=env,
-                capture_output=True,
-                timeout=1200,
-                check=False,
-            )
-            if result.returncode or b"1 passed" not in result.stdout:
-                raise RuntimeError("Synthetic migration and fixture command failed")
+            run_fixture(env, "seed_synthetic")
             archive = root / "synthetic.dump"
             with Snapshot(binaries, pg_env(urls[0])) as source:
                 exercise_quiescence_control(source)
@@ -396,6 +402,9 @@ def main():
                     raise RuntimeError("Restored synthetic table content differs")
                 if sequences_before != sequences_after:
                     raise RuntimeError("Restored synthetic sequence state differs")
+                run_fixture(
+                    {**env, "RESTORE_FIXTURE_DATABASE_URL": urls[1]}, "verify_restored_keys"
+                )
                 require_quiescent_source(source)
                 if sequence_inventory(source) != sequences_before:
                     raise RuntimeError("Synthetic source sequence changed during comparison")
@@ -460,6 +469,7 @@ def main():
                 ).hexdigest(),
                 "source_sequence_quiescence": "owned source; no other clients at checks; before/after state unchanged",
                 "changed_sequence_detected": True,
+                "synthetic_restored_key_opening_checked": True,
                 "extra_client_rejected": True,
                 "archive_sha256": archive_hash,
                 "restore_seconds": restore_seconds,
