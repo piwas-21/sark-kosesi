@@ -160,7 +160,8 @@ Server-side capability guards now protect catalogue/BOM inspection and warehouse
 commands using persisted staff sessions, recent MFA attestations and grants.
 Warehouse changes require explicit confirmation. Revocation locks span the stock
 commit; audit actors come from the session.
-Installation seeds no staff authority. Login/MFA verification, session issuance
+A private bearer-only self-revocation primitive can relinquish an existing staff
+session without creating authority. Installation seeds no staff authority. Login/MFA verification, session issuance
 and HTTP admin writes remain unimplemented. Catalogue publication already uses
 the same persisted authority guard.
 Do not restart stack comparisons or redesign the accepted courtyard direction.
