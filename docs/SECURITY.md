@@ -61,6 +61,10 @@ authority. Hidden entries can be removed without disclosing unpublished facts.
 The current row and opt-in timestamp are not an immutable consent audit. Browser
 routing and complete CSRF enforcement, abuse limits, retention, privacy export/deletion and delivery consent and
 cancellation guarantees require separate design and acceptance before exposure.
+An independently enabled test-only subscription GET requires preview authority,
+the exact configured Origin and a live owner cookie. Query parameters and bodies
+are rejected, unavailable publication stays hidden, and the route may initialize
+an empty bucket. This does not establish public abuse or retention controls.
 
 ## P1 verification scope
 
