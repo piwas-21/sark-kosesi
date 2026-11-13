@@ -59,9 +59,6 @@ pub async fn next(
     clock: &dyn Clock,
     after: Option<&Cursor>,
 ) -> Result<Option<Entry>, ReviewError> {
-    if let Some(cursor) = after {
-        Cursor::new(cursor.updated_at, &cursor.job_id)?;
-    }
     let observed = ObservedClock::new(clock, 0);
     let mut access = lock_staff(pool, token, &observed, Capability::ReversalReview)
         .await
@@ -105,7 +102,6 @@ async fn examine(
     if job.id != candidate.id
         || job.attempt_id != candidate.attempt_id
         || job.updated_at != candidate.updated_at
-        || job.state != "review"
     {
         return Err(ReviewError::Unavailable);
     }

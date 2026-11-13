@@ -25,16 +25,54 @@ async fn add_review(
     frozen: &FrozenAttempt,
     ids: &impl commerce_application::request_context::Identifiers,
     paid: &str,
-    kind: ReversalKind,
-    effect: &str,
+    spec: (ReversalKind, &str, &str),
 ) -> (
     crate::payment_attempts::reversal_item_supervision::Job,
     Server,
 ) {
-    let page = page_fixture(pool, time.as_ref(), ids, frozen.snapshot(), kind, effect).await;
+    let (kind, effect, payment_id) = spec;
+    let child_id = format!(
+        "{}{}",
+        if kind == ReversalKind::Refund {
+            "re_"
+        } else {
+            "chb_"
+        },
+        effect
+    );
+    let item = match kind {
+        ReversalKind::Refund => {
+            json!({"resource":"refund","id":child_id,"paymentId":payment_id,"mode":"test"})
+        }
+        ReversalKind::Chargeback => {
+            json!({"resource":"chargeback","id":child_id,"paymentId":payment_id})
+        }
+    };
+    let page_body =
+        json!({"count":1,"_embedded":{(collection(kind)):[item]},"_links":{"next":null}});
+    let mut parent = payment(frozen.snapshot());
+    parent["id"] = payment_id.into();
+    let page_server = Server::start(vec![
+        profile(),
+        Reply::Json(200, parent.clone()),
+        Reply::Json(200, page_body),
+    ]);
+    let page_client = local(&page_server)
+        .verify_profile()
+        .await
+        .expect("page profile")
+        .into_reconciliation();
+    let verified = page_client
+        .reversal_page(frozen.snapshot(), payment_id, kind, None)
+        .await
+        .expect("verified page");
+    let page = reversal_pages::record(pool, time.as_ref(), ids, effect, None, &verified)
+        .await
+        .expect("page custody")
+        .id;
     let server = Server::start(vec![
         profile(),
-        Reply::Json(200, payment(frozen.snapshot())),
+        Reply::Json(200, parent),
         Reply::Json(200, json!({})),
     ]);
     let client = local(&server)
@@ -106,8 +144,7 @@ async fn inbox_pages_exact_equal_time_stops_without_effects_and_fails_closed(poo
         &frozen,
         &ids,
         &paid,
-        ReversalKind::Refund,
-        "refund",
+        (ReversalKind::Refund, "refund", PAYMENT),
     )
     .await;
     let (b, server_b) = add_review(
@@ -116,8 +153,7 @@ async fn inbox_pages_exact_equal_time_stops_without_effects_and_fails_closed(poo
         &frozen,
         &ids,
         &paid,
-        ReversalKind::Chargeback,
-        "chargeback",
+        (ReversalKind::Chargeback, "chargeback", PAYMENT),
     )
     .await;
     assert_eq!(a.updated_at, b.updated_at, "tie uses job ID");
@@ -192,8 +228,7 @@ async fn inbox_withholds_summary_when_staff_expires_during_real_attempt_wait(poo
         &frozen,
         &ids,
         &paid,
-        ReversalKind::Refund,
-        "expiry",
+        (ReversalKind::Refund, "expiry", PAYMENT),
     )
     .await;
     let before = server.count();
@@ -235,8 +270,7 @@ async fn inbox_refuses_a_valid_changed_candidate_after_claim_wait(pool: PgPool) 
         &frozen,
         &ids,
         &paid,
-        ReversalKind::Refund,
-        "change",
+        (ReversalKind::Refund, "change", PAYMENT),
     )
     .await;
     let before = server.count();
@@ -325,4 +359,174 @@ async fn review_index_is_partial_and_supports_both_bounded_keyset_shapes(pool: P
         );
     }
     tx.rollback().await.expect("release");
+}
+
+#[sqlx::test(migrations = false)]
+async fn inbox_upgrade_preserves_equal_time_stops_from_distinct_attempts(pool: PgPool) {
+    use crate::payment_test_fixture::{self, order, quote};
+    use commerce_application::{Locale, guest_access::GuestLimits};
+    use commerce_infrastructure::{
+        checkout_orders::create_order,
+        checkout_quotes::issue_quote,
+        guest_baskets::{GuestCredential, GuestSessionStore},
+        payment_attempts::{observations::record_verified, prepare_attempt, start_dispatch},
+    };
+    crate::MIGRATOR
+        .run_to(65, &pool)
+        .await
+        .expect("prior schema");
+    let (time, first_frozen, ids, first_paid) = reversal_supervision_cases::fixture(&pool).await;
+    staff_review_cases::staff(&pool).await;
+    let (first, first_server) = add_review(
+        &pool,
+        &time,
+        &first_frozen,
+        &ids,
+        &first_paid,
+        (ReversalKind::Refund, "upgrade-first", PAYMENT),
+    )
+    .await;
+
+    // Reuse the approved synthetic catalogue, but create another guest/order and
+    // payment identity with a distinct identifier stream and provider ID.
+    sqlx::query("UPDATE stock_balances SET on_hand = on_hand + 6")
+        .execute(&pool)
+        .await
+        .expect("seed stock for second synthetic order");
+    time.0.store(1100, Ordering::SeqCst);
+    let store = GuestSessionStore::new(
+        pool.clone(),
+        time.clone(),
+        Arc::new(payment_test_fixture::Ids(
+            std::sync::atomic::AtomicU64::new(100_000),
+        )),
+        GuestLimits::default(),
+    )
+    .expect("independent guest store");
+    let (session, csrf) = quote::guest(&store).await;
+    let owner = GuestCredential::from_session(&session).expect("second guest");
+    let quoted = issue_quote(
+        &store,
+        &owner,
+        &csrf,
+        Locale::Nl,
+        &quote::request("second-quote"),
+    )
+    .await
+    .expect("second quote")
+    .snapshot;
+    let second_order = create_order(
+        &store,
+        &owner,
+        &csrf,
+        "second-order",
+        &order::intent(&quoted.binding.quote_id),
+        &order::seller(),
+    )
+    .await
+    .expect("second order")
+    .snapshot;
+    time.0.store(1500, Ordering::SeqCst);
+    let configuration = config(&credential());
+    let second_frozen = prepare_attempt(
+        &store,
+        &owner,
+        &csrf,
+        "second-attempt",
+        &payment_test_fixture::intent(&second_order),
+        &configuration,
+    )
+    .await
+    .expect("second attempt")
+    .frozen;
+    assert_ne!(
+        first_frozen.snapshot().binding.id,
+        second_frozen.snapshot().binding.id
+    );
+    start_dispatch(
+        &pool,
+        time.as_ref(),
+        &ids,
+        &second_frozen.snapshot().binding.id,
+        &configuration,
+    )
+    .await
+    .expect("second dispatch");
+    let payment_id = "tr_SECOND_INBOX_SYNTHETIC";
+    let paid =
+        observation_cases::fetched(second_frozen.snapshot(), payment_id, "paid", false).await;
+    let second_paid = record_verified(
+        &pool,
+        time.as_ref(),
+        &ids,
+        &second_frozen.snapshot().binding.id,
+        "second-paid",
+        &paid,
+    )
+    .await
+    .expect("second paid source")
+    .snapshot
+    .id;
+    let (second, second_server) = add_review(
+        &pool,
+        &time,
+        &second_frozen,
+        &ids,
+        &second_paid,
+        (ReversalKind::Refund, "upgrade-second", payment_id),
+    )
+    .await;
+    assert_ne!(first.attempt_id, second.attempt_id);
+    assert_eq!(first.updated_at, second.updated_at);
+    let before: (i64,i64,i64) = sqlx::query_as("SELECT (SELECT count(*) FROM reversal_item_jobs),(SELECT count(*) FROM reversal_item_operations),(SELECT count(*) FROM commerce_outbox)").fetch_one(&pool).await.expect("before upgrade");
+    let calls = (first_server.count(), second_server.count());
+    crate::MIGRATOR.run(&pool).await.expect("add inbox index");
+    let after: (i64,i64,i64) = sqlx::query_as("SELECT (SELECT count(*) FROM reversal_item_jobs),(SELECT count(*) FROM reversal_item_operations),(SELECT count(*) FROM commerce_outbox)").fetch_one(&pool).await.expect("after upgrade");
+    assert_eq!(before, after);
+    let mut expected = [(first.id, first.attempt_id), (second.id, second.attempt_id)];
+    expected.sort_by(|a, b| a.0.cmp(&b.0));
+    let token = SessionToken::from_bytes([11; 32]);
+    let mut other_attempt = pool.begin().await.expect("hold unrelated attempt");
+    sqlx::query("SELECT id FROM payment_attempts WHERE id=$1 FOR UPDATE")
+        .bind(&expected[1].1)
+        .fetch_one(&mut *other_attempt)
+        .await
+        .expect("hold second attempt claim");
+    let a = inbox::next(&pool, &token, time.as_ref(), None)
+        .await
+        .expect("first scan does not claim unrelated attempt")
+        .expect("first entry");
+    other_attempt
+        .rollback()
+        .await
+        .expect("release unrelated attempt");
+    let b = inbox::next(&pool, &token, time.as_ref(), Some(&a.position))
+        .await
+        .expect("second scan")
+        .expect("second entry");
+    assert_eq!(
+        [a.position.job_id(), b.position.job_id()],
+        [expected[0].0.as_str(), expected[1].0.as_str()]
+    );
+    assert_eq!(
+        a.summary,
+        Summary {
+            reason: Reason::Invalid,
+            generation: 1,
+            late_receipt_present: false
+        }
+    );
+    assert_eq!(
+        b.summary,
+        Summary {
+            reason: Reason::Invalid,
+            generation: 1,
+            late_receipt_present: false
+        }
+    );
+    assert_eq!(
+        inbox::next(&pool, &token, time.as_ref(), Some(&b.position)).await,
+        Ok(None)
+    );
+    assert_eq!((first_server.count(), second_server.count()), calls);
 }
