@@ -126,6 +126,18 @@ async fn session_owned_versioned_membership_tracks_current_publication(pool: PgP
     let (_, other) = account(&pool, "other@example.test").await;
     let clock = FixedClock(1100);
     assert_eq!(
+        customer_favourites::set(&pool, &first, &clock, Locale::Nl, "DEMO-COVERS", true, 0).await,
+        Err(FavouriteError::InvalidRequest)
+    );
+    assert_eq!(
+        customer_favourites::set(&pool, &first, &clock, Locale::Nl, "SET-FILLED", true, -1).await,
+        Err(FavouriteError::InvalidRequest)
+    );
+    assert_eq!(
+        customer_favourites::clear_all(&pool, &first, &clock, -1).await,
+        Err(FavouriteError::InvalidRequest)
+    );
+    assert_eq!(
         customer_favourites::set(&pool, &first, &clock, Locale::Nl, "SET-FILLED", true, 0).await,
         Err(FavouriteError::Unavailable)
     );
@@ -137,6 +149,45 @@ async fn session_owned_versioned_membership_tracks_current_publication(pool: PgP
     record_publication(&pool, &author(), &clock, request("activate", &choice()))
         .await
         .expect("activate");
+    // The projection is valid while read, but rights can expire after the
+    // write. The final check must roll back the membership and revision.
+    let expiry_after_write = StepClock {
+        calls: AtomicUsize::new(0),
+        after: 6,
+        value: Ok(2000),
+    };
+    assert_eq!(
+        customer_favourites::set(
+            &pool,
+            &first,
+            &expiry_after_write,
+            Locale::Nl,
+            "SET-FILLED",
+            true,
+            0
+        )
+        .await,
+        Err(FavouriteError::Unavailable)
+    );
+    let after_rights_expiry = customer_favourites::list(&pool, &first, &clock, Locale::Nl)
+        .await
+        .expect("rights rollback");
+    assert_eq!(after_rights_expiry.revision, 0);
+    assert!(after_rights_expiry.items.is_empty());
+    // An unexpected post-insert database effect is detected before commit.
+    pool.execute("CREATE FUNCTION undo_favourite_insert() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN DELETE FROM customer_favourites WHERE account_id=NEW.account_id AND sku=NEW.sku; RETURN NEW; END $$; CREATE TRIGGER zzz_undo_favourite_insert AFTER INSERT ON customer_favourites FOR EACH ROW EXECUTE FUNCTION undo_favourite_insert()").await.expect("install isolated post-insert fault");
+    assert_eq!(
+        customer_favourites::set(&pool, &first, &clock, Locale::Nl, "SET-FILLED", true, 0).await,
+        Err(FavouriteError::Unavailable)
+    );
+    let after_insert_fault = customer_favourites::list(&pool, &first, &clock, Locale::Nl)
+        .await
+        .expect("read after insert fault");
+    assert_eq!(after_insert_fault.revision, 0);
+    assert!(after_insert_fault.items.is_empty());
+    pool.execute("DROP FUNCTION undo_favourite_insert() CASCADE")
+        .await
+        .expect("remove isolated post-insert fault");
     assert_eq!(
         customer_favourites::set(&pool, &first, &clock, Locale::Nl, "SET-FILLED", true, 0).await,
         Ok(1)
@@ -293,6 +344,73 @@ async fn session_owned_versioned_membership_tracks_current_publication(pool: PgP
         .expect("rollback visible");
     assert_eq!(after_expiry.revision, 5);
     assert_eq!(after_expiry.items.len(), 1);
+    // A post-delete trigger that silently restores the row is also detected.
+    pool.execute("CREATE FUNCTION undo_favourite_delete() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN INSERT INTO customer_favourites(account_id,sku) VALUES (OLD.account_id,OLD.sku); RETURN OLD; END $$; CREATE TRIGGER zzz_undo_favourite_delete AFTER DELETE ON customer_favourites FOR EACH ROW EXECUTE FUNCTION undo_favourite_delete()").await.expect("install isolated post-delete fault");
+    assert_eq!(
+        customer_favourites::clear_all(&pool, &first, &clock, 5).await,
+        Err(FavouriteError::Unavailable)
+    );
+    let after_delete_fault = customer_favourites::list(&pool, &first, &clock, Locale::Nl)
+        .await
+        .expect("read after delete fault");
+    assert_eq!(after_delete_fault.revision, 5);
+    assert_eq!(after_delete_fault.items.len(), 1);
+    pool.execute("DROP FUNCTION undo_favourite_delete() CASCADE")
+        .await
+        .expect("remove isolated post-delete fault");
+    // A damaged database trigger can suppress a write; neither operation may
+    // report success or change the retained membership and revision.
+    pool.execute("CREATE FUNCTION suppress_favourite_delete() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN RETURN NULL; END $$; CREATE TRIGGER aaa_suppress_favourite_delete BEFORE DELETE ON customer_favourites FOR EACH ROW EXECUTE FUNCTION suppress_favourite_delete()")
+        .await.expect("install isolated fault");
+    assert_eq!(
+        customer_favourites::set(&pool, &first, &clock, Locale::Nl, "SET-FILLED", false, 5).await,
+        Err(FavouriteError::Unavailable)
+    );
+    assert_eq!(
+        customer_favourites::clear_all(&pool, &first, &clock, 5).await,
+        Err(FavouriteError::Unavailable)
+    );
+    let after_fault = customer_favourites::list(&pool, &first, &clock, Locale::Nl)
+        .await
+        .expect("read after suppressed writes");
+    assert_eq!(after_fault.revision, 5);
+    assert_eq!(after_fault.items.len(), 1);
+    pool.execute("DROP FUNCTION suppress_favourite_delete() CASCADE")
+        .await
+        .expect("remove isolated fault");
+    // A credential revision change invalidates the previous session even for
+    // a read-only empty list; the new session retains access to its own state.
+    let proof = customer_passwords::issue(&pool, "other@example.test", &clock)
+        .await
+        .expect("password proof");
+    customer_passwords::replace(
+        &pool,
+        "other@example.test",
+        &proof,
+        "another memorable phrase",
+        &clock,
+    )
+    .await
+    .expect("password replacement");
+    assert_eq!(
+        customer_favourites::list(&pool, &other, &clock, Locale::Nl).await,
+        Err(FavouriteError::Denied)
+    );
+    let renewed = admitted_login::login(
+        &pool,
+        "other@example.test",
+        "another memorable phrase",
+        &clock,
+    )
+    .await
+    .expect("fresh login");
+    assert!(
+        customer_favourites::list(&pool, &renewed.token, &clock, Locale::Nl)
+            .await
+            .expect("fresh session")
+            .items
+            .is_empty()
+    );
     customer_sessions::logout(&pool, &first, &clock)
         .await
         .expect("logout");
@@ -414,6 +532,11 @@ async fn native_capacity_serializes_competing_final_inserts_and_rejects_fixture(
     let a = a.await.expect("first writer task");
     let b = b.await.expect("second writer task");
     assert_ne!(a.is_ok(), b.is_ok());
+    let loser_sku = if a.is_err() {
+        "SYNTHETIC-24"
+    } else {
+        "SYNTHETIC-25"
+    };
     let loser = if a.is_err() { a.err() } else { b.err() }.expect("capacity rejected one writer");
     assert_eq!(
         loser
@@ -454,6 +577,34 @@ async fn native_capacity_serializes_competing_final_inserts_and_rejects_fixture(
         .await,
         Err(FavouriteError::Denied)
     );
+    // Simulate pre-existing on-disk damage in this disposable database. The
+    // private read and clear must fail closed when native cap custody is absent.
+    pool.execute("ALTER TABLE customer_favourites DISABLE TRIGGER guard_favourite_membership")
+        .await
+        .expect("inject isolated damage");
+    sqlx::query("INSERT INTO customer_favourites(account_id,sku) VALUES ($1,$2)")
+        .bind(id)
+        .bind(loser_sku)
+        .execute(&pool)
+        .await
+        .expect("over-cap damaged row");
+    pool.execute("ALTER TABLE customer_favourites ENABLE TRIGGER guard_favourite_membership")
+        .await
+        .expect("restore guard");
+    assert_eq!(
+        customer_favourites::list(&pool, &token, &FixedClock(1100), Locale::Nl).await,
+        Err(FavouriteError::Unavailable)
+    );
+    assert_eq!(
+        customer_favourites::clear_all(&pool, &token, &FixedClock(1100), 25).await,
+        Err(FavouriteError::Unavailable)
+    );
+    sqlx::query("DELETE FROM customer_favourites WHERE account_id=$1 AND sku=$2")
+        .bind(id)
+        .bind(loser_sku)
+        .execute(&pool)
+        .await
+        .expect("remove isolated damage");
     assert!(
         sqlx::query("UPDATE customer_favourite_buckets SET revision=0 WHERE account_id=$1")
             .bind(id)
@@ -486,5 +637,26 @@ async fn native_capacity_serializes_competing_final_inserts_and_rejects_fixture(
             .execute(&pool)
             .await
             .is_err()
+    );
+    // A corrupted fixture identity must never cross the private list boundary,
+    // even if ordinary native insertion guards have been bypassed.
+    pool.execute("ALTER TABLE customer_favourites DISABLE TRIGGER guard_favourite_membership")
+        .await
+        .expect("inject isolated fixture damage");
+    sqlx::query("INSERT INTO customer_favourites(account_id,sku) VALUES ($1,'DEMO-COVERS')")
+        .bind(id)
+        .execute(&pool)
+        .await
+        .expect("damaged fixture row");
+    pool.execute("ALTER TABLE customer_favourites ENABLE TRIGGER guard_favourite_membership")
+        .await
+        .expect("restore fixture guard");
+    assert_eq!(
+        customer_favourites::list(&pool, &token, &FixedClock(1100), Locale::Nl).await,
+        Err(FavouriteError::Unavailable)
+    );
+    assert_eq!(
+        customer_favourites::clear_all(&pool, &token, &FixedClock(1100), 0).await,
+        Err(FavouriteError::Unavailable)
     );
 }
