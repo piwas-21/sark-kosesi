@@ -75,6 +75,7 @@ def validate(document, root, branches=True):
             "crates/api/src/test_login_input.rs",
             "crates/api/src/test_session.rs",
             "crates/api/src/test_favourites.rs",
+            "crates/api/src/test_restock.rs",
             "crates/api/src/routing.rs",
             "crates/*/src/stock.rs",
             "crates/*/src/holds.rs",

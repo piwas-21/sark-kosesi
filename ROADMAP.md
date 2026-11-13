@@ -210,6 +210,8 @@ preview-authenticated caller with the configured Origin and customer cookie.
 It can initialize the account's empty favourites bucket; it is not public ingress.
 A separate private restock opt-in primitive retains a bounded active subscription
 per account and merchant variant; cancellation does not depend on publication.
+An independently enabled test-only GET exposes current published subscriptions
+to the preview-authenticated session owner and may initialize an empty bucket.
 It sends no messages and does not detect stock transitions. Alert delivery,
 retention and cancellation policy remain open.
 
