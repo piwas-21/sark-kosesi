@@ -503,7 +503,8 @@ window. Logout revokes the current bearer. An optional private login variant
 returns an independent synchronizer once and commits its immutable digest with
 the exact session. Protected logout checks both under the session claim; legacy
 bearer-only callers remain compatible and rotated successors are unbound.
-HTTP transport and Origin/CSRF integration remain separate. The private login entry point commits
+The separately enabled test-only HTTP and Origin/CSRF transport is described below;
+public browser ingress and production CSRF policy remain open. The private login entry point commits
 its purpose and target quota debit before lookup or hashing and carries the same
 observed clock through issuance. Verification and password proof operations also
 commit admission before accessing proof or credential state. Standalone proof

@@ -172,7 +172,8 @@ buyer mailbox. Private detail and bounded history reads return the linked
 order's captured items and amounts under live customer authority. Private
 credential admission provides shared purpose and mailbox quotas. A private
 session variant binds a synchronizer digest to issuance and protects revocation
-under the same session claim; browser transport and CSRF policy remain open. Login,
+under the same session claim. The separately enabled test transport is described
+below; public browser ingress and production CSRF policy remain open. Login,
 email verification, enrolment and password proof operations commit both
 debits before credential work. Password replacement requires an explicitly supplied,
 integrity-checked offline blocklist and fails closed on unavailable or expired
