@@ -408,7 +408,11 @@ supervision or live provider activation follows from deploying the empty preview
    unseeded recent-MFA `reversal.review` capability can inspect one exact item
    review stop, its bounded operation history and any exact-effect late receipt
    under the same staff and attempt claims. Its redacted result grants no retry
-   or financial authority. Add operator review recovery and scheduling before
+   or financial authority. A separate local/test worker review command accepts
+   exactly 32 raw staff-session bytes on non-terminal stdin with a five-second
+   EOF deadline, then reports only the closed review summary. Credentials do not
+   appear in arguments or logs. Staff session issuance remains unimplemented;
+   this command does not establish production operator access. Add operator review recovery and scheduling before
    provider acceptance. An exact
    GET, 404, empty page, ended scan or capped scan
    leaves the provider history and net balance unresolved. Complete provider-side
