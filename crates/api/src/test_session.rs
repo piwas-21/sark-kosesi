@@ -161,6 +161,14 @@ mod tests {
     fn cookie_lookup_accepts_only_one_exact_bounded_canonical_customer_pair() {
         let value = "ab".repeat(32);
         let mut headers = HeaderMap::new();
+        assert!(customer_cookie(&headers).is_none());
+        headers.insert(
+            COOKIE,
+            format!("malformed; other=a; {CUSTOMER_COOKIE}={value}")
+                .parse()
+                .expect("header"),
+        );
+        assert!(customer_cookie(&headers).is_some());
         headers.insert(
             COOKIE,
             format!("other=a; {CUSTOMER_COOKIE}={value}")

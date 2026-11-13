@@ -18,7 +18,7 @@ use std::{
     collections::HashMap,
     sync::{
         Arc,
-        atomic::{AtomicU64, Ordering},
+        atomic::{AtomicU64, AtomicUsize, Ordering},
     },
 };
 use tokio::sync::{Mutex, Semaphore};
@@ -35,6 +35,18 @@ struct Time(AtomicU64);
 impl Clock for Time {
     fn unix_seconds(&self) -> Result<u64, ContextError> {
         Ok(self.0.load(Ordering::SeqCst))
+    }
+}
+// The request, quota custody and issuance each obtain independent clock samples.
+// This fixture fails the first sample after the private session has committed.
+struct FailAfterIssuance(AtomicUsize);
+impl Clock for FailAfterIssuance {
+    fn unix_seconds(&self) -> Result<u64, ContextError> {
+        if self.0.fetch_add(1, Ordering::SeqCst) < 7 {
+            Ok(1000)
+        } else {
+            Err(ContextError::ClockUnavailable)
+        }
     }
 }
 struct Ids;
@@ -1109,4 +1121,71 @@ async fn bound_session_trace_logs_exclude_cookie_proof_password_and_body(pool: P
     ] {
         assert!(!log.contains(secret), "sensitive value leaked to logs");
     }
+}
+
+#[sqlx::test(migrator = "MIGRATOR")]
+async fn bound_login_closed_storage_fails_without_cookie_or_identity(pool: PgPool) {
+    let _case = LOGIN_CASE.lock().await;
+    let time = Arc::new(Time(AtomicU64::new(1000)));
+    account(&pool, &time).await;
+    let audit = sqlx::postgres::PgPoolOptions::new()
+        .max_connections(1)
+        .connect_with((*pool.connect_options()).clone())
+        .await
+        .expect("independent audit pool");
+    let app = bound_app(&pool, time);
+    pool.close().await;
+    let response = app
+        .oneshot(bound_login(body(EMAIL, PASSWORD)))
+        .await
+        .expect("closed storage response");
+    assert_eq!(response.status(), StatusCode::SERVICE_UNAVAILABLE);
+    let (_, response_body) = response_parts(response).await;
+    assert_body(
+        &response_body,
+        br#"{"code":"login_unavailable"}"#,
+        "generic denial required",
+    );
+    assert_eq!(counts(&audit).await, (0, 0));
+    let bound: i64 = sqlx::query_scalar("SELECT count(*) FROM customer_session_csrf")
+        .fetch_one(&audit)
+        .await
+        .expect("binding count");
+    assert_eq!(bound, 0);
+}
+
+#[sqlx::test(migrator = "MIGRATOR")]
+async fn bound_login_cookie_clock_failure_keeps_committed_unreturned_session(pool: PgPool) {
+    let _case = LOGIN_CASE.lock().await;
+    let fixed = Arc::new(Time(AtomicU64::new(1000)));
+    account(&pool, &fixed).await;
+    let mut app_state = state(&pool, fixed);
+    app_state.clock = Arc::new(FailAfterIssuance(AtomicUsize::new(0)));
+    let mut values = enabled();
+    values.insert("TEST_LOGIN_CSRF_TRANSPORT".into(), "1".into());
+    let app = router_with_test_login(
+        app_state,
+        None,
+        None,
+        None,
+        Config::parse(&values).expect("test config").test_login,
+    )
+    .expect("router");
+    let response = app
+        .oneshot(bound_login(body(EMAIL, PASSWORD)))
+        .await
+        .expect("clock failure response");
+    assert_eq!(response.status(), StatusCode::SERVICE_UNAVAILABLE);
+    let (_, response_body) = response_parts(response).await;
+    assert_body(
+        &response_body,
+        br#"{"code":"login_unavailable"}"#,
+        "generic denial required",
+    );
+    assert_eq!(counts(&pool).await, (1, 1));
+    let bound: i64 = sqlx::query_scalar("SELECT count(*) FROM customer_session_csrf")
+        .fetch_one(&pool)
+        .await
+        .expect("binding count");
+    assert_eq!(bound, 1);
 }
