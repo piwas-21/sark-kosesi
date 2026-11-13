@@ -15,6 +15,7 @@ pub mod published_types;
 mod test_favourites;
 pub mod test_login;
 mod test_login_input;
+mod test_restock;
 mod test_session;
 pub mod verification;
 
