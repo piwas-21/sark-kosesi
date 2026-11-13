@@ -1853,6 +1853,9 @@ bucket. It does not install public ingress or a customer erasure workflow.
 
 An explicit trusted call claims the live account and session, then serializes
 its private subscription bucket before claiming current publication sources.
+The separate synchronizer-bound subscribe and unsubscribe calls verify the exact
+immutable session binding while holding that same claim and transaction through
+the bucket change and final session-time check. There is no browser route yet.
 A current merchant SKU can have one active opt-in per account. The native bucket
 advances for each actual insert or delete; a new row receives that revision as
 its immutable generation and records its opt-in time. Unchanged requests do not
