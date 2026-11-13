@@ -1776,7 +1776,12 @@ session before checking revision, revocation and fresh time. The returned
 identity is a detached snapshot. Future protected writes must hold live session
 authority in their own transaction. Rotation revokes the old bearer and
 inserts one successor with the original expiry in a single transaction. Native
-same-transaction custody and a deferred check bind both effects. Complete
+same-transaction custody and a deferred check bind both effects. An optional
+private issuance path creates a distinct random synchronizer and stores only its
+domain-separated digest in an immutable row in the session issuance transaction.
+Protected logout matches that exact digest while holding the account and session
+claims. Existing bearer-only operations remain private and compatible; a rotated
+successor has no synchronizer binding and cannot use protected logout. Complete
 secure delivery, blocklist, abuse limits and browser integration separately.
 An optional test-only loopback login adapter requires preview authentication,
 an exact HTTPS Origin and a separate admission key. The existing admitted login

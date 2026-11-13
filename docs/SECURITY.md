@@ -608,6 +608,16 @@ account ID; the session bearer is present in the sensitive Set-Cookie header.
 The request deadline may follow a committed session without delivering its cookie.
 No public timing, trusted-edge abuse or session-read policy follows from this test.
 
+Optional private issuance can bind a random independent synchronizer digest to
+the exact new session in its creation transaction. Its bearer and proof return
+only to the trusted caller; do not log or persist their raw bytes. Protected
+logout compares the digest in constant time after claiming the live account and
+session, in the same transaction as revocation. Existing bearer-only operations
+remain private; a legacy or rotated unbound session fails protected logout.
+No HTTP response, Origin policy, token recovery or public CSRF protection follows
+from this custody primitive. The test login does not use this issuance path or
+expose a synchronizer.
+
 ## Private guest-order linking
 
 Use distinct proof and customer-session bearers. The issuer checks a live

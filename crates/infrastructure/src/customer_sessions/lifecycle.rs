@@ -2,7 +2,8 @@ use commerce_application::request_context::{Clock, ObservedClock};
 use sqlx::{PgPool, Postgres, Transaction};
 
 use super::{
-    CustomerIdentity, CustomerSessionToken, IssuedSession, SessionError, SessionRow, begin, now,
+    CustomerCsrfToken, CustomerIdentity, CustomerSessionToken, IssuedSession, SessionError,
+    SessionRow, begin, now,
 };
 
 // Account-first locking serializes password changes and session writes consistently.
@@ -158,11 +159,40 @@ pub async fn logout(
     token: &CustomerSessionToken,
     clock: &dyn Clock,
 ) -> Result<(), SessionError> {
+    logout_inner(pool, token, None, clock).await
+}
+
+/// Revoke only when both the live session and its exact synchronizer are owned.
+pub async fn logout_with_csrf(
+    pool: &PgPool,
+    token: &CustomerSessionToken,
+    csrf: &CustomerCsrfToken,
+    clock: &dyn Clock,
+) -> Result<(), SessionError> {
+    logout_inner(pool, token, Some(csrf), clock).await
+}
+
+async fn logout_inner(
+    pool: &PgPool,
+    token: &CustomerSessionToken,
+    csrf: Option<&CustomerCsrfToken>,
+    clock: &dyn Clock,
+) -> Result<(), SessionError> {
     let observed = ObservedClock::new(clock, 0);
     now(&observed)?;
     let verifier = token.verifier();
     let mut tx = begin(pool).await?;
     let row = claim(&mut tx, &verifier, true, &observed).await?;
+    if let Some(csrf) = csrf {
+        use subtle::ConstantTimeEq;
+        let saved: Option<Vec<u8>> = sqlx::query_scalar("SELECT csrf_digest FROM customer_session_csrf WHERE session_verifier=$1 AND created_xid::text=$2")
+            .bind(verifier.as_slice()).bind(&row.created_xid).fetch_optional(&mut *tx)
+            .await.map_err(|_| SessionError::Unavailable)?;
+        let digest = csrf.digest();
+        if !saved.is_some_and(|saved| bool::from(saved.as_slice().ct_eq(digest.as_slice()))) {
+            return Err(SessionError::Denied);
+        }
+    }
     let captured = now(&observed)?;
     if !row.active(captured) {
         return Err(SessionError::Denied);

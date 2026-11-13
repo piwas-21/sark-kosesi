@@ -824,6 +824,11 @@ and registration verifier. These checks establish private credential custody.
 
 ### Private customer sessions
 
+For optional synchronizer custody, use real PostgreSQL to verify exact session
+and proof binding, immutable digest, wrong and other-session proofs, old-schema
+upgrade, expiration, rotation and competing revocations. Existing bearer-only
+operations must remain compatible. These tests do not establish HTTP CSRF policy.
+
 Use isolated PostgreSQL with real verified accounts and current password
 hashes. Check wrong or missing credentials, verifier domains, reset racing
 login, stale sessions after reset, fixed expiry, logout and concurrent
