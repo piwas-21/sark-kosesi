@@ -56,6 +56,11 @@ compares the entire compiled output with independently hashed migration files,
 and rejects synthetic omissions, duplicates, altered checksums, wrong types and
 missing-version policy. This verifies the CLI contract, not an image or rollback.
 
+The private API binary readiness test uses an isolated PostgreSQL database,
+checks initial readiness, a real locked-table failure and post-release recovery,
+and reports only closed diagnostic categories. It does not retry or establish
+deployed service availability.
+
 `python3 scripts/check_app_coverage.py --report REPORT.lcov --package OWNED_SOURCE_DIRECTORY`
 validates TypeScript LCOV from the actual coverage generator. Invoke it separately for each
 maintained package source directory, and add `--critical SOURCE_FILE` for each

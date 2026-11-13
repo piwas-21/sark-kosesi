@@ -24,6 +24,63 @@ impl Identifiers for FixedIds {
 }
 
 const TOKEN: &str = "fixture_preview_key_12345678901234567890";
+
+// Report only closed categories: a response may contain a request credential.
+fn readiness_category(response: &str) -> &'static str {
+    if response.len() > 8192 {
+        return "oversized response";
+    }
+    let Some((head, body)) = response.split_once("\r\n\r\n") else {
+        return "incomplete response";
+    };
+    match (head.lines().next(), body) {
+        (Some("HTTP/1.1 204 No Content"), "") => "ready",
+        (Some("HTTP/1.1 503 Service Unavailable"), "{\"code\":\"database_unavailable\"}") => {
+            "database unavailable"
+        }
+        (Some("HTTP/1.1 504 Gateway Timeout"), "{\"code\":\"dependency_timeout\"}") => {
+            "dependency timeout"
+        }
+        _ => "unexpected response",
+    }
+}
+
+#[test]
+fn readiness_diagnostic_is_exact_bounded_and_redacted() {
+    assert_eq!(
+        readiness_category("HTTP/1.1 204 No Content\r\nconnection: close\r\n\r\n"),
+        "ready"
+    );
+    assert_eq!(
+        readiness_category(
+            "HTTP/1.1 503 Service Unavailable\r\n\r\n{\"code\":\"database_unavailable\"}"
+        ),
+        "database unavailable"
+    );
+    assert_eq!(
+        readiness_category("HTTP/1.1 504 Gateway Timeout\r\n\r\n{\"code\":\"dependency_timeout\"}"),
+        "dependency timeout"
+    );
+    assert_eq!(
+        readiness_category("HTTP/1.1 204 No Content\r\n"),
+        "incomplete response"
+    );
+    assert_eq!(
+        readiness_category("HTTP/1.1 200 OK\r\n\r\n204 No Content"),
+        "unexpected response"
+    );
+    assert_eq!(
+        readiness_category("HTTP/1.1 204 No Content\r\n\r\nprivate-token-marker"),
+        "unexpected response"
+    );
+    assert_eq!(
+        readiness_category(
+            "HTTP/1.1 503 Service Unavailable\r\n\r\n{\"code\":\"private-token-marker\"}"
+        ),
+        "unexpected response"
+    );
+    assert_eq!(readiness_category(&"x".repeat(8193)), "oversized response");
+}
 fn state(pool: PgPool, capacity: usize) -> AppState {
     AppState {
         pool,
@@ -291,13 +348,17 @@ async fn api_binary_serves_and_stops_gracefully(pool: PgPool) {
     let child = &mut owned.0;
     let mut connected = None;
     for _ in 0..100 {
+        assert!(
+            matches!(child.try_wait(), Ok(None)),
+            "API exited before listening"
+        );
         if let Ok(stream) = TcpStream::connect(address) {
             connected = Some(stream);
             break;
         }
         std::thread::sleep(Duration::from_millis(20));
     }
-    if let Some(mut stream) = connected {
+    let check_ready = |mut stream: TcpStream| {
         stream
             .set_read_timeout(Some(Duration::from_secs(2)))
             .expect("timeout");
@@ -307,8 +368,19 @@ async fn api_binary_serves_and_stops_gracefully(pool: PgPool) {
             )
             .expect("request");
         let mut response = String::new();
-        stream.read_to_string(&mut response).expect("response");
-        assert!(response.contains("204 No Content"));
+        stream
+            .take(8193)
+            .read_to_string(&mut response)
+            .expect("response");
+        readiness_category(&response)
+    };
+    if let Some(stream) = connected {
+        let category = check_ready(stream);
+        assert!(
+            matches!(child.try_wait(), Ok(None)),
+            "API exited during readiness"
+        );
+        assert!(category == "ready", "initial readiness: {category}");
     } else {
         let _ = child.kill();
         panic!("API failed to listen");
@@ -350,6 +422,12 @@ async fn api_binary_serves_and_stops_gracefully(pool: PgPool) {
         .rollback()
         .await
         .expect("release readiness lock");
+    let recovered = check_ready(TcpStream::connect(address).expect("recovery connection"));
+    assert!(
+        matches!(child.try_wait(), Ok(None)),
+        "API exited before recovery"
+    );
+    assert!(recovered == "ready", "recovered readiness: {recovered}");
     Command::new("kill")
         .args(["-INT", &child.id().to_string()])
         .status()
