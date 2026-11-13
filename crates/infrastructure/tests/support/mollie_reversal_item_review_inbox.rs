@@ -345,8 +345,8 @@ async fn review_index_is_partial_and_supports_both_bounded_keyset_shapes(pool: P
         .await
         .expect("index control");
     for sql in [
-        "EXPLAIN SELECT id,attempt_id,updated_at FROM reversal_item_jobs WHERE state='review' ORDER BY updated_at,id COLLATE \"C\" LIMIT 1",
-        "EXPLAIN SELECT id,attempt_id,updated_at FROM reversal_item_jobs WHERE state='review' AND (updated_at,id COLLATE \"C\")>(1,'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa' COLLATE \"C\") ORDER BY updated_at,id COLLATE \"C\" LIMIT 1",
+        "EXPLAIN SELECT id,updated_at FROM reversal_item_jobs WHERE state='review' ORDER BY updated_at,id COLLATE \"C\" LIMIT 1",
+        "EXPLAIN SELECT id,updated_at FROM reversal_item_jobs WHERE state='review' AND (updated_at,id COLLATE \"C\")>(1,'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa' COLLATE \"C\") ORDER BY updated_at,id COLLATE \"C\" LIMIT 1",
     ] {
         let rows: Vec<String> = sqlx::query_scalar(sql)
             .fetch_all(&mut *tx)
