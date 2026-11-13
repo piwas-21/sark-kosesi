@@ -1,4 +1,5 @@
 //! Private command boundary; synthetic input and isolated PostgreSQL only.
+#![cfg(unix)]
 use commerce_infrastructure::{MIGRATOR, staff_access::SessionToken};
 use sqlx::{ConnectOptions, PgPool};
 use std::{
@@ -98,6 +99,35 @@ fn open_pipe_cannot_hang_process_after_input_deadline() {
     assert!(!result.status.success());
     assert!(text(&result).contains("staff review input unavailable"));
     assert!(!text(&result).contains("synthetic-staff-token"));
+}
+
+#[cfg(unix)]
+#[test]
+fn input_rejects_excess_without_stdio_read_ahead() {
+    use std::{
+        io::Read,
+        net::Shutdown,
+        os::{fd::OwnedFd, unix::net::UnixStream},
+    };
+    let (mut retained, mut sender) = UnixStream::pair().expect("socket pair");
+    retained
+        .set_read_timeout(Some(Duration::from_secs(2)))
+        .expect("read timeout");
+    let child_fd: OwnedFd = retained.try_clone().expect("duplicate reader").into();
+    sender.write_all(&[b'x'; 33]).expect("excess input");
+    sender.write_all(b"tail").expect("trailing marker");
+    sender.shutdown(Shutdown::Write).expect("input EOF");
+    let result = command()
+        .stdin(Stdio::from(child_fd))
+        .output()
+        .expect("worker");
+    assert!(!result.status.success());
+    assert!(text(&result).contains("staff review input unavailable"));
+    let mut trailing = [0; 4];
+    retained
+        .read_exact(&mut trailing)
+        .expect("unread trailing bytes");
+    assert_eq!(&trailing, b"tail");
 }
 
 #[sqlx::test(migrator = "MIGRATOR")]

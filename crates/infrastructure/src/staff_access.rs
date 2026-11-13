@@ -5,6 +5,7 @@ use commerce_application::{
 };
 use sha2::{Digest, Sha256};
 use sqlx::{PgPool, Postgres, Transaction};
+use zeroize::Zeroize;
 
 // Intentionally no Debug/Serialize: a bearer credential is never response/log data.
 pub struct SessionToken([u8; 32]);
@@ -13,7 +14,12 @@ impl SessionToken {
         Self(bytes)
     }
     pub fn digest(&self) -> [u8; 32] {
-        Sha256::digest(self.0).into()
+        Sha256::digest(self.0.as_slice()).into()
+    }
+}
+impl Drop for SessionToken {
+    fn drop(&mut self) {
+        self.0.zeroize();
     }
 }
 #[derive(Debug)]
@@ -103,4 +109,23 @@ pub(super) async fn lock_staff(
     // Evaluate time after any authority-row wait, immediately before the operation.
     access.check_time(clock)?;
     Ok(access)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::SessionToken;
+
+    #[test]
+    fn bearer_has_drop_and_unchanged_digest() {
+        assert!(std::mem::needs_drop::<SessionToken>());
+        let token = SessionToken::from_bytes([11; 32]);
+        assert_eq!(
+            token.digest(),
+            [
+                0xf0, 0xe3, 0x8b, 0x83, 0x0e, 0xbd, 0x8a, 0x50, 0x66, 0x15, 0xec, 0xd1, 0x54, 0x33,
+                0x0e, 0xc0, 0x7f, 0xf6, 0xbf, 0x50, 0x30, 0x44, 0x7b, 0x44, 0xe2, 0x97, 0xdb, 0x1d,
+                0x4b, 0x75, 0x14, 0xac,
+            ]
+        );
+    }
 }
