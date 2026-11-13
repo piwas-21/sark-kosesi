@@ -752,6 +752,27 @@ async fn exhausted_observation_capacity_stops_before_provider_io(pool: PgPool) {
         generation: 1, late_receipt_present: false,
     })));
     assert_eq!(server.count(), 3);
+    // A capped checkpoint also fails if an earlier observation is missing.
+    pool.execute("CREATE TABLE synthetic_saved_observation AS SELECT * FROM payment_reversal_observations LIMIT 1; ALTER TABLE payment_reversal_observations DISABLE TRIGGER USER; DELETE FROM payment_reversal_observations WHERE id IN (SELECT id FROM synthetic_saved_observation); ALTER TABLE payment_reversal_observations ENABLE TRIGGER USER")
+        .await.expect("remove capped observation");
+    assert_eq!(
+        crate::payment_attempts::reversal_item_supervision::review::inspect(
+            &pool,
+            &crate::staff_access::SessionToken::from_bytes([11; 32]),
+            time.as_ref(),
+            &job.id
+        )
+        .await,
+        Err(crate::payment_attempts::reversal_item_supervision::review::ReviewError::Unavailable)
+    );
+    pool.execute("ALTER TABLE payment_reversal_observations DISABLE TRIGGER USER; INSERT INTO payment_reversal_observations SELECT * FROM synthetic_saved_observation; ALTER TABLE payment_reversal_observations ENABLE TRIGGER USER")
+        .await.expect("restore capped observation");
+    assert_eq!(crate::payment_attempts::reversal_item_supervision::review::inspect(
+        &pool, &crate::staff_access::SessionToken::from_bytes([11;32]), time.as_ref(), &job.id
+    ).await, Ok(Some(crate::payment_attempts::reversal_item_supervision::review::Summary {
+        reason: crate::payment_attempts::reversal_item_supervision::review::Reason::ObservationLimit,
+        generation: 1, late_receipt_present: false,
+    })));
     // Bypass only the native guard in this disposable database to model an
     // over-cap damaged import; the exact 128th state is the positive control.
     pool.execute("ALTER TABLE payment_reversal_observations DISABLE TRIGGER USER; INSERT INTO payment_reversal_observations(id,attempt_id,order_id,effect_key,payment_id,child_id,phase,amount_minor,credential_fingerprint,source_created_seconds,source_created_nanos,source_reversed_seconds,source_reversed_nanos,recorded_at,event_id,transaction_id) SELECT 'ffffffffffffffffffffffffffffffff',attempt_id,order_id,'synthetic-over-cap',payment_id,child_id,phase,amount_minor,credential_fingerprint,source_created_seconds,source_created_nanos,source_reversed_seconds,source_reversed_nanos,recorded_at,'eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee',transaction_id FROM payment_reversal_observations LIMIT 1; ALTER TABLE payment_reversal_observations ENABLE TRIGGER USER")
