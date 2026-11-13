@@ -1,0 +1,47 @@
+// Pure workload plan only. No credentials, HTTP client, or runnable load entry point.
+export const STEADY_OWNERS = 25;
+export const BURST_OWNERS = 50;
+export const STEADY_MS = 600_000;
+export const STEADY_SLEEP_SECONDS = 10.1;
+
+export function scenarios() {
+  const result = {};
+  for (let owner = 0; owner < STEADY_OWNERS; owner += 1) {
+    result[`quote_steady_${owner}`] = {
+      executor: "constant-vus",
+      vus: 1,
+      duration: "10m",
+      exec: "steadyQuote",
+      env: { QUOTE_OWNER: String(owner) },
+      tags: { workload: "steady" },
+    };
+  }
+  result.quote_burst = {
+    executor: "per-vu-iterations",
+    vus: BURST_OWNERS,
+    iterations: 1,
+    startTime: "10m",
+    maxDuration: "30s",
+    exec: "burstQuote",
+    tags: { workload: "burst" },
+  };
+  return result;
+}
+
+// These identifiers contain no credential or customer data. A future driver
+// must use each owner with exactly one prepared synthetic session.
+export function quoteEffect(workload, owner, sequence) {
+  if (
+    !["steady", "burst"].includes(workload) ||
+    !Number.isSafeInteger(owner) ||
+    owner < 0 ||
+    owner >= (workload === "steady" ? STEADY_OWNERS : BURST_OWNERS) ||
+    !Number.isSafeInteger(sequence) ||
+    sequence < 0 ||
+    sequence > 9999 ||
+    (workload === "burst" && sequence !== 0)
+  ) {
+    throw new Error("invalid synthetic quote position");
+  }
+  return `load-${workload}-${owner}-${sequence}`;
+}

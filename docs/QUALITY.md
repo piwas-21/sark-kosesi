@@ -216,6 +216,17 @@ the separately timed quote workload, burst, resource observations and P6 budget
 evidence remain to be completed. Quote snapshots and rate counters are writes
 to the disposable test database; no seller or provider facts are seeded.
 
+The non-runnable quote workload contract assigns distinct synthetic owners to
+25 steady users and 50 burst requests. Its offline observation evaluator checks
+bounded request intervals, per-owner quotas, expected quote contents, unchanged
+stock and commerce ledgers, and quote-count reconciliation. Its controls use
+synthetic observations only. The evaluator consumes caller-supplied data, reports
+nearest-rank p95 over successful client elapsed times and conservative client-side
+burst overlap; it proves neither server concurrency nor observation authenticity.
+An independently reviewed launcher must still prove owned listener, credentials
+and isolated database custody, collect real metrics and resources, and validate k6
+execution before this can support P6 evidence.
+
 An explicitly selected single-quote smoke uses the same synthetic fixture and
 an owned native PostgreSQL 18 cluster. Run it with the locked Rust dependencies
 available offline and `lsof` installed:
