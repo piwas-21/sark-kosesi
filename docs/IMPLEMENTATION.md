@@ -435,7 +435,7 @@ only the current SKU and publication revision. Unavailable entries remain stored
 but are hidden; removal and clear include them. This is an internal primitive,
 not an HTTP endpoint. It does not provide export, account deletion, browser
 controls or production abuse and retention policy. Migration 0063 follows the
-separately reserved 0062.
+customer-session CSRF migration 0062.
 
 ## P4 email verification foundation
 

@@ -660,3 +660,106 @@ async fn native_capacity_serializes_competing_final_inserts_and_rejects_fixture(
         Err(FavouriteError::Unavailable)
     );
 }
+
+#[sqlx::test(migrations = false)]
+async fn upgrade_from_62_preserves_sessions_csrf_and_catalogue(pool: PgPool) {
+    MIGRATOR.run_to(62, &pool).await.expect("previous schema");
+    let _fixture = media_seed(&pool).await;
+    let clock = FixedClock(1100);
+    approve(&pool).await;
+    record_publication(&pool, &author(), &clock, request("activate", &choice()))
+        .await
+        .expect("activate before upgrade");
+    let product = commerce_infrastructure::published_catalogue::published_product(
+        &pool,
+        &clock,
+        Locale::Nl,
+        "SET-FILLED",
+    )
+    .await
+    .expect("catalogue before upgrade")
+    .expect("published product");
+    let (account_id, legacy) = account(&pool, "upgrade@example.test").await;
+    let key = commerce_infrastructure::customer_credential_admission::AdmissionKey::new(1, [7; 32])
+        .expect("synthetic key");
+    let limits =
+        commerce_infrastructure::customer_credential_admission::AdmissionLimits::new(1000, 100)
+            .expect("synthetic limits");
+    let bound = customer_sessions::login_with_csrf(
+        &pool,
+        "upgrade@example.test",
+        "correct horse battery staple",
+        &clock,
+        &key,
+        limits,
+    )
+    .await
+    .expect("bound session before upgrade");
+    let pre_upgrade: (i64, i64, i64) = sqlx::query_as("SELECT (SELECT count(*) FROM customer_sessions),(SELECT count(*) FROM customer_session_csrf),(SELECT count(*) FROM catalogue_publication_revisions WHERE sku='SET-FILLED' AND locale='nl')")
+        .fetch_one(&pool).await.expect("pre-upgrade custody");
+    assert_eq!(pre_upgrade, (2, 1, 1));
+
+    MIGRATOR
+        .run_to(63, &pool)
+        .await
+        .expect("upgrade favourites");
+    let versions: Vec<i64> = sqlx::query_scalar("SELECT version FROM _sqlx_migrations WHERE version IN (62,63) AND success ORDER BY version")
+        .fetch_all(&pool).await.expect("ordered migrations");
+    assert_eq!(versions, vec![62, 63]);
+    let preserved: (i64, i64, i64) = sqlx::query_as("SELECT (SELECT count(*) FROM customer_sessions),(SELECT count(*) FROM customer_session_csrf),(SELECT count(*) FROM catalogue_publication_revisions WHERE sku='SET-FILLED' AND locale='nl')")
+        .fetch_one(&pool).await.expect("preserved custody");
+    assert_eq!(preserved, pre_upgrade);
+    for token in [&legacy, &bound.session.token] {
+        let identity = customer_sessions::authenticate(&pool, token, &clock)
+            .await
+            .expect("existing session remains live");
+        assert_eq!(
+            (identity.account_id, identity.expires_at),
+            (account_id, 44300)
+        );
+    }
+    let after = commerce_infrastructure::published_catalogue::published_product(
+        &pool,
+        &clock,
+        Locale::Nl,
+        "SET-FILLED",
+    )
+    .await
+    .expect("catalogue after upgrade")
+    .expect("published product");
+    assert_eq!(after, product);
+    let empty = customer_favourites::list(&pool, &bound.session.token, &clock, Locale::Nl)
+        .await
+        .expect("new list");
+    assert_eq!(empty.revision, 0);
+    assert!(empty.items.is_empty());
+    assert_eq!(
+        customer_favourites::set(
+            &pool,
+            &bound.session.token,
+            &clock,
+            Locale::Nl,
+            "SET-FILLED",
+            true,
+            0
+        )
+        .await,
+        Ok(1)
+    );
+    assert_eq!(
+        customer_favourites::list(&pool, &bound.session.token, &clock, Locale::Nl)
+            .await
+            .expect("saved favourite")
+            .items,
+        vec![FavouriteItem {
+            sku: "SET-FILLED".into(),
+            publication_revision: 1
+        }]
+    );
+    customer_sessions::logout_with_csrf(&pool, &bound.session.token, &bound.csrf, &clock)
+        .await
+        .expect("existing csrf binding remains usable");
+    customer_sessions::authenticate(&pool, &legacy, &clock)
+        .await
+        .expect("other pre-upgrade session remains live");
+}

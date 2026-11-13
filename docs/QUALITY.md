@@ -844,6 +844,15 @@ the real request deadline and redacted errors. Verify the returned host-only
 cookie against the live session, original expiry and password-revision reset;
 no failure may return a cookie. This does not establish public timing safety.
 
+### Private customer favourites
+
+Use isolated PostgreSQL to check customer ownership, revision and capacity races,
+withdrawn or damaged catalogue entries, session and rights expiry across waits,
+and rollback after suppressed or altered writes. Upgrade from schema 0062 with
+live bearer-only and CSRF-bound sessions and a published catalogue, then verify
+that session and publication authority survive the addition of migration 0063.
+These checks do not establish browser CSRF, account deletion or public ingress.
+
 ### Private guest-order links
 
 Use isolated PostgreSQL with actual accepted guest orders and verified
