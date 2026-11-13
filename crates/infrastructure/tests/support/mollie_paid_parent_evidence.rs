@@ -188,6 +188,10 @@ async fn rotated_same_profile_permit_is_single_use_and_preserves_omission_zero_a
             paid_parent_evidence::lookup(&pool, id, effect).await,
             Err(PaymentStoreError::InvalidStoredData)
         ));
+        assert!(matches!(
+            paid_parent_evidence::inspect_set(&pool, id).await,
+            Err(PaymentStoreError::InvalidStoredData)
+        ));
         if effect == "amounts" {
             assert!(
                 matches!(
@@ -928,6 +932,23 @@ async fn bounded_native_history_rejects_129th_and_non_read_committed_admission(p
         .await
         .expect("128 exact source operations commit");
     assert_eq!(counts(&pool).await, (128, 0, 0));
+    let set = paid_parent_evidence::inspect_set(&pool, id)
+        .await
+        .expect("128 bounded operations");
+    assert_eq!((set.operations, set.pending, set.complete), (128, 128, 0));
+    pool.execute("ALTER TABLE paid_parent_total_operations DISABLE TRIGGER guard_paid_parent_total_operation")
+        .await.expect("isolate over-limit stored damage");
+    sqlx::query("INSERT INTO paid_parent_total_operations(id,order_id,attempt_id,effect_key,recognition_id,through_observation,profile_id,payment_id,credential_fingerprint,started_at,fetch_before,transaction_id) SELECT 'ffffffffffffffffffffffffffffffff',order_id,attempt_id,'damaged-over-limit',recognition_id,through_observation,profile_id,payment_id,credential_fingerprint,started_at,fetch_before,pg_current_xact_id() FROM paid_parent_total_operations WHERE id=$1")
+        .bind(&template).execute(&pool).await.expect("simulate damaged 129th operation");
+    assert!(matches!(
+        paid_parent_evidence::inspect_set(&pool, id).await,
+        Err(PaymentStoreError::InvalidStoredData)
+    ));
+    pool.execute(
+        "ALTER TABLE paid_parent_total_operations ENABLE TRIGGER guard_paid_parent_total_operation",
+    )
+    .await
+    .expect("restore guard");
     assert!(matches!(
         paid_parent_evidence::start(&pool, time.as_ref(), &ids, id, "new-over-limit", &client)
             .await,
@@ -1083,6 +1104,255 @@ fn expected_worker_fields(fields: &[(&str, &str)]) -> Vec<(String, String)> {
         .collect();
     fields.sort();
     fields
+}
+
+#[sqlx::test(migrator = "MIGRATOR")]
+async fn set_inspection_requires_valid_attempt_and_current_received_source(pool: PgPool) {
+    assert!(matches!(
+        paid_parent_evidence::inspect_set(&pool, "invalid").await,
+        Err(PaymentStoreError::InvalidRequest)
+    ));
+    assert!(matches!(
+        paid_parent_evidence::inspect_set(&pool, "ffffffffffffffffffffffffffffffff").await,
+        Err(PaymentStoreError::NotFound)
+    ));
+    let (time, frozen) = observation_cases::prepared(&pool, true).await;
+    let id = &frozen.snapshot().binding.id;
+    assert!(matches!(
+        paid_parent_evidence::inspect_set(&pool, id).await,
+        Err(PaymentStoreError::Unavailable)
+    ));
+    let ids = observation_cases::ids();
+    let open = observation_cases::fetched(frozen.snapshot(), PAYMENT, "open", false).await;
+    record_verified(&pool, time.as_ref(), &ids, id, "open-source", &open)
+        .await
+        .expect("open observation");
+    resolve(&pool, time.as_ref(), &ids, id, "open-resolution")
+        .await
+        .expect("open resolution");
+    let current = recognize(&pool, time.as_ref(), &ids, id)
+        .await
+        .expect("unconfirmed recognition");
+    assert_eq!(current.recognition.state, State::Unconfirmed);
+    assert!(matches!(
+        paid_parent_evidence::inspect_set(&pool, id).await,
+        Err(PaymentStoreError::Unavailable)
+    ));
+}
+
+#[sqlx::test(migrator = "MIGRATOR")]
+async fn set_inspection_tracks_late_receipts_and_recognition_without_provider_io(pool: PgPool) {
+    use super::reversal_supervision_cases::worker_entry::Capture;
+    use std::sync::{Arc, Mutex};
+    use tracing::instrument::WithSubscriber;
+
+    let (time, frozen, ids) = paid(&pool).await;
+    let mut response = payment(frozen.snapshot());
+    response["amountRemaining"] = json!({"currency":"EUR","value":"0.00"});
+    let server = Server::start(vec![profile(), Reply::Json(200, response)]);
+    let client = local(&server)
+        .verify_profile()
+        .await
+        .expect("profile")
+        .into_reconciliation();
+    let attempt = &frozen.snapshot().binding.id;
+    let empty = paid_parent_evidence::inspect_set(&pool, attempt)
+        .await
+        .expect("empty set");
+    assert_eq!((empty.operations, empty.pending, empty.complete), (0, 0, 0));
+    let native_proof: String = sqlx::query_scalar("SELECT pg_get_functiondef('payment_recognition_source(payment_recognitions,boolean)'::regprocedure)")
+        .fetch_one(&pool).await.expect("save native proof");
+    pool.execute("CREATE OR REPLACE FUNCTION payment_recognition_source(r payment_recognitions, require_current boolean) RETURNS boolean LANGUAGE sql VOLATILE AS $$ SELECT false $$")
+        .await.expect("simulate rejected native proof");
+    assert!(matches!(
+        paid_parent_evidence::inspect_set(&pool, attempt).await,
+        Err(PaymentStoreError::InvalidStoredData)
+    ));
+    sqlx::raw_sql(sqlx::AssertSqlSafe(native_proof))
+        .execute(&pool)
+        .await
+        .expect("restore native proof");
+    assert_eq!(
+        paid_parent_evidence::inspect_set(&pool, attempt)
+            .await
+            .expect("restored proof")
+            .digest,
+        empty.digest
+    );
+    let permit =
+        match paid_parent_evidence::start(&pool, time.as_ref(), &ids, attempt, "late", &client)
+            .await
+            .expect("start")
+        {
+            Start::Fetch(permit) => permit,
+            _ => panic!("fresh permit"),
+        };
+    let pending = paid_parent_evidence::inspect_set(&pool, attempt)
+        .await
+        .expect("pending set");
+    assert_eq!(
+        (pending.operations, pending.pending, pending.complete),
+        (1, 1, 0)
+    );
+    assert_ne!(empty.digest, pending.digest);
+    assert_eq!(
+        pending.digest,
+        paid_parent_evidence::inspect_set(&pool, attempt)
+            .await
+            .expect("stable")
+            .digest
+    );
+
+    // The reader must actually wait for the same attempt lock as writers.
+    let mut lock = pool.begin().await.expect("lock transaction");
+    sqlx::query("SELECT id FROM payment_attempts WHERE id=$1 FOR UPDATE")
+        .bind(attempt)
+        .fetch_one(&mut *lock)
+        .await
+        .expect("attempt lock");
+    let reader_pool = pool.clone();
+    let reader_attempt = attempt.to_string();
+    let inspection = tokio::spawn(async move {
+        paid_parent_evidence::inspect_set(&reader_pool, &reader_attempt).await
+    });
+    tokio::time::timeout(Duration::from_millis(800), async {
+        loop {
+            let waiting: bool = sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM pg_stat_activity WHERE datname=current_database() AND wait_event_type='Lock' AND query LIKE 'SELECT 1 FROM payment_attempts WHERE id=%')")
+                .fetch_one(&pool).await.expect("inspect lock wait");
+            if waiting { break; }
+            tokio::time::sleep(Duration::from_millis(5)).await;
+        }
+    }).await.expect("reader reached actual attempt lock");
+    lock.rollback().await.expect("release lock");
+    assert_eq!(
+        inspection
+            .await
+            .expect("reader task")
+            .expect("after lock")
+            .digest,
+        pending.digest
+    );
+
+    let fetched = paid_parent_evidence::fetch(permit, time.as_ref(), &client)
+        .await
+        .expect("parent GET");
+    let receipt = paid_parent_evidence::record(&pool, time.as_ref(), &ids, &fetched)
+        .await
+        .expect("late receipt");
+    assert_eq!(receipt.totals.remaining_minor, Some(0));
+    assert_eq!(receipt.totals.refunded_minor, None);
+    let complete = paid_parent_evidence::inspect_set(&pool, attempt)
+        .await
+        .expect("complete set");
+    assert_eq!(
+        (complete.operations, complete.pending, complete.complete),
+        (1, 0, 1)
+    );
+    assert_ne!(complete.digest, pending.digest);
+
+    let later = observation_cases::fetched(frozen.snapshot(), PAYMENT, "open", false).await;
+    record_verified(&pool, time.as_ref(), &ids, attempt, "later-open", &later)
+        .await
+        .expect("later observation");
+    assert!(matches!(
+        paid_parent_evidence::inspect_set(&pool, attempt).await,
+        Err(PaymentStoreError::Unavailable)
+    ));
+    resolve(&pool, time.as_ref(), &ids, attempt, "later-resolution")
+        .await
+        .expect("later resolution");
+    recognize(&pool, time.as_ref(), &ids, attempt)
+        .await
+        .expect("later recognition");
+    let current = paid_parent_evidence::inspect_set(&pool, attempt)
+        .await
+        .expect("new current source");
+    assert_ne!(current.digest, complete.digest);
+    assert_eq!(
+        (current.operations, current.pending, current.complete),
+        (1, 0, 1)
+    );
+    assert!(matches!(
+        paid_parent_evidence::start(&pool, time.as_ref(), &ids, attempt, "new-current", &client)
+            .await
+            .expect("operation against new recognition"),
+        Start::Fetch(_)
+    ));
+    let current_set = paid_parent_evidence::inspect_set(&pool, attempt)
+        .await
+        .expect("mixed historical recognitions");
+    assert_ne!(current_set.digest, current.digest);
+    assert_eq!(
+        (
+            current_set.operations,
+            current_set.pending,
+            current_set.complete
+        ),
+        (2, 1, 1)
+    );
+
+    // A validly rebound fixture mutation isolates omission from numeric zero.
+    pool.execute("ALTER TABLE paid_parent_total_receipts DISABLE TRIGGER guard_paid_parent_total_receipt; ALTER TABLE commerce_outbox DISABLE TRIGGER guard_commerce_outbox")
+        .await.expect("isolate fixture mutation");
+    sqlx::query("UPDATE paid_parent_total_receipts SET refunded_minor=0 WHERE operation_id=$1")
+        .bind(&receipt.operation.id)
+        .execute(&pool)
+        .await
+        .expect("replace omitted amount with zero");
+    sqlx::query("UPDATE commerce_outbox e SET payload=paid_parent_total_receipt_event(r,o) FROM paid_parent_total_receipts r JOIN paid_parent_total_operations o ON o.id=r.operation_id WHERE e.id=r.event_id AND o.id=$1")
+        .bind(&receipt.operation.id).execute(&pool).await.expect("rebind event");
+    let zero = paid_parent_evidence::inspect_set(&pool, attempt)
+        .await
+        .expect("zero set");
+    assert_ne!(zero.digest, current_set.digest);
+    sqlx::query("UPDATE paid_parent_total_receipts SET refunded_minor=NULL WHERE operation_id=$1")
+        .bind(&receipt.operation.id)
+        .execute(&pool)
+        .await
+        .expect("restore omission");
+    sqlx::query("UPDATE commerce_outbox e SET payload=paid_parent_total_receipt_event(r,o) FROM paid_parent_total_receipts r JOIN paid_parent_total_operations o ON o.id=r.operation_id WHERE e.id=r.event_id AND o.id=$1")
+        .bind(&receipt.operation.id).execute(&pool).await.expect("restore event");
+    assert_eq!(
+        paid_parent_evidence::inspect_set(&pool, attempt)
+            .await
+            .expect("restored set")
+            .digest,
+        current_set.digest
+    );
+    pool.execute("ALTER TABLE paid_parent_total_receipts ENABLE TRIGGER guard_paid_parent_total_receipt; ALTER TABLE commerce_outbox ENABLE TRIGGER guard_commerce_outbox")
+        .await.expect("restore guards");
+
+    let captured = Arc::new(Mutex::new(Vec::new()));
+    let before = counts(&pool).await;
+    let calls = server.count();
+    worker_inspect::inspect_set(&pool, attempt)
+        .with_subscriber(Capture(captured.clone()))
+        .await
+        .expect("worker set");
+    {
+        let events = captured.lock().expect("fields");
+        assert_eq!(events.len(), 1);
+        let fields = &events[0];
+        assert!(fields.contains(&("code".into(), "paid_parent_evidence_set".into())));
+        assert!(fields.contains(&("digest".into(), current_set.digest.clone())));
+        assert_eq!(fields.len(), 5, "only code, counts and digest are logged");
+    }
+    assert_eq!(counts(&pool).await, before);
+    assert_eq!(server.count(), calls);
+    pool.execute(
+        "ALTER TABLE paid_parent_total_receipts DISABLE TRIGGER guard_paid_parent_total_receipt",
+    )
+    .await
+    .expect("isolate damaged receipt");
+    sqlx::query("UPDATE paid_parent_total_receipts SET remaining_minor=1 WHERE operation_id=$1")
+        .bind(&receipt.operation.id)
+        .execute(&pool)
+        .await
+        .expect("damage receipt without event");
+    assert!(matches!(
+        paid_parent_evidence::inspect_set(&pool, attempt).await,
+        Err(PaymentStoreError::InvalidStoredData)
+    ));
 }
 
 #[sqlx::test(migrator = "MIGRATOR")]

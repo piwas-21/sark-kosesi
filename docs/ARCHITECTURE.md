@@ -497,6 +497,15 @@ amounts and a minimal digest event commit together under the original attempt
 claim. They supply evidence for later reconciliation. Net balance and refund
 execution require separate authority and evidence.
 
+A read-only set inspector claims the attempt, validates the current received
+recognition and its complete observation prefix, then reuses that native prefix
+proof for each distinct historical recognition in the bounded operation set.
+It checks operation shape and source, receipt shape and reciprocal event, and
+hashes every full operation/receipt state in operation-ID order with the attempt
+and current recognition watermark. Omitted amounts remain distinct from zero.
+The detached digest is not a continuing lock, provider completeness, balance or
+financial authority; a later start, receipt or recognition invalidates it.
+
 A private list operation verifies that same paid parent before each bounded GET
 of its refund or chargeback collection. It returns only exact candidate identities;
 item status has no authority. The continuation is an in-memory capability bound to
@@ -541,6 +550,12 @@ already recorded page without another GET. Expiry without a receipt parks the
 scan for review and preserves any late page as separate historical evidence.
 Transport failures that return to the worker retry after 60 seconds and stop
 after three consecutive failures.
+
+The local/test scan inspection claims the attempt, revalidates the paid source
+and current tip, then checks an uncertain stop's exact operation and any page
+recorded under that operation's effect key. It validates the page's ancestry,
+event and frozen scope. The redacted result reports presence or absence only for
+that stop; a page remains evidence, not a scan continuation or financial decision.
 
 The independent item supervisor enrolls one exact candidate ordinal from a
 validated page and its authenticated paid original. The job freezes the actual
@@ -1817,8 +1832,11 @@ claim current publication sources using the existing projection. Recheck the
 session after bucket and publication waits before returning private-state errors,
 and recheck session and image rights at the final observed time. Only current SKU and
 publication revision leave the private read; hidden entries remain removable.
-The database writer is trusted for session and publication authority. No HTTP
-route or customer erasure workflow is installed.
+The database writer is trusted for session and publication authority. A separately
+enabled test-only GET uses preview authority, exact configured Origin and the
+issued customer cookie to call this operation directly. It returns only the
+bounded eligible projection and decimal revision, and may initialize an empty
+bucket. It does not install public ingress or a customer erasure workflow.
 
 ### Private restock opt-in
 

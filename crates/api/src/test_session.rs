@@ -112,7 +112,7 @@ pub(crate) async fn logout(
     }
 }
 
-fn customer_cookie(headers: &HeaderMap) -> Option<CustomerSessionToken> {
+pub(crate) fn customer_cookie(headers: &HeaderMap) -> Option<CustomerSessionToken> {
     let raw = single_header(headers, COOKIE.as_str())?;
     if raw.len() > 4096 {
         return None;
