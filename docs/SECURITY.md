@@ -17,6 +17,16 @@ P1 supplies automated authorization/header/abuse tests and a local-only scanner 
 
 Report vulnerabilities through the root [disclosure policy](../SECURITY.md). Do not include secrets or customer information in public issues/CI artifacts.
 
+The local/test staff reversal-review worker takes a 32-byte session bearer only
+from non-terminal standard input, requires EOF within five seconds, rejects
+additional bytes and does not print the bearer. On Unix it reads a duplicate file
+descriptor without the standard input buffer; other platforms fail closed for
+this command. Input temporaries and the held staff token are zeroized when dropped;
+kernel buffers and other transient copies are outside that guarantee. Input custody is the caller's
+responsibility. The unseeded capability and missing staff-session issuer do not
+provide production operator access. The review validates existing custody and
+does not retry a provider operation or authorize a financial change.
+
 The RustSec check audits the full lockfile. The PostgreSQL-only SQLx export
 crate removes the unused SQLite dependency affected by
 [RUSTSEC-2026-0459](https://rustsec.org/advisories/RUSTSEC-2026-0459.html).
