@@ -68,14 +68,16 @@ an empty bucket. This does not establish public abuse or retention controls.
 
 ## Commerce threat model
 
-The Internet reaches the non-selling preview through TLS ingress. Next.js serves
-public preview reads and gates the unavailable admin shell with separate test
-credentials. The Rust API listens on loopback and applies its own preview bearer
-check. Optional customer test routes add an exact Origin and their respective
-session or proof checks. The API and explicitly invoked workers use the dedicated
-PostgreSQL store. The database write role is trusted. A stolen database writer
-credential crosses the native trust boundary even where constraints reject
-particular forged or partial records.
+The staging configuration exposes the non-selling preview through TLS ingress
+when enabled. Next.js Basic-gates the preview by default. A separate flag opens
+storefront GET and HEAD while the unavailable admin shell keeps its own test
+credentials. The Rust API listens on loopback, requires its own preview bearer
+for application routes and allows anonymous health probes. Optional customer
+test routes add an exact Origin and their respective session or proof checks.
+The API and explicitly invoked workers use the dedicated PostgreSQL store. The
+database write role is trusted. A stolen database writer credential crosses the
+native trust boundary even where constraints reject particular forged or partial
+records.
 
 | Boundary                         | Abuse case                                                                                                     | Implemented controls and regression evidence                                                                                                                                                                                                                                                                                                                                                                    | Acceptance still needed                                                                                                                                               |
 | -------------------------------- | -------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
