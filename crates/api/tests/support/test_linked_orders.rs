@@ -116,6 +116,9 @@ fn history_requires_separate_explicit_test_configuration() {
         value.remove(key);
         assert!(Config::parse(&value).is_err());
     }
+    let mut no_login = values();
+    no_login.insert("TEST_LINKED_ORDERS_TRANSPORT".into(), "1".into());
+    assert!(Config::parse(&no_login).is_err());
 }
 
 #[sqlx::test(migrator = "MIGRATOR")]
@@ -284,6 +287,11 @@ async fn endpoint_rejects_bad_authority_and_canonical_query_without_leaking(pool
     let (cookie, _, _) = bound_issue(&app).await;
     let disabled = bound_app(&pool, time);
     response(&disabled, get(URL, &cookie), StatusCode::NOT_FOUND).await;
+    let zero = format!("{URL}?after_linked_at=0&after_order_id=00000000000000000000000000000000");
+    assert_eq!(
+        response(&app, get(&zero, &cookie), StatusCode::OK).await,
+        br#"{"orders":[],"has_more":false}"#
+    );
     for query in [
         "?",
         "?after_linked_at=1",
@@ -293,6 +301,11 @@ async fn endpoint_rejects_bad_authority_and_canonical_query_without_leaking(pool
         "?after_linked_at=1&after_order_id=00000000000000000000000000000000&extra=1",
         "?after_linked_at=1&after_linked_at=1&after_order_id=00000000000000000000000000000000",
         "?after_linked_at=%31&after_order_id=00000000000000000000000000000000",
+        "?after_linked_at=&after_order_id=00000000000000000000000000000000",
+        "?after_linked_at=12345678901234567&after_order_id=00000000000000000000000000000000",
+        "?after_linked_at=1&after_order_id=0000000000000000000000000000000",
+        "?after_linked_at=1&after_order_id=0000000000000000000000000000000g",
+        "?after_linked_at=1&after_order_id=00000000000000000000000000000000&after_order_id=0",
     ] {
         response(
             &app,
@@ -301,6 +314,8 @@ async fn endpoint_rejects_bad_authority_and_canonical_query_without_leaking(pool
         )
         .await;
     }
+    let oversize = format!("{URL}?after_linked_at=1&after_order_id={}", "0".repeat(90));
+    response(&app, get(&oversize, &cookie), StatusCode::BAD_REQUEST).await;
     let mut req = get(URL, &cookie);
     req.headers_mut()
         .append("origin", ORIGIN.parse().expect("origin"));

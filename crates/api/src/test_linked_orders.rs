@@ -115,17 +115,19 @@ fn cursor(query: Option<&str>) -> Result<Option<LinkedOrderCursor>, ()> {
 }
 
 fn has_more(page: &LinkedOrderPage) -> Result<bool, ()> {
-    let Some(next) = &page.next_cursor else {
-        return Ok(false);
-    };
-    if page
-        .orders
-        .last()
-        .is_some_and(|order| order.linked_at == next.linked_at && order.order_id == next.order_id)
-    {
-        Ok(true)
-    } else {
-        Err(())
+    match &page.next_cursor {
+        None => Ok(false),
+        Some(next) => {
+            let last = page
+                .orders
+                .last()
+                .map(|order| (order.linked_at, order.order_id.as_str()));
+            if last == Some((next.linked_at, next.order_id.as_str())) {
+                Ok(true)
+            } else {
+                Err(())
+            }
+        }
     }
 }
 
@@ -160,8 +162,11 @@ pub(crate) async fn list(
     .await
     {
         Ok(page) => {
-            let Ok(has_more) = has_more(&page) else {
-                return error(StatusCode::SERVICE_UNAVAILABLE, "linked_orders_unavailable");
+            let has_more = match has_more(&page) {
+                Ok(value) => value,
+                Err(()) => {
+                    return error(StatusCode::SERVICE_UNAVAILABLE, "linked_orders_unavailable");
+                }
             };
             Json(TestLinkedOrderPage {
                 orders: page.orders.into_iter().map(Into::into).collect(),
