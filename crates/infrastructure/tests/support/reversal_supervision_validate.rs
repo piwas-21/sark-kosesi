@@ -91,6 +91,34 @@ fn effect_page_requires_exact_predecessor_scope_and_start_time() {
     }
 }
 #[test]
+fn late_effect_page_requires_exact_scope_and_original_operation_start() {
+    let j = job();
+    let mut p = page();
+    p.recorded_at = 110;
+    assert!(valid_late_page(&j, &p, 110));
+    assert!(
+        !valid_page(&j, &p),
+        "a late page need not follow the stop time"
+    );
+    type Mutation = (&'static str, fn(&mut ReversalPageReceipt));
+    for (label, change) in [
+        (
+            "predecessor",
+            (|p: &mut ReversalPageReceipt| p.previous_page_id = None)
+                as fn(&mut ReversalPageReceipt),
+        ),
+        ("payment", |p| p.payment_id = "tr_other".into()),
+        ("kind", |p| p.kind = ReversalKind::Chargeback),
+        ("key", |p| p.credential_fingerprint = "f".repeat(64)),
+        ("before original start", |p| p.recorded_at = 109),
+    ] as [Mutation; 5]
+    {
+        let mut changed = p.clone();
+        change(&mut changed);
+        assert!(!valid_late_page(&j, &changed, 110), "{label}");
+    }
+}
+#[test]
 fn started_operation_requires_exact_unfinished_lease() {
     let j = job();
     assert!(valid_operation(&j, &op()));

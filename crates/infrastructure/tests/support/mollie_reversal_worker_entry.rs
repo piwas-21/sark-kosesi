@@ -164,7 +164,8 @@ async fn actual_worker_enrolls_runs_and_inspects_with_redacted_output(pool: PgPo
             .any(|e| field(e, "code", "reversal_scan_state")
                 && field(e, "state", "pending")
                 && field(e, "generation", "1")
-                && field(e, "reason", "none"))
+                && field(e, "reason", "none")
+                && field(e, "late_page", "not_applicable"))
     );
     for event in events.iter() {
         for (_, value) in event {

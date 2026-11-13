@@ -86,12 +86,24 @@ fn valid_tip(j: &Job, p: &ReversalPageReceipt) -> bool {
         && p.recorded_at >= j.created_at
         && p.recorded_at <= j.updated_at
 }
+fn page_scope_matches(j: &Job, p: &ReversalPageReceipt) -> bool {
+    (
+        &p.previous_page_id,
+        &p.payment_id,
+        p.kind,
+        &p.credential_fingerprint,
+    ) == (
+        &j.tip_page_id,
+        &j.payment_id,
+        j.kind,
+        &j.credential_fingerprint,
+    )
+}
 fn valid_page(j: &Job, p: &ReversalPageReceipt) -> bool {
-    p.previous_page_id == j.tip_page_id
-        && p.payment_id == j.payment_id
-        && p.kind == j.kind
-        && p.credential_fingerprint == j.credential_fingerprint
-        && p.recorded_at >= j.updated_at
+    page_scope_matches(j, p) && p.recorded_at >= j.updated_at
+}
+pub(super) fn valid_late_page(j: &Job, p: &ReversalPageReceipt, operation_started: i64) -> bool {
+    page_scope_matches(j, p) && p.recorded_at >= operation_started
 }
 fn valid_operation(j: &Job, op: &Operation) -> bool {
     identifier(&op.id)
