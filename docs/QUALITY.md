@@ -216,6 +216,21 @@ the separately timed quote workload, burst, resource observations and P6 budget
 evidence remain to be completed. Quote snapshots and rate counters are writes
 to the disposable test database; no seller or provider facts are seeded.
 
+An explicitly selected single-quote smoke uses the same synthetic fixture and
+an owned native PostgreSQL 18 cluster. Run it with the locked Rust dependencies
+available offline and `lsof` installed:
+
+```sh
+P1_POSTGRES_BIN=/absolute/path/to/pg18/bin python3 scripts/quote_http_smoke.py
+```
+
+The launcher rejects arbitrary targets; the test
+checks the release API's loopback listener belongs to its child before sending
+fixture credentials. It verifies session, basket, quote, retry and independent
+stock/commerce postconditions. Its private ownership proof prevents accidental
+target reuse, not malicious tampering by another process with the same user.
+The smoke is not a browser, multi-user, provider or latency-budget result.
+
 Approved preview read/stock/image boundaries and HTTP mapping retain 95% critical
 native line/branch gates. Isolated cases cover exact customer facts/price, missing
 locale and fixture rejection, all-component stock/quarantine/reservation effects,
