@@ -319,6 +319,7 @@ consumption cases stay stopped. Complete actual proxy/resource-limit/no-bypass
 and TLS/provider acceptance before public activation, remaining operator
 dispositions and separate order/fulfilment/refund/invoice transitions. A pure
 whole-variant quantity check now bounds a shipment proposal against an accepted
-order and caller-supplied prior counts. Shipment history, package contents and
-dispatch authority still need evidence. Dispatch and payment require separate
-authorization.
+order and caller-supplied prior counts. A pure projection checks supplied original
+BOMs against frozen members and the order, then sums expected component demand.
+Shipment history, authenticated inputs, package contents and dispatch authority
+still need evidence. Dispatch and payment require separate authorization.

@@ -684,6 +684,12 @@ It must authenticate staff, lock and reconstruct complete committed history, bin
 idempotent effects, revalidate order/payment/stock state and persist its event.
 A variant may need multiple physical packages. Accounting for a whole unit then
 requires custody of its packages and components.
+The separate pure component projection checks every caller-supplied original
+BOM and frozen allocation member against the accepted SKU, BOM revision, ordered
+units, fill and exact component totals before expanding proposed whole units.
+Shared component demand is summed in code order. These inputs still require
+trusted sealed source and allocation custody; the calculation neither defines
+packages nor establishes warehouse, shipment or dispatch evidence.
 
 Write domain changes and outbox events in one transaction. Workers claim leases using PostgreSQL, retry with backoff and stable effect identifiers, and recover abandoned leases. Emails, stock alerts and fulfilment requests are idempotent. Record provider acceptance separately from customer delivery. Failed jobs are visible and replayable only through bounded, audited admin actions.
 
