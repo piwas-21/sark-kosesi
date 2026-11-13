@@ -22,6 +22,7 @@ enum Mode {
     EnrollReversal(reversal_pages::Enrollment),
     InspectReversal(String),
     InspectPaidParent(paid_parent::Inspection),
+    InspectPaidParentSet(String),
 }
 
 fn parse_mode(args: &[String]) -> Result<Mode, std::io::Error> {
@@ -54,6 +55,11 @@ fn parse_mode(args: &[String]) -> Result<Mode, std::io::Error> {
         }
         [argument, attempt, effect] if argument == "--inspect-paid-parent" => {
             paid_parent::Inspection::parse(attempt, effect).map(Mode::InspectPaidParent)
+        }
+        [argument, attempt]
+            if argument == "--inspect-paid-parent-set" && reversal_pages::identifier(attempt) =>
+        {
+            Ok(Mode::InspectPaidParentSet(attempt.clone()))
         }
         _ => Err(std::io::Error::other("unsupported worker command")),
     }
@@ -124,6 +130,7 @@ async fn main() -> Result<(), std::io::Error> {
         Mode::EnrollReversal(intent) => reversal_pages::run(&pool, Some(intent)).await?,
         Mode::InspectReversal(id) => reversal_pages::inspect(&pool, &id).await?,
         Mode::InspectPaidParent(intent) => paid_parent::inspect(&pool, intent).await?,
+        Mode::InspectPaidParentSet(attempt) => paid_parent::inspect_set(&pool, &attempt).await?,
         Mode::Probe => tracing::info!(code = "worker_dependencies_ready", effects_enabled = false),
     }
     Ok(())

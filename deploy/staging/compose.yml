@@ -34,7 +34,7 @@ services:
       STAGING_PUBLIC_STOREFRONT: ${STAGING_PUBLIC_STOREFRONT:-false}
       STAGING_ADMIN_TOKEN: ${STAGING_ADMIN_TOKEN:-}
     ports:
-      - 127.0.0.1:45972:3000
+      - "127.0.0.1:${STAGING_WEB_LOOPBACK_PORT:-45972}:3000"
     networks: [backend, ingress]
     healthcheck:
       test:
