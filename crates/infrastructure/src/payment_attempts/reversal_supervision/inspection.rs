@@ -16,19 +16,10 @@ pub async fn inspect(pool: &PgPool, id: &str) -> Result<Option<Inspection>, Reco
     }
     let mut tx = pool.begin().await?;
     limits(&mut tx).await?;
-    let Some(initial) = rows::load(&mut tx, id).await? else {
+    let Some((job, frozen, started)) = checked_job(&mut tx, id).await? else {
         tx.rollback().await?;
         return Ok(None);
     };
-    let (frozen, started) = context(&mut tx, &initial.attempt_id, true).await?;
-    let job = rows::load(&mut tx, id)
-        .await?
-        .ok_or(RecoveryError::InvalidStoredData)?;
-    if job.attempt_id != initial.attempt_id {
-        return Err(RecoveryError::InvalidStoredData);
-    }
-    validate::source(&mut tx, &job, &frozen, started).await?;
-    validate::tip(&mut tx, &job, &frozen, started).await?;
     let late_page_present = if job.review_reason.as_deref() == Some("uncertain") {
         Some(late_page(&mut tx, &job, &frozen, started).await?)
     } else {
@@ -83,11 +74,7 @@ async fn late_page(
     let page =
         super::super::reversal_pages::rows::load(tx, frozen, started, Some(&effect), None).await?;
     if let Some(page) = &page
-        && (page.previous_page_id != job.tip_page_id
-            || page.payment_id != job.payment_id
-            || page.kind != job.kind
-            || page.credential_fingerprint != job.credential_fingerprint
-            || page.recorded_at < operation_started)
+        && !validate::valid_late_page(job, page, operation_started)
     {
         return Err(RecoveryError::InvalidStoredData);
     }

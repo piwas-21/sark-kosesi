@@ -160,6 +160,26 @@ pub async fn enroll(
     tx.commit().await?;
     Ok(job)
 }
+/// Load the checkpoint, claim its attempt, and revalidate under that claim.
+async fn checked_job(
+    tx: &mut Transaction<'_, Postgres>,
+    id: &str,
+) -> Result<Option<(Job, FrozenAttempt, i64)>, RecoveryError> {
+    let Some(initial) = rows::load(tx, id).await? else {
+        return Ok(None);
+    };
+    let (frozen, started) = context(tx, &initial.attempt_id, true).await?;
+    let current = rows::load(tx, id)
+        .await?
+        .ok_or(RecoveryError::InvalidStoredData)?;
+    if current.attempt_id != initial.attempt_id {
+        return Err(RecoveryError::InvalidStoredData);
+    }
+    validate::source(tx, &current, &frozen, started).await?;
+    validate::tip(tx, &current, &frozen, started).await?;
+    Ok(Some((current, frozen, started)))
+}
+
 /// Read and revalidate a bounded private supervision record.
 pub async fn read_job(pool: &PgPool, id: &str) -> Result<Option<Job>, RecoveryError> {
     if !identifier(id) {
@@ -167,21 +187,7 @@ pub async fn read_job(pool: &PgPool, id: &str) -> Result<Option<Job>, RecoveryEr
     }
     let mut tx = pool.begin().await?;
     limits(&mut tx).await?;
-    let initial = rows::load(&mut tx, id).await?;
-    let job = if let Some(j) = initial {
-        let (frozen, started) = context(&mut tx, &j.attempt_id, true).await?;
-        let current = rows::load(&mut tx, id)
-            .await?
-            .ok_or(RecoveryError::InvalidStoredData)?;
-        if current.attempt_id != j.attempt_id {
-            return Err(RecoveryError::InvalidStoredData);
-        }
-        validate::source(&mut tx, &current, &frozen, started).await?;
-        validate::tip(&mut tx, &current, &frozen, started).await?;
-        Some(current)
-    } else {
-        None
-    };
+    let job = checked_job(&mut tx, id).await?.map(|(job, _, _)| job);
     tx.rollback().await?;
     Ok(job)
 }

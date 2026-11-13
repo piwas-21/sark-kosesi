@@ -1269,5 +1269,102 @@ async fn lease_expiring_before_provider_io_never_sends_a_request(pool: PgPool) {
         .expect("custody")
         .expect("job");
     assert_eq!(stopped.review_reason.as_deref(), Some("uncertain"));
+    assert_eq!(stopped.tip_page_id, None);
+    assert_eq!(
+        inspect(&pool, &job.id)
+            .await
+            .expect("first-operation inspection")
+            .expect("stopped job")
+            .late_page_present,
+        Some(false)
+    );
+    let operation: String = sqlx::query_scalar(
+        "SELECT id FROM reversal_scan_operations WHERE job_id=$1 AND generation=1",
+    )
+    .bind(&job.id)
+    .fetch_one(&pool)
+    .await
+    .expect("stopped operation");
+    // The schema normally protects operation IDs; damage only this isolated DB.
+    pool.execute("ALTER TABLE reversal_scan_operations DISABLE TRIGGER USER; ALTER TABLE reversal_scan_operations DROP CONSTRAINT reversal_scan_operations_id_check")
+        .await.expect("isolate identifier control");
+    sqlx::query("UPDATE reversal_scan_operations SET id='invalid' WHERE id=$1")
+        .bind(&operation)
+        .execute(&pool)
+        .await
+        .expect("corrupt operation ID");
+    assert!(matches!(
+        inspect(&pool, &job.id).await,
+        Err(RecoveryError::InvalidStoredData)
+    ));
+    sqlx::query("UPDATE reversal_scan_operations SET id=$1 WHERE id='invalid'")
+        .bind(&operation)
+        .execute(&pool)
+        .await
+        .expect("restore operation ID");
+    pool.execute("ALTER TABLE reversal_scan_operations ADD CONSTRAINT reversal_scan_operations_id_check CHECK(id ~ '^[a-f0-9]{32}$'); ALTER TABLE reversal_scan_operations ENABLE TRIGGER USER")
+        .await.expect("restore operation guard");
+    assert_eq!(
+        inspect(&pool, &job.id)
+            .await
+            .expect("restored operation")
+            .expect("stopped job")
+            .late_page_present,
+        Some(false)
+    );
+    let verified = verified_test_page(frozen.snapshot(), None, None).await;
+    let page = crate::payment_attempts::reversal_pages::record(
+        &pool,
+        time.as_ref(),
+        &ids,
+        &operation,
+        None,
+        &verified,
+    )
+    .await
+    .expect("valid first late page");
+    assert_eq!(
+        inspect(&pool, &job.id)
+            .await
+            .expect("late inspection")
+            .expect("stopped job")
+            .late_page_present,
+        Some(true)
+    );
+
+    // An internally valid first receipt of another kind is still not this job's page.
+    pool.execute("ALTER TABLE payment_reversal_pages DISABLE TRIGGER USER; ALTER TABLE commerce_outbox DISABLE TRIGGER USER")
+        .await.expect("isolate page scope control");
+    sqlx::query("UPDATE payment_reversal_pages SET reversal_kind='chargeback' WHERE id=$1")
+        .bind(&page.id)
+        .execute(&pool)
+        .await
+        .expect("wrong page kind");
+    sqlx::query("UPDATE commerce_outbox e SET payload=payment_reversal_page_event(p) FROM payment_reversal_pages p WHERE p.id=$1 AND e.id=p.event_id")
+        .bind(&page.id).execute(&pool).await.expect("rebind page event");
+    crate::payment_attempts::reversal_pages::read_page(&pool, &job.attempt_id, &page.id)
+        .await
+        .expect("wrong-scope page remains independently valid");
+    assert!(matches!(
+        inspect(&pool, &job.id).await,
+        Err(RecoveryError::InvalidStoredData)
+    ));
+    sqlx::query("UPDATE payment_reversal_pages SET reversal_kind='refund' WHERE id=$1")
+        .bind(&page.id)
+        .execute(&pool)
+        .await
+        .expect("restore page kind");
+    sqlx::query("UPDATE commerce_outbox e SET payload=payment_reversal_page_event(p) FROM payment_reversal_pages p WHERE p.id=$1 AND e.id=p.event_id")
+        .bind(&page.id).execute(&pool).await.expect("restore page event");
+    pool.execute("ALTER TABLE payment_reversal_pages ENABLE TRIGGER USER; ALTER TABLE commerce_outbox ENABLE TRIGGER USER")
+        .await.expect("restore page guards");
+    assert_eq!(
+        inspect(&pool, &job.id)
+            .await
+            .expect("restored scope")
+            .expect("stopped job")
+            .late_page_present,
+        Some(true)
+    );
     assert_eq!(server.count(), 1);
 }
