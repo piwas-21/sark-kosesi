@@ -549,8 +549,12 @@ customer session for the verified buyer mailbox consumes it and records the
 immutable link in one transaction. Private detail and history reads hold
 the live session claim while validating the reciprocal link and the original
 order. Return captured items and amounts through a minimal projection.
-Cookie and Origin checks, safe proof delivery, rate limits and public order
-journeys remain separate work.
+An independently enabled test-only history route requires preview authority,
+the configured Origin and the customer cookie. It returns up to eight linked
+guest orders and uses the last order's linked time and ID as a live position
+when more remain. Decimal strings carry times and amounts. No linking or proof
+delivery route is installed. Public browser controls, safe proof delivery, rate
+limits and public order journeys remain separate work.
 
 ## P5 room-fit foundation
 

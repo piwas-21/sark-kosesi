@@ -1880,7 +1880,12 @@ including the selected Dutch source approval for non-Dutch copy. Later
 catalogue changes leave accepted titles intact. History seeks up to eight
 entries in descending link time and order identity. The cursor is a live
 position. Refresh from the beginning to include newer links. Browser
-exposure and verified delivery remain separate.
+exposure and verified delivery remain separate. A separately enabled test-only
+history transport requires preview authority, the exact configured Origin and
+the current customer cookie. Its optional canonical time and order ID pair is
+only a position, never authorization; each page claims the live owner again.
+It exposes the same bounded commercial projection with decimal times and amounts.
+It does not link orders or provide a proof-delivery or public account route.
 
 ### Credential admission
 

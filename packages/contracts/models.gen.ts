@@ -212,6 +212,34 @@ export type TestFavouriteList = {
     revision: string;
 };
 
+export type TestLinkedOrder = {
+    created_at: string;
+    currency: string;
+    lines: Array<TestOrderLine>;
+    linked_at: string;
+    order_id: string;
+    shipping: TestOrderAmount;
+    total: TestOrderAmount;
+};
+
+export type TestLinkedOrderPage = {
+    has_more: boolean;
+    orders: Array<TestLinkedOrder>;
+};
+
+export type TestOrderAmount = {
+    gross_minor: string;
+    net_minor: string;
+    vat_minor: string;
+};
+
+export type TestOrderLine = {
+    amounts: TestOrderAmount;
+    quantity: number;
+    sku: string;
+    title: string;
+};
+
 export type TestSessionProof = {
     /**
      * One independent synchronizer encoded as 64 lowercase hexadecimal characters.
@@ -542,6 +570,38 @@ export type TestCustomerFavouritesResponses = {
 };
 
 export type TestCustomerFavouritesResponse = TestCustomerFavouritesResponses[keyof TestCustomerFavouritesResponses];
+
+export type TestCustomerLinkedOrdersData = {
+    body?: never;
+    headers: {
+        Origin: string;
+    };
+    path?: never;
+    query?: {
+        after_linked_at?: string;
+        after_order_id?: string;
+    };
+    url: '/api/test/customer/linked-orders';
+};
+
+export type TestCustomerLinkedOrdersErrors = {
+    400: ApiError;
+    401: ApiError;
+    403: ApiError;
+    503: ApiError;
+    504: ApiError;
+};
+
+export type TestCustomerLinkedOrdersError = TestCustomerLinkedOrdersErrors[keyof TestCustomerLinkedOrdersErrors];
+
+export type TestCustomerLinkedOrdersResponses = {
+    /**
+     * Owned linked guest orders; use the last item as the next position when has_more
+     */
+    200: TestLinkedOrderPage;
+};
+
+export type TestCustomerLinkedOrdersResponse = TestCustomerLinkedOrdersResponses[keyof TestCustomerLinkedOrdersResponses];
 
 export type TestCustomerLoginData = {
     body: LoginRequest;
