@@ -47,6 +47,20 @@ pub(super) async fn inspect(pool: &PgPool, input: Inspection) -> Result<()> {
     Ok(())
 }
 
+pub(super) async fn inspect_set(pool: &PgPool, attempt: &str) -> Result<()> {
+    let set = paid_parent_evidence::inspect_set(pool, attempt)
+        .await
+        .map_err(|_| Error::other("paid-parent evidence set unavailable"))?;
+    tracing::info!(
+        code = "paid_parent_evidence_set",
+        operations = set.operations,
+        pending = set.pending,
+        complete = set.complete,
+        digest = %set.digest,
+    );
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
