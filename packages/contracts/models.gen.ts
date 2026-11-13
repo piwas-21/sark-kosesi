@@ -199,6 +199,13 @@ export type RedeemRequest = {
     token: string;
 };
 
+export type TestSessionProof = {
+    /**
+     * One independent synchronizer encoded as 64 lowercase hexadecimal characters.
+     */
+    csrf_token: string;
+};
+
 export type IntakeData = {
     body: CallbackForm;
     path?: never;
@@ -522,6 +529,67 @@ export type TestCustomerLoginResponses = {
 };
 
 export type TestCustomerLoginResponse = TestCustomerLoginResponses[keyof TestCustomerLoginResponses];
+
+export type TestCustomerLoginWithCsrfData = {
+    body: LoginRequest;
+    headers: {
+        Origin: string;
+    };
+    path?: never;
+    query?: never;
+    url: '/api/test/customer/login-with-csrf';
+};
+
+export type TestCustomerLoginWithCsrfErrors = {
+    400: ApiError;
+    401: ApiError;
+    403: ApiError;
+    413: ApiError;
+    415: ApiError;
+    503: ApiError;
+    504: ApiError;
+};
+
+export type TestCustomerLoginWithCsrfError = TestCustomerLoginWithCsrfErrors[keyof TestCustomerLoginWithCsrfErrors];
+
+export type TestCustomerLoginWithCsrfResponses = {
+    /**
+     * Bound synchronizer and HttpOnly secure session cookie
+     */
+    200: TestSessionProof;
+};
+
+export type TestCustomerLoginWithCsrfResponse = TestCustomerLoginWithCsrfResponses[keyof TestCustomerLoginWithCsrfResponses];
+
+export type TestCustomerLogoutData = {
+    body?: never;
+    headers: {
+        Origin: string;
+        'x-csrf-token': string;
+    };
+    path?: never;
+    query?: never;
+    url: '/api/test/customer/session';
+};
+
+export type TestCustomerLogoutErrors = {
+    400: ApiError;
+    401: ApiError;
+    403: ApiError;
+    503: ApiError;
+    504: ApiError;
+};
+
+export type TestCustomerLogoutError = TestCustomerLogoutErrors[keyof TestCustomerLogoutErrors];
+
+export type TestCustomerLogoutResponses = {
+    /**
+     * Bound session revoked and cookie cleared
+     */
+    204: void;
+};
+
+export type TestCustomerLogoutResponse = TestCustomerLogoutResponses[keyof TestCustomerLogoutResponses];
 
 export type RedeemTestVerificationData = {
     body: RedeemRequest;

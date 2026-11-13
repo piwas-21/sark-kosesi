@@ -637,3 +637,476 @@ async fn truncated_transport_body_is_redacted_and_debits_nothing(pool: PgPool) {
     assert_eq!(counts(&pool).await, (0, 0));
     server.abort();
 }
+
+const BOUND_LOGIN: &str = "/api/test/customer/login-with-csrf";
+const BOUND_LOGOUT: &str = "/api/test/customer/session";
+
+fn bound_app(pool: &PgPool, clock: Arc<Time>) -> axum::Router {
+    let mut values = enabled();
+    values.insert("TEST_LOGIN_CSRF_TRANSPORT".into(), "1".into());
+    router_with_test_login(
+        state(pool, clock),
+        None,
+        None,
+        None,
+        Config::parse(&values).expect("test config").test_login,
+    )
+    .expect("router")
+}
+fn bound_login(body: impl Into<Body>) -> Request<Body> {
+    Request::builder()
+        .method("POST")
+        .uri(BOUND_LOGIN)
+        .header("authorization", format!("Bearer {PREVIEW}"))
+        .header("origin", ORIGIN)
+        .header("content-type", "application/json")
+        .body(body.into())
+        .expect("request")
+}
+fn bound_logout(cookie: &str, csrf: &str) -> Request<Body> {
+    Request::builder()
+        .method("DELETE")
+        .uri(BOUND_LOGOUT)
+        .header("authorization", format!("Bearer {PREVIEW}"))
+        .header("origin", ORIGIN)
+        .header("cookie", cookie)
+        .header("x-csrf-token", csrf)
+        .body(Body::empty())
+        .expect("request")
+}
+async fn bound_issue(app: &axum::Router) -> (String, String, CustomerSessionToken) {
+    let response = app
+        .clone()
+        .oneshot(bound_login(body(EMAIL, PASSWORD)))
+        .await
+        .expect("test login response");
+    assert_eq!(response.status(), StatusCode::OK);
+    assert_private_headers(&response);
+    let header = response
+        .headers()
+        .get(SET_COOKIE)
+        .expect("one session cookie");
+    assert!(header.is_sensitive());
+    assert_eq!(response.headers().get_all(SET_COOKIE).iter().count(), 1);
+    let header = header
+        .to_str()
+        .unwrap_or_else(|_| panic!("invalid cookie encoding"));
+    let token = bearer(header);
+    let cookie = header
+        .split(';')
+        .next()
+        .unwrap_or_else(|| panic!("missing cookie pair"))
+        .to_owned();
+    let bytes = to_bytes(response.into_body(), 4096)
+        .await
+        .unwrap_or_else(|_| panic!("missing proof body"));
+    let value: serde_json::Value =
+        serde_json::from_slice(&bytes).unwrap_or_else(|_| panic!("invalid proof body"));
+    let map = value
+        .as_object()
+        .unwrap_or_else(|| panic!("proof must be an object"));
+    assert_eq!(map.len(), 1);
+    let proof = map
+        .get("csrf_token")
+        .and_then(serde_json::Value::as_str)
+        .unwrap_or_else(|| panic!("missing synchronizer"));
+    assert!(
+        proof.len() == 64
+            && proof
+                .bytes()
+                .all(|b| b.is_ascii_digit() || (b'a'..=b'f').contains(&b)),
+        "invalid synchronizer encoding"
+    );
+    (cookie, proof.to_owned(), token)
+}
+
+#[test]
+fn bound_transport_requires_explicit_test_mode_and_complete_login_configuration() {
+    let mut v = enabled();
+    v.insert("TEST_LOGIN_CSRF_TRANSPORT".into(), "1".into());
+    assert!(Config::parse(&v).is_ok());
+    for mode in ["local", "staging", "production"] {
+        let mut v = v.clone();
+        v.insert("APP_ENV".into(), mode.into());
+        assert!(Config::parse(&v).is_err());
+    }
+    for value in ["", "0", "true", "yes", "2"] {
+        let mut v = v.clone();
+        v.insert("TEST_LOGIN_CSRF_TRANSPORT".into(), value.into());
+        assert!(Config::parse(&v).is_err());
+    }
+    for key in ["TEST_LOGIN_ORIGIN", "TEST_LOGIN_ADMISSION_KEY"] {
+        let mut v = v.clone();
+        v.remove(key);
+        assert!(Config::parse(&v).is_err());
+    }
+    let mut v = values();
+    v.insert("TEST_LOGIN_CSRF_TRANSPORT".into(), "1".into());
+    assert!(Config::parse(&v).is_err());
+}
+
+#[sqlx::test(migrator = "MIGRATOR")]
+async fn bound_transport_requires_all_authority_and_replay_fails_closed(pool: PgPool) {
+    let _case = LOGIN_CASE.lock().await;
+    let time = Arc::new(Time(AtomicU64::new(1000)));
+    account(&pool, &time).await;
+    let disabled = app(&pool, time.clone());
+    let response = disabled
+        .clone()
+        .oneshot(bound_login(body(EMAIL, PASSWORD)))
+        .await
+        .expect("disabled route");
+    assert_eq!(response.status(), StatusCode::NOT_FOUND);
+    let response = disabled
+        .oneshot(bound_logout("missing=1", "missing"))
+        .await
+        .expect("disabled logout");
+    assert_eq!(response.status(), StatusCode::NOT_FOUND);
+    let app = bound_app(&pool, time.clone());
+    let before = counts(&pool).await;
+    for invalid in ["[]", "{}", r#"{"email":"x","password":"y","extra":true}"#] {
+        let response = app
+            .clone()
+            .oneshot(bound_login(invalid))
+            .await
+            .expect("closed request");
+        assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+        let _ = response_parts(response).await;
+    }
+    let mut missing_login_origin = bound_login(body(EMAIL, PASSWORD));
+    missing_login_origin.headers_mut().remove("origin");
+    let mut duplicate_login_origin = bound_login(body(EMAIL, PASSWORD));
+    duplicate_login_origin
+        .headers_mut()
+        .append("origin", ORIGIN.parse().expect("origin"));
+    let mut missing_login_auth = bound_login(body(EMAIL, PASSWORD));
+    missing_login_auth.headers_mut().remove("authorization");
+    for (request, expected) in [
+        (missing_login_origin, StatusCode::FORBIDDEN),
+        (duplicate_login_origin, StatusCode::FORBIDDEN),
+        (missing_login_auth, StatusCode::UNAUTHORIZED),
+    ] {
+        let response = app.clone().oneshot(request).await.expect("login authority");
+        assert_eq!(response.status(), expected);
+        let _ = response_parts(response).await;
+    }
+    let mut form = bound_login(body(EMAIL, PASSWORD));
+    form.headers_mut().insert(
+        "content-type",
+        "application/x-www-form-urlencoded".parse().expect("type"),
+    );
+    let response = app.clone().oneshot(form).await.expect("form rejection");
+    assert_eq!(response.status(), StatusCode::UNSUPPORTED_MEDIA_TYPE);
+    let _ = response_parts(response).await;
+    assert_eq!(counts(&pool).await, before);
+    let wrong = app
+        .clone()
+        .oneshot(bound_login(body(EMAIL, "incorrect password")))
+        .await
+        .expect("wrong credentials");
+    let unknown = app
+        .clone()
+        .oneshot(bound_login(body("unknown@example.test", PASSWORD)))
+        .await
+        .expect("unknown identity");
+    let wrong = response_parts(wrong).await;
+    let unknown = response_parts(unknown).await;
+    assert_eq!(wrong.0, StatusCode::UNAUTHORIZED);
+    assert_same_denial(&wrong, &unknown, "credential denials must be neutral");
+    let (cookie_a, proof_a, token_a) = bound_issue(&app).await;
+    let (cookie_b, proof_b, token_b) = bound_issue(&app).await;
+    assert!(
+        cookie_a != cookie_b && proof_a != proof_b,
+        "independent authority required"
+    );
+    let legacy = app
+        .clone()
+        .oneshot(request(body(EMAIL, PASSWORD)))
+        .await
+        .expect("cookie-only login");
+    assert_eq!(legacy.status(), StatusCode::NO_CONTENT);
+    let legacy_header = legacy
+        .headers()
+        .get(SET_COOKIE)
+        .expect("legacy cookie")
+        .to_str()
+        .unwrap_or_else(|_| panic!("legacy cookie encoding"));
+    let legacy_token = bearer(legacy_header);
+    let legacy_cookie = legacy_header
+        .split(';')
+        .next()
+        .unwrap_or_else(|| panic!("legacy cookie pair"))
+        .to_owned();
+    let bindings: i64 = sqlx::query_scalar("SELECT count(*) FROM customer_session_csrf")
+        .fetch_one(&pool)
+        .await
+        .expect("binding count");
+    assert_eq!(bindings, 2);
+    let mut wrong_origin = bound_logout(&cookie_a, &proof_a);
+    wrong_origin.headers_mut().insert(
+        "origin",
+        "https://other.example.invalid".parse().expect("origin"),
+    );
+    let mut missing_origin = bound_logout(&cookie_a, &proof_a);
+    missing_origin.headers_mut().remove("origin");
+    let mut duplicate_origin = bound_logout(&cookie_a, &proof_a);
+    duplicate_origin
+        .headers_mut()
+        .append("origin", ORIGIN.parse().expect("origin"));
+    let mut missing_csrf = bound_logout(&cookie_a, &proof_a);
+    missing_csrf.headers_mut().remove("x-csrf-token");
+    let mut missing_cookie = bound_logout(&cookie_a, &proof_a);
+    missing_cookie.headers_mut().remove("cookie");
+    let mut no_auth = bound_logout(&cookie_a, &proof_a);
+    no_auth.headers_mut().remove("authorization");
+    let mut duplicate_csrf = bound_logout(&cookie_a, &proof_a);
+    duplicate_csrf.headers_mut().append(
+        "x-csrf-token",
+        proof_a.parse().unwrap_or_else(|_| panic!("header")),
+    );
+    let duplicate_cookie = format!("{cookie_a}; {cookie_a}");
+    let mut split_cookie = bound_logout(&cookie_a, &proof_a);
+    split_cookie.headers_mut().append(
+        "cookie",
+        cookie_a.parse().unwrap_or_else(|_| panic!("header")),
+    );
+    let mut extra_body = bound_logout(&cookie_a, &proof_a);
+    *extra_body.body_mut() = Body::from("x");
+    let mut query = bound_logout(&cookie_a, &proof_a);
+    *query.uri_mut() = format!("{BOUND_LOGOUT}?x=1").parse().expect("uri");
+    for (request, expected) in [
+        (bound_logout(&cookie_a, &proof_b), StatusCode::UNAUTHORIZED),
+        (
+            bound_logout(&legacy_cookie, &proof_a),
+            StatusCode::UNAUTHORIZED,
+        ),
+        (bound_logout(&cookie_a, "invalid"), StatusCode::UNAUTHORIZED),
+        (
+            bound_logout(&duplicate_cookie, &proof_a),
+            StatusCode::UNAUTHORIZED,
+        ),
+        (duplicate_csrf, StatusCode::UNAUTHORIZED),
+        (split_cookie, StatusCode::UNAUTHORIZED),
+        (wrong_origin, StatusCode::FORBIDDEN),
+        (missing_origin, StatusCode::FORBIDDEN),
+        (duplicate_origin, StatusCode::FORBIDDEN),
+        (missing_csrf, StatusCode::UNAUTHORIZED),
+        (missing_cookie, StatusCode::UNAUTHORIZED),
+        (no_auth, StatusCode::UNAUTHORIZED),
+        (extra_body, StatusCode::BAD_REQUEST),
+        (query, StatusCode::BAD_REQUEST),
+    ] {
+        let response = app
+            .clone()
+            .oneshot(request)
+            .await
+            .expect("negative response");
+        assert_eq!(response.status(), expected);
+        let _ = response_parts(response).await;
+    }
+    for token in [&token_a, &token_b, &legacy_token] {
+        customer_sessions::authenticate(&pool, token, &*time)
+            .await
+            .expect("session remains live");
+    }
+    let response = app
+        .clone()
+        .oneshot(bound_logout(&format!("other=value; {cookie_a}"), &proof_a))
+        .await
+        .expect("logout");
+    assert_eq!(response.status(), StatusCode::NO_CONTENT);
+    assert_private_headers(&response);
+    let header = response.headers().get(SET_COOKIE).expect("removal cookie");
+    assert!(header.is_sensitive());
+    let removed = Cookie::parse(
+        header
+            .to_str()
+            .unwrap_or_else(|_| panic!("cookie header"))
+            .to_owned(),
+    )
+    .unwrap_or_else(|_| panic!("removal cookie"));
+    assert!(removed.name() == "__Host-piwas-customer" && removed.value().is_empty());
+    assert_eq!(removed.secure(), Some(true));
+    assert_eq!(removed.http_only(), Some(true));
+    assert_eq!(removed.same_site(), Some(SameSite::Lax));
+    assert!(removed.path() == Some("/") && removed.domain().is_none());
+    assert_eq!(
+        removed.max_age(),
+        Some(tower_sessions::cookie::time::Duration::ZERO)
+    );
+    assert!(
+        to_bytes(response.into_body(), 4096)
+            .await
+            .unwrap_or_else(|_| panic!("logout body"))
+            .is_empty()
+    );
+    assert!(matches!(
+        customer_sessions::authenticate(&pool, &token_a, &*time).await,
+        Err(SessionError::Denied)
+    ));
+    customer_sessions::authenticate(&pool, &token_b, &*time)
+        .await
+        .expect("other remains live");
+    // A lost success response may have committed; a duplicate denies and does not
+    // emit a misleading second tombstone or claim an idempotent receipt.
+    let response = app
+        .clone()
+        .oneshot(bound_logout(&cookie_a, &proof_a))
+        .await
+        .expect("duplicate");
+    assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
+    let _ = response_parts(response).await;
+    for (path, method) in [(BOUND_LOGIN, "POST"), (BOUND_LOGOUT, "DELETE")] {
+        let preflight = Request::builder()
+            .method("OPTIONS")
+            .uri(path)
+            .header("origin", ORIGIN)
+            .header("access-control-request-method", method)
+            .body(Body::empty())
+            .expect("preflight");
+        let response = app
+            .clone()
+            .oneshot(preflight)
+            .await
+            .expect("preflight response");
+        assert!(response.status().is_client_error());
+        assert!(
+            response
+                .headers()
+                .get("access-control-allow-origin")
+                .is_none()
+        );
+        assert!(response.headers().get(SET_COOKIE).is_none());
+    }
+}
+
+#[sqlx::test(migrator = "MIGRATOR")]
+async fn bound_session_rejects_rotation_expiry_and_competing_logout(pool: PgPool) {
+    let _case = LOGIN_CASE.lock().await;
+    let time = Arc::new(Time(AtomicU64::new(1000)));
+    account(&pool, &time).await;
+    let app = bound_app(&pool, time.clone());
+    let (cookie, proof, old) = bound_issue(&app).await;
+    let successor = customer_sessions::rotate(&pool, &old, &*time)
+        .await
+        .expect("rotate");
+    let mut successor_cookie = String::from("__Host-piwas-customer=");
+    for byte in successor.token.expose_bytes() {
+        use std::fmt::Write;
+        write!(successor_cookie, "{byte:02x}").expect("encode synthetic token");
+    }
+    for cookie in [&cookie, &successor_cookie] {
+        let response = app
+            .clone()
+            .oneshot(bound_logout(cookie, &proof))
+            .await
+            .expect("rotated response");
+        assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
+        let _ = response_parts(response).await;
+    }
+    customer_sessions::authenticate(&pool, &successor.token, &*time)
+        .await
+        .expect("unbound successor remains live");
+    let (cookie, proof, token) = bound_issue(&app).await;
+    let (one, two) = tokio::join!(
+        app.clone().oneshot(bound_logout(&cookie, &proof)),
+        app.clone().oneshot(bound_logout(&cookie, &proof))
+    );
+    let one = one.expect("first response");
+    let two = two.expect("second response");
+    assert_eq!(
+        usize::from(one.headers().contains_key(SET_COOKIE))
+            + usize::from(two.headers().contains_key(SET_COOKIE)),
+        1
+    );
+    assert!(matches!(
+        (one.status(), two.status()),
+        (StatusCode::NO_CONTENT, StatusCode::UNAUTHORIZED)
+            | (StatusCode::UNAUTHORIZED, StatusCode::NO_CONTENT)
+    ));
+    assert!(matches!(
+        customer_sessions::authenticate(&pool, &token, &*time).await,
+        Err(SessionError::Denied)
+    ));
+    let (cookie, proof, _) = bound_issue(&app).await;
+    time.0.store(44_200, Ordering::SeqCst);
+    let response = app
+        .oneshot(bound_logout(&cookie, &proof))
+        .await
+        .expect("expired response");
+    assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
+    let _ = response_parts(response).await;
+}
+
+#[derive(Clone)]
+struct SessionLogSink(Arc<std::sync::Mutex<Vec<u8>>>);
+impl std::io::Write for SessionLogSink {
+    fn write(&mut self, bytes: &[u8]) -> std::io::Result<usize> {
+        self.0
+            .lock()
+            .map_err(|_| std::io::Error::other("fixture lock"))?
+            .extend_from_slice(bytes);
+        Ok(bytes.len())
+    }
+    fn flush(&mut self) -> std::io::Result<()> {
+        Ok(())
+    }
+}
+impl<'a> tracing_subscriber::fmt::MakeWriter<'a> for SessionLogSink {
+    type Writer = Self;
+    fn make_writer(&'a self) -> Self::Writer {
+        self.clone()
+    }
+}
+
+#[sqlx::test(migrator = "MIGRATOR")]
+async fn bound_session_trace_logs_exclude_cookie_proof_password_and_body(pool: PgPool) {
+    use tracing::instrument::WithSubscriber;
+    let _case = LOGIN_CASE.lock().await;
+    let sink = SessionLogSink(Arc::new(std::sync::Mutex::new(Vec::new())));
+    let subscriber = tracing_subscriber::fmt()
+        .with_max_level(tracing::Level::TRACE)
+        .with_ansi(false)
+        .without_time()
+        .with_writer(sink.clone())
+        .finish();
+    let (cookie, proof) = async {
+        tracing::warn!(code = "session_log_positive_control");
+        let time = Arc::new(Time(AtomicU64::new(1000)));
+        account(&pool, &time).await;
+        let app = bound_app(&pool, time);
+        let (cookie, proof, _) = bound_issue(&app).await;
+        let invalid = app.clone().oneshot(bound_logout(&cookie, &"ab".repeat(32))).await.expect("wrong proof");
+        assert_eq!(invalid.status(), StatusCode::UNAUTHORIZED);
+        let _ = response_parts(invalid).await;
+        let invalid = app.clone().oneshot(bound_login(r#"{"email":"private-body-marker@example.test","password":"private-password-marker","extra":true}"#)).await.expect("invalid input");
+        assert_eq!(invalid.status(), StatusCode::BAD_REQUEST);
+        let _ = response_parts(invalid).await;
+        pool.close().await;
+        let unavailable = app.oneshot(bound_logout(&cookie, &proof)).await.expect("database failure");
+        assert_eq!(unavailable.status(), StatusCode::SERVICE_UNAVAILABLE);
+        let _ = response_parts(unavailable).await;
+        (cookie, proof)
+    }.with_subscriber(subscriber).await;
+    let log = String::from_utf8(sink.0.lock().expect("capture").clone()).expect("UTF8");
+    assert!(
+        log.contains("session_log_positive_control"),
+        "capture positive control missing"
+    );
+    assert!(log.contains("request_unavailable"), "failure event missing");
+    for secret in [
+        cookie
+            .split_once('=')
+            .map(|(_, value)| value)
+            .expect("cookie"),
+        &proof,
+        PREVIEW,
+        EMAIL,
+        PASSWORD,
+        "private-body-marker",
+        "private-password-marker",
+        &"ab".repeat(32),
+    ] {
+        assert!(!log.contains(secret), "sensitive value leaked to logs");
+    }
+}

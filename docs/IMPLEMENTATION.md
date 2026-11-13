@@ -520,7 +520,12 @@ An independent default-off test-only login POST requires preview authentication,
 an exact HTTPS Origin and a separate admission key. It performs the admitted
 password login and returns the resulting session only in a secure host-only,
 HttpOnly SameSite=Lax cookie with the original session expiry. Its empty response
-contains no identity; no session-read or logout route is installed.
+contains no identity and its bearer-only session cannot use protected logout.
+An independently enabled test-only login returns a bound synchronizer once in a
+no-store response and the session in the same kind of cookie. Its paired logout
+requires the exact Origin, one cookie and one matching proof. Only committed
+revocation returns a removal cookie; a lost response can leave revocation committed,
+and a duplicate request is denied. No session-read or public route is installed.
 Complete secure delivery, trusted ingress, timing and browser controls before
 exposing the flow beyond this test boundary.
 

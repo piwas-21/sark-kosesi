@@ -113,6 +113,20 @@ fn build(
         );
     }
     if let Some(config) = login {
+        if config.csrf_transport {
+            app = app
+                .route(
+                    "/api/test/customer/login-with-csrf",
+                    post(crate::test_session::login)
+                        .layer::<_, std::convert::Infallible>(DefaultBodyLimit::max(4096))
+                        .layer(Extension(config.clone())),
+                )
+                .route(
+                    "/api/test/customer/session",
+                    axum::routing::delete(crate::test_session::logout)
+                        .layer(Extension(config.clone())),
+                );
+        }
         app = app.route(
             "/api/test/customer/login",
             post(crate::test_login::login)

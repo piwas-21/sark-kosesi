@@ -1,13 +1,11 @@
 //! Explicit test-only customer login. This is not a public authentication surface.
 use crate::{
-    ApiError, AppState, error,
-    guest::{GuestOrigin, origin::single_header},
+    ApiError, AppState, error, guest::GuestOrigin, test_login_input::parse_request,
     verification::decode_hex,
 };
 use axum::{
     Extension,
-    body::Bytes,
-    extract::{FromRequest, Request, State},
+    extract::{Request, State},
     http::{HeaderValue, StatusCode, header::SET_COOKIE},
     response::{IntoResponse, Response},
 };
@@ -15,31 +13,35 @@ use commerce_infrastructure::{
     customer_credential_admission::{AdmissionKey, AdmissionLimits},
     customer_sessions::{self, IssuedSession, SessionError},
 };
-use serde::Deserialize;
 use std::{collections::HashMap, sync::Arc};
 use tower_sessions::cookie::{Cookie, SameSite, time::OffsetDateTime};
-use utoipa::ToSchema;
 use zeroize::Zeroizing;
 
 const SESSION_LIFETIME: i64 = 43_200;
-const COOKIE: &str = "__Host-piwas-customer";
+pub(crate) const COOKIE: &str = "__Host-piwas-customer";
 
 #[derive(Clone)]
 pub struct LoginConfig {
-    origin: GuestOrigin,
-    key: Arc<AdmissionKey>,
-    limits: AdmissionLimits,
+    pub(crate) origin: GuestOrigin,
+    pub(crate) key: Arc<AdmissionKey>,
+    pub(crate) limits: AdmissionLimits,
+    pub(crate) csrf_transport: bool,
 }
 impl LoginConfig {
     pub fn from_env(
         environment: Option<&str>,
         values: &HashMap<String, String>,
     ) -> Result<Option<Self>, &'static str> {
+        let csrf_transport = match values.get("TEST_LOGIN_CSRF_TRANSPORT").map(String::as_str) {
+            None => false,
+            Some("1") if environment == Some("test") => true,
+            _ => return Err("Invalid test login CSRF transport"),
+        };
         match (
             values.get("TEST_LOGIN_ORIGIN"),
             values.get("TEST_LOGIN_ADMISSION_KEY"),
         ) {
-            (None, None) => Ok(None),
+            (None, None) if !csrf_transport => Ok(None),
             (Some(origin), Some(key)) if environment == Some("test") => {
                 let origin = GuestOrigin::parse(origin).map_err(|_| "Invalid test login origin")?;
                 let bytes = decode_hex(key).ok_or("Invalid test login admission key")?;
@@ -50,6 +52,7 @@ impl LoginConfig {
                     origin,
                     key: Arc::new(key),
                     limits,
+                    csrf_transport,
                 }))
             }
             _ => Err("Test login requires test mode, origin and admission key"),
@@ -57,50 +60,16 @@ impl LoginConfig {
     }
 }
 
-#[derive(Deserialize, ToSchema)]
-#[serde(deny_unknown_fields)]
-pub struct LoginRequest {
-    /// Exact mailbox under the private identity normalization policy.
-    #[schema(max_length = 254)]
-    email: String,
-    /// Password input; the private credential policy also bounds UTF-8 bytes.
-    #[schema(max_length = 256)]
-    password: String,
-}
-
-#[utoipa::path(post, operation_id="test_customer_login", path="/api/test/customer/login", params(("Origin"=String,Header)), request_body=LoginRequest, responses((status=204,description="Session issued in an HttpOnly Secure SameSite=Lax host-only cookie"),(status=400,body=ApiError),(status=401,body=ApiError),(status=403,body=ApiError),(status=413,body=ApiError),(status=415,body=ApiError),(status=503,body=ApiError),(status=504,body=ApiError)), security(("preview"=[])))]
+#[utoipa::path(post, operation_id="test_customer_login", path="/api/test/customer/login", params(("Origin"=String,Header)), request_body=crate::test_login_input::LoginRequest, responses((status=204,description="Session issued in an HttpOnly Secure SameSite=Lax host-only cookie"),(status=400,body=ApiError),(status=401,body=ApiError),(status=403,body=ApiError),(status=413,body=ApiError),(status=415,body=ApiError),(status=503,body=ApiError),(status=504,body=ApiError)), security(("preview"=[])))]
 pub(crate) async fn login(
     State(state): State<AppState>,
     Extension(config): Extension<LoginConfig>,
     request: Request,
 ) -> Response {
-    if !config.origin.accepts(request.headers()) {
-        return error(StatusCode::FORBIDDEN, "login_origin_required");
-    }
-    if request.uri().query().is_some() {
-        return error(StatusCode::BAD_REQUEST, "invalid_login_request");
-    }
-    if single_header(request.headers(), "content-type").and_then(|v| v.split(';').next())
-        != Some("application/json")
-    {
-        return error(StatusCode::UNSUPPORTED_MEDIA_TYPE, "login_json_required");
-    }
-    let bytes = match Bytes::from_request(request, &state).await {
-        Ok(bytes) => bytes,
-        Err(rejection) if rejection.status() == StatusCode::PAYLOAD_TOO_LARGE => {
-            return error(StatusCode::PAYLOAD_TOO_LARGE, "login_request_too_large");
-        }
-        Err(_) => return error(StatusCode::BAD_REQUEST, "invalid_login_request"),
+    let input = match parse_request(&state, &config, request).await {
+        Ok(input) => input,
+        Err(response) => return *response,
     };
-    let bytes = Zeroizing::new(Vec::from(bytes));
-    if bytes.iter().copied().find(|b| !b.is_ascii_whitespace()) != Some(b'{') {
-        return error(StatusCode::BAD_REQUEST, "invalid_login_request");
-    }
-    let input: LoginRequest = match serde_json::from_slice(&bytes) {
-        Ok(value) => value,
-        Err(_) => return error(StatusCode::BAD_REQUEST, "invalid_login_request"),
-    };
-    drop(bytes);
     let password = Zeroizing::new(input.password);
     match customer_sessions::login(
         &state.pool,
@@ -127,7 +96,7 @@ pub(crate) async fn login(
     }
 }
 
-fn session_cookie(state: &AppState, session: IssuedSession) -> Option<HeaderValue> {
+pub(crate) fn session_cookie(state: &AppState, session: IssuedSession) -> Option<HeaderValue> {
     let now = i64::try_from(state.clock.unix_seconds().ok()?).ok()?;
     let expires = session.identity.expires_at;
     let remaining = expires.checked_sub(now)?;

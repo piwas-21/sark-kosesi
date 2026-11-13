@@ -648,9 +648,14 @@ only to the trusted caller; do not log or persist their raw bytes. Protected
 logout compares the digest in constant time after claiming the live account and
 session, in the same transaction as revocation. Existing bearer-only operations
 remain private; a legacy or rotated unbound session fails protected logout.
-No HTTP response, Origin policy, token recovery or public CSRF protection follows
-from this custody primitive. The test login does not use this issuance path or
-expose a synchronizer.
+No public CSRF protection follows from the custody primitive. The original test
+login remains bearer-only and does not expose a synchronizer. A separately enabled
+test-only login returns a fresh bound synchronizer once in a no-store response;
+the paired test logout requires preview authority, the exact configured Origin,
+one canonical customer cookie and one matching proof. Neither request body nor
+credentials enter logs. Revocation commits before the removal cookie; response loss
+can leave a revoked session, and duplicate logout is denied. No proof recovery,
+public route, CORS grant or deployed authentication acceptance follows.
 
 ## Private guest-order linking
 

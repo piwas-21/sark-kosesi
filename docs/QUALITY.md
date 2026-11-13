@@ -853,6 +853,14 @@ the real request deadline and redacted errors. Verify the returned host-only
 cookie against the live session, original expiry and password-revision reset;
 no failure may return a cookie. This does not establish public timing safety.
 
+For the separately enabled bound-session test transport, exercise default-off and
+misconfigured modes, closed login input, non-CORS preflight, exact Origin and
+preview authorization, cookie/proof duplicates and cross-session mismatch. A
+successful logout must clear only its committed session; expiry, rotation, replay
+and competing requests must fail closed. Lost responses do not prove non-commit.
+Check no-store headers and redacted diagnostics for the synchronizer and cookie.
+These controls do not establish a public browser or trusted-ingress policy.
+
 ### Private customer favourites
 
 Use isolated PostgreSQL to check customer ownership, revision and capacity races,

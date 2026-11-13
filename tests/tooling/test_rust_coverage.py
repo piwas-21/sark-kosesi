@@ -88,6 +88,8 @@ class RustCoverage(unittest.TestCase):
             ("crates/api/src/bin/callback_edge.rs", False),
             ("crates/infrastructure/src/callback_forwarder.rs", False),
             ("crates/api/src/config.rs", False),
+            ("crates/api/src/test_login_input.rs", False),
+            ("crates/api/src/test_session.rs", False),
             ("crates/domain/src/holds.rs", False),
             ("crates/infrastructure/src/holds/create.rs", False),
             ("crates/infrastructure/src/holds/mod.rs", True),
