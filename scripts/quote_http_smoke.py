@@ -8,24 +8,75 @@ import signal
 import subprocess
 import sys
 import tempfile
+import time
 from pathlib import Path
 
 from with_postgres import ROOT, native_cluster, run
 
 
-def stop_child(child):
+def group_present(pgid):
     try:
-        os.killpg(child.pid, signal.SIGTERM)
+        os.killpg(pgid, 0)
     except ProcessLookupError:
-        return
-    try:
-        child.wait(timeout=10)
-    except subprocess.TimeoutExpired:
-        os.killpg(child.pid, signal.SIGKILL)
-        child.wait()
+        return False
+    except OSError:
+        return None
+    return True
+
+
+def drain_group(child, grace=2.0):
+    """Drain the owned session, including descendants after the leader exits."""
+    for requested in (signal.SIGTERM, signal.SIGKILL):
+        child.poll()  # Reap the leader before testing whether its group remains.
+        present = group_present(child.pid)
+        if present is False:
+            return True
+        if present is None:
+            return False
+        try:
+            os.killpg(child.pid, requested)
+        except ProcessLookupError:
+            return True
+        except OSError:
+            return False
+        deadline = time.monotonic() + grace
+        while time.monotonic() < deadline:
+            child.poll()
+            present = group_present(child.pid)
+            if present is False:
+                return True
+            if present is None:
+                return False
+            time.sleep(0.02)
+    child.poll()
+    return group_present(child.pid) is False
+
+
+class StopRequest:
+    def __init__(self):
+        self.received = False
+
+    def handle(self, _signum, _frame):
+        # Defer handling during native_cluster's bounded startup so a postgres
+        # process cannot be abandoned just before its pidfile is created.
+        self.received = True
+
+    def check(self):
+        if self.received:
+            raise InterruptedError("Quote smoke interrupted")
 
 
 def main():
+    stop = StopRequest()
+    previous = {sig: signal.signal(sig, stop.handle) for sig in (signal.SIGINT, signal.SIGTERM)}
+    try:
+        return run_smoke(stop)
+    finally:
+        for sig, handler in previous.items():
+            signal.signal(sig, handler)
+
+
+def run_smoke(stop):
     if len(sys.argv) != 1:
         raise SystemExit("The quote smoke accepts no arguments")
     configured = os.environ.get("P1_POSTGRES_BIN")
@@ -39,9 +90,14 @@ def main():
     version = run(str(binaries / "postgres"), "--version").stdout.strip()
     if not version.startswith("postgres (PostgreSQL) 18."):
         raise SystemExit("The quote smoke requires native PostgreSQL 18")
+    stop.check()
     directory = Path(tempfile.mkdtemp(prefix="sark-quote-smoke-"))
+    drained = True
+    startup_confirmed = False
     try:
         database = native_cluster(directory, binaries)
+        startup_confirmed = True
+        stop.check()
         proof = directory / "owned-db.json"
         descriptor = os.open(proof, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
         with os.fdopen(descriptor, "w", encoding="utf-8") as output:
@@ -57,6 +113,7 @@ def main():
                 "CARGO_INCREMENTAL": "0",
             }
         )
+        stop.check()
         child = subprocess.Popen(
             [
                 "cargo",
@@ -77,15 +134,24 @@ def main():
             env=environment,
             start_new_session=True,
         )
+        drained = False
         try:
-            return child.wait(timeout=1800)
-        except subprocess.TimeoutExpired:
-            stop_child(child)
-            raise RuntimeError("Quote smoke exceeded its deadline") from None
-        except BaseException:
-            stop_child(child)
-            raise
+            deadline = time.monotonic() + 1800
+            while True:
+                stop.check()
+                if time.monotonic() >= deadline:
+                    raise RuntimeError("Quote smoke exceeded its deadline")
+                try:
+                    return child.wait(timeout=0.2)
+                except subprocess.TimeoutExpired:
+                    continue
+        finally:
+            drained = drain_group(child)
     finally:
+        if not drained:
+            raise RuntimeError(f"Owned process group not drained; retained {directory}")
+        if not startup_confirmed:
+            raise RuntimeError(f"Owned PostgreSQL startup unconfirmed; retained {directory}")
         pidfile = directory / "data/postmaster.pid"
         if pidfile.exists():
             # A stop failure must not erase a potentially live cluster.

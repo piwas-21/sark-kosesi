@@ -250,6 +250,50 @@ fn token() -> String {
     output
 }
 
+fn require_basket(value: &serde_json::Value) {
+    assert!(
+        value == &serde_json::json!({"revision":1,"replayed":false}),
+        "invalid basket receipt"
+    );
+}
+
+fn require_quote(value: &serde_json::Value) {
+    assert!(
+        value["replayed"] == false
+            && value["quote"]["indicative"] == true
+            && value["quote"]["locale"] == "nl"
+            && value["quote"]["currency"] == "EUR"
+            && value["quote"]["lines"]
+                .as_array()
+                .is_some_and(|lines| lines.len() == 1)
+            && value["quote"]["lines"][0]["sku"] == "SET-FILLED"
+            && value["quote"]["lines"][0]["quantity"] == 3
+            && value["quote"]["total"]
+                == serde_json::json!({"gross_minor":38245,"net_minor":31607,"vat_minor":6638}),
+        "invalid quote response"
+    );
+}
+
+#[test]
+fn invalid_http_json_diagnostics_do_not_echo_private_values() {
+    let value = serde_json::json!({
+        "revision": "private-token-marker",
+        "replayed": "private-cookie-marker",
+        "quote": {"total": "private-csrf-marker"}
+    });
+    for check in [require_basket, require_quote] {
+        let failure = std::panic::catch_unwind(|| check(&value)).expect_err("invalid response");
+        let diagnostic = failure
+            .downcast_ref::<&str>()
+            .copied()
+            .or_else(|| failure.downcast_ref::<String>().map(String::as_str))
+            .expect("static diagnostic");
+        assert!(!diagnostic.contains("private-token-marker"));
+        assert!(!diagnostic.contains("private-cookie-marker"));
+        assert!(!diagnostic.contains("private-csrf-marker"));
+    }
+}
+
 #[tokio::test]
 #[ignore = "run only through scripts/quote_http_smoke.py against its owned native cluster"]
 async fn owned_quote_http_smoke() {
@@ -322,7 +366,7 @@ async fn owned_quote_http_smoke() {
     let cookie = cookie.split(';').next().expect("cookie pair");
     assert!(cookie.starts_with("__Host-piwas-guest="));
     let session: serde_json::Value = serde_json::from_str(&body).expect("session JSON");
-    assert_eq!(session["revision"], 0);
+    assert!(session["revision"] == 0, "invalid session revision");
     let csrf = session["csrf_token"].as_str().expect("session proof");
     let basket = r#"{"expected_revision":0,"effect_key":"smoke-basket","lines":[{"sku":"SET-FILLED","quantity":3}]}"#;
     let (status, _, body) = server.request(
@@ -335,7 +379,7 @@ async fn owned_quote_http_smoke() {
     );
     assert_eq!(status, 200);
     let receipt: serde_json::Value = serde_json::from_str(&body).expect("basket JSON");
-    assert_eq!(receipt, serde_json::json!({"revision":1,"replayed":false}));
+    require_basket(&receipt);
     let quote = r#"{"expected_basket_revision":1,"effect_key":"smoke-quote","country":"NL","postcode":"1234 AB"}"#;
     let mut invalid_csrf = csrf.to_owned();
     invalid_csrf.replace_range(0..1, if csrf.starts_with('0') { "1" } else { "0" });
@@ -359,16 +403,7 @@ async fn owned_quote_http_smoke() {
     );
     assert_eq!(status, 200);
     let value: serde_json::Value = serde_json::from_str(&body).expect("quote JSON");
-    assert_eq!(value["replayed"], false);
-    assert_eq!(value["quote"]["indicative"], true);
-    assert_eq!(value["quote"]["locale"], "nl");
-    assert_eq!(value["quote"]["currency"], "EUR");
-    assert_eq!(value["quote"]["lines"][0]["sku"], "SET-FILLED");
-    assert_eq!(value["quote"]["lines"][0]["quantity"], 3);
-    assert_eq!(
-        value["quote"]["total"],
-        serde_json::json!({"gross_minor":38245,"net_minor":31607,"vat_minor":6638})
-    );
+    require_quote(&value);
     for private in ["basket_id", "policy_id", "1234 AB", "csrf", "evidence"] {
         assert!(!body.contains(private), "private response field");
     }
@@ -386,7 +421,7 @@ async fn owned_quote_http_smoke() {
     );
     assert_eq!(status, 200);
     let replay: serde_json::Value = serde_json::from_str(&body).expect("replay JSON");
-    assert_eq!(replay["replayed"], true);
+    assert!(replay["replayed"] == true, "invalid replay receipt");
     assert_eq!(effects(&pool).await, after);
     sqlx::query("UPDATE stock_balances SET on_hand=on_hand-1 WHERE component_code='SEAT-COVER'")
         .execute(&pool)

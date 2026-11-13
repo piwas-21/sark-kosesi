@@ -7,7 +7,7 @@ import sys
 import tempfile
 import unittest
 from pathlib import Path
-from unittest.mock import patch
+from unittest.mock import call, patch
 
 import quote_http_smoke as smoke
 
@@ -55,8 +55,7 @@ class QuoteHttpSmoke(unittest.TestCase):
 
             class Child:
                 def wait(self, timeout=None):
-                    self_timeout = timeout
-                    assert self_timeout == 1800
+                    assert timeout == 0.2
                     return 7
 
             return Child()
@@ -67,6 +66,7 @@ class QuoteHttpSmoke(unittest.TestCase):
             patch.object(smoke, "run", side_effect=fake_run),
             patch.object(smoke, "native_cluster", side_effect=fake_cluster),
             patch.object(smoke.subprocess, "Popen", side_effect=fake_subprocess),
+            patch.object(smoke, "drain_group", return_value=True),
         ):
             self.assertEqual(smoke.main(), 7)
         self.assertEqual(len(calls), 2)
@@ -116,6 +116,7 @@ class QuoteHttpSmoke(unittest.TestCase):
                 patch.object(smoke.tempfile, "mkdtemp", return_value=str(directory)),
                 patch.object(smoke, "native_cluster", side_effect=fake_cluster),
                 patch.object(smoke.subprocess, "Popen", return_value=Child()),
+                patch.object(smoke, "drain_group", return_value=True),
                 patch.object(
                     smoke,
                     "run",
@@ -129,7 +130,7 @@ class QuoteHttpSmoke(unittest.TestCase):
                     smoke.main()
             self.assertTrue((directory / "data/postmaster.pid").exists())
 
-    def test_timeout_terminates_only_owned_child_group(self):
+    def test_signal_during_child_run_requests_owned_group_drain(self):
         class Child:
             pid = 12345
             calls = 0
@@ -137,6 +138,7 @@ class QuoteHttpSmoke(unittest.TestCase):
             def wait(self, timeout=None):
                 self.calls += 1
                 if self.calls == 1:
+                    os.kill(os.getpid(), smoke.signal.SIGTERM)
                     raise subprocess.TimeoutExpired("fixture", timeout)
                 return 143
 
@@ -146,16 +148,148 @@ class QuoteHttpSmoke(unittest.TestCase):
             patch.object(sys, "argv", ["quote_http_smoke.py"]),
             patch.object(smoke, "native_cluster", return_value="postgresql://fixture"),
             patch.object(smoke.subprocess, "Popen", return_value=child),
-            patch.object(smoke.os, "killpg") as terminate,
+            patch.object(smoke, "drain_group", return_value=True) as drain,
             patch.object(
                 smoke,
                 "run",
                 return_value=subprocess.CompletedProcess([], 0, "postgres (PostgreSQL) 18.1", ""),
             ),
         ):
-            with self.assertRaisesRegex(RuntimeError, "deadline"):
+            with self.assertRaisesRegex(InterruptedError, "interrupted"):
                 smoke.main()
-        terminate.assert_called_once_with(12345, smoke.signal.SIGTERM)
+        drain.assert_called_once_with(child)
+
+    def test_startup_signal_waits_for_cluster_then_stops_it(self):
+        calls = []
+
+        def fake_cluster(directory, _binaries):
+            (directory / "data").mkdir()
+            (directory / "data/postmaster.pid").write_text("fake")
+            os.kill(os.getpid(), smoke.signal.SIGTERM)
+            return "postgresql://fixture"
+
+        def fake_run(*args, **_kwargs):
+            calls.append(args)
+            if "stop" in args:
+                (Path(args[2]) / "postmaster.pid").unlink()
+            return subprocess.CompletedProcess(args, 0, "postgres (PostgreSQL) 18.1", "")
+
+        with (
+            patch.dict(os.environ, {"P1_POSTGRES_BIN": "/fixture/bin"}, clear=True),
+            patch.object(sys, "argv", ["quote_http_smoke.py"]),
+            patch.object(smoke, "native_cluster", side_effect=fake_cluster),
+            patch.object(smoke.subprocess, "Popen") as popen,
+            patch.object(smoke, "run", side_effect=fake_run),
+        ):
+            with self.assertRaisesRegex(InterruptedError, "interrupted"):
+                smoke.main()
+        popen.assert_not_called()
+        self.assertEqual(calls[-1][-2:], ("-m", "fast"))
+
+    def test_signal_during_child_creation_still_drains_created_group(self):
+        class Child:
+            def wait(self, timeout=None):
+                raise AssertionError("signal must be checked before waiting")
+
+        child = Child()
+
+        def create(*_args, **_kwargs):
+            os.kill(os.getpid(), smoke.signal.SIGTERM)
+            return child
+
+        with (
+            patch.dict(os.environ, {"P1_POSTGRES_BIN": "/fixture/bin"}, clear=True),
+            patch.object(sys, "argv", ["quote_http_smoke.py"]),
+            patch.object(smoke, "native_cluster", return_value="postgresql://fixture"),
+            patch.object(smoke.subprocess, "Popen", side_effect=create),
+            patch.object(smoke, "drain_group", return_value=True) as drain,
+            patch.object(
+                smoke,
+                "run",
+                return_value=subprocess.CompletedProcess([], 0, "postgres (PostgreSQL) 18.1", ""),
+            ),
+        ):
+            with self.assertRaisesRegex(InterruptedError, "interrupted"):
+                smoke.main()
+        drain.assert_called_once_with(child)
+
+    def test_leader_exit_does_not_hide_stubborn_group(self):
+        class Child:
+            pid = 12345
+
+            def poll(self):
+                return 0
+
+        with (
+            patch.object(smoke, "group_present", side_effect=[True, True, False]),
+            patch.object(smoke.os, "killpg") as kill,
+        ):
+            self.assertTrue(smoke.drain_group(Child(), grace=0))
+        self.assertEqual(
+            kill.call_args_list,
+            [call(12345, smoke.signal.SIGTERM), call(12345, smoke.signal.SIGKILL)],
+        )
+
+    def test_group_status_rejects_unknown_permissions(self):
+        with patch.object(smoke.os, "killpg", side_effect=PermissionError):
+            self.assertIsNone(smoke.group_present(12345))
+        with patch.object(smoke.os, "killpg", side_effect=ProcessLookupError):
+            self.assertFalse(smoke.group_present(12345))
+
+    def test_failed_native_startup_retains_directory_even_without_pidfile(self):
+        with tempfile.TemporaryDirectory(prefix="quote-smoke-unit-") as parent:
+            directory = Path(parent) / "owned"
+            directory.mkdir()
+            with (
+                patch.dict(os.environ, {"P1_POSTGRES_BIN": "/fixture/bin"}, clear=True),
+                patch.object(sys, "argv", ["quote_http_smoke.py"]),
+                patch.object(smoke.tempfile, "mkdtemp", return_value=str(directory)),
+                patch.object(smoke, "native_cluster", side_effect=RuntimeError("uncertain")),
+                patch.object(
+                    smoke,
+                    "run",
+                    return_value=subprocess.CompletedProcess(
+                        [], 0, "postgres (PostgreSQL) 18.1", ""
+                    ),
+                ),
+            ):
+                with self.assertRaisesRegex(RuntimeError, "startup unconfirmed"):
+                    smoke.main()
+            self.assertTrue(directory.exists())
+
+    def test_unknown_group_retains_cluster_without_stopping_it(self):
+        with tempfile.TemporaryDirectory(prefix="quote-smoke-unit-") as parent:
+            directory = Path(parent) / "owned"
+            directory.mkdir()
+
+            def fake_cluster(path, _binaries):
+                (path / "data").mkdir()
+                (path / "data/postmaster.pid").write_text("fake")
+                return "postgresql://fixture"
+
+            class Child:
+                def wait(self, timeout=None):
+                    return 0
+
+            with (
+                patch.dict(os.environ, {"P1_POSTGRES_BIN": "/fixture/bin"}, clear=True),
+                patch.object(sys, "argv", ["quote_http_smoke.py"]),
+                patch.object(smoke.tempfile, "mkdtemp", return_value=str(directory)),
+                patch.object(smoke, "native_cluster", side_effect=fake_cluster),
+                patch.object(smoke.subprocess, "Popen", return_value=Child()),
+                patch.object(smoke, "drain_group", return_value=False),
+                patch.object(
+                    smoke,
+                    "run",
+                    return_value=subprocess.CompletedProcess(
+                        [], 0, "postgres (PostgreSQL) 18.1", ""
+                    ),
+                ) as run,
+            ):
+                with self.assertRaisesRegex(RuntimeError, "not drained"):
+                    smoke.main()
+            self.assertTrue((directory / "data/postmaster.pid").exists())
+            self.assertEqual(run.call_count, 1)
 
 
 if __name__ == "__main__":
