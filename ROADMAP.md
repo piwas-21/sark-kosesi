@@ -8,6 +8,9 @@ support deterministic diagnostics and generated request correlation. Real
 source/coverage/audit, PostgreSQL, component/browser/accessibility, approved visual,
 performance and discovery gates are required from the first application PR.
 Current-revision CI, independent review and the merge gate remain mandatory.
+The API's offline migration-manifest command reports the compiled SQLx migration
+versions, types, checksums and missing-version policy. It does not prove image
+provenance, database state or startup compatibility.
 
 Product families, separable variants, shared cover/foam components and sealed,
 immutable BOM revisions are implemented behind the existing read-only preview.

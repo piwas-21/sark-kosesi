@@ -1,4 +1,6 @@
 #![forbid(unsafe_code)]
+mod migration_manifest;
+
 use commerce_api::{
     AppState, PREVIEW_REQUEST_CAPACITY, config::Config, contract, router_with_test_login,
 };
@@ -9,7 +11,19 @@ use tokio::sync::Semaphore;
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
-    if std::env::args().nth(1).as_deref() == Some("openapi") {
+    let mut arguments = std::env::args_os();
+    arguments.next();
+    let first = arguments.next();
+    if first.as_deref() == Some(std::ffi::OsStr::new("migration-manifest")) {
+        if arguments.next().is_some() {
+            return Err(
+                std::io::Error::other("migration-manifest accepts no extra arguments").into(),
+            );
+        }
+        migration_manifest::print()?;
+        return Ok(());
+    }
+    if first.as_deref() == Some(std::ffi::OsStr::new("openapi")) {
         println!("{}", contract::openapi()?);
         return Ok(());
     }
