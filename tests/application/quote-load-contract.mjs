@@ -3,6 +3,10 @@ export const STEADY_OWNERS = 25;
 export const BURST_OWNERS = 50;
 export const STEADY_MS = 600_000;
 export const STEADY_SLEEP_SECONDS = 10.1;
+export const REQUEST_TIMEOUT_MS = 3_000;
+export const MAX_REQUEST_INTERVAL_MS = 3_500;
+export const MAX_STEADY_IDLE_MS = 11_500;
+export const MIN_STEADY_REQUESTS = 40;
 
 export function scenarios() {
   const result = {};

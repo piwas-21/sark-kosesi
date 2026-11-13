@@ -223,6 +223,11 @@ stock and commerce ledgers, and quote-count reconciliation. Its controls use
 synthetic observations only. The evaluator consumes caller-supplied data, reports
 nearest-rank p95 over successful client elapsed times and conservative client-side
 burst overlap; it proves neither server concurrency nor observation authenticity.
+Each steady owner needs at least 40 attempts, with first and last starts within
+ten seconds of the steady window's ends. The planned request timeout is three
+seconds; observed intervals allow 3.5 seconds including measurement slack, with
+10.1–11.5 seconds between completion and the next attempt. Thus a complete cycle
+is at most 15 seconds, consistent with the minimum count.
 An independently reviewed launcher must still prove owned listener, credentials
 and isolated database custody, collect real metrics and resources, and validate k6
 execution before this can support P6 evidence.

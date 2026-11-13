@@ -107,6 +107,56 @@ class QuoteLoadObservations(unittest.TestCase):
         steady_error["quote_count_after"] -= 1
         self.assertTrue(observations.evaluate(steady_error)["steady"]["within_budget"])
 
+        deadline = fixture()
+        row = deadline["requests"][-1]
+        row.update(status=0, replayed=None, quote=None)
+        row["finished_ms"] = row["started_ms"] + 3500
+        deadline["burst_end_ms"] = row["finished_ms"]
+        deadline["quote_count_after"] -= 1
+        self.assertEqual(observations.evaluate(deadline)["burst"]["failures"], 1)
+
+    def test_sparse_owner_and_missing_middle_attempt_are_rejected(self):
+        sparse = fixture()
+        sparse["requests"] = [
+            row
+            for row in sparse["requests"]
+            if row["workload"] != "steady" or row["owner"] != 0 or row["sequence"] in (0, 58)
+        ]
+        for row in sparse["requests"]:
+            if row["workload"] == "steady" and row["owner"] == 0 and row["sequence"] == 58:
+                row["sequence"] = 1
+        sparse["quote_count_after"] = len(sparse["requests"])
+        with self.assertRaisesRegex(ValueError, "^invalid quote observations$"):
+            observations.evaluate(sparse)
+
+        gap = fixture()
+        gap["requests"] = [
+            row
+            for row in gap["requests"]
+            if (row["workload"], row["owner"], row["sequence"]) != ("steady", 0, 20)
+        ]
+        for row in gap["requests"]:
+            if row["workload"] == "steady" and row["owner"] == 0 and row["sequence"] > 20:
+                row["sequence"] -= 1
+        gap["quote_count_after"] = len(gap["requests"])
+        with self.assertRaisesRegex(ValueError, "^invalid quote observations$"):
+            observations.evaluate(gap)
+
+    def test_forty_attempts_fit_the_worst_permitted_cycle(self):
+        sample = fixture()
+        base = sample["steady_start_ms"]
+        sample["requests"] = [
+            row for row in sample["requests"] if row["workload"] == "burst" or row["sequence"] < 40
+        ]
+        for row in sample["requests"]:
+            if row["workload"] == "steady":
+                row["started_ms"] = base + 5000 + row["sequence"] * 15_000
+                row["finished_ms"] = row["started_ms"] + 3500
+        sample["quote_count_after"] = len(sample["requests"])
+        result = observations.evaluate(sample)
+        self.assertEqual(result["steady"]["requests"], 1000)
+        self.assertFalse(result["steady"]["within_budget"])
+
     def test_rejects_booleans_or_extra_fields_as_numeric_proof(self):
         for mutate in (
             lambda d: d["stock_before"][0].__setitem__(2, False),

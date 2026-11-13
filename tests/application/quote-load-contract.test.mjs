@@ -2,6 +2,10 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import {
   BURST_OWNERS,
+  MAX_REQUEST_INTERVAL_MS,
+  MAX_STEADY_IDLE_MS,
+  MIN_STEADY_REQUESTS,
+  REQUEST_TIMEOUT_MS,
   STEADY_MS,
   STEADY_OWNERS,
   STEADY_SLEEP_SECONDS,
@@ -15,6 +19,10 @@ test("workload identities are distinct and do not exceed the fixed budget", () =
   assert.equal(BURST_OWNERS, 50);
   assert.equal(STEADY_MS, 600_000);
   assert.ok(STEADY_SLEEP_SECONDS > 10);
+  assert.equal(REQUEST_TIMEOUT_MS, 3000);
+  assert.equal(MAX_REQUEST_INTERVAL_MS, 3500);
+  assert.equal(MAX_STEADY_IDLE_MS, 11500);
+  assert.equal(MIN_STEADY_REQUESTS, 40);
   assert.equal(Object.keys(plan).length, 26);
   const names = new Set();
   for (let owner = 0; owner < STEADY_OWNERS; owner += 1) {

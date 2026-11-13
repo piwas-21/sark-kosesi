@@ -8,6 +8,10 @@ import math
 from collections import Counter
 
 MAX_REQUESTS = 3000
+MAX_REQUEST_INTERVAL_MS = 3500
+MIN_STEADY_IDLE_MS = 10_100
+MAX_STEADY_IDLE_MS = 11_500
+MIN_STEADY_REQUESTS = 40
 LEDGERS = {
     "stock_holds",
     "stock_hold_lines",
@@ -117,6 +121,7 @@ def evaluate(document):
             and integer(sequence, 0, 9999)
             and integer(first, start, burst_end)
             and integer(last, first, burst_end)
+            and last - first <= MAX_REQUEST_INTERVAL_MS
             and integer(status, 0, 599)
             and (status == 0 or status >= 100)
         ):
@@ -156,12 +161,14 @@ def evaluate(document):
             key=lambda row: row["sequence"],
         )
         if (
-            not owned
+            len(owned) < MIN_STEADY_REQUESTS
             or [row["sequence"] for row in owned] != list(range(len(owned)))
-            or owned[0]["started_ms"] > start + 30_000
-            or owned[-1]["started_ms"] < end - 30_000
+            or owned[0]["started_ms"] > start + 10_000
+            or owned[-1]["started_ms"] < end - 10_000
             or any(
-                later["started_ms"] - earlier["finished_ms"] < 10_100
+                not MIN_STEADY_IDLE_MS
+                <= later["started_ms"] - earlier["finished_ms"]
+                <= MAX_STEADY_IDLE_MS
                 for earlier, later in zip(owned, owned[1:], strict=False)
             )
         ):
