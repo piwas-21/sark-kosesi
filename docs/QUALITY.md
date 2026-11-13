@@ -891,6 +891,11 @@ orders. Persistent shipment operations will need authorization, concurrency and
 retry tests, plus physical checks for warehouse custody, parcel contents and
 delivery. The whole-variant quantity module is included in the critical Rust
 coverage policy.
+Component demand projection must compare literal frozen BOM and member counts
+against the accepted order, aggregate shared codes, preserve covers-only and
+foam differences, and reject wrong revisions, missing or duplicate members,
+changed quantities and invalid prior counts. Check the real maximum 20 by 64
+footprint. These pure controls do not establish package or warehouse custody.
 
 ### Private customer favourites
 
