@@ -825,8 +825,9 @@ and registration verifier. These checks establish private credential custody.
 ### Private reversal-item review inspection
 
 Use isolated PostgreSQL to test dedicated grant, revocation, stale MFA and an
-actual attempt-lock wait through staff expiry. Validate the exact review
-checkpoint and late-receipt absence/presence; damaged custody fails closed.
+actual attempt-lock wait through staff expiry. Validate the complete bounded
+review operation history and exact-effect late-receipt absence/presence;
+damaged custody and over-cap history fail closed.
 Check that inspection changes no custody and makes no provider request.
 
 ### Private customer sessions

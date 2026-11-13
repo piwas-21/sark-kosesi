@@ -427,6 +427,85 @@ async fn unavailable_retries_are_bounded_and_malformed_response_is_reviewed(pool
         generation: 3, late_receipt_present: false,
     })));
     assert_eq!(server.count(), 4);
+    // Removing or altering a previous transient operation must invalidate the
+    // terminal history; restoring the exact row is the positive control.
+    sqlx::query("CREATE TABLE synthetic_saved_predecessor AS SELECT * FROM reversal_item_operations WHERE job_id=$1 AND generation=1")
+        .bind(&job.id).execute(&pool).await.expect("copy synthetic predecessor");
+    pool.execute("ALTER TABLE reversal_item_operations DISABLE TRIGGER USER; DELETE FROM reversal_item_operations WHERE id IN (SELECT id FROM synthetic_saved_predecessor); ALTER TABLE reversal_item_operations ENABLE TRIGGER USER")
+        .await.expect("remove predecessor");
+    assert_eq!(
+        crate::payment_attempts::reversal_item_supervision::review::inspect(
+            &pool,
+            &crate::staff_access::SessionToken::from_bytes([11; 32]),
+            time.as_ref(),
+            &job.id
+        )
+        .await,
+        Err(crate::payment_attempts::reversal_item_supervision::review::ReviewError::Unavailable)
+    );
+    pool.execute("ALTER TABLE reversal_item_operations DISABLE TRIGGER USER; INSERT INTO reversal_item_operations SELECT * FROM synthetic_saved_predecessor; ALTER TABLE reversal_item_operations ENABLE TRIGGER USER")
+        .await.expect("restore predecessor");
+    assert!(
+        crate::payment_attempts::reversal_item_supervision::review::inspect(
+            &pool,
+            &crate::staff_access::SessionToken::from_bytes([11; 32]),
+            time.as_ref(),
+            &job.id
+        )
+        .await
+        .is_ok_and(|value| value.is_some())
+    );
+    pool.execute("ALTER TABLE reversal_item_operations DISABLE TRIGGER USER; UPDATE reversal_item_operations SET outcome='invalid' WHERE id IN (SELECT id FROM synthetic_saved_predecessor); ALTER TABLE reversal_item_operations ENABLE TRIGGER USER")
+        .await.expect("alter predecessor");
+    assert_eq!(
+        crate::payment_attempts::reversal_item_supervision::review::inspect(
+            &pool,
+            &crate::staff_access::SessionToken::from_bytes([11; 32]),
+            time.as_ref(),
+            &job.id
+        )
+        .await,
+        Err(crate::payment_attempts::reversal_item_supervision::review::ReviewError::Unavailable)
+    );
+    pool.execute("ALTER TABLE reversal_item_operations DISABLE TRIGGER USER; UPDATE reversal_item_operations SET outcome='transient' WHERE id IN (SELECT id FROM synthetic_saved_predecessor); ALTER TABLE reversal_item_operations ENABLE TRIGGER USER")
+        .await.expect("repair predecessor");
+    assert!(
+        crate::payment_attempts::reversal_item_supervision::review::inspect(
+            &pool,
+            &crate::staff_access::SessionToken::from_bytes([11; 32]),
+            time.as_ref(),
+            &job.id
+        )
+        .await
+        .is_ok_and(|value| value.is_some())
+    );
+
+    // An earlier transient generation can also acquire an exact late fact;
+    // checking only the terminal effect would incorrectly report none.
+    let previous_effect: String = sqlx::query_scalar(
+        "SELECT id FROM reversal_item_operations WHERE job_id=$1 AND generation=1",
+    )
+    .bind(&job.id)
+    .fetch_one(&pool)
+    .await
+    .expect("earlier effect");
+    let previous_fact = verified_test_item(frozen.snapshot(), ReversalKind::Refund).await;
+    crate::payment_attempts::reversals::record(
+        &pool,
+        time.as_ref(),
+        &ids,
+        &previous_effect,
+        &previous_fact,
+    )
+    .await
+    .expect("append earlier late fact");
+    assert_eq!(crate::payment_attempts::reversal_item_supervision::review::inspect(
+        &pool, &crate::staff_access::SessionToken::from_bytes([11;32]), time.as_ref(), &job.id
+    ).await, Ok(Some(crate::payment_attempts::reversal_item_supervision::review::Summary {
+        reason: crate::payment_attempts::reversal_item_supervision::review::Reason::RetryExhausted,
+        generation: 3, late_receipt_present: true,
+    })));
+    assert_eq!(server.count(), 4);
 
     let second = page_fixture(
         &pool,
@@ -486,6 +565,81 @@ async fn unavailable_retries_are_bounded_and_malformed_response_is_reviewed(pool
                 late_receipt_present: false,
             }
         ))
+    );
+    assert_eq!(malformed.count(), 3);
+    // An independently recorded exact-effect observation can arrive after a
+    // non-uncertain terminal outcome. It is a fact, not a new dispatch permit.
+    let effect: String = sqlx::query_scalar(
+        "SELECT id FROM reversal_item_operations WHERE job_id=$1 AND generation=1",
+    )
+    .bind(&job.id)
+    .fetch_one(&pool)
+    .await
+    .expect("terminal effect");
+    let verified = verified_test_item(frozen.snapshot(), ReversalKind::Refund).await;
+    crate::payment_attempts::reversals::record(&pool, time.as_ref(), &ids, &effect, &verified)
+        .await
+        .expect("append late exact receipt");
+    assert_eq!(
+        crate::payment_attempts::reversal_item_supervision::review::inspect(
+            &pool,
+            &crate::staff_access::SessionToken::from_bytes([11; 32]),
+            time.as_ref(),
+            &job.id
+        )
+        .await,
+        Ok(Some(
+            crate::payment_attempts::reversal_item_supervision::review::Summary {
+                reason: crate::payment_attempts::reversal_item_supervision::review::Reason::Invalid,
+                generation: 1,
+                late_receipt_present: true,
+            }
+        ))
+    );
+    pool.execute("ALTER TABLE payment_reversal_observations DISABLE TRIGGER USER")
+        .await
+        .expect("disable receipt guard");
+    sqlx::query(
+        "UPDATE payment_reversal_observations SET child_id='re_DAMAGED' WHERE effect_key=$1",
+    )
+    .bind(&effect)
+    .execute(&pool)
+    .await
+    .expect("damage exact receipt");
+    pool.execute("ALTER TABLE payment_reversal_observations ENABLE TRIGGER USER")
+        .await
+        .expect("restore receipt guard");
+    assert_eq!(
+        crate::payment_attempts::reversal_item_supervision::review::inspect(
+            &pool,
+            &crate::staff_access::SessionToken::from_bytes([11; 32]),
+            time.as_ref(),
+            &job.id
+        )
+        .await,
+        Err(crate::payment_attempts::reversal_item_supervision::review::ReviewError::Unavailable)
+    );
+    pool.execute("ALTER TABLE payment_reversal_observations DISABLE TRIGGER USER")
+        .await
+        .expect("disable receipt guard for repair");
+    sqlx::query("UPDATE payment_reversal_observations SET child_id=$2 WHERE effect_key=$1")
+        .bind(&effect)
+        .bind(child_id(ReversalKind::Refund))
+        .execute(&pool)
+        .await
+        .expect("restore exact receipt");
+    pool.execute("ALTER TABLE payment_reversal_observations ENABLE TRIGGER USER")
+        .await
+        .expect("restore receipt guard after repair");
+    assert!(
+        crate::payment_attempts::reversal_item_supervision::review::inspect(
+            &pool,
+            &crate::staff_access::SessionToken::from_bytes([11; 32]),
+            time.as_ref(),
+            &job.id
+        )
+        .await
+        .is_ok_and(|value| value.is_some_and(|summary| summary.late_receipt_present))
     );
     assert_eq!(malformed.count(), 3);
 }
@@ -552,6 +706,29 @@ async fn exhausted_observation_capacity_stops_before_provider_io(pool: PgPool) {
         .expect("present");
     assert_eq!(saved.review_reason.as_deref(), Some("observation_limit"));
     assert_eq!(server.count(), 3);
+    assert_eq!(crate::payment_attempts::reversal_item_supervision::review::inspect(
+        &pool, &crate::staff_access::SessionToken::from_bytes([11;32]), time.as_ref(), &job.id
+    ).await, Ok(Some(crate::payment_attempts::reversal_item_supervision::review::Summary {
+        reason: crate::payment_attempts::reversal_item_supervision::review::Reason::ObservationLimit,
+        generation: 1, late_receipt_present: false,
+    })));
+    assert_eq!(server.count(), 3);
+    // Bypass only the native guard in this disposable database to model an
+    // over-cap damaged import; the exact 128th state is the positive control.
+    pool.execute("ALTER TABLE payment_reversal_observations DISABLE TRIGGER USER; INSERT INTO payment_reversal_observations(id,attempt_id,order_id,effect_key,payment_id,child_id,phase,amount_minor,credential_fingerprint,source_created_seconds,source_created_nanos,source_reversed_seconds,source_reversed_nanos,recorded_at,event_id,transaction_id) SELECT 'ffffffffffffffffffffffffffffffff',attempt_id,order_id,'synthetic-over-cap',payment_id,child_id,phase,amount_minor,credential_fingerprint,source_created_seconds,source_created_nanos,source_reversed_seconds,source_reversed_nanos,recorded_at,'eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee',transaction_id FROM payment_reversal_observations LIMIT 1; ALTER TABLE payment_reversal_observations ENABLE TRIGGER USER")
+        .await.expect("inject over-cap observation");
+    assert_eq!(
+        crate::payment_attempts::reversal_item_supervision::review::inspect(
+            &pool,
+            &crate::staff_access::SessionToken::from_bytes([11; 32]),
+            time.as_ref(),
+            &job.id
+        )
+        .await,
+        Err(crate::payment_attempts::reversal_item_supervision::review::ReviewError::Unavailable)
+    );
+    pool.execute("ALTER TABLE payment_reversal_observations DISABLE TRIGGER USER; DELETE FROM payment_reversal_observations WHERE effect_key='synthetic-over-cap'; ALTER TABLE payment_reversal_observations ENABLE TRIGGER USER")
+        .await.expect("repair over-cap observation");
     assert_eq!(crate::payment_attempts::reversal_item_supervision::review::inspect(
         &pool, &crate::staff_access::SessionToken::from_bytes([11;32]), time.as_ref(), &job.id
     ).await, Ok(Some(crate::payment_attempts::reversal_item_supervision::review::Summary {

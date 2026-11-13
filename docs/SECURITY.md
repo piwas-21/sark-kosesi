@@ -598,8 +598,9 @@ distributed abuse controls.
 ## Private reversal-item review inspection
 
 One exact review stop can be inspected with a dedicated unseeded `reversal.review`
-grant and fresh MFA. Staff and attempt claims are held while source, checkpoint
-and any late receipt are validated; time is rechecked after waits. The detached
+grant and fresh MFA. Staff and attempt claims are held while source, complete
+bounded operation history and each exact-effect late receipt are validated; time
+is rechecked after waits. The detached
 summary contains only a closed reason, generation and late-receipt presence.
 It authorizes neither provider access, retry nor any financial action. Public
 operator access, audit operations and provider reconciliation remain separate.

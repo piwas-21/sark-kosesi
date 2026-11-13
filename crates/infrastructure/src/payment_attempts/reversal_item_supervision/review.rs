@@ -22,6 +22,18 @@ pub struct Summary {
     pub generation: i32,
     pub late_receipt_present: bool,
 }
+#[derive(sqlx::FromRow)]
+struct Operation {
+    id: String,
+    generation: i32,
+    started_at: i64,
+    lease_until: i64,
+    outcome: Option<String>,
+    finished_at: Option<i64>,
+    transactions_valid: bool,
+    receipt_absent: bool,
+}
+
 fn staff_error(error: StaffError) -> ReviewError {
     match error {
         StaffError::Denied => ReviewError::Denied,
@@ -74,32 +86,70 @@ async fn validated(
         Some("observation_limit") => (Reason::ObservationLimit, "capped"),
         _ => return Err(RecoveryError::InvalidStoredData),
     };
-    // The native checkpoint guarantees these at write time. Revalidate them
-    // before projecting a historical review, including after a damaged import.
-    let exact: bool = sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM reversal_item_operations o WHERE o.job_id=$1 AND o.generation=$2 AND o.outcome=$3 AND o.finished_at=$4 AND o.started_at >= $5 AND o.lease_until=o.started_at+60 AND o.start_xid IS NOT NULL AND o.finish_xid IS NOT NULL AND o.start_xid<>o.finish_xid AND o.receipt_id IS NULL AND (($3='uncertain' AND o.finished_at>=o.lease_until) OR ($3<>'uncertain' AND o.finished_at<o.lease_until)))")
-        .bind(&job.id).bind(job.generation).bind(outcome).bind(job.updated_at).bind(job.created_at)
-        .fetch_one(&mut **tx).await?;
-    if !exact
-        || job.generation == 0
-        || (reason == Reason::RetryExhausted && (job.failures != 3 || job.generation != 3))
-        || (reason != Reason::RetryExhausted && job.failures >= job.generation)
+    // Reconstruct the entire bounded history, not just its terminal checkpoint.
+    let history: Vec<Operation> = sqlx::query_as("SELECT left(id,33) id,generation,started_at,lease_until,left(outcome,20) outcome,finished_at,COALESCE(start_xid IS NOT NULL AND finish_xid IS NOT NULL AND start_xid<>finish_xid,false) transactions_valid,receipt_id IS NULL AS receipt_absent FROM reversal_item_operations WHERE job_id=$1 ORDER BY generation LIMIT 4")
+        .bind(&job.id).fetch_all(&mut **tx).await?;
+    if job.generation == 0 || history.len() != job.generation as usize {
+        return Err(RecoveryError::InvalidStoredData);
+    }
+    let expected_failures = if reason == Reason::RetryExhausted {
+        job.generation
+    } else {
+        job.generation - 1
+    };
+    if job.failures != expected_failures
+        || (reason == Reason::RetryExhausted && job.generation != 3)
     {
         return Err(RecoveryError::InvalidStoredData);
     }
+    let mut previous_finished = None;
+    for (index, operation) in history.iter().enumerate() {
+        let last = index + 1 == history.len();
+        let expected_outcome = if last { outcome } else { "transient" };
+        let finished = operation
+            .finished_at
+            .ok_or(RecoveryError::InvalidStoredData)?;
+        if !identifier(&operation.id)
+            || operation.generation != (index + 1) as i32
+            || operation.started_at < job.created_at
+            || previous_finished.is_some_and(|previous: i64| {
+                previous
+                    .checked_add(60)
+                    .is_none_or(|due| operation.started_at < due)
+            })
+            || operation.started_at.checked_add(60) != Some(operation.lease_until)
+            || finished < operation.started_at
+            || finished > 9_007_199_254_740_991
+            || operation.outcome.as_deref() != Some(expected_outcome)
+            || !operation.transactions_valid
+            || !operation.receipt_absent
+            || (expected_outcome == "uncertain" && finished < operation.lease_until)
+            || (expected_outcome != "uncertain" && finished >= operation.lease_until)
+            || (last && finished != job.updated_at)
+        {
+            return Err(RecoveryError::InvalidStoredData);
+        }
+        previous_finished = Some(finished);
+    }
     if reason == Reason::ObservationLimit {
-        let count: i64 = sqlx::query_scalar("SELECT count(*) FROM (SELECT 1 FROM payment_reversal_observations WHERE attempt_id=$1 LIMIT 128) bounded")
-            .bind(&job.attempt_id).fetch_one(&mut **tx).await?;
+        let (count, _) = super::super::reversals::rows::history(tx, &job.attempt_id).await?;
         if count != 128 {
             return Err(RecoveryError::InvalidStoredData);
         }
     }
-    let late_receipt_present = if reason == Reason::Uncertain {
-        validate::late_receipt(tx, &job, &frozen, started)
-            .await?
-            .is_some()
-    } else {
-        false
-    };
+    let mut late_receipt_present = false;
+    for operation in &history {
+        late_receipt_present |= validate::exact_receipt(
+            tx,
+            &job,
+            &frozen,
+            started,
+            &operation.id,
+            operation.started_at,
+        )
+        .await?
+        .is_some();
+    }
     Ok(Some(Summary {
         reason,
         generation: job.generation,
