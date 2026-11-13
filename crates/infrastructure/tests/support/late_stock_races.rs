@@ -20,7 +20,13 @@ async fn cross_path(pool: PgPool, late_first: bool) {
     let order = f.order.identity.id.clone();
     let original = if !late_first {
         Some(tokio::spawn(async move {
-            crate::order_stock::settle(&p, &Fixed(1999), ids.as_ref(), &order).await
+            crate::late_stock_wait_budget::scope(crate::order_stock::settle(
+                &p,
+                &Fixed(1999),
+                ids.as_ref(),
+                &order,
+            ))
+            .await
         }))
     } else {
         None
@@ -30,7 +36,8 @@ async fn cross_path(pool: PgPool, late_first: bool) {
     let order = f.order.identity.id.clone();
     let late = if late_first {
         Some(tokio::spawn(async move {
-            recover(&p, &Fixed(2000), ids.as_ref(), &order).await
+            crate::late_stock_wait_budget::scope(recover(&p, &Fixed(2000), ids.as_ref(), &order))
+                .await
         }))
     } else {
         None
@@ -42,7 +49,10 @@ async fn cross_path(pool: PgPool, late_first: bool) {
     let late = if let Some(late) = late {
         late
     } else {
-        tokio::spawn(async move { recover(&p, &Fixed(2000), ids.as_ref(), &order).await })
+        tokio::spawn(async move {
+            crate::late_stock_wait_budget::scope(recover(&p, &Fixed(2000), ids.as_ref(), &order))
+                .await
+        })
     };
     let p = pool.clone();
     let ids = f.ids.clone();
@@ -51,7 +61,13 @@ async fn cross_path(pool: PgPool, late_first: bool) {
         original
     } else {
         tokio::spawn(async move {
-            crate::order_stock::settle(&p, &Fixed(1999), ids.as_ref(), &order).await
+            crate::late_stock_wait_budget::scope(crate::order_stock::settle(
+                &p,
+                &Fixed(1999),
+                ids.as_ref(),
+                &order,
+            ))
+            .await
         })
     };
     wait_for(
@@ -60,6 +76,11 @@ async fn cross_path(pool: PgPool, late_first: bool) {
         1,
     )
     .await;
+    // The original-winner control holds both real queues beyond the normal
+    // one-second lock timeout; success demonstrates the scoped budget is used.
+    if !late_first {
+        tokio::time::sleep(Duration::from_millis(1200)).await;
+    }
     blocker
         .commit()
         .await
