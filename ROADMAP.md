@@ -294,8 +294,11 @@ processing. Private callback intake and GET-only supervision now retain atomic
 profile/global quotas, generation/operation custody, fenced checkpoints and
 independent receipt processing. An unseeded recent-MFA reversal-review capability
 can inspect one exact item review stop with a redacted local summary; a private
-one-candidate live inbox discovers validated stops under the same authority. Neither
-grants retry, provider or financial authority. Unresolved older generations retain capacity;
+one-candidate live inbox discovers validated stops under the same authority. An
+explicit local/test worker command uses the exact review with bounded non-terminal
+credential input; staff session issuance and production operator access remain
+absent. These grant no retry, provider or financial authority. Unresolved older
+generations retain capacity;
 late paid facts stay visible after newer open results or review stops. A private
 authenticated API adapter accepts closed bounded classic forms and acknowledges
 durable intake only. An optional default-disabled Rust edge validates configured
