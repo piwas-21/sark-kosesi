@@ -277,7 +277,9 @@ events. Unknown/unmatched facts remain visible without an invented order; closed
 stored revalidation and complete original matching protect idempotent observation
 processing. Private callback intake and GET-only supervision now retain atomic
 profile/global quotas, generation/operation custody, fenced checkpoints and
-independent receipt processing. Unresolved older generations retain capacity;
+independent receipt processing. An unseeded recent-MFA reversal-review capability
+can inspect one exact item review stop with a redacted local summary; it grants no
+retry, provider or financial authority. Unresolved older generations retain capacity;
 late paid facts stay visible after newer open results or review stops. A private
 authenticated API adapter accepts closed bounded classic forms and acknowledges
 durable intake only. An optional default-disabled Rust edge validates configured

@@ -402,8 +402,12 @@ supervision or live provider activation follows from deploying the empty preview
    bounded pass and inspect a scan without exposing provider identifiers.
    A separate item supervisor enrolls a verified page position and its paid
    original. It commits each operation before fetching the exact child and
-   checkpoints only against the matching authenticated journal receipt. Add
-   operator review recovery and scheduling before provider acceptance. An exact
+   checkpoints only against the matching authenticated journal receipt. A private,
+   unseeded recent-MFA `reversal.review` capability can inspect one exact item
+   review stop, its bounded operation history and any exact-effect late receipt
+   under the same staff and attempt claims. Its redacted result grants no retry
+   or financial authority. Add operator review recovery and scheduling before
+   provider acceptance. An exact
    GET, 404, empty page, ended scan or capped scan
    leaves the provider history and net balance unresolved. Complete provider-side
    refund/chargeback reconciliation, execution custody

@@ -662,7 +662,7 @@ async fn native_capacity_serializes_competing_final_inserts_and_rejects_fixture(
 }
 
 #[sqlx::test(migrations = false)]
-async fn upgrade_from_62_preserves_sessions_csrf_and_catalogue(pool: PgPool) {
+async fn upgrade_through_64_preserves_sessions_csrf_favourites_and_grants(pool: PgPool) {
     MIGRATOR.run_to(62, &pool).await.expect("previous schema");
     let _fixture = media_seed(&pool).await;
     let clock = FixedClock(1100);
@@ -756,6 +756,79 @@ async fn upgrade_from_62_preserves_sessions_csrf_and_catalogue(pool: PgPool) {
             publication_revision: 1
         }]
     );
+    // Upgrade the populated v63 database without seeding operator authority.
+    let grants_before: Vec<(String, String)> = sqlx::query_as(
+        "SELECT staff_id,capability FROM staff_capabilities ORDER BY staff_id,capability",
+    )
+    .fetch_all(&pool)
+    .await
+    .expect("existing staff grants");
+    let before_64 = customer_favourites::list(&pool, &bound.session.token, &clock, Locale::Nl)
+        .await
+        .expect("populated v63 favourites");
+    assert_eq!(before_64.revision, 1);
+    MIGRATOR
+        .run_to(64, &pool)
+        .await
+        .expect("upgrade review capability");
+    let migrations: Vec<(i64, bool, Vec<u8>)> = sqlx::query_as("SELECT version,success,checksum FROM _sqlx_migrations WHERE version IN (62,63,64) ORDER BY version")
+        .fetch_all(&pool).await.expect("ordered upgrade custody");
+    assert_eq!(migrations.len(), 3);
+    for (version, (actual, success, checksum)) in [62_i64, 63, 64].into_iter().zip(migrations) {
+        let expected = MIGRATOR
+            .iter()
+            .find(|migration| migration.version == version)
+            .expect("embedded migration");
+        assert_eq!(actual, version);
+        assert!(
+            success && checksum == expected.checksum.as_ref(),
+            "exact successful migration checksum"
+        );
+    }
+    let grants_after: Vec<(String, String)> = sqlx::query_as(
+        "SELECT staff_id,capability FROM staff_capabilities ORDER BY staff_id,capability",
+    )
+    .fetch_all(&pool)
+    .await
+    .expect("preserved staff grants");
+    assert_eq!(grants_after, grants_before);
+    let seeded: i64 = sqlx::query_scalar(
+        "SELECT count(*) FROM staff_capabilities WHERE capability='reversal.review'",
+    )
+    .fetch_one(&pool)
+    .await
+    .expect("no seeded review grant");
+    assert_eq!(seeded, 0);
+    sqlx::query(
+        "INSERT INTO staff_capabilities(staff_id,capability) VALUES('author','reversal.review')",
+    )
+    .execute(&pool)
+    .await
+    .expect("explicit review grant");
+    assert!(sqlx::query("INSERT INTO staff_capabilities(staff_id,capability) VALUES('author','reversal.recover')")
+        .execute(&pool).await.is_err());
+    let after_64 = customer_favourites::list(&pool, &bound.session.token, &clock, Locale::Nl)
+        .await
+        .expect("favourites after v64");
+    assert_eq!(after_64, before_64);
+    assert!(
+        sqlx::query("UPDATE customer_favourite_buckets SET revision=0 WHERE account_id=$1")
+            .bind(account_id)
+            .execute(&pool)
+            .await
+            .is_err()
+    );
+    assert!(sqlx::query("UPDATE customer_session_csrf SET csrf_digest=$2 WHERE session_verifier IN (SELECT verifier FROM customer_sessions WHERE account_id=$1)")
+        .bind(account_id).bind([0_u8;32].as_slice()).execute(&pool).await.is_err());
+    let wrong = commerce_infrastructure::customer_sessions::CustomerCsrfToken::from_bytes([9; 32]);
+    assert!(matches!(
+        customer_sessions::logout_with_csrf(&pool, &bound.session.token, &wrong, &clock).await,
+        Err(commerce_infrastructure::customer_sessions::SessionError::Denied)
+    ));
+    let identity = customer_sessions::authenticate(&pool, &bound.session.token, &clock)
+        .await
+        .expect("wrong csrf did not revoke session");
+    assert_eq!(identity.account_id, account_id);
     customer_sessions::logout_with_csrf(&pool, &bound.session.token, &bound.csrf, &clock)
         .await
         .expect("existing csrf binding remains usable");

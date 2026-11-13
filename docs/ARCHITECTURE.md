@@ -648,6 +648,15 @@ Use a dedicated approved Piwas retail website profile and keys in the existing M
 
 Create a stable payment attempt and idempotency key before calling Mollie. Do not hold a DB transaction during provider I/O. Unknown create/capture/refund outcomes retain their original attempt/key and enter reconciliation; never mint a replacement charge. Fetch webhook identifiers with the correct server credentials and verify order, amount, currency, environment and profile. Deduplicate and tolerate delayed, repeated and reordered notifications.
 
+A private exact reversal-item review inspection holds an unseeded dedicated
+`reversal.review` staff grant and recent MFA through the existing attempt claim.
+It revalidates the paid source, page, complete bounded operation history and
+each exact-effect late receipt, then rechecks staff time before returning only a
+closed reason, generation and whether any late receipt exists. No provider
+identifiers, network access, state changes or financial or recovery authority
+follow from this detached summary. Migration 0064
+follows separately reserved migrations 0062 and 0063.
+
 Order, payment, fulfilment and return states are separate. Late paid payments after reservation expiry attempt atomic reallocation; failure creates a visible finance/support exception and recovery/refund process. Payment success cannot be discarded because stock expired. Partial refunds cannot exceed captured less refunded amounts; preserve tax/discount allocation and credit-document links. A refund does not automatically restock goods. Chargebacks are finance events.
 
 Write domain changes and outbox events in one transaction. Workers claim leases using PostgreSQL, retry with backoff and stable effect identifiers, and recover abandoned leases. Emails, stock alerts and fulfilment requests are idempotent. Record provider acceptance separately from customer delivery. Failed jobs are visible and replayable only through bounded, audited admin actions.

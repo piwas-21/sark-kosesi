@@ -113,9 +113,10 @@ Linux CI uses Tab. This does not replace manual Safari/assistive-technology acce
 The P1 browser scope is the authenticated, noindex, read-only preview. The gallery,
 locale/theme and fixture catalogue run on Chromium/Firefox/WebKit; Lighthouse
 uses the production build for home/detail/gallery and k6 runs the isolated
-catalogue fixture. The Application gate has a 65-minute job limit to accommodate
-these checks and the full visual comparison. Checkout/payment/account/room-planner
-acceptance stays pending until those features exist. No passing dummy journeys are
+catalogue fixture. The Application gate has an 80-minute job limit to accommodate
+the full integration, coverage, load and visual suites across runner speeds.
+Checkout/payment/account/room-planner acceptance stays pending until those
+features exist. No passing dummy journeys are
 substituted. Initial visual candidates are captured separately. `config/visual-approval.json` must record actual human approval and
 bind every baseline image hash to the current UI source digest. Missing/stale
 approval fails before comparison; snapshot updating is disabled in normal gates.
@@ -821,6 +822,14 @@ exercise detached consumption, cross-account proof and revision jumps.
 Measure proof freshness after an actual lock wait. Check that only the current
 hash remains and that the stored challenge verifier differs from the bearer
 and registration verifier. These checks establish private credential custody.
+
+### Private reversal-item review inspection
+
+Use isolated PostgreSQL to test dedicated grant, revocation, stale MFA and an
+actual attempt-lock wait through staff expiry. Validate the complete bounded
+review operation history and exact-effect late-receipt absence/presence;
+damaged custody and over-cap history fail closed.
+Check that inspection changes no custody and makes no provider request.
 
 ### Private customer sessions
 
