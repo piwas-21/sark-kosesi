@@ -1329,15 +1329,16 @@ async fn set_inspection_tracks_late_receipts_and_recognition_without_provider_io
         .with_subscriber(Capture(captured.clone()))
         .await
         .expect("worker set");
-    let events = captured.lock().expect("fields");
-    assert_eq!(events.len(), 1);
-    let fields = &events[0];
-    assert!(fields.contains(&("code".into(), "paid_parent_evidence_set".into())));
-    assert!(fields.contains(&("digest".into(), current_set.digest.clone())));
-    assert_eq!(fields.len(), 5, "only code, counts and digest are logged");
+    {
+        let events = captured.lock().expect("fields");
+        assert_eq!(events.len(), 1);
+        let fields = &events[0];
+        assert!(fields.contains(&("code".into(), "paid_parent_evidence_set".into())));
+        assert!(fields.contains(&("digest".into(), current_set.digest.clone())));
+        assert_eq!(fields.len(), 5, "only code, counts and digest are logged");
+    }
     assert_eq!(counts(&pool).await, before);
     assert_eq!(server.count(), calls);
-    drop(events);
     pool.execute(
         "ALTER TABLE paid_parent_total_receipts DISABLE TRIGGER guard_paid_parent_total_receipt",
     )
