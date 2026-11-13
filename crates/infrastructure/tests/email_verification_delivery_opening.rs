@@ -15,7 +15,7 @@ use commerce_infrastructure::{
 };
 use ring::aead::{AES_256_GCM, Aad, LessSafeKey, Nonce, UnboundKey};
 use sha2::{Digest, Sha256};
-use sqlx::{Executor, PgPool};
+use sqlx::{Executor, PgConnection, PgPool};
 use std::sync::{
     Arc,
     atomic::{AtomicBool, AtomicU64, AtomicUsize, Ordering},
@@ -232,6 +232,34 @@ async fn wait_for(pool: &PgPool, sql: &'static str) {
     .await
     .expect("expected actual lock wait");
 }
+// The observed waiter must be blocked by the specific transaction we hold.
+async fn wait_for_blocked(
+    connection: &mut PgConnection,
+    blocking_pid: i32,
+    query_pattern: &str,
+    phase: &'static str,
+) -> i32 {
+    tokio::time::timeout(std::time::Duration::from_secs(2), async {
+        loop {
+            let waiters: Vec<i32> = sqlx::query_scalar(
+                "SELECT pid FROM pg_stat_activity WHERE datname=current_database() AND wait_event_type='Lock' AND $1=ANY(pg_blocking_pids(pid)) AND query LIKE $2 ORDER BY pid LIMIT 2",
+            )
+            .bind(blocking_pid)
+            .bind(query_pattern)
+            .fetch_all(&mut *connection)
+            .await
+            .expect("observe exact blocking transaction");
+            assert!(waiters.len() <= 1, "ambiguous waiter at {phase}");
+            if let Some(waiter) = waiters.first() {
+                return *waiter;
+            }
+            tokio::time::sleep(std::time::Duration::from_millis(5)).await;
+        }
+    })
+    .await
+    .unwrap_or_else(|_| panic!("expected actual lock wait at {phase}"))
+}
+
 fn start_gate_sql() -> &'static str {
     "SELECT EXISTS(SELECT 1 FROM pg_stat_activity WHERE datname=current_database() AND wait_event_type='Lock' AND wait_event='advisory' AND query LIKE '%INSERT INTO email_verification_delivery_starts%')"
 }
@@ -298,13 +326,23 @@ async fn expiry_while_fresh_open_waits_for_challenge_denies_callback(pool: PgPoo
     let (time, key, verifier) = fixture(&pool).await;
     pool.execute("CREATE FUNCTION test_opening_expiry_start_wait() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN PERFORM pg_advisory_xact_lock(1936876991,1); RETURN NEW; END; $$; CREATE TRIGGER z_test_opening_expiry_start_wait AFTER INSERT ON email_verification_delivery_starts FOR EACH ROW EXECUTE FUNCTION test_opening_expiry_start_wait()").await.expect("start gate");
     let mut gate = pool.begin().await.expect("gate");
+    let gate_pid: i32 = sqlx::query_scalar("SELECT pg_backend_pid()")
+        .fetch_one(&mut *gate)
+        .await
+        .expect("gate backend");
     sqlx::query("SELECT pg_advisory_xact_lock(1936876991,1)")
         .execute(&mut *gate)
         .await
         .expect("hold gate");
+    // Keep both opening transactions on one known backend for exact wait checks.
+    let opening_pool = sqlx::postgres::PgPoolOptions::new()
+        .max_connections(1)
+        .connect_with(pool.connect_options().as_ref().clone())
+        .await
+        .expect("single-backend opening pool");
     let calls = Arc::new(AtomicUsize::new(0));
     let opening = tokio::spawn({
-        let pool = pool.clone();
+        let pool = opening_pool.clone();
         let time = time.clone();
         let key = key.clone();
         let calls = calls.clone();
@@ -315,13 +353,25 @@ async fn expiry_while_fresh_open_waits_for_challenge_denies_callback(pool: PgPoo
             .await
         }
     });
-    wait_for(&pool, start_gate_sql()).await;
-    let (held_tx, held_rx) = tokio::sync::oneshot::channel();
-    let (release_tx, release_rx) = tokio::sync::oneshot::channel();
+    let mut observer = pool.acquire().await.expect("wait observer");
+    let opener_pid = wait_for_blocked(
+        &mut observer,
+        gate_pid,
+        "%INSERT INTO email_verification_delivery_starts%",
+        "start gate",
+    )
+    .await;
+    let (pid_tx, pid_rx) = tokio::sync::oneshot::channel();
     let blocker = tokio::spawn({
         let pool = pool.clone();
+        let time = time.clone();
         async move {
             let mut tx = pool.begin().await.expect("second source blocker");
+            let blocker_pid: i32 = sqlx::query_scalar("SELECT pg_backend_pid()")
+                .fetch_one(&mut *tx)
+                .await
+                .expect("source blocker backend");
+            pid_tx.send(blocker_pid).expect("signal blocker backend");
             sqlx::query(
                 "SELECT verifier FROM email_verification_challenges WHERE verifier=$1 FOR UPDATE",
             )
@@ -329,20 +379,32 @@ async fn expiry_while_fresh_open_waits_for_challenge_denies_callback(pool: PgPoo
             .execute(&mut *tx)
             .await
             .expect("claim source after start");
-            held_tx.send(()).expect("signal held source");
-            release_rx.await.expect("release signal");
-            tx.rollback().await.expect("release source");
+            let waiting_pid = wait_for_blocked(
+                &mut tx,
+                blocker_pid,
+                "%email_verification_challenges%FOR UPDATE%",
+                "fresh opening",
+            )
+            .await;
+            assert_eq!(waiting_pid, opener_pid, "the same opener waits again");
+            time.0.store(1900, Ordering::SeqCst);
+            tx.rollback().await.expect("release source after expiry");
         }
     });
-    wait_for(&pool, challenge_wait_sql()).await;
-    gate.rollback().await.expect("commit start");
-    tokio::time::timeout(std::time::Duration::from_secs(2), held_rx)
+    let blocker_pid = tokio::time::timeout(std::time::Duration::from_secs(2), pid_rx)
         .await
-        .expect("blocker acquired source")
-        .expect("blocker signal");
-    wait_for(&pool, challenge_wait_sql()).await;
-    time.0.store(1900, Ordering::SeqCst);
-    release_tx.send(()).expect("release source blocker");
+        .expect("blocker backend deadline")
+        .expect("blocker backend signal");
+    let waiting_pid = wait_for_blocked(
+        &mut observer,
+        opener_pid,
+        "%email_verification_challenges%FOR UPDATE%",
+        "source blocker",
+    )
+    .await;
+    assert_eq!(waiting_pid, blocker_pid, "the selected blocker is queued");
+    drop(observer);
+    gate.rollback().await.expect("release start gate");
     blocker.await.expect("blocker task");
     assert!(matches!(
         opening.await.expect("opening task"),
@@ -350,6 +412,7 @@ async fn expiry_while_fresh_open_waits_for_challenge_denies_callback(pool: PgPoo
     ));
     assert_eq!(calls.load(Ordering::SeqCst), 0);
     assert_eq!(starts(&pool).await, 1);
+    opening_pool.close().await;
 }
 
 #[sqlx::test(migrator = "MIGRATOR")]
