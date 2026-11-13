@@ -1031,3 +1031,6 @@ mod paid_parent_evidence_cases;
 
 #[path = "mollie_paid_parent_faults.rs"]
 mod paid_parent_fault_cases;
+
+#[path = "restore_rehearsal.rs"]
+mod restore_rehearsal;
