@@ -113,6 +113,14 @@ fn build(
         );
     }
     if let Some(config) = login {
+        if config.restock_mutation_transport {
+            app = app.route(
+                "/api/test/customer/restock/{locale}/{sku}",
+                axum::routing::put(crate::test_restock_mutation::set)
+                    .layer::<_, std::convert::Infallible>(DefaultBodyLimit::max(256))
+                    .layer(Extension(config.clone())),
+            );
+        }
         if config.restock_transport {
             app = app.route(
                 "/api/test/customer/restock/{locale}",

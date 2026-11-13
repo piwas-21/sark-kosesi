@@ -16,6 +16,7 @@ mod test_favourites;
 pub mod test_login;
 mod test_login_input;
 mod test_restock;
+mod test_restock_mutation;
 mod test_session;
 pub mod verification;
 

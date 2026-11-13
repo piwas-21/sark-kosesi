@@ -1872,6 +1872,11 @@ publication revision plus the decimal bucket revision for the current session.
 The underlying list may initialize an empty account bucket; it cannot subscribe,
 dispatch an alert or change stock. Preview authentication and the exact test
 Origin apply, and public ingress and browser controls remain separate work.
+An independently enabled test-only mutation uses the same preview and Origin
+boundary plus the issued customer cookie and its synchronizer. Its explicit
+desired state and expected decimal revision call the synchronizer-bound change
+under that held session; cancellation does not require current publication.
+It does not create public ingress, notification delivery or stock authority.
 
 ### Private guest-order linking
 

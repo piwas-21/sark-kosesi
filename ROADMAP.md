@@ -214,6 +214,8 @@ An independently enabled test-only GET exposes current published subscriptions
 to the preview-authenticated session owner and may initialize an empty bucket.
 It sends no messages and does not detect stock transitions. Alert delivery,
 retention and cancellation policy remain open.
+An independently enabled test-only mutation uses a bound session proof to add or
+cancel a subscription; it is not public ingress or notification delivery.
 
 The local room-planner preview combines the rectangle calculator with keyboard
 measurement and rotation controls, a drawn footprint, and text clearance and fit

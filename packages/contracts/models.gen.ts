@@ -225,6 +225,18 @@ export type TestRestockList = {
     revision: string;
 };
 
+export type TestRestockMutation = {
+    /**
+     * Current bucket revision as a canonical decimal integer.
+     */
+    expected_revision: string;
+    subscribed: boolean;
+};
+
+export type TestRestockReceipt = {
+    revision: string;
+};
+
 export type TestSessionProof = {
     /**
      * One independent synchronizer encoded as 64 lowercase hexadecimal characters.
@@ -648,6 +660,42 @@ export type TestCustomerRestockResponses = {
 };
 
 export type TestCustomerRestockResponse = TestCustomerRestockResponses[keyof TestCustomerRestockResponses];
+
+export type TestCustomerRestockSetData = {
+    body: TestRestockMutation;
+    headers: {
+        Origin: string;
+        'x-csrf-token': string;
+    };
+    path: {
+        locale: string;
+        sku: string;
+    };
+    query?: never;
+    url: '/api/test/customer/restock/{locale}/{sku}';
+};
+
+export type TestCustomerRestockSetErrors = {
+    400: ApiError;
+    401: ApiError;
+    403: ApiError;
+    409: ApiError;
+    413: ApiError;
+    415: ApiError;
+    503: ApiError;
+    504: ApiError;
+};
+
+export type TestCustomerRestockSetError = TestCustomerRestockSetErrors[keyof TestCustomerRestockSetErrors];
+
+export type TestCustomerRestockSetResponses = {
+    /**
+     * Resulting private bucket revision
+     */
+    200: TestRestockReceipt;
+};
+
+export type TestCustomerRestockSetResponse = TestCustomerRestockSetResponses[keyof TestCustomerRestockSetResponses];
 
 export type TestCustomerLogoutData = {
     body?: never;
