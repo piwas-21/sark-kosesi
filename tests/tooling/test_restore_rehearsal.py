@@ -9,10 +9,49 @@ import unittest
 from pathlib import Path
 from unittest.mock import patch
 
-from rehearse_restore import digest_file, owned_directory, pg_env, source_state
+from rehearse_restore import (
+    digest_file,
+    owned_directory,
+    pg_env,
+    require_quiescent_source,
+    sequence_inventory,
+    source_state,
+)
 
 
 class RestoreRehearsalSafety(unittest.TestCase):
+    def test_sequence_inventory_quotes_identifiers_and_preserves_called_state(self):
+        class SyntheticSnapshot:
+            def query(self, sql):
+                if "pg_catalog.pg_class" in sql:
+                    return '["public", "odd \\"sequence\\""]\n["public", "untouched"]\n'
+                if 'FROM "public"."odd ""sequence"""' in sql:
+                    return "[42, true]\n"
+                if 'FROM "public"."untouched"' in sql:
+                    return "[1, false]\n"
+                raise AssertionError("unexpected sequence query")
+
+        self.assertEqual(
+            sequence_inventory(SyntheticSnapshot()),
+            {'"public"."odd ""sequence"""': [42, True], '"public"."untouched"': [1, False]},
+        )
+
+    def test_source_quiescence_rejects_another_client(self):
+        class SyntheticSnapshot:
+            pid = 777
+
+            def __init__(self, count):
+                self.count = count
+
+            def query(self, sql):
+                if "pg_catalog.pg_backend_pid(),777" not in sql:
+                    raise AssertionError("snapshot and query backends must be excluded")
+                return self.count
+
+        require_quiescent_source(SyntheticSnapshot("0"))
+        with self.assertRaises(RuntimeError):
+            require_quiescent_source(SyntheticSnapshot("1"))
+
     def test_owned_directory_removes_only_stopped_clusters(self):
         with owned_directory() as directory:
             (directory / "source").mkdir()

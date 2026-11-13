@@ -72,13 +72,19 @@ scripts/rehearse_restore.py` creates two disposable loopback-only native cluster
 It uses the embedded project migrations and existing synthetic order, stock and
 encrypted verification fixtures. A single exported source snapshot supplies both
 the custom-format dump and full per-table row counts and canonical content hashes;
-the restore must match, including SQLx migration history and checksums. It tests
-that altered restored content and a corrupt archive are detected. Its redacted
+the restore must match, including SQLx migration history and checksums. The runner
+also compares public sequence `last_value` and `is_called`, with the exercised
+synthetic stock sequence as an altered-state negative control. PostgreSQL sequences
+are not MVCC-snapshotted: this comparison relies on the exclusively owned source
+having no other client writers. The runner checks for other clients and unchanged
+sequence state around the dump; it cannot detect a change reversed between checks.
+It also tests that altered restored content and a corrupt archive are detected. Its redacted
 output records source revision, clean-source checks, archive and comparison hashes,
 tool version and elapsed time. Run it from a clean reviewed revision with a bounded
 owned Cargo target and sufficient disk; stopped temporary clusters are removed, and
 a cluster that cannot be stopped is retained for inspection. The comparison covers
-public tables and migration rows, not complete schema/constraint or sequence state.
+public tables, migration rows and public sequence values, not complete schema,
+constraint definitions or sequence configuration.
 This synthetic test does not exercise staging images, media, key rotation, shared
 proxy or router switching, off-host backups, live data, provider recovery, or the
 production RPO/RTO. It cannot by itself pass the restore and rollback release gate.

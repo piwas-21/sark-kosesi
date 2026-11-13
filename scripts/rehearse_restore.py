@@ -20,6 +20,7 @@ from with_postgres import ROOT, native_cluster, run
 MAX_TABLES = 300
 MAX_ROWS = 20000
 MAX_TABLE_BYTES = 64 * 1024 * 1024
+MAX_SEQUENCES = 300
 
 
 @contextmanager
@@ -96,13 +97,16 @@ class Snapshot:
             text=True,
         )
         self.process.stdin.write(
-            "BEGIN ISOLATION LEVEL REPEATABLE READ READ ONLY; SELECT pg_export_snapshot();\n"
+            "BEGIN ISOLATION LEVEL REPEATABLE READ READ ONLY; "
+            "SELECT pg_export_snapshot(); SELECT pg_backend_pid();\n"
         )
         self.process.stdin.flush()
         self.value = self.process.stdout.readline().strip()
-        if not re.fullmatch(r"[0-9A-Fa-f-]+", self.value):
+        pid = self.process.stdout.readline().strip()
+        if not re.fullmatch(r"[0-9A-Fa-f-]+", self.value) or not re.fullmatch(r"[1-9][0-9]*", pid):
             self.__exit__(None, None, None)
             raise RuntimeError("Could not export owned snapshot")
+        self.pid = int(pid)
         return self
 
     def __exit__(self, *_):
@@ -166,6 +170,59 @@ def inventory(snapshot):
     return {name: table_digest(snapshot, name) for name in names}
 
 
+def quoted_identifier(value):
+    return '"' + value.replace('"', '""') + '"'
+
+
+def sequence_inventory(snapshot):
+    # Names come from the held schema snapshot. Sequence values are explicitly
+    # non-MVCC and are read separately only while the owned source is quiescent.
+    rows = snapshot.query(
+        "SELECT pg_catalog.json_build_array(n.nspname,c.relname)::text "
+        "FROM pg_catalog.pg_class c JOIN pg_catalog.pg_namespace n ON n.oid=c.relnamespace "
+        "WHERE n.nspname='public' AND c.relkind='S' ORDER BY c.relname COLLATE \"C\""
+    ).splitlines()
+    if not rows or len(rows) > MAX_SEQUENCES:
+        raise ValueError("Unexpected synthetic sequence inventory")
+    result = {}
+    for row in rows:
+        pair = json.loads(row)
+        if (
+            not isinstance(pair, list)
+            or len(pair) != 2
+            or pair[0] != "public"
+            or not isinstance(pair[1], str)
+        ):
+            raise ValueError("Invalid synthetic sequence identity")
+        qualified = ".".join(quoted_identifier(value) for value in pair)
+        state = json.loads(
+            snapshot.query(
+                f"SELECT pg_catalog.json_build_array(last_value,is_called)::text FROM {qualified}"
+            ).strip()
+        )
+        if (
+            not isinstance(state, list)
+            or len(state) != 2
+            or type(state[0]) is not int
+            or type(state[1]) is not bool
+        ):
+            raise ValueError("Invalid synthetic sequence state")
+        if qualified in result:
+            raise ValueError("Duplicate synthetic sequence identity")
+        result[qualified] = state
+    return result
+
+
+def require_quiescent_source(snapshot):
+    other_clients = snapshot.query(
+        "SELECT count(*) FROM pg_catalog.pg_stat_activity "
+        "WHERE datname=pg_catalog.current_database() AND backend_type='client backend' "
+        f"AND pid NOT IN (pg_catalog.pg_backend_pid(),{snapshot.pid})"
+    ).strip()
+    if other_clients != "0":
+        raise RuntimeError("Synthetic source has another database client")
+
+
 def main():
     binaries = Path(os.environ.get("P1_POSTGRES_BIN", ""))
     if not binaries.is_absolute() or not all(
@@ -216,6 +273,16 @@ def main():
                 raise RuntimeError("Synthetic migration and fixture command failed")
             archive = root / "synthetic.dump"
             with Snapshot(binaries, pg_env(urls[0])) as source:
+                require_quiescent_source(source)
+                sequences_before = sequence_inventory(source)
+                control_sequence = '"public"."stock_movements_sequence_seq"'
+                control_state = sequences_before.get(control_sequence)
+                if (
+                    control_state is None
+                    or not control_state[1]
+                    or not (0 < control_state[0] < 9_000_000_000_000_000_000)
+                ):
+                    raise RuntimeError("Expected synthetic stock sequence was not exercised")
                 before = inventory(source)
                 for table in (
                     "_sqlx_migrations",
@@ -245,6 +312,9 @@ def main():
                     str(archive),
                     env=source.env,
                 )
+                require_quiescent_source(source)
+                if sequence_inventory(source) != sequences_before:
+                    raise RuntimeError("Synthetic source sequence changed during dump")
                 archive_hash = digest_file(archive)
                 restore_started = time.monotonic()
                 run(
@@ -260,8 +330,26 @@ def main():
                 restore_seconds = round(time.monotonic() - restore_started, 3)
                 with Snapshot(binaries, pg_env(urls[1])) as target:
                     after = inventory(target)
+                    sequences_after = sequence_inventory(target)
                 if before != after:
                     raise RuntimeError("Restored synthetic table content differs")
+                if sequences_before != sequences_after:
+                    raise RuntimeError("Restored synthetic sequence state differs")
+                require_quiescent_source(source)
+                if sequence_inventory(source) != sequences_before:
+                    raise RuntimeError("Synthetic source sequence changed during comparison")
+                # Alter a sequence only in the disposable restored database.
+                psql(
+                    binaries,
+                    pg_env(urls[1]),
+                    f"SELECT pg_catalog.setval('{control_sequence}'::pg_catalog.regclass,{control_state[0] + 1},true)",
+                )
+                with Snapshot(binaries, pg_env(urls[1])) as changed:
+                    damaged_sequences = sequence_inventory(changed)
+                expected_damage = dict(sequences_before)
+                expected_damage[control_sequence] = [control_state[0] + 1, True]
+                if damaged_sequences != expected_damage or damaged_sequences == sequences_before:
+                    raise RuntimeError("Changed-sequence negative control failed")
                 # Deliberately add a harmless fixture row only to the disposable
                 # restored copy and prove the comparison detects changed content.
                 psql(
@@ -305,6 +393,12 @@ def main():
                 "table_inventory_sha256": hashlib.sha256(
                     json.dumps(before, sort_keys=True, separators=(",", ":")).encode()
                 ).hexdigest(),
+                "sequences_compared": len(sequences_before),
+                "sequence_inventory_sha256": hashlib.sha256(
+                    json.dumps(sequences_before, sort_keys=True, separators=(",", ":")).encode()
+                ).hexdigest(),
+                "source_sequence_quiescence": "owned source; no other clients at checks; before/after state unchanged",
+                "changed_sequence_detected": True,
                 "archive_sha256": archive_hash,
                 "restore_seconds": restore_seconds,
                 "total_seconds": round(time.monotonic() - started, 3),
