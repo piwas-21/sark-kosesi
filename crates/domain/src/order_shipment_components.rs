@@ -50,6 +50,7 @@ pub fn expected_components(
         }
     }
     let mut expected = BTreeMap::<&str, i64>::new();
+    let mut component_kinds = BTreeMap::new();
     for ((quantity, line), product) in plan.iter().zip(&order.quote.lines).zip(&order.products) {
         let member = members
             .iter()
@@ -65,10 +66,11 @@ pub fn expected_components(
         {
             return Err(ShipmentComponentError::InvalidFootprint);
         }
-        let fill = match product.fill.as_str() {
-            "covers-only" => Fill::CoversOnly,
-            "with-foam" => Fill::WithFoam,
-            _ => return Err(ShipmentComponentError::InvalidFootprint),
+        // The accepted-order validator has already limited fill to these two values.
+        let fill = if product.fill == "covers-only" {
+            Fill::CoversOnly
+        } else {
+            Fill::WithFoam
         };
         let mut components = BTreeMap::new();
         let mut kinds = Vec::with_capacity(bom.components.len());
@@ -78,6 +80,11 @@ pub fn expected_components(
                 || components
                     .insert(component.code.as_str(), component.quantity)
                     .is_some()
+            {
+                return Err(ShipmentComponentError::InvalidFootprint);
+            }
+            if let Some(previous) = component_kinds.insert(component.code.as_str(), component.kind)
+                && previous != component.kind
             {
                 return Err(ShipmentComponentError::InvalidFootprint);
             }
@@ -108,12 +115,6 @@ pub fn expected_components(
                     .ok_or(ShipmentComponentError::InvalidFootprint)?;
             }
         }
-        if !components.is_empty() {
-            return Err(ShipmentComponentError::InvalidFootprint);
-        }
-    }
-    if !by_sku.is_empty() {
-        return Err(ShipmentComponentError::InvalidFootprint);
     }
     Ok(expected
         .into_iter()

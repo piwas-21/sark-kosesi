@@ -158,6 +158,9 @@ fn mismatched_original_members_or_bom_never_become_expected_demand() {
     changed[0].sku = "OTHER".into();
     check(&changed, &boms);
     let mut changed = boms.clone();
+    changed[0].components.pop();
+    check(&members, &changed);
+    let mut changed = boms.clone();
     changed[0].components.clear();
     check(&members, &changed);
     let mut changed = boms.clone();
@@ -205,6 +208,12 @@ fn mismatched_original_members_or_bom_never_become_expected_demand() {
     let mut changed = boms.clone();
     changed[1].components[0].kind = ComponentKind::Foam;
     check(&members, &changed);
+    // Both BOMs satisfy their own fill, but one code cannot be both kinds.
+    let mut conflicting_boms = boms.clone();
+    let mut conflicting_members = members.clone();
+    conflicting_boms[1].components[0].code = "FOAM".into();
+    conflicting_members[1].components[0].component_code = "FOAM".into();
+    check(&conflicting_members, &conflicting_boms);
 }
 
 #[test]

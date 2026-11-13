@@ -687,7 +687,8 @@ requires custody of its packages and components.
 The separate pure component projection checks every caller-supplied original
 BOM and frozen allocation member against the accepted SKU, BOM revision, ordered
 units, fill and exact component totals before expanding proposed whole units.
-Shared component demand is summed in code order. These inputs still require
+Shared component codes must agree on kind and their demand is summed in code
+order. These inputs still require
 trusted sealed source and allocation custody; the calculation neither defines
 packages nor establishes warehouse, shipment or dispatch evidence.
 
