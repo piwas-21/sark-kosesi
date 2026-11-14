@@ -41,7 +41,7 @@ class MinimatchBackport(unittest.TestCase):
         self.node = shutil.which("node")
         self.assertIsNotNone(self.node)
         self.assertEqual(
-            subprocess.check_output([self.node, "--version"], text=True).strip(), "v24.22.1"
+            subprocess.check_output([self.node, "--version"], text=True).strip(), "v24.22.3"
         )
         self.temp = tempfile.TemporaryDirectory(prefix="sark-minimatch-control-")
         self.addCleanup(self.temp.cleanup)
