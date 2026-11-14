@@ -77,8 +77,71 @@ pub fn policy() -> MarketPolicy {
     }
 }
 pub async fn seed(pool: &PgPool) {
+    seed_with_policy(pool, &policy(), false).await;
+}
+
+// The load fixture must remain valid when the API uses its real clock. Existing
+// tests retain the short, fixed 1970 window and its original review graph.
+#[allow(
+    dead_code,
+    reason = "Used by the separate isolated quote-load test target"
+)]
+pub async fn seed_for_load(pool: &PgPool, now: u64) {
+    assert!(now >= 1100);
+    let expires_at = now.checked_add(3600).expect("bounded load expiry");
+    assert!(expires_at <= 9_007_199_254_740_991);
+    let mut load_policy = policy();
+    load_policy.expires_at = i64::try_from(expires_at).expect("bounded expiry");
+    seed_with_policy(pool, &load_policy, true).await;
+}
+
+async fn seed_with_policy(pool: &PgPool, selected_policy: &MarketPolicy, load_rights: bool) {
     let _guard = catalogue::media_seed(pool).await;
-    catalogue::approve(pool).await;
+    let mut selection = catalogue::selected();
+    if load_rights {
+        catalogue::rights(
+            pool,
+            1,
+            &catalogue::MediaRightsChange::Grant {
+                use_scope: catalogue::MediaUse::ProductPhotography,
+                valid_from: 1100,
+                term: catalogue::RightsTerm::Until {
+                    expires_at: selected_policy.expires_at,
+                },
+                permission_ref: "isolated synthetic load fixture".into(),
+            },
+        )
+        .await;
+        selection.image.rights_revision = 2;
+        catalogue::facts_review(
+            pool,
+            selection.facts,
+            0,
+            FactDecision::Approved,
+            "facts-approved",
+        )
+        .await;
+        catalogue::image_review(
+            pool,
+            &selection.image,
+            0,
+            catalogue::ImageDecision::Approved,
+            "image-approved",
+        )
+        .await;
+        catalogue::copy_draft(pool, Locale::Nl, 1, None, 0, "copy-nl").await;
+        catalogue::copy_review(
+            pool,
+            Locale::Nl,
+            1,
+            0,
+            catalogue::TranslationDecision::Approved,
+            "copy-nl-approved",
+        )
+        .await;
+    } else {
+        catalogue::approve(pool).await;
+    }
     commerce_infrastructure::publication::record_publication(
         pool,
         &catalogue::author(),
@@ -88,7 +151,7 @@ pub async fn seed(pool: &PgPool) {
             sku: "SET-FILLED",
             expected_revision: 0,
             effect_key: "snapshot-activate",
-            choice: &catalogue::choice(),
+            choice: &catalogue::PublicationChoice::Activate { selection },
             evidence_ref: "synthetic",
             reason: "synthetic",
             confirmed: true,
@@ -97,7 +160,7 @@ pub async fn seed(pool: &PgPool) {
     .await
     .expect("synthetic publication");
     pool.execute("INSERT INTO stock_balances(component_code,on_hand,quarantine,reserved) VALUES('SEAT-COVER',100,0,0),('SEAT-FOAM',100,0,0);INSERT INTO staff_capabilities VALUES('author','market.manage'),('reviewer','market.review')").await.expect("isolated ready fixture");
-    draft(pool, &policy()).await;
+    draft(pool, selected_policy).await;
     decide(pool, 1, 0, true, "snapshot-review").await;
 }
 pub async fn draft(pool: &PgPool, p: &MarketPolicy) {

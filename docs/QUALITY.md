@@ -208,6 +208,14 @@ Budgets are in `config/performance-budgets.json`: field p75 LCP <=2.5s, INP <=20
 
 At 25 concurrent users for 10 minutes plus a 50-request burst, catalogue p95 <=300ms and quote p95 <=500ms excluding separately reported provider time, errors <=1%; no overselling, leaked resources or unbounded queue growth. Record hardware, DB size, seed, cache state and exact SHA. Resource caps and profiling matter more than language claims. P6 captures lab evidence; post-launch field data validates real-user performance separately.
 
+The existing isolated k6 exercise measures catalogue reads, not quote latency.
+The quote-load source fixture gives the market and image rights one hour of
+remaining validity from seeding and checks an owned fresh quote against synthetic amounts and
+unchanged stock and commerce ledgers. This fixture test is not an HTTP load run:
+the separately timed quote workload, burst, resource observations and P6 budget
+evidence remain to be completed. Quote snapshots and rate counters are writes
+to the disposable test database; no seller or provider facts are seeded.
+
 Approved preview read/stock/image boundaries and HTTP mapping retain 95% critical
 native line/branch gates. Isolated cases cover exact customer facts/price, missing
 locale and fixture rejection, all-component stock/quarantine/reservation effects,
@@ -839,7 +847,20 @@ Measure proof freshness after an actual lock wait. Check that only the current
 hash remains and that the stored challenge verifier differs from the bearer
 and registration verifier. These checks establish private credential custody.
 
+### Private staff self-revocation
+
+Use isolated PostgreSQL for exact and repeated bearer revocation, missing, expired
+and stale-MFA sessions, other-session isolation, clock failure and both lock
+orderings against a real guarded operation. Confirm no session issuance, grant,
+stock or unrelated-session mutation. This is not browser logout or MFA issuance.
+
 ### Private reversal-item review inspection
+
+The review inbox scans at most one indexed candidate per call. Check stable
+keyset ordering and equal-time ties, cursor bounds and refresh, held-attempt
+expiry, changed or corrupt candidate custody, denied staff, and unchanged
+provider, payment and outbox effects. Verify both bounded query shapes can use
+the partial index without requiring the optimizer to select it on small tables.
 
 Use isolated PostgreSQL to test dedicated grant, revocation, stale MFA and an
 actual attempt-lock wait through staff expiry. Validate the complete bounded
@@ -896,6 +917,11 @@ orders. Persistent shipment operations will need authorization, concurrency and
 retry tests, plus physical checks for warehouse custody, parcel contents and
 delivery. The whole-variant quantity module is included in the critical Rust
 coverage policy.
+Component demand projection must compare literal frozen BOM and member counts
+against the accepted order, aggregate shared codes, preserve covers-only and
+foam differences, and reject wrong revisions, missing or duplicate members,
+conflicting component kinds, changed quantities and invalid prior counts. Check the real maximum 20 by 64
+footprint. These pure controls do not establish package or warehouse custody.
 
 ### Private customer favourites
 
