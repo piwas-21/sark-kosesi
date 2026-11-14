@@ -30,6 +30,10 @@ transitive dependencies.
 
 Transitive metadata also includes MIT-0, BSD-2/3-Clause, ISC, 0BSD, CC0-1.0,
 CC-BY-4.0, BlueOak-1.0.0, Python-2.0, Unicode-3.0, Zlib and OpenSSL.
+The staged web runtime excludes Sharp's native packages because catalogue images
+are served as verified renditions. Next's default image optimizer is disabled.
+Confirm the absence in the built OCI image and verify the catalogue image route.
+
 Retain attribution/notices and any source obligations when packaging. MPL applies
 to covered files; changes to those files require renewed review. No such vendored
 modifications are made here. Unknown licences or sources fail the source audit.

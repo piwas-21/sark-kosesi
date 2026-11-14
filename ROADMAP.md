@@ -229,6 +229,10 @@ preview baselines with the file controls. Integration requires successful
 hosted visual comparison. Native-language acceptance, verified product
 dimensions and physical-fit acceptance remain open.
 
+The staging web image excludes the unused Next image optimizer packages.
+The catalogue keeps its rights-checked rendition route. Verify these boundaries
+in the exported image before deployment.
+
 The isolated synthetic quote workload supports the P6 API latency and effect
 checks. Exact container and staging performance, recovery, merchant facts,
 provider and fulfilment acceptance remain production release work.
