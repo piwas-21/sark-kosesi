@@ -215,8 +215,8 @@ guest owners for a 10-minute steady window and 50 separate owners for the
 following burst. Each steady owner uses a three-second request timeout and
 waits just over ten seconds between completed requests to preserve the real
 quote quota. The evaluator requires at least 40 attempts per steady owner,
-first and last starts within ten seconds of the window boundaries, and a
-bounded inter-request idle time.
+first starts within ten seconds of the window start and last starts within
+one maximum request-plus-idle cycle of the end.
 
 The runner reconciles k6 counts and redacted request observations against
 persisted basket/effect ownership, quote snapshot count, component stock

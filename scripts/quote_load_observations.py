@@ -12,6 +12,7 @@ MAX_REQUEST_INTERVAL_MS = 3500
 MIN_STEADY_IDLE_MS = 10_100
 MAX_STEADY_IDLE_MS = 11_500
 MIN_STEADY_REQUESTS = 40
+MAX_STEADY_CYCLE_MS = MAX_REQUEST_INTERVAL_MS + MAX_STEADY_IDLE_MS
 LEDGERS = {
     "stock_holds",
     "stock_hold_lines",
@@ -164,7 +165,7 @@ def evaluate(document):
             len(owned) < MIN_STEADY_REQUESTS
             or [row["sequence"] for row in owned] != list(range(len(owned)))
             or owned[0]["started_ms"] > start + 10_000
-            or owned[-1]["started_ms"] < end - 10_000
+            or owned[-1]["started_ms"] < end - MAX_STEADY_CYCLE_MS
             or any(
                 not MIN_STEADY_IDLE_MS
                 <= later["started_ms"] - earlier["finished_ms"]

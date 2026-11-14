@@ -115,6 +115,19 @@ class QuoteLoadObservations(unittest.TestCase):
         deadline["quote_count_after"] -= 1
         self.assertEqual(observations.evaluate(deadline)["burst"]["failures"], 1)
 
+    def test_last_valid_cycle_can_end_just_outside_nominal_ten_second_edge(self):
+        full = fixture()
+        for row in full["requests"][:-50]:
+            started = full["steady_start_ms"] + 10_170 * row["sequence"]
+            row["started_ms"] = started
+            row["finished_ms"] = started + 20
+        self.assertTrue(observations.evaluate(full)["steady"]["within_budget"])
+        truncated = copy.deepcopy(full)
+        truncated["requests"].pop(58)
+        truncated["quote_count_after"] -= 1
+        with self.assertRaisesRegex(ValueError, "^invalid quote observations$"):
+            observations.evaluate(truncated)
+
     def test_sparse_owner_and_missing_middle_attempt_are_rejected(self):
         sparse = fixture()
         sparse["requests"] = [

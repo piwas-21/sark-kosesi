@@ -14,6 +14,7 @@ import time
 from pathlib import Path
 
 from quote_load_observations import evaluate
+from rehearse_restore import source_state
 from with_postgres import ROOT, native_cluster, run
 
 SMOKE_CASE = "owned_quote_http_smoke"
@@ -93,15 +94,6 @@ def main():
             signal.signal(sig, handler)
 
 
-def source_state():
-    return (
-        run("git", "-C", str(ROOT), "rev-parse", "HEAD").stdout.strip(),
-        not run(
-            "git", "-C", str(ROOT), "status", "--porcelain", "--untracked-files=normal"
-        ).stdout.strip(),
-    )
-
-
 def load_evidence(directory, binaries, k6_version, source_at_start):
     report = directory / "quote-observations.json"
     if report.is_symlink() or not report.is_file() or report.stat().st_size > 2_000_000:
@@ -122,9 +114,9 @@ def load_evidence(directory, binaries, k6_version, source_at_start):
         "crates/infrastructure/tests/support/checkout_quote_fixture.rs",
         "crates/api/tests/support/quote_load_preparation.rs",
     )
-    revision, tree_clean = source_state()
-    if revision != source_at_start[0]:
-        raise RuntimeError("Quote workload source revision changed during execution")
+    revision, tree_clean = source_state(ROOT)
+    if (revision, tree_clean) != source_at_start:
+        raise RuntimeError("Quote workload source changed during execution")
     return {
         "scope": "local isolated PostgreSQL and Rust release API; synthetic NL quote",
         "revision": revision,
@@ -180,7 +172,9 @@ def run_smoke(stop):
         k6_version = run(str(tool), "version").stdout.strip()
         if not k6_version.startswith(f"k6 v{pin} "):
             raise SystemExit("The installed k6 version does not match config/tools.json")
-        source_at_start = source_state()
+        source_at_start = source_state(ROOT)
+        if not source_at_start[1]:
+            raise SystemExit("The timed quote run requires a clean source checkout")
     stop.check()
     directory = Path(tempfile.mkdtemp(prefix="sark-quote-smoke-"))
     drained = True
