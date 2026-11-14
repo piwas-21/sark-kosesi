@@ -8,9 +8,16 @@ ROOT = Path(__file__).resolve().parents[2]
 DOCKERFILE = ROOT / "deploy/staging/Dockerfile"
 NODE = "node:24.22.3-bookworm-slim@sha256:dc26ae92c9fb15cf6b1d63e20f0944b2efe0f115b20e00be48fb23fceb061c54"
 DEBIAN = (
-    "debian:bookworm-slim@sha256:734a72b3d6142a71993b4bc580ca01d8ca687f77a2c422d96a961d3376b179bc"
+    "debian:trixie-slim@sha256:a72b4433de1cf7d6bae0c4cee74d0547f58601a643b3375f070c51600d63b6b2"
 )
 IDENTITY = "RUN groupadd --gid 1000 node && useradd --uid 1000 --gid 1000 --create-home --shell /bin/bash node"
+RUNTIME_INPUTS = [
+    "RUN apt-get update \\",
+    "    && apt-get install --yes --no-install-recommends zlib1g=1:1.3.dfsg+really1.3.1-1+deb13u1 \\",
+    "    && rm -rf /var/lib/apt/lists/*",
+    "COPY --from=node-runtime /etc/ssl/certs/ca-certificates.crt /etc/ssl/certs/ca-certificates.crt",
+    IDENTITY,
+]
 NODE_COPIES = {
     "COPY --from=node-runtime /usr/local/bin/node /usr/local/bin/node",
     "COPY --from=node-runtime /usr/local/LICENSE /usr/local/LICENSE",
@@ -50,7 +57,7 @@ def valid_runtime(source):
             stages[next(reversed(stages))][1].append(line)
     if stages.get("node-runtime") != [NODE, []]:
         return False
-    if stages.get("runtime") != [DEBIAN, [IDENTITY]]:
+    if stages.get("runtime") != [DEBIAN, RUNTIME_INPUTS]:
         return False
     if stages.get("web-build", [None])[0] != "node-runtime":
         return False
@@ -100,6 +107,8 @@ class StagingRuntime(unittest.TestCase):
                 'ENTRYPOINT ["/app/commerce-api"]', 'USER root\nENTRYPOINT ["/app/commerce-api"]'
             ),
             source.replace(IDENTITY, "RUN useradd node"),
+            source.replace("zlib1g=1:1.3.dfsg+really1.3.1-1+deb13u1", "zlib1g"),
+            source.replace(RUNTIME_INPUTS[3] + "\n", ""),
         ):
             self.assertNotEqual(changed, source)
             self.assertFalse(valid_runtime(changed))

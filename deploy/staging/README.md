@@ -4,6 +4,12 @@ This deploys the non-selling preview for P3 integration work. It does not releas
 `main`, configure a live payment key or establish provider/product acceptance.
 Read AGENTS.md and the operations/security requirements first.
 
+The minimal runtime uses digest-pinned Debian trixie and an exact zlib
+security package version from Debian's signed package indices. The base image
+alone still contains the earlier zlib build. The runtime copies the build
+image's CA bundle for TLS and copies Node and its licence only where needed.
+Rebuild, scan the exact images and privately verify startup before reuse.
+
 ## Isolation and credentials
 
 Use a dedicated deployment directory and Compose project. The database/volume,
