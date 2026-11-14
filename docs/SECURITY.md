@@ -104,6 +104,8 @@ private browser preview, thin same-origin Next proxy, Rust read API and isolated
 PostgreSQL. Test data is invented and cannot be published by the schema; both
 runtimes reject production configuration. Constant-time token checks guard the
 preview; no real customer/admin session is implemented.
+The browser CSP allows same-origin stylesheets and nonce-bearing style elements.
+Unapproved inline style elements and attributes are blocked.
 
 | Applicable area      | P1 evidence                                                                                   | Remaining acceptance                                    |
 | -------------------- | --------------------------------------------------------------------------------------------- | ------------------------------------------------------- |

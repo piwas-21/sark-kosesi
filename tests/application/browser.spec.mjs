@@ -205,6 +205,34 @@ test("@security auth, private cache, CSP and unavailable mutations", async ({
     expect((await page.request.get(path)).status()).toBe(404);
 });
 
+test("@security CSP blocks unapproved inline styles", async ({ page }) => {
+  const response = await page.goto("/ar");
+  expect(response?.status()).toBe(200);
+  const policy = response?.headers()["content-security-policy"] ?? "";
+  const nonce = policy.match(
+    /(?:^|; )style-src 'self' 'nonce-([A-Za-z0-9+/]+)'/,
+  );
+  expect(nonce?.[1]).toBeTruthy();
+  expect(policy).not.toContain("'unsafe-inline'");
+  await page.evaluate((styleNonce) => {
+    const target = document.createElement("div");
+    target.id = "csp-style-probe";
+    target.setAttribute("style", "padding-left: 13px");
+    const unapproved = document.createElement("style");
+    unapproved.textContent = "#csp-style-probe { margin-left: 17px; }";
+    const approved = document.createElement("style");
+    approved.nonce = styleNonce;
+    approved.textContent =
+      "#csp-style-probe { border-left-width: 19px; border-left-style: solid; }";
+    document.head.append(unapproved, approved);
+    document.body.append(target);
+  }, nonce?.[1] ?? "");
+  const probe = page.locator("#csp-style-probe");
+  await expect(probe).toHaveCSS("border-left-width", "19px");
+  await expect(probe).toHaveCSS("padding-left", "0px");
+  await expect(probe).toHaveCSS("margin-left", "0px");
+});
+
 test("@a11y traversal detects an input removed from keyboard order", async ({
   page,
   browserName,
