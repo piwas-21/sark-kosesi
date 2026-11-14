@@ -229,6 +229,11 @@ preview baselines with the file controls. Integration requires successful
 hosted visual comparison. Native-language acceptance, verified product
 dimensions and physical-fit acceptance remain open.
 
+The preview CSP restricts stylesheets to the same origin and allows inline
+style elements only with the per-response nonce. Browser checks exercise
+stylesheet authorization and deny unapproved style elements and attributes.
+The final ingress and production security assessment remain open.
+
 The isolated synthetic quote workload supports the P6 API latency and effect
 checks. Exact container and staging performance, recovery, merchant facts,
 provider and fulfilment acceptance remain production release work.
