@@ -19,7 +19,7 @@
     "gate:merge": "python3 scripts/merge_gate.py",
     "lint": "ruff check scripts tests/tooling && node scripts/lint.mjs && python3 scripts/check_application.py",
     "format:check": "ruff format --check scripts tests/tooling && prettier --check \"*.{md,json,mjs,mts}\" \"docs/**/*.md\" \"config/*.json\" \".github/**/*.{yml,md}\" \"tests/**/*.{mjs,js,ts}\" \"apps/**/*.{ts,tsx,css,json,mjs}\" \"packages/**/*.{ts,tsx,css,json}\" \"design/*.md\"",
-    "test:tooling": "PYTHONPATH=scripts python3 -m coverage run -m unittest discover -s tests/tooling -v && python3 -m coverage report && python3 -m coverage xml",
+    "test:tooling": "PYTHONPATH=scripts python3 -m coverage run -m unittest discover -s tests/tooling -v && python3 -m coverage report && python3 -m coverage xml && node --test tests/application/quote-load-contract.test.mjs",
     "check:rust": "mkdir -p coverage && cargo fmt --all -- --check && cargo clippy --workspace --all-targets --all-features --locked --message-format=json -- -D warnings > coverage/clippy.json",
     "audit:rust": "python3 scripts/audit_rust.py",
     "format:app": "prettier --write \"*.{json,mjs,mts}\" \"config/*.json\" \"tests/application/**/*.{mjs,js,ts}\" \"apps/**/*.{ts,tsx,css,json,mjs}\" \"packages/**/*.{ts,tsx,css,json}\"",

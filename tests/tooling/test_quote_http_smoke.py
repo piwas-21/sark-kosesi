@@ -1,5 +1,6 @@
 """Safe launcher controls use fakes; they never start PostgreSQL or the API."""
 
+import io
 import json
 import os
 import subprocess
@@ -13,6 +14,54 @@ import quote_http_smoke as smoke
 
 
 class QuoteHttpSmoke(unittest.TestCase):
+    def test_preparation_requires_its_own_pass_record(self):
+        summary = b"test result: ok. 1 passed; 0 failed; 0 ignored\n"
+        for case in (smoke.SMOKE_CASE, smoke.PREPARE_CASE):
+            with self.subTest(case=case):
+                output = io.BytesIO(f"test {case} ... ok\n".encode() + summary)
+                if case == smoke.PREPARE_CASE:
+                    smoke.require_completed_case(output, smoke.PREPARE_CASE)
+                else:
+                    with self.assertRaisesRegex(RuntimeError, "exactly one successful"):
+                        smoke.require_completed_case(output, smoke.PREPARE_CASE)
+
+    def test_owned_load_requires_its_own_pass_record(self):
+        summary = b"test result: ok. 1 passed; 0 failed; 0 ignored\n"
+        for case in (smoke.PREPARE_CASE, smoke.LOAD_CASE):
+            with self.subTest(case=case):
+                output = io.BytesIO(f"test {case} ... ok\n".encode() + summary)
+                if case == smoke.LOAD_CASE:
+                    smoke.require_completed_case(output, smoke.LOAD_CASE)
+                else:
+                    with self.assertRaisesRegex(RuntimeError, "exactly one successful"):
+                        smoke.require_completed_case(output, smoke.LOAD_CASE)
+
+    def test_owned_load_rejects_unpinned_k6_before_starting_database(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            (root / ".local/bin").mkdir(parents=True)
+            (root / "config").mkdir()
+            tool = root / ".local/bin/k6"
+            tool.touch()
+            (root / "config/tools.json").write_text('{"k6":{"version":"2.3.0"}}')
+            with (
+                patch.object(smoke, "ROOT", root),
+                patch.dict(os.environ, {"P1_POSTGRES_BIN": "/fixture/bin"}, clear=True),
+                patch.object(sys, "argv", ["quote_http_smoke.py", "--run-load"]),
+                patch.object(smoke, "native_cluster") as cluster,
+                patch.object(
+                    smoke,
+                    "run",
+                    side_effect=[
+                        subprocess.CompletedProcess([], 0, "postgres (PostgreSQL) 18.1\n", ""),
+                        subprocess.CompletedProcess([], 0, "k6 v1.0.0 fixture\n", ""),
+                    ],
+                ),
+            ):
+                with self.assertRaisesRegex(SystemExit, "does not match"):
+                    smoke.main()
+                cluster.assert_not_called()
+
     def test_owned_command_requires_one_successful_smoke_even_on_zero_exit(self):
         database = (
             "postgresql://p1_test:syntheticfixturepassword0123456789@127.0.0.1:12345/postgres"

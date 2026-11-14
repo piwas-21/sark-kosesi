@@ -476,3 +476,6 @@ async fn effects(pool: &PgPool) -> Effects {
     let ledgers = sqlx::query_as("SELECT (SELECT count(*) FROM stock_holds),(SELECT count(*) FROM stock_hold_lines),(SELECT count(*) FROM basket_hold_groups),(SELECT count(*) FROM stock_movements),(SELECT count(*) FROM checkout_orders),(SELECT count(*) FROM payment_attempts),(SELECT count(*) FROM commerce_outbox)").fetch_one(pool).await.expect("ledgers");
     (count, balances, ledgers)
 }
+
+#[path = "support/quote_load_preparation.rs"]
+mod quote_load_preparation;
