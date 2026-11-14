@@ -37,6 +37,12 @@ Upgrade policy remains weekly reviewed updates and prompt security fixes. P1 has
 no production deployment; a green metadata allowlist alone does not establish
 compliance of a future distributed image.
 
+The lint and test updates keep TypeScript on 5.9.3 and Node declarations on
+the Node 24 line. Globals 17.14.0 and typescript-eslint 8.72.2 keep the existing
+MIT licence and minimatch consumers. Ruff 0.17.4 and coverage.py 7.17.2 remain
+hash-pinned developer tools. Ruff uses the MIT licence and coverage.py uses
+Apache-2.0.
+
 `sha2` 0.10.9 was already transitively locked and is now an exact direct dependency
 for hashing opaque 256-bit staff session tokens. Its MIT/Apache-2.0 terms are in the
 same reviewed allowlist. This is not password hashing or an MFA implementation;

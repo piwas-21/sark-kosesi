@@ -24,6 +24,11 @@ Keep all CodeQL action steps on the same commit. Dependabot groups their version
 updates; review the resulting pins together and require fresh populated analysis
 for each configured language before merging.
 
+CI pins checkout 7.0.1, setup-node 7.1.0 and download-artifact 8.0.2 to
+upstream commits. Checkout keeps credential persistence disabled. Node setup
+uses the repository version and npm cache. The Sonar job downloads the
+revision-named application artifact with digest verification enforced.
+
 ## Environments and credentials
 
 Compose runs independent storefront, Rust API/worker, PostgreSQL and storage services. The current non-selling staging deployment uses the existing Traefik/Coolify TLS proxy; future production ingress needs its own reviewed policy. No public DB/admin debug port. Separate sandbox/staging/production secrets, profiles, sender and storage; least-privilege credentials with documented rotation and revocation. Inject secrets at runtime; verify logs/artifacts never disclose them. Access is audited and MFA protected. Use small bounded production-safe health endpoints without customer data.
