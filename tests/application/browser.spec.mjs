@@ -426,6 +426,7 @@ test("@a11y long room planner conflicts remain reachable by page scrolling", asy
   browserName,
 }) => {
   await page.setViewportSize({ width: 1280, height: 500 });
+  await page.emulateMedia({ reducedMotion: "reduce" });
   await page.goto("/en/room-planner");
   const room = page.getByRole("region", { name: "Room", exact: true });
   await room.getByLabel("Width (cm)").fill("400");
@@ -465,17 +466,81 @@ test("@a11y long room planner conflicts remain reachable by page scrolling", asy
     document.body.removeAttribute("tabindex");
     window.scrollTo(0, 0);
   });
-  for (let count = 0; count < 30; count++) {
-    const inViewport = await issues.last().evaluate((element) => {
+  const position = () =>
+    issues.last().evaluate((element) => {
       const bounds = element.getBoundingClientRect();
-      return bounds.top >= 0 && bounds.bottom <= window.innerHeight;
+      return {
+        top: bounds.top,
+        bottom: bounds.bottom,
+        height: window.innerHeight,
+        scrollY: window.scrollY,
+      };
     });
-    if (inViewport) break;
-    await page.keyboard.press("PageDown");
-    await page.waitForTimeout(100);
+  async function reachLastIssue() {
+    let pageDowns = 0;
+    for (let count = 0; count < 60; count++) {
+      const before = await position();
+      if (before.top >= 0 && before.bottom <= before.height) return pageDowns;
+      const key =
+        before.top < 0
+          ? "ArrowUp"
+          : before.top < before.height
+            ? "ArrowDown"
+            : "PageDown";
+      if (key === "PageDown") pageDowns++;
+      await page.keyboard.press(key);
+      try {
+        await page.waitForFunction(
+          (scrollY) => window.scrollY !== scrollY,
+          before.scrollY,
+          {
+            timeout: 1500,
+          },
+        );
+        await page.evaluate(
+          () =>
+            new Promise((resolve, reject) => {
+              let last = window.scrollY;
+              let stable = 0;
+              const start = performance.now();
+              function frame(now) {
+                const current = window.scrollY;
+                stable = Math.abs(current - last) < 0.1 ? stable + 1 : 0;
+                last = current;
+                if (stable >= 5) resolve();
+                else if (now - start > 2000)
+                  reject(new Error("Scroll did not settle"));
+                else requestAnimationFrame(frame);
+              }
+              requestAnimationFrame(frame);
+            }),
+        );
+      } catch {
+        throw new Error(
+          `Keyboard scrolling stopped: ${JSON.stringify(await position())}`,
+        );
+      }
+    }
+    throw new Error(
+      `Keyboard scrolling exceeded its bound: ${JSON.stringify(await position())}`,
+    );
   }
+  expect(await reachLastIssue()).toBeGreaterThan(0);
   await expect(issues.last()).toBeInViewport({ ratio: 1 });
   expect(await page.evaluate(() => window.scrollY)).toBeGreaterThan(0);
+
+  // A blocked page must not pass the keyboard-reachability check.
+  await page.evaluate(() => {
+    window.scrollTo(0, 0);
+  });
+  await expect.poll(() => page.evaluate(() => window.scrollY)).toBe(0);
+  const blockedStart = await position();
+  expect(blockedStart.bottom).toBeGreaterThan(blockedStart.height);
+  await page.evaluate(() => {
+    document.documentElement.style.overflow = "hidden";
+    document.body.style.overflow = "hidden";
+  });
+  await expect(reachLastIssue()).rejects.toThrow("Keyboard scrolling stopped");
 });
 
 for (const locale of ["nl", "ar"])

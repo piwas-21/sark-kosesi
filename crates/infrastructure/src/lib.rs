@@ -5,6 +5,9 @@
 #[cfg(test)]
 extern crate self as commerce_infrastructure;
 #[cfg(test)]
+#[path = "../tests/support/late_stock_wait_budget.rs"]
+mod late_stock_wait_budget;
+#[cfg(test)]
 #[allow(dead_code)]
 #[path = "../tests/support/payment_fixture.rs"]
 mod payment_test_fixture;
