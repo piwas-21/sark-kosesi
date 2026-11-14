@@ -18,8 +18,6 @@ contracts remain separate and pending.
 | webpki-roots                                                                   | CDLA-Permissive-2.0                  | Trust-root data; preserve the agreement with redistributed data                                                                                                                  |
 | sharp/libvips optional native packages                                         | Apache-2.0 / LGPL-3.0-or-later / MIT | Unmodified dynamically loaded libraries. Preserve licence/source/relinking material when distributing runtime images; do not statically combine or modify without renewed review |
 
-Playwright 1.65.0 uses the matching digest-pinned Noble image for prototype
-smoke in CI. Browser upgrades require checking the existing approved gallery.
 ESLint 10.14.0 (MIT) retains the verified minimatch backport, and jsdom 31.0.0
 (MIT) runs the frontend unit tests under the pinned Node version.
 
