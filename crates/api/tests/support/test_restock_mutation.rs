@@ -259,6 +259,7 @@ async fn rejects_bad_authority_aliases_and_noncanonical_bodies(pool: PgPool) {
         "/api/test/customer/restock/nl/%53ET-FILLED",
         "/api/test/customer/restock/NL/SET-FILLED",
         "/api/test/customer/restock/nl/SET-FILLED?x=1",
+        "/api/test/customer/restock/nl/set-filled",
     ] {
         response(
             &app,
@@ -268,6 +269,8 @@ async fn rejects_bad_authority_aliases_and_noncanonical_bodies(pool: PgPool) {
         .await;
     }
     for bad in [
+        r#"{"subscribed":true,"expected_revision":""}"#,
+        r#"{"subscribed":true,"expected_revision":"10000000000000000000"}"#,
         r#"{"subscribed":true,"expected_revision":"00"}"#,
         r#"{"subscribed":true,"expected_revision":"-1"}"#,
         r#"{"subscribed":true,"expected_revision":"9223372036854775808"}"#,
@@ -313,6 +316,61 @@ async fn rejects_bad_authority_aliases_and_noncanonical_bodies(pool: PgPool) {
         .await
         .expect("no mutation");
     assert_eq!(count, 0);
+}
+
+#[sqlx::test(migrator = "MIGRATOR")]
+async fn truncated_body_is_redacted_without_changing_subscriptions(pool: PgPool) {
+    use std::{
+        io::{Read, Write},
+        net::{Shutdown, TcpStream},
+        time::Duration,
+    };
+
+    let _case = LOGIN_CASE.lock().await;
+    let _fixture = catalogue::media_seed(&pool).await;
+    let (app, cookie, proof, _) = setup(&pool).await;
+    let before = effects(&pool).await;
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
+        .await
+        .expect("loopback");
+    let address = listener.local_addr().expect("address");
+    let server = tokio::spawn(async move { axum::serve(listener, app).await });
+    let response = tokio::task::spawn_blocking(move || {
+        let mut stream =
+            TcpStream::connect_timeout(&address, Duration::from_secs(3)).expect("connect");
+        stream.set_read_timeout(Some(Duration::from_secs(3))).expect("read deadline");
+        stream.set_write_timeout(Some(Duration::from_secs(3))).expect("write deadline");
+        let body = payload(true, "0");
+        write!(
+            stream,
+            "PUT {URL} HTTP/1.1\r\nHost: localhost\r\nAuthorization: Bearer {PREVIEW}\r\nOrigin: {ORIGIN}\r\nCookie: {cookie}\r\nx-csrf-token: {proof}\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}",
+            body.len() + 1,
+        )
+        .expect("partial body below the size limit");
+        stream.shutdown(Shutdown::Write).expect("premature EOF");
+        let mut response = String::new();
+        stream.take(4096).read_to_string(&mut response).expect("response");
+        assert!(!response.contains(&cookie));
+        assert!(!response.contains(&proof));
+        response
+    })
+    .await
+    .expect("transport");
+    server.abort();
+    assert!(response.starts_with("HTTP/1.1 400 Bad Request"));
+    assert!(response.contains(r#"{"code":"invalid_restock_request"}"#));
+    assert!(
+        response
+            .to_ascii_lowercase()
+            .contains("cache-control: private, no-store")
+    );
+    assert!(!response.contains(PREVIEW));
+    let counts: (i64, i64) = sqlx::query_as("SELECT (SELECT count(*) FROM customer_restock_buckets),(SELECT count(*) FROM customer_restock_subscriptions)")
+        .fetch_one(&pool)
+        .await
+        .expect("no partial state");
+    assert_eq!(counts, (0, 0));
+    assert_eq!(effects(&pool).await, before);
 }
 
 #[sqlx::test(migrator = "MIGRATOR")]
