@@ -13,7 +13,7 @@ import quote_http_smoke as smoke
 
 
 class QuoteHttpSmoke(unittest.TestCase):
-    def test_only_owned_native_database_reaches_fixed_command(self):
+    def test_owned_command_requires_one_successful_smoke_even_on_zero_exit(self):
         database = (
             "postgresql://p1_test:syntheticfixturepassword0123456789@127.0.0.1:12345/postgres"
         )
@@ -48,6 +48,7 @@ class QuoteHttpSmoke(unittest.TestCase):
             self.assertNotIn("API_URL", child_env)
             self.assertNotIn("HTTPS_PROXY", child_env)
             self.assertNotIn("CALLBACK_INTAKE_PROFILE_ID", child_env)
+            self.assertEqual(kwargs["stdin"], subprocess.DEVNULL)
             proof = Path(child_env["SARK_QUOTE_OWNED_DB_PROOF"])
             self.assertEqual(proof.stat().st_mode & 0o777, 0o600)
             self.assertEqual(json.loads(proof.read_text()), {"database_url": database})
@@ -56,21 +57,37 @@ class QuoteHttpSmoke(unittest.TestCase):
             class Child:
                 def wait(self, timeout=None):
                     assert timeout == 0.2
-                    return 7
+                    kwargs["stdout"].write(transcript)
+                    return code
 
             return Child()
 
-        with (
-            patch.dict(os.environ, environment, clear=True),
-            patch.object(sys, "argv", ["quote_http_smoke.py"]),
-            patch.object(smoke, "run", side_effect=fake_run),
-            patch.object(smoke, "native_cluster", side_effect=fake_cluster),
-            patch.object(smoke.subprocess, "Popen", side_effect=fake_subprocess),
-            patch.object(smoke, "drain_group", return_value=True),
-        ):
-            self.assertEqual(smoke.main(), 7)
-        self.assertEqual(len(calls), 2)
-        self.assertEqual(calls[1][-2:], ("-m", "fast"))
+        passed = b"test owned_quote_http_smoke ... ok\n"
+        summary = b"test result: ok. 1 passed; 0 failed; 0 ignored\n"
+        for code, transcript, expected in [
+            (7, b"", 7),
+            (0, b"test result: ok. 0 passed; 0 failed; 0 ignored\n", None),
+            (0, b"test another_case ... ok\n" + summary, None),
+            (0, passed + passed + summary, None),
+            (0, passed + summary, 0),
+        ]:
+            calls.clear()
+            with (
+                self.subTest(code=code, transcript=transcript),
+                patch.dict(os.environ, environment, clear=True),
+                patch.object(sys, "argv", ["quote_http_smoke.py"]),
+                patch.object(smoke, "run", side_effect=fake_run),
+                patch.object(smoke, "native_cluster", side_effect=fake_cluster),
+                patch.object(smoke.subprocess, "Popen", side_effect=fake_subprocess),
+                patch.object(smoke, "drain_group", return_value=True),
+            ):
+                if expected is None:
+                    with self.assertRaisesRegex(RuntimeError, "exactly one successful"):
+                        smoke.main()
+                else:
+                    self.assertEqual(smoke.main(), expected)
+            self.assertEqual(len(calls), 2)
+            self.assertEqual(calls[1][-2:], ("-m", "fast"))
 
     def test_rejects_arguments_missing_path_and_wrong_version_before_cluster(self):
         for environment, argv, version in [
@@ -108,7 +125,7 @@ class QuoteHttpSmoke(unittest.TestCase):
 
             class Child:
                 def wait(self, timeout=None):
-                    return 0
+                    return 7
 
             with (
                 patch.dict(os.environ, {"P1_POSTGRES_BIN": "/fixture/bin"}, clear=True),

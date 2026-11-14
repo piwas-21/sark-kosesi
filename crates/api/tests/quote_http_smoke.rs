@@ -453,6 +453,7 @@ async fn owned_quote_http_smoke() {
     assert_eq!(status, 200);
     let replay: serde_json::Value = serde_json::from_str(&body).expect("replay JSON");
     assert!(replay["replayed"] == true, "invalid replay receipt");
+    assert!(replay["quote"] == value["quote"], "replayed quote changed");
     assert_eq!(effects(&pool).await, after);
     sqlx::query("UPDATE stock_balances SET on_hand=on_hand-1 WHERE component_code='SEAT-COVER'")
         .execute(&pool)

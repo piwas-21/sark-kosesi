@@ -13,6 +13,18 @@ from pathlib import Path
 
 from with_postgres import ROOT, native_cluster, run
 
+SMOKE_CASE = "owned_quote_http_smoke"
+
+
+def require_completed_smoke(output):
+    end = output.seek(0, os.SEEK_END)
+    output.seek(max(0, end - 4096))
+    lines = output.read(4096).splitlines()
+    if lines.count(f"test {SMOKE_CASE} ... ok".encode()) != 1 or not any(
+        line.startswith(b"test result: ok. 1 passed; 0 failed;") for line in lines
+    ):
+        raise RuntimeError("Expected exactly one successful quote smoke case")
+
 
 def group_present(pgid):
     try:
@@ -114,40 +126,49 @@ def run_smoke(stop):
             }
         )
         stop.check()
-        child = subprocess.Popen(
-            [
-                "cargo",
-                "test",
-                "--release",
-                "--offline",
-                "--locked",
-                "-p",
-                "commerce-api",
-                "--test",
-                "quote_http_smoke",
-                "--",
-                "--ignored",
-                "--exact",
-                "owned_quote_http_smoke",
-            ],
-            cwd=ROOT,
-            env=environment,
-            start_new_session=True,
-        )
-        drained = False
-        try:
-            deadline = time.monotonic() + 1800
-            while True:
-                stop.check()
-                if time.monotonic() >= deadline:
-                    raise RuntimeError("Quote smoke exceeded its deadline")
-                try:
-                    result = child.wait(timeout=0.2)
-                    break
-                except subprocess.TimeoutExpired:
-                    continue
-        finally:
-            drained = drain_group(child)
+        with tempfile.TemporaryFile(dir=directory) as output:
+            child = subprocess.Popen(
+                [
+                    "cargo",
+                    "test",
+                    "--release",
+                    "--offline",
+                    "--locked",
+                    "-p",
+                    "commerce-api",
+                    "--test",
+                    "quote_http_smoke",
+                    "--",
+                    "--format",
+                    "pretty",
+                    "--color",
+                    "never",
+                    "--ignored",
+                    "--exact",
+                    SMOKE_CASE,
+                ],
+                cwd=ROOT,
+                env=environment,
+                stdin=subprocess.DEVNULL,
+                stdout=output,
+                start_new_session=True,
+            )
+            drained = False
+            try:
+                deadline = time.monotonic() + 1800
+                while True:
+                    stop.check()
+                    if time.monotonic() >= deadline:
+                        raise RuntimeError("Quote smoke exceeded its deadline")
+                    try:
+                        result = child.wait(timeout=0.2)
+                        break
+                    except subprocess.TimeoutExpired:
+                        continue
+            finally:
+                drained = drain_group(child)
+            if result == 0 and drained:
+                require_completed_smoke(output)
     finally:
         if not drained:
             raise RuntimeError(f"Owned process group not drained; retained {directory}")
@@ -165,6 +186,8 @@ def run_smoke(stop):
         shutil.rmtree(directory)
     # A signal received while draining or stopping PostgreSQL is still failure.
     stop.check()
+    if result == 0:
+        print("One owned quote HTTP smoke case passed")
     return result
 
 
