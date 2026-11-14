@@ -4,6 +4,13 @@ This deploys the non-selling preview for P3 integration work. It does not releas
 `main`, configure a live payment key or establish provider/product acceptance.
 Read AGENTS.md and the operations/security requirements first.
 
+The runtime uses a digest-pinned distroless Debian 13 C/C++ base with
+Debian's patched zlib from DSA-6613-1. It preserves the existing UID/GID
+1000 account mapping from the pinned Node build image. The web and
+callback-edge images also copy the pinned Node executable and its licence.
+Health checks use direct executable commands. Build and scan each exact image
+and verify private startup before reuse.
+
 ## Isolation and credentials
 
 Use a dedicated deployment directory and Compose project. The database/volume,
@@ -31,6 +38,13 @@ No expiry worker, admin authority, merchant data or test fixtures are seeded.
 The web build copies each locked workspace manifest before `npm ci` so that
 workspace dependency changes invalidate the install layer. Keep those copies in
 sync when adding or changing workspaces.
+
+Final API, web and callback-edge stages use a pinned Debian runtime with UID and
+GID 1000. The web and edge copy only the pinned Node executable and its licence
+from the Node image; npm, Yarn and Corepack are build tools, not intentionally
+copied as global runtime tools. Verify the built images, their standalone app
+dependencies, non-root startup and health checks before using them. Source checks
+alone do not prove image contents or runtime compatibility.
 
 1. Use accepted `develop` source whose complete tree matches the independently
    reviewed feature and all nine current-head gates. Keep `productionEnabled=false`.

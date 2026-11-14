@@ -209,7 +209,7 @@ class CallbackEdgeDeployment(unittest.TestCase):
                 policy.main()
             self.assertNotIn("SECRET_FIXTURE_MARKER", str(error.exception))
 
-    def test_docker_target_copies_the_built_edge_binary_with_no_new_base_image(self):
+    def test_docker_target_copies_the_built_edge_binary_with_pinned_ancestry(self):
         source = (policy.ROOT / "deploy/staging/Dockerfile").read_text()
         stage = source.split(" AS callback-edge\n", 1)[1].split("\nFROM ", 1)[0]
         self.assertIn(
@@ -219,6 +219,14 @@ class CallbackEdgeDeployment(unittest.TestCase):
         self.assertIn('ENTRYPOINT ["/app/commerce-callback-edge"]', stage)
         self.assertIn("USER node", stage)
         self.assertIn("RUN cargo build --release --locked -p commerce-api --bins", source)
+        stages = set()
         for line in source.splitlines():
             if line.startswith("FROM "):
-                self.assertRegex(line, r"@sha256:[a-f0-9]{64} AS ")
+                _, parent, alias, stage_name = line.split()
+                self.assertEqual(alias, "AS")
+                if "@sha256:" in parent:
+                    self.assertRegex(parent, r"@sha256:[a-f0-9]{64}$")
+                else:
+                    self.assertIn(parent, stages)
+                self.assertNotIn(stage_name, stages)
+                stages.add(stage_name)
