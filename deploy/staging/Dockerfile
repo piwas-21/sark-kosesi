@@ -6,7 +6,7 @@ COPY migrations ./migrations
 ENV CARGO_BUILD_JOBS=1
 RUN cargo build --release --locked -p commerce-api --bins
 
-FROM node:24.22.1-bookworm-slim@sha256:be8204d4bd327363357f532187b752ff62759c31bedf98e9e18fc08c9cbd605c AS web-build
+FROM node:24.22.3-bookworm-slim@sha256:dc26ae92c9fb15cf6b1d63e20f0944b2efe0f115b20e00be48fb23fceb061c54 AS web-build
 WORKDIR /app
 COPY package.json package-lock.json .npmrc ./
 COPY apps/web/package.json ./apps/web/package.json
@@ -22,7 +22,7 @@ ENV NEXT_TELEMETRY_DISABLED=1
 ENV NODE_OPTIONS=--max-old-space-size=1536
 RUN npm run build --workspace @piwas/web
 
-FROM node:24.22.1-bookworm-slim@sha256:be8204d4bd327363357f532187b752ff62759c31bedf98e9e18fc08c9cbd605c AS api
+FROM node:24.22.3-bookworm-slim@sha256:dc26ae92c9fb15cf6b1d63e20f0944b2efe0f115b20e00be48fb23fceb061c54 AS api
 ARG SOURCE_REVISION
 LABEL org.opencontainers.image.source="https://github.com/piwas-21/sark-kosesi" org.opencontainers.image.revision=$SOURCE_REVISION org.piwas.environment="staging"
 WORKDIR /app
@@ -30,7 +30,7 @@ COPY --from=rust-build /source/target/release/commerce-api /app/commerce-api
 USER node
 ENTRYPOINT ["/app/commerce-api"]
 
-FROM node:24.22.1-bookworm-slim@sha256:be8204d4bd327363357f532187b752ff62759c31bedf98e9e18fc08c9cbd605c AS callback-edge
+FROM node:24.22.3-bookworm-slim@sha256:dc26ae92c9fb15cf6b1d63e20f0944b2efe0f115b20e00be48fb23fceb061c54 AS callback-edge
 ARG SOURCE_REVISION
 LABEL org.opencontainers.image.source="https://github.com/piwas-21/sark-kosesi" org.opencontainers.image.revision=$SOURCE_REVISION org.piwas.environment="staging"
 WORKDIR /app
@@ -38,7 +38,7 @@ COPY --from=rust-build /source/target/release/commerce-callback-edge /app/commer
 USER node
 ENTRYPOINT ["/app/commerce-callback-edge"]
 
-FROM node:24.22.1-bookworm-slim@sha256:be8204d4bd327363357f532187b752ff62759c31bedf98e9e18fc08c9cbd605c AS web
+FROM node:24.22.3-bookworm-slim@sha256:dc26ae92c9fb15cf6b1d63e20f0944b2efe0f115b20e00be48fb23fceb061c54 AS web
 ARG SOURCE_REVISION
 LABEL org.opencontainers.image.source="https://github.com/piwas-21/sark-kosesi" org.opencontainers.image.revision=$SOURCE_REVISION org.piwas.environment="staging"
 WORKDIR /app
