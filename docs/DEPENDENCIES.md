@@ -18,6 +18,9 @@ contracts remain separate and pending.
 | webpki-roots                                                                   | CDLA-Permissive-2.0                  | Trust-root data; preserve the agreement with redistributed data                                                                                                                  |
 | sharp/libvips optional native packages                                         | Apache-2.0 / LGPL-3.0-or-later / MIT | Unmodified dynamically loaded libraries. Preserve licence/source/relinking material when distributing runtime images; do not statically combine or modify without renewed review |
 
+ESLint 10.14.0 (MIT) retains the verified minimatch backport, and jsdom 31.0.0
+(MIT) runs the frontend unit tests under the pinned Node version.
+
 The private password credential module uses RustCrypto Argon2 0.6.0 and
 zeroize 1.9.1 under MIT or Apache-2.0, and unicode-normalization 0.1.26 under
 (MIT or Apache-2.0) and Unicode-3.0. Argon2 runs locally with explicit parameters
