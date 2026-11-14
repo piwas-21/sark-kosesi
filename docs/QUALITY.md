@@ -248,6 +248,13 @@ stock/commerce postconditions. Its private ownership proof prevents accidental
 target reuse, not malicious tampering by another process with the same user.
 The smoke is not a browser, multi-user, provider or latency-budget result.
 
+The launcher also accepts `--prepare-load`. The preparation case starts its
+own release API and uses the real guest session and basket endpoints to create
+75 separate owners. It verifies quota rollover, session-to-basket binding and
+unchanged stock and commerce ledgers before stopping the fixture. Credentials
+stay in the test process. This mode prepares and checks owners without timing
+quote traffic or starting k6.
+
 Approved preview read/stock/image boundaries and HTTP mapping retain 95% critical
 native line/branch gates. Isolated cases cover exact customer facts/price, missing
 locale and fixture rejection, all-component stock/quarantine/reservation effects,

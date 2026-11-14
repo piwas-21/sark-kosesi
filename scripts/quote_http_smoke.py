@@ -14,16 +14,17 @@ from pathlib import Path
 from with_postgres import ROOT, native_cluster, run
 
 SMOKE_CASE = "owned_quote_http_smoke"
+PREPARE_CASE = "quote_load_preparation::owned_quote_load_preparation"
 
 
-def require_completed_smoke(output):
+def require_completed_case(output, selected_case):
     end = output.seek(0, os.SEEK_END)
     output.seek(max(0, end - 4096))
     lines = output.read(4096).splitlines()
-    if lines.count(f"test {SMOKE_CASE} ... ok".encode()) != 1 or not any(
+    if lines.count(f"test {selected_case} ... ok".encode()) != 1 or not any(
         line.startswith(b"test result: ok. 1 passed; 0 failed;") for line in lines
     ):
-        raise RuntimeError("Expected exactly one successful quote smoke case")
+        raise RuntimeError("Expected exactly one successful quote fixture case")
 
 
 def group_present(pgid):
@@ -89,8 +90,12 @@ def main():
 
 
 def run_smoke(stop):
-    if len(sys.argv) != 1:
-        raise SystemExit("The quote smoke accepts no arguments")
+    if sys.argv[1:] == []:
+        selected_case = SMOKE_CASE
+    elif sys.argv[1:] == ["--prepare-load"]:
+        selected_case = PREPARE_CASE
+    else:
+        raise SystemExit("Unsupported quote fixture command")
     configured = os.environ.get("P1_POSTGRES_BIN")
     if not configured or not Path(configured).is_absolute():
         raise SystemExit("An absolute P1_POSTGRES_BIN is required")
@@ -145,7 +150,7 @@ def run_smoke(stop):
                     "never",
                     "--ignored",
                     "--exact",
-                    SMOKE_CASE,
+                    selected_case,
                 ],
                 cwd=ROOT,
                 env=environment,
@@ -168,7 +173,7 @@ def run_smoke(stop):
             finally:
                 drained = drain_group(child)
             if result == 0 and drained:
-                require_completed_smoke(output)
+                require_completed_case(output, selected_case)
     finally:
         if not drained:
             raise RuntimeError(f"Owned process group not drained; retained {directory}")
@@ -187,7 +192,7 @@ def run_smoke(stop):
     # A signal received while draining or stopping PostgreSQL is still failure.
     stop.check()
     if result == 0:
-        print("One owned quote HTTP smoke case passed")
+        print(f"One owned quote fixture case passed: {selected_case}")
     return result
 
 

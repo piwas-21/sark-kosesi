@@ -1,5 +1,6 @@
 """Safe launcher controls use fakes; they never start PostgreSQL or the API."""
 
+import io
 import json
 import os
 import subprocess
@@ -13,6 +14,17 @@ import quote_http_smoke as smoke
 
 
 class QuoteHttpSmoke(unittest.TestCase):
+    def test_preparation_requires_its_own_pass_record(self):
+        summary = b"test result: ok. 1 passed; 0 failed; 0 ignored\n"
+        for case in (smoke.SMOKE_CASE, smoke.PREPARE_CASE):
+            with self.subTest(case=case):
+                output = io.BytesIO(f"test {case} ... ok\n".encode() + summary)
+                if case == smoke.PREPARE_CASE:
+                    smoke.require_completed_case(output, smoke.PREPARE_CASE)
+                else:
+                    with self.assertRaisesRegex(RuntimeError, "exactly one successful"):
+                        smoke.require_completed_case(output, smoke.PREPARE_CASE)
+
     def test_owned_command_requires_one_successful_smoke_even_on_zero_exit(self):
         database = (
             "postgresql://p1_test:syntheticfixturepassword0123456789@127.0.0.1:12345/postgres"
