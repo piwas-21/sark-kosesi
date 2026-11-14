@@ -37,7 +37,10 @@ No expiry worker, admin authority, merchant data or test fixtures are seeded.
 
 The web build copies each locked workspace manifest before `npm ci` so that
 workspace dependency changes invalidate the install layer. Keep those copies in
-sync when adding or changing workspaces.
+sync when adding or changing workspaces. Catalogue images use the application's
+rights-checked rendition route. Next's image optimizer returns 404, and the web
+build removes its Sharp and libvips packages from the standalone runtime tree.
+Verify the exported image contents and a seeded rendition before promoting it.
 
 Final API, web and callback-edge stages use a pinned Debian runtime with UID and
 GID 1000. The web and edge copy only the pinned Node executable and its licence

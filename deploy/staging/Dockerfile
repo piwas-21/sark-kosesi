@@ -23,6 +23,9 @@ COPY tsconfig.json ./
 ENV NEXT_TELEMETRY_DISABLED=1
 ENV NODE_OPTIONS=--max-old-space-size=1536
 RUN npm run build --workspace @piwas/web
+# Next's standalone server trace includes the disabled optimizer's native libraries.
+RUN cd /app/apps/web/.next/standalone/node_modules && \
+    rm -rf -- sharp @img/sharp-* @img/colour
 
 FROM gcr.io/distroless/cc-debian13:nonroot@sha256:cb87acc574abe719b6e5c547384defa2f7b1f24af9605d3f618cf852495d8be2 AS runtime
 COPY --from=node-runtime /etc/passwd /etc/passwd
