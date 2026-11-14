@@ -27,7 +27,7 @@ Read [ROADMAP.md](ROADMAP.md), [implementation plan](docs/IMPLEMENTATION.md), an
 ## Architecture and code
 
 - Rust is Piwas's standard for new backend/domain/worker code. This project owns its commerce implementation: Axum/Tokio, SQLx/PostgreSQL, durable PostgreSQL outbox, Next.js/React/TypeScript rendering. See `docs/ARCHITECTURE.md` for boundaries and layout. No paid commerce engine or mandatory hosted platform.
-- Use free self-hostable dependencies with reviewed licences, exact direct versions and committed lockfiles. Rust 1.99.1/edition 2024, Node 24.22.1/npm 11.19.1 are pinned. No Rust source exists until P1 activates real application gates.
+- Use free self-hostable dependencies with reviewed licences, exact direct versions and committed lockfiles. Rust 1.99.1/edition 2024, Node 24.22.3/npm 11.19.1 are pinned. No Rust source exists until P1 activates real application gates.
 - Rust domain code owns totals, stock, authorization and transitions. Forbid unsafe in owned crates; no panic/unwrap/expect in request paths, unchecked money arithmetic or network I/O inside DB transactions. Generated TS contracts must match Rust OpenAPI.
 - Production TypeScript is strict: no `any`, unexplained non-null assertions, suppressed errors, unchecked casts or unchecked JSON. Validate untrusted data at boundaries. Keep routes/controllers thin and domain logic testable.
 - Shared money type: integer minor units + ISO currency. Never trust client totals, stock, roles, ownership or provider-return parameters. Preserve immutable order/tax/discount snapshots.
