@@ -65,6 +65,11 @@ An independently enabled test-only subscription GET requires preview authority,
 the exact configured Origin and a live owner cookie. Query parameters and bodies
 are rejected, unavailable publication stays hidden, and the route may initialize
 an empty bucket. This does not establish public abuse or retention controls.
+The independently enabled test-only mutation requires a single exact Origin,
+preview authority, the customer's cookie and that session's synchronizer. The
+proof is checked in the same transaction as the subscription change. Request
+bodies and revision values are bounded and the response exposes only the new
+revision. No public browser security or notification acceptance follows.
 
 ## P1 verification scope
 

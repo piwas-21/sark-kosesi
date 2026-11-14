@@ -918,6 +918,10 @@ untranslated publication, exact Origin and cookie enforcement, disabled configur
 revocation/rotation and expiry after a bucket wait. Check its permitted first-read
 bucket initialization and unchanged subscriptions, stock, outbox and delivery
 state. These checks do not establish a working alert or public browser flow.
+For the separately enabled test mutation, exercise bound and foreign-session
+proofs, disabled configuration, canonical paths and revisions, bounded closed
+bodies, hidden cancellation, stale replay and concurrent duplicate opt-in with
+real isolated PostgreSQL. Check unchanged stock, outbox and notification data.
 
 ### Private guest-order links
 

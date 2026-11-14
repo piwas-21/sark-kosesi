@@ -93,6 +93,7 @@ class RustCoverage(unittest.TestCase):
             ("crates/api/src/test_session.rs", False),
             ("crates/api/src/test_favourites.rs", False),
             ("crates/api/src/test_restock.rs", False),
+            ("crates/api/src/test_restock_mutation.rs", False),
             ("crates/domain/src/holds.rs", False),
             ("crates/infrastructure/src/holds/create.rs", False),
             ("crates/infrastructure/src/holds/mod.rs", True),

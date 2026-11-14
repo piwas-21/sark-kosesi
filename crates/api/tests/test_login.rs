@@ -1195,3 +1195,6 @@ mod favourites;
 
 #[path = "support/test_restock.rs"]
 mod restock;
+
+#[path = "support/test_restock_mutation.rs"]
+mod restock_mutation;
