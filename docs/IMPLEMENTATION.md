@@ -482,6 +482,13 @@ delivery idempotency and cancellation ordering, retention, locale, recurrence,
 privacy export/deletion, guest enrollment and abuse controls remain P4 work.
 Migration 0065 follows the separately queued 0062–0064 migrations.
 
+A separate test-only mutation transport requires preview authority, the exact
+configured Origin, the customer cookie and its session-bound synchronizer.
+It takes an explicit desired subscription state and decimal bucket revision;
+the same transaction validates the proof and applies the owned change. A hidden
+SKU remains cancellable. The route is disabled unless explicitly enabled in test
+mode and does not provide public browser access or send notifications.
+
 ## P4 email verification foundation
 
 Private SQLx custody issues a random challenge for a narrowly normalized mailbox

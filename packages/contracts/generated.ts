@@ -38,6 +38,8 @@ export interface components {
     TestOrderLine: Model.TestOrderLine;
     TestRestockItem: Model.TestRestockItem;
     TestRestockList: Model.TestRestockList;
+    TestRestockMutation: Model.TestRestockMutation;
+    TestRestockReceipt: Model.TestRestockReceipt;
     TestSessionProof: Model.TestSessionProof;
   };
 }
@@ -86,6 +88,9 @@ export interface paths {
   };
   "/api/test/customer/restock/{locale}": {
     get: operations["test_customer_restock"];
+  };
+  "/api/test/customer/restock/{locale}/{sku}": {
+    put: operations["test_customer_restock_set"];
   };
   "/api/test/customer/session": {
     delete: operations["test_customer_logout"];
@@ -371,6 +376,26 @@ export interface operations {
       400: { headers: { [name: string]: unknown }; content: { "application/json": Model.ApiError; } };
       401: { headers: { [name: string]: unknown }; content: { "application/json": Model.ApiError; } };
       403: { headers: { [name: string]: unknown }; content: { "application/json": Model.ApiError; } };
+      503: { headers: { [name: string]: unknown }; content: { "application/json": Model.ApiError; } };
+      504: { headers: { [name: string]: unknown }; content: { "application/json": Model.ApiError; } };
+    };
+  };
+  "test_customer_restock_set": {
+    parameters: {
+      query?: never;
+      header: NonNullable<Model.TestCustomerRestockSetData["headers"]>;
+      path: NonNullable<Model.TestCustomerRestockSetData["path"]>;
+      cookie?: never;
+    };
+    requestBody: { content: { "application/json": Model.TestRestockMutation; } };
+    responses: {
+      200: { headers: { [name: string]: unknown }; content: { "application/json": Model.TestRestockReceipt; } };
+      400: { headers: { [name: string]: unknown }; content: { "application/json": Model.ApiError; } };
+      401: { headers: { [name: string]: unknown }; content: { "application/json": Model.ApiError; } };
+      403: { headers: { [name: string]: unknown }; content: { "application/json": Model.ApiError; } };
+      409: { headers: { [name: string]: unknown }; content: { "application/json": Model.ApiError; } };
+      413: { headers: { [name: string]: unknown }; content: { "application/json": Model.ApiError; } };
+      415: { headers: { [name: string]: unknown }; content: { "application/json": Model.ApiError; } };
       503: { headers: { [name: string]: unknown }; content: { "application/json": Model.ApiError; } };
       504: { headers: { [name: string]: unknown }; content: { "application/json": Model.ApiError; } };
     };

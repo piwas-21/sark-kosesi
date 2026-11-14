@@ -29,6 +29,7 @@ pub struct LoginConfig {
     pub(crate) favourites_transport: bool,
     pub(crate) linked_orders_transport: bool,
     pub(crate) restock_transport: bool,
+    pub(crate) restock_mutation_transport: bool,
 }
 impl LoginConfig {
     pub fn from_env(
@@ -59,11 +60,20 @@ impl LoginConfig {
             Some("1") if environment == Some("test") => true,
             _ => return Err("Invalid test restock transport"),
         };
+        let restock_mutation_transport = match values
+            .get("TEST_RESTOCK_MUTATION_TRANSPORT")
+            .map(String::as_str)
+        {
+            None => false,
+            Some("1") if environment == Some("test") => true,
+            _ => return Err("Invalid test restock mutation transport"),
+        };
         let transport_requested = [
             csrf_transport,
             favourites_transport,
             linked_orders_transport,
             restock_transport,
+            restock_mutation_transport,
         ]
         .contains(&true);
         match (
@@ -85,6 +95,7 @@ impl LoginConfig {
                     favourites_transport,
                     linked_orders_transport,
                     restock_transport,
+                    restock_mutation_transport,
                 }))
             }
             _ => Err("Test login requires test mode, origin and admission key"),

@@ -1199,6 +1199,9 @@ mod linked_orders;
 #[path = "support/test_restock.rs"]
 mod restock;
 
+#[path = "support/test_restock_mutation.rs"]
+mod restock_mutation;
+
 #[test]
 fn restock_and_linked_order_flags_share_the_required_login_pair() {
     for (restock, history) in [(false, false), (true, false), (false, true), (true, true)] {
