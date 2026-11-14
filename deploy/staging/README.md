@@ -33,6 +33,13 @@ without a browser login. Keep noindex/no-store, disabled production and internal
 API authentication. Unknown routes and mutations remain gated.
 No expiry worker, admin authority, merchant data or test fixtures are seeded.
 
+Staging and the container-backed test harness pin the same PostgreSQL 18.7
+Debian Trixie image. Before updating an existing cluster, check its indexes
+and constraints against the [18.7 release notes](https://www.postgresql.org/docs/18/release-18-7.html).
+Verify a fresh cluster with a restored copy and preserve the current volume
+for rollback. If using incremental backups, start a new chain from a full
+backup on 18.7.
+
 ## Build and start
 
 The web build copies each locked workspace manifest before `npm ci` so that
