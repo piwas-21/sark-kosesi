@@ -11,12 +11,16 @@ use tower_sessions::{
 };
 use zeroize::{Zeroize, Zeroizing};
 
+#[path = "quote_load_driver.rs"]
+mod driver;
+
 const OWNERS: usize = 75;
 const PER_MINUTE: i32 = 64;
 const BASKET: &str = r#"{"expected_revision":0,"effect_key":"load-prepare","lines":[{"sku":"SET-FILLED","quantity":3}]}"#;
 
 // Never format or serialize these credentials. They live only in this process.
 struct Owner {
+    basket: String,
     cookie: Zeroizing<String>,
     csrf: Zeroizing<String>,
 }
@@ -175,6 +179,16 @@ async fn await_issue_capacity(pool: &PgPool, deadline: Instant, previous: &mut (
 #[tokio::test]
 #[ignore = "run only through scripts/quote_http_smoke.py --prepare-load"]
 async fn owned_quote_load_preparation() {
+    prepare(false).await;
+}
+
+#[tokio::test]
+#[ignore = "run only through scripts/quote_http_smoke.py --run-load"]
+async fn owned_quote_load() {
+    prepare(true).await;
+}
+
+async fn prepare(run_load: bool) {
     let database = owned_database().expect("owned disposable database proof required");
     let pool = PgPool::connect(&database).await.expect("isolated database");
     let empty: i64 = sqlx::query_scalar("SELECT count(*) FROM pg_class c JOIN pg_namespace n ON n.oid=c.relnamespace WHERE n.nspname='public' AND c.relkind IN ('r','p','v','m','S','f')")
@@ -282,7 +296,7 @@ async fn owned_quote_load_preparation() {
                 && lines == serde_json::json!([{"sku":"SET-FILLED","quantity":3}]),
             "invalid stored owner"
         );
-        assert!(baskets.insert(basket), "guest basket duplicated");
+        assert!(baskets.insert(basket.clone()), "guest basket duplicated");
         let independently_counted = windows.entry(observed_quota.0).or_default();
         *independently_counted += 1;
         assert_eq!(
@@ -290,7 +304,11 @@ async fn owned_quote_load_preparation() {
             (observed_quota.0, *independently_counted),
             "persisted issuance quota mismatch"
         );
-        owners.push(Owner { cookie, csrf });
+        owners.push(Owner {
+            basket,
+            cookie,
+            csrf,
+        });
     }
     assert!(windows.len() >= 2, "guest quota rollover not observed");
     assert!(
@@ -342,4 +360,7 @@ async fn owned_quote_load_preparation() {
         baseline,
         "preparation changed stock or commerce ledgers"
     );
+    if run_load {
+        driver::run(&mut server, bearer.as_str(), &owners, &pool, baseline).await;
+    }
 }

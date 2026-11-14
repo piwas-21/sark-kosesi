@@ -1,8 +1,10 @@
 #!/usr/bin/env python3
 """Run one quote HTTP smoke only against a newly owned native PostgreSQL cluster."""
 
+import hashlib
 import json
 import os
+import platform
 import shutil
 import signal
 import subprocess
@@ -11,10 +13,12 @@ import tempfile
 import time
 from pathlib import Path
 
+from quote_load_observations import evaluate
 from with_postgres import ROOT, native_cluster, run
 
 SMOKE_CASE = "owned_quote_http_smoke"
 PREPARE_CASE = "quote_load_preparation::owned_quote_load_preparation"
+LOAD_CASE = "quote_load_preparation::owned_quote_load"
 
 
 def require_completed_case(output, selected_case):
@@ -89,11 +93,70 @@ def main():
             signal.signal(sig, handler)
 
 
+def source_state():
+    return (
+        run("git", "-C", str(ROOT), "rev-parse", "HEAD").stdout.strip(),
+        not run(
+            "git", "-C", str(ROOT), "status", "--porcelain", "--untracked-files=normal"
+        ).stdout.strip(),
+    )
+
+
+def load_evidence(directory, binaries, k6_version, source_at_start):
+    report = directory / "quote-observations.json"
+    if report.is_symlink() or not report.is_file() or report.stat().st_size > 2_000_000:
+        raise RuntimeError("Missing or unbounded quote observations")
+    with report.open(encoding="utf-8") as source:
+        evidence = json.load(source)
+    observations = evidence["observations"]
+    resources = evidence["resources"]
+    if set(resources) != {
+        "api_peak_sampled_rss_kib",
+        "database_bytes_before",
+        "database_bytes_after",
+        "rss_sample_seconds",
+    } or any(type(value) is not int or value <= 0 for value in resources.values()):
+        raise RuntimeError("Invalid quote resource observations")
+    metrics = evaluate(observations)
+    seed_paths = (
+        "crates/infrastructure/tests/support/checkout_quote_fixture.rs",
+        "crates/api/tests/support/quote_load_preparation.rs",
+    )
+    revision, tree_clean = source_state()
+    if revision != source_at_start[0]:
+        raise RuntimeError("Quote workload source revision changed during execution")
+    return {
+        "scope": "local isolated PostgreSQL and Rust release API; synthetic NL quote",
+        "revision": revision,
+        "source_tree_clean": tree_clean and source_at_start[1],
+        "seed_sha256": {
+            name: hashlib.sha256((ROOT / name).read_bytes()).hexdigest() for name in seed_paths
+        },
+        "hardware": {
+            "platform": platform.system(),
+            "release": platform.release(),
+            "architecture": platform.machine(),
+            "logical_cpus": os.cpu_count(),
+            "memory_bytes": os.sysconf("SC_PHYS_PAGES") * os.sysconf("SC_PAGE_SIZE"),
+        },
+        "cache_state": "fresh DB and API warmed by synthetic guest and basket setup",
+        "postgres": run(str(binaries / "postgres"), "--version").stdout.strip(),
+        "k6": k6_version,
+        "database_and_api_resources": resources,
+        "metrics": metrics,
+        "duration_ms": observations["burst_end_ms"] - observations["steady_start_ms"],
+        "committed_quotes": observations["quote_count_after"],
+        "unchanged_stock_and_commerce_ledgers": True,
+    }
+
+
 def run_smoke(stop):
     if sys.argv[1:] == []:
         selected_case = SMOKE_CASE
     elif sys.argv[1:] == ["--prepare-load"]:
         selected_case = PREPARE_CASE
+    elif sys.argv[1:] == ["--run-load"]:
+        selected_case = LOAD_CASE
     else:
         raise SystemExit("Unsupported quote fixture command")
     configured = os.environ.get("P1_POSTGRES_BIN")
@@ -107,10 +170,22 @@ def run_smoke(stop):
     version = run(str(binaries / "postgres"), "--version").stdout.strip()
     if not version.startswith("postgres (PostgreSQL) 18."):
         raise SystemExit("The quote smoke requires native PostgreSQL 18")
+    k6_version = None
+    source_at_start = None
+    if selected_case == LOAD_CASE:
+        tool = ROOT / ".local/bin/k6"
+        if tool.is_symlink() or not tool.is_file():
+            raise SystemExit("Install the checksum-pinned k6 in .local/bin before quote load")
+        pin = json.loads((ROOT / "config/tools.json").read_text())["k6"]["version"]
+        k6_version = run(str(tool), "version").stdout.strip()
+        if not k6_version.startswith(f"k6 v{pin} "):
+            raise SystemExit("The installed k6 version does not match config/tools.json")
+        source_at_start = source_state()
     stop.check()
     directory = Path(tempfile.mkdtemp(prefix="sark-quote-smoke-"))
     drained = True
     startup_confirmed = False
+    evidence = None
     try:
         database = native_cluster(directory, binaries)
         startup_confirmed = True
@@ -174,6 +249,8 @@ def run_smoke(stop):
                 drained = drain_group(child)
             if result == 0 and drained:
                 require_completed_case(output, selected_case)
+                if selected_case == LOAD_CASE:
+                    evidence = load_evidence(directory, binaries, k6_version, source_at_start)
     finally:
         if not drained:
             raise RuntimeError(f"Owned process group not drained; retained {directory}")
@@ -191,6 +268,10 @@ def run_smoke(stop):
         shutil.rmtree(directory)
     # A signal received while draining or stopping PostgreSQL is still failure.
     stop.check()
+    if evidence is not None:
+        print(json.dumps(evidence, sort_keys=True))
+        if not all(group["within_budget"] for group in evidence["metrics"].values()):
+            return 1
     if result == 0:
         print(f"One owned quote fixture case passed: {selected_case}")
     return result

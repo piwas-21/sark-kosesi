@@ -151,7 +151,7 @@ def evaluate(document):
         if identity in identities:
             invalid()
         identities.add(identity)
-        quota[(owner, first // 60_000)] += 1
+        quota[(workload, owner, first // 60_000)] += 1
         groups[workload].append((row, success))
     if max(quota.values()) > 10:
         invalid()

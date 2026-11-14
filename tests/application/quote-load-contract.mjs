@@ -1,8 +1,8 @@
-// Pure workload plan only. No credentials, HTTP client, or runnable load entry point.
+// Shared plan and identities for the isolated quote workload.
 export const STEADY_OWNERS = 25;
 export const BURST_OWNERS = 50;
 export const STEADY_MS = 600_000;
-export const STEADY_SLEEP_SECONDS = 10.1;
+export const STEADY_SLEEP_SECONDS = 10.15;
 export const REQUEST_TIMEOUT_MS = 3_000;
 export const MAX_REQUEST_INTERVAL_MS = 3_500;
 export const MAX_STEADY_IDLE_MS = 11_500;
@@ -15,6 +15,7 @@ export function scenarios() {
       executor: "constant-vus",
       vus: 1,
       duration: "10m",
+      gracefulStop: "4s",
       exec: "steadyQuote",
       env: { QUOTE_OWNER: String(owner) },
       tags: { workload: "steady" },
@@ -32,8 +33,7 @@ export function scenarios() {
   return result;
 }
 
-// These identifiers contain no credential or customer data. A future driver
-// must use each owner with exactly one prepared synthetic session.
+// These identifiers contain no credential or customer data.
 export function quoteEffect(workload, owner, sequence) {
   if (
     !["steady", "burst"].includes(workload) ||

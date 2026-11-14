@@ -208,29 +208,25 @@ Budgets are in `config/performance-budgets.json`: field p75 LCP <=2.5s, INP <=20
 
 At 25 concurrent users for 10 minutes plus a 50-request burst, catalogue p95 <=300ms and quote p95 <=500ms excluding separately reported provider time, errors <=1%; no overselling, leaked resources or unbounded queue growth. Record hardware, DB size, seed, cache state and exact SHA. Resource caps and profiling matter more than language claims. P6 captures lab evidence; post-launch field data validates real-user performance separately.
 
-The existing isolated k6 exercise measures catalogue reads, not quote latency.
-The quote-load source fixture gives the market and image rights one hour of
-remaining validity from seeding and checks an owned fresh quote against synthetic amounts and
-unchanged stock and commerce ledgers. This fixture test is not an HTTP load run:
-the separately timed quote workload, burst, resource observations and P6 budget
-evidence remain to be completed. Quote snapshots and rate counters are writes
-to the disposable test database; no seller or provider facts are seeded.
+The isolated catalogue k6 exercise measures reads. A separate local quote
+fixture seeds one synthetic Dutch destination and component balances with an
+hour of market and image-rights validity. The quote exercise uses 25 distinct
+guest owners for a 10-minute steady window and 50 separate owners for the
+following burst. Each steady owner uses a three-second request timeout and
+waits just over ten seconds between completed requests to preserve the real
+quote quota. The evaluator requires at least 40 attempts per steady owner,
+first and last starts within ten seconds of the window boundaries, and a
+bounded inter-request idle time.
 
-The non-runnable quote workload contract assigns distinct synthetic owners to
-25 steady users and 50 burst requests. Its offline observation evaluator checks
-bounded request intervals, per-owner quotas, expected quote contents, unchanged
-stock and commerce ledgers, and quote-count reconciliation. Its controls use
-synthetic observations only. The evaluator consumes caller-supplied data, reports
-nearest-rank p95 over successful client elapsed times and conservative client-side
-burst overlap; it proves neither server concurrency nor observation authenticity.
-Each steady owner needs at least 40 attempts, with first and last starts within
-ten seconds of the steady window's ends. The planned request timeout is three
-seconds; observed intervals allow 3.5 seconds including measurement slack, with
-10.1–11.5 seconds between completion and the next attempt. Thus a complete cycle
-is at most 15 seconds, consistent with the minimum count.
-An independently reviewed launcher must still prove owned listener, credentials
-and isolated database custody, collect real metrics and resources, and validate k6
-execution before this can support P6 evidence.
+The runner reconciles k6 counts and redacted request observations against
+persisted basket/effect ownership, quote snapshot count, component stock
+and commerce ledger counts. It measures client elapsed nearest-rank p95,
+failure rate, conservative client-side burst overlap, sampled API RSS and
+database size. The burst budget requires all 50 client intervals to overlap.
+These measurements cover this release binary, synthetic seed, owned loopback
+database and host. Container and public delivery topology, the full EU
+matrix, operational queue behavior and field performance require their own
+evidence.
 
 An explicitly selected single-quote smoke uses the same synthetic fixture and
 an owned native PostgreSQL 18 cluster. Run it with the locked Rust dependencies
@@ -248,12 +244,21 @@ stock/commerce postconditions. Its private ownership proof prevents accidental
 target reuse, not malicious tampering by another process with the same user.
 The smoke is not a browser, multi-user, provider or latency-budget result.
 
-The launcher also accepts `--prepare-load`. The preparation case starts its
-own release API and uses the real guest session and basket endpoints to create
-75 separate owners. It verifies quota rollover, session-to-basket binding and
-unchanged stock and commerce ledgers before stopping the fixture. Credentials
-stay in the test process. This mode prepares and checks owners without timing
-quote traffic or starting k6.
+The launcher accepts `--prepare-load` to create and verify the 75 synthetic
+guest owners, including quota rollover, session-to-basket binding, and
+unchanged stock and commerce ledgers. To run the timed case, install the
+checksum-pinned k6 binary from `config/tools.json` in `.local/bin` first:
+
+```sh
+P1_POSTGRES_BIN=/absolute/path/to/pg18/bin python3 scripts/quote_http_smoke.py --run-load
+```
+
+The timed case gives k6 only synthetic credentials in a private disposable file.
+The launcher checks k6's configured version, process completion, owned loopback
+listener and database proof. It emits a redacted result to standard output and
+removes the disposable cluster, credentials and per-request data on completion.
+An exceeded latency, failure-rate or overlap budget leaves the measurements
+available and returns a failing exit status.
 
 Approved preview read/stock/image boundaries and HTTP mapping retain 95% critical
 native line/branch gates. Isolated cases cover exact customer facts/price, missing
