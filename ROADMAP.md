@@ -234,6 +234,10 @@ style elements only with the per-response nonce. Browser checks exercise
 stylesheet authorization and deny unapproved style elements and attributes.
 The final ingress and production security assessment remain open.
 
+The staging web image excludes the unused Next image optimizer packages.
+The catalogue keeps its rights-checked rendition route. Verify these boundaries
+in the exported image before deployment.
+
 The isolated synthetic quote workload supports the P6 API latency and effect
 checks. Exact container and staging performance, recovery, merchant facts,
 provider and fulfilment acceptance remain production release work.

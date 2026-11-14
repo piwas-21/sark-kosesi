@@ -128,6 +128,17 @@ function effect(action) {
 }
 await mkdir(".local/evidence", { recursive: true });
 const initial = await check();
+const optimizerQuery = new URLSearchParams({
+  url: initial.image,
+  w: "640",
+  q: "75",
+});
+const optimizer = await fetch(base + "/_next/image?" + optimizerQuery, {
+  headers: { Authorization: authorization },
+  redirect: "manual",
+});
+assert.equal(optimizer.status, 404, "Next image optimizer must be disabled");
+await optimizer.body?.cancel();
 await writeFile(".local/evidence/published-product.html", initial.html);
 await writeFile(".local/evidence/published-catalogue.xml", initial.feed);
 const filled = await (
