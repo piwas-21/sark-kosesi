@@ -71,6 +71,32 @@ proof is checked in the same transaction as the subscription change. Request
 bodies and revision values are bounded and the response exposes only the new
 revision. No public browser security or notification acceptance follows.
 
+## Commerce threat model
+
+The staging configuration exposes the non-selling preview through TLS ingress
+when enabled. Next.js Basic-gates the preview by default. A separate flag opens
+storefront GET and HEAD while the unavailable admin shell keeps its own test
+credentials. The Rust API listens on loopback, requires its own preview bearer
+for application routes and allows anonymous health probes. Optional customer
+test routes add an exact Origin and their respective session or proof checks.
+The API and explicitly invoked workers use the dedicated PostgreSQL store. The
+database write role is trusted. A stolen database writer credential crosses the
+native trust boundary even where constraints reject particular forged or partial
+records.
+
+| Boundary                         | Abuse case                                                                                                     | Implemented controls and regression evidence                                                                                                                                                                                                                                                                                                                                                                    | Acceptance still needed                                                                                                                                               |
+| -------------------------------- | -------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Browser, proxy and private API   | Direct API access, spoofed host or Origin, cached private response, cross-site mutation                        | [Preview proxy](../apps/web/src/proxy.ts), [browser checks](../tests/application/browser.spec.mjs), and [test-route checks](../crates/api/tests/test_login.rs) cover the bearer boundary, session, Origin, protected logout, response policy and anonymous denials.                                                                                                                                             | Verify proxy identity and direct-network denial, ingress timeouts, authenticated dynamic scan, and abuse controls on the exact release candidate.                     |
+| Customer and staff identity      | Enumeration, credential reuse, another customer's order or restock state, or stale staff authority             | [Admitted login](../crates/infrastructure/tests/admitted_customer_login.rs), [restock ownership](../crates/infrastructure/tests/customer_restock.rs), [linked order ownership](../crates/infrastructure/tests/guest_order_links.rs), and [staff authority](../crates/infrastructure/tests/staff_access.rs) cover purpose-scoped admission, owned reads and session/grant claims through transaction completion. | Verify staff enrollment, MFA and session issuance, real email delivery and public authentication, and test privacy export/deletion.                                   |
+| Catalogue and uploaded data      | Fixture publication, forged source approval, poisoned image or excessive decode work                           | [Publication checks](../crates/infrastructure/tests/published_catalogue.rs) and the [ingestion boundary](ARCHITECTURE.md#verified-private-image-storage) validate exact source revisions, media rights, bounded decode and closed projections.                                                                                                                                                                  | Review actual supplier evidence, original media and rights, upload ingress limits and publication withdrawal on the release candidate.                                |
+| Orders, shared stock and refunds | Client-supplied totals, concurrent oversell, duplicate capture/credit, stale or replayed authority             | [Checkout orders](../crates/infrastructure/tests/checkout_orders.rs), [late allocation](../crates/infrastructure/tests/support/late_stock_races.rs), and [refund allocation](../crates/domain/tests/order_refunds.rs) cover captured totals, shared-component claims, immutable receipts and bounded retries.                                                                                                   | Exercise the complete checkout, provider and refund lifecycle and reconcile cash, stock and fulfilment independently.                                                 |
+| Callback and provider            | Spoofed body, callback replay, lost provider reply, replacement payment after uncertainty                      | [Callback API](../crates/api/tests/callback_intake.rs) and [edge](../crates/api/tests/callback_edge.rs) tests exercise bounded intake and private transport. The [provider boundary](ARCHITECTURE.md#payments-and-durable-work) requires matching authenticated fetches and durable recovery.                                                                                                                   | Verify the actual proxy identity, denial of bypass and sandbox provider outcomes on the dedicated profile. Preserve unknown attempts for supervised reconciliation.   |
+| Build, runtime and recovery      | Tampered dependency/image, leaked credentials, unsafe rollout, rollback against incompatible migration history | [CI checks](../.github/workflows/ci.yml), the [release verifier](../scripts/release_readiness.py), and the [isolated restore diagnostic](../scripts/rehearse_restore.py) exercise immutable inputs and fail-closed evidence.                                                                                                                                                                                    | Inspect exact built SBOMs and vulnerabilities, attest image provenance, prove rollback against the selected database, and verify off-host backup and restore targets. |
+
+Revisit this table when exposure, credentials, ownership, runtime images or the
+provider boundary changes. Bind actual scan, operational and reviewer evidence to
+the release revision under the [release gates](OPERATIONS.md#release-gates).
+
 ## P1 verification scope
 
 ASVS level 2 is the inventory target. The implemented trust boundaries are the
@@ -108,6 +134,12 @@ confirmation. Tokens are hashed at rest and have no
 Debug/Serialize implementation. These tests prove the authorization consumer,
 not a completed MFA ceremony: installation seeds no staff authority, and no staff
 login/MFA/session issuer, cookie mutation route or admin write endpoint exists.
+A separate private self-revocation primitive invalidates only the supplied staff
+bearer and returns only closed failure categories, without database diagnostics, account or grant information. With a valid clock, unknown and already-revoked
+bearers return the same successful result. It needs neither an active grant nor
+recent MFA because it cannot create authority; held session locks serialize the
+change with privileged operations. It does not provide an HTTP endpoint, a
+logout CSRF policy, or native protection from other trusted database writers.
 P4 owns those controls and P6/P7 own operational acceptance. Guarded draft price
 writes require explicit confirmation, immutable evidence/reason/actor history,
 optimistic revision checks and idempotency. Late expiry rolls back draft changes;
@@ -634,6 +666,12 @@ distributed abuse controls.
 
 ## Private reversal-item review inspection
 
+The separately bounded review inbox requires the same `reversal.review` grant
+and recent MFA. Its single candidate is rechecked against the attempt-locked
+proof; empty and corrupt results remain subject to a final staff-time check. Its
+live cursor grants no recovery or financial authority and can miss earlier changes
+until refreshed. No provider identifier, route or grant is exposed by this scan.
+
 One exact review stop can be inspected with a dedicated unseeded `reversal.review`
 grant and fresh MFA. Staff and attempt claims are held while source, complete
 bounded operation history and each exact-effect late receipt are validated; time
@@ -697,6 +735,11 @@ Read linked orders only under live account and session claims. Filter the
 link by the session account, validate its exact consumed proof and accepted
 order, and check session time again before returning. Keep buyer, delivery
 address, payment and fulfilment details out of the history projection.
+The separately enabled test-only history transport requires preview authority,
+the exact Origin and the customer cookie on every bounded page. Cursor fields
+are positions rather than credentials. Query values can appear in proxy access
+logs; review log redaction before any public browser exposure. This transport
+does not issue or deliver a link proof or establish public abuse controls.
 
 ### Private credential admission
 

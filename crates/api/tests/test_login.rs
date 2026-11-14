@@ -1193,8 +1193,98 @@ async fn bound_login_cookie_clock_failure_keeps_committed_unreturned_session(poo
 #[path = "support/test_favourites.rs"]
 mod favourites;
 
+#[path = "support/test_linked_orders.rs"]
+mod linked_orders;
+
 #[path = "support/test_restock.rs"]
 mod restock;
 
 #[path = "support/test_restock_mutation.rs"]
 mod restock_mutation;
+
+#[test]
+fn restock_and_linked_order_flags_share_the_required_login_pair() {
+    for (restock, history) in [(false, false), (true, false), (false, true), (true, true)] {
+        let mut missing = values();
+        if restock {
+            missing.insert("TEST_RESTOCK_TRANSPORT".into(), "1".into());
+        }
+        if history {
+            missing.insert("TEST_LINKED_ORDERS_TRANSPORT".into(), "1".into());
+        }
+        assert_eq!(Config::parse(&missing).is_err(), restock || history);
+        missing.insert("TEST_LOGIN_ORIGIN".into(), ORIGIN.into());
+        assert!(Config::parse(&missing).is_err());
+        missing.insert("TEST_LOGIN_ADMISSION_KEY".into(), "08".repeat(32));
+        assert!(Config::parse(&missing).is_ok());
+    }
+}
+
+#[sqlx::test(migrator = "MIGRATOR")]
+async fn restock_and_linked_order_routes_coexist_under_one_login(pool: PgPool) {
+    let _case = LOGIN_CASE.lock().await;
+    let time = Arc::new(Time(AtomicU64::new(1000)));
+    account(&pool, time.as_ref()).await;
+    let mut values = enabled();
+    values.insert("TEST_RESTOCK_TRANSPORT".into(), "1".into());
+    values.insert("TEST_LINKED_ORDERS_TRANSPORT".into(), "1".into());
+    let config = Config::parse(&values).expect("combined configuration");
+    let app = router_with_test_login(state(&pool, time), None, None, None, config.test_login)
+        .expect("combined router");
+    for path in [
+        "/api/test/customer/restock/nl",
+        "/api/test/customer/linked-orders",
+    ] {
+        let request = Request::builder()
+            .method("GET")
+            .uri(path)
+            .header("authorization", format!("Bearer {PREVIEW}"))
+            .header("origin", ORIGIN)
+            .body(Body::empty())
+            .expect("request");
+        let response = app.clone().oneshot(request).await.expect("response");
+        assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
+    }
+    let login = app
+        .clone()
+        .oneshot(request(body(EMAIL, PASSWORD)))
+        .await
+        .expect("login");
+    assert_eq!(login.status(), StatusCode::NO_CONTENT);
+    let cookie = login
+        .headers()
+        .get(SET_COOKIE)
+        .expect("cookie")
+        .to_str()
+        .expect("ASCII")
+        .split(';')
+        .next()
+        .expect("cookie pair")
+        .to_owned();
+    for (path, expected) in [
+        (
+            "/api/test/customer/restock/nl",
+            serde_json::json!({"revision":"0","items":[]}),
+        ),
+        (
+            "/api/test/customer/linked-orders",
+            serde_json::json!({"orders":[],"has_more":false}),
+        ),
+    ] {
+        let request = Request::builder()
+            .method("GET")
+            .uri(path)
+            .header("authorization", format!("Bearer {PREVIEW}"))
+            .header("origin", ORIGIN)
+            .header("cookie", &cookie)
+            .body(Body::empty())
+            .expect("request");
+        let response = app.clone().oneshot(request).await.expect("response");
+        assert_eq!(response.status(), StatusCode::OK);
+        assert_private_headers(&response);
+        let actual: serde_json::Value =
+            serde_json::from_slice(&to_bytes(response.into_body(), 4096).await.expect("body"))
+                .expect("JSON");
+        assert!(actual == expected, "unexpected owned result");
+    }
+}

@@ -56,6 +56,11 @@ compares the entire compiled output with independently hashed migration files,
 and rejects synthetic omissions, duplicates, altered checksums, wrong types and
 missing-version policy. This verifies the CLI contract, not an image or rollback.
 
+The private API binary readiness test uses an isolated PostgreSQL database,
+checks initial readiness, a real locked-table failure and post-release recovery,
+and reports only closed diagnostic categories. It does not retry or establish
+deployed service availability.
+
 `python3 scripts/check_app_coverage.py --report REPORT.lcov --package OWNED_SOURCE_DIRECTORY`
 validates TypeScript LCOV from the actual coverage generator. Invoke it separately for each
 maintained package source directory, and add `--critical SOURCE_FILE` for each
@@ -202,6 +207,14 @@ Target WCAG 2.2 AA. Automated checks require zero serious/critical violations an
 Budgets are in `config/performance-budgets.json`: field p75 LCP <=2.5s, INP <=200ms, CLS <=0.1; lab median of three controlled runs Lighthouse >=90, LCP <=2.5s, TBT <=200ms; initial first-party JS <=170KiB gzip, mobile LCP image <=250KiB, fonts <=150KiB, total <=750KiB. Test home/product/cart/checkout/account and planner-open separately. Lazy-load room tools and nonessential motion; responsive images with dimensions, self-host subset fonts and cache-safe SSR. Never score the unoptimized specimen as production.
 
 At 25 concurrent users for 10 minutes plus a 50-request burst, catalogue p95 <=300ms and quote p95 <=500ms excluding separately reported provider time, errors <=1%; no overselling, leaked resources or unbounded queue growth. Record hardware, DB size, seed, cache state and exact SHA. Resource caps and profiling matter more than language claims. P6 captures lab evidence; post-launch field data validates real-user performance separately.
+
+The existing isolated k6 exercise measures catalogue reads, not quote latency.
+The quote-load source fixture gives the market and image rights one hour of
+remaining validity from seeding and checks an owned fresh quote against synthetic amounts and
+unchanged stock and commerce ledgers. This fixture test is not an HTTP load run:
+the separately timed quote workload, burst, resource observations and P6 budget
+evidence remain to be completed. Quote snapshots and rate counters are writes
+to the disposable test database; no seller or provider facts are seeded.
 
 Approved preview read/stock/image boundaries and HTTP mapping retain 95% critical
 native line/branch gates. Isolated cases cover exact customer facts/price, missing
@@ -834,7 +847,20 @@ Measure proof freshness after an actual lock wait. Check that only the current
 hash remains and that the stored challenge verifier differs from the bearer
 and registration verifier. These checks establish private credential custody.
 
+### Private staff self-revocation
+
+Use isolated PostgreSQL for exact and repeated bearer revocation, missing, expired
+and stale-MFA sessions, other-session isolation, clock failure and both lock
+orderings against a real guarded operation. Confirm no session issuance, grant,
+stock or unrelated-session mutation. This is not browser logout or MFA issuance.
+
 ### Private reversal-item review inspection
+
+The review inbox scans at most one indexed candidate per call. Check stable
+keyset ordering and equal-time ties, cursor bounds and refresh, held-attempt
+expiry, changed or corrupt candidate custody, denied staff, and unchanged
+provider, payment and outbox effects. Verify both bounded query shapes can use
+the partial index without requiring the optimizer to select it on small tables.
 
 Use isolated PostgreSQL to test dedicated grant, revocation, stale MFA and an
 actual attempt-lock wait through staff expiry. Validate the complete bounded
@@ -891,6 +917,11 @@ orders. Persistent shipment operations will need authorization, concurrency and
 retry tests, plus physical checks for warehouse custody, parcel contents and
 delivery. The whole-variant quantity module is included in the critical Rust
 coverage policy.
+Component demand projection must compare literal frozen BOM and member counts
+against the accepted order, aggregate shared codes, preserve covers-only and
+foam differences, and reject wrong revisions, missing or duplicate members,
+conflicting component kinds, changed quantities and invalid prior counts. Check the real maximum 20 by 64
+footprint. These pure controls do not establish package or warehouse custody.
 
 ### Private customer favourites
 
@@ -937,6 +968,10 @@ for exact captured totals and absence of buyer details. Assert that later
 withdrawal and newer Dutch source copy preserve accepted titles, while altered
 captured titles and missing, mismatched or rejected source reviews fail closed.
 Browser and delivery acceptance remain open.
+For the test-only history route, use actual isolated linked guest orders to
+check ownership, closed cursor parsing, same-time keyset ties, final empty page,
+invalid session and Origin, damaged reciprocal evidence and private output.
+Verify that reading creates no order, proof, link, stock or outbox changes.
 
 Test credential admission against isolated PostgreSQL from separate pools.
 Assert exact independent target and global caps, domain-case normalization,

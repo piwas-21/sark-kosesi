@@ -113,6 +113,12 @@ fn build(
         );
     }
     if let Some(config) = login {
+        if config.linked_orders_transport {
+            app = app.route(
+                "/api/test/customer/linked-orders",
+                get(crate::test_linked_orders::list).layer(Extension(config.clone())),
+            );
+        }
         if config.restock_mutation_transport {
             app = app.route(
                 "/api/test/customer/restock/{locale}/{sku}",

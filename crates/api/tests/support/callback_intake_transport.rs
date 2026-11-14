@@ -48,7 +48,7 @@ impl Server {
             std::thread::sleep(Duration::from_millis(10));
         }
     }
-    fn exchange(&self, content_type: &str, chunks: &[&[u8]]) -> String {
+    fn exchange(&self, content_type: &str, chunks: &[&[u8]], allow_early_413: bool) -> String {
         let mut stream = TcpStream::connect(self.address).expect("owned HTTP connection");
         stream
             .set_read_timeout(Some(Duration::from_secs(3)))
@@ -59,19 +59,33 @@ impl Server {
         let headers = format!(
             "POST {PATH}?private=transport-private-query HTTP/1.1\r\nHost: localhost\r\nAuthorization: Bearer {TOKEN}\r\nCookie: __Host-secret=transport-private-cookie\r\nContent-Type: {content_type}\r\nTransfer-Encoding: chunked\r\nConnection: close\r\n\r\n"
         );
-        stream
-            .write_all(headers.as_bytes())
-            .expect("chunked headers");
-        for chunk in chunks {
-            write!(stream, "{:x}\r\n", chunk.len()).expect("chunk length");
-            stream.write_all(chunk).expect("chunk bytes");
-            stream.write_all(b"\r\n").expect("chunk end");
+        // The oversized case intentionally omits the terminal chunk. A 413
+        // must follow the 1025 payload bytes without waiting for body EOF.
+        if allow_early_413 {
+            assert_eq!(chunks.len(), 2);
+            assert_eq!(chunks.iter().map(|chunk| chunk.len()).sum::<usize>(), 1025);
+            assert_eq!(content_type, "application/x-www-form-urlencoded");
         }
-        stream.write_all(b"0\r\n\r\n").expect("chunk terminator");
+        let mut wire = headers.into_bytes();
+        for chunk in chunks {
+            write!(&mut wire, "{:x}\r\n", chunk.len()).expect("chunk length");
+            wire.extend_from_slice(chunk);
+            wire.extend_from_slice(b"\r\n");
+        }
+        if !allow_early_413 {
+            wire.extend_from_slice(b"0\r\n\r\n");
+        }
+        stream.write_all(&wire).expect("complete intended wire");
         let mut response = String::new();
         stream
             .read_to_string(&mut response)
             .expect("complete HTTP response");
+        if allow_early_413 {
+            assert!(
+                complete_early_413(&response),
+                "expected a complete 413 response"
+            );
+        }
         response
     }
     fn incomplete_body(&self, close_write: bool) -> String {
@@ -124,6 +138,47 @@ impl Drop for Server {
         let _ = self.child.wait();
     }
 }
+fn complete_early_413(response: &str) -> bool {
+    let Some((head, body)) = response.split_once("\r\n\r\n") else {
+        return false;
+    };
+    if !head.starts_with("HTTP/1.1 413 Payload Too Large\r\n") {
+        return false;
+    }
+    let lengths: Vec<_> = head
+        .lines()
+        .filter_map(|line| {
+            let (name, value) = line.split_once(':')?;
+            name.eq_ignore_ascii_case("content-length")
+                .then_some(value.trim().parse::<usize>().ok())
+        })
+        .collect();
+    if lengths.as_slice() != [Some(body.len())] {
+        return false;
+    }
+    matches!(serde_json::from_str::<serde_json::Value>(body), Ok(value) if value == serde_json::json!({"code":"callback_body_too_large"}))
+}
+
+#[test]
+fn early_rejection_oracle_requires_exact_complete_413() {
+    let body = r#"{"code":"callback_body_too_large"}"#;
+    let good = format!(
+        "HTTP/1.1 413 Payload Too Large\r\ncontent-length: {}\r\n\r\n{body}",
+        body.len()
+    );
+    assert!(complete_early_413(&good));
+    assert!(!complete_early_413(
+        &good.replace("413 Payload Too Large", "415 Unsupported Media Type")
+    ));
+    assert!(!complete_early_413(&good[..good.len() - 1]));
+    assert!(!complete_early_413(
+        &good.replace("callback_body_too_large", "invalid_callback_body")
+    ));
+    assert!(!complete_early_413(
+        &good.replace("content-length:", "not-content-length:")
+    ));
+}
+
 fn status(response: &str, expected: &str) {
     assert!(
         response.starts_with(expected),
@@ -147,13 +202,13 @@ async fn chunked_transport_obeys_limits_and_binary_logs_never_retain_request_or_
 ) {
     let server = Server::start(&pool);
     let media = "application/x-www-form-urlencoded";
-    let response = server.exchange(media, &[b"id=tr_CHUNKED_PRIVATE"]);
+    let response = server.exchange(media, &[b"id=tr_CHUNKED_PRIVATE"], false);
     status(&response, "HTTP/1.1 200 OK");
     assert!(
         response.ends_with("\r\n\r\n"),
         "success acknowledgement has no response body"
     );
-    let response = server.exchange(media, &[b"%6", b"9d=%74%7", b"2%5fSPLIT_ESCAPE"]);
+    let response = server.exchange(media, &[b"%6", b"9d=%74%7", b"2%5fSPLIT_ESCAPE"], false);
     status(&response, "HTTP/1.1 200 OK");
     assert_eq!(custody(&pool).await, (2, 2, 2, 2));
     for (length, expected) in [
@@ -162,10 +217,18 @@ async fn chunked_transport_obeys_limits_and_binary_logs_never_retain_request_or_
     ] {
         let body = format!("id=tr_{}", "x".repeat(length - 6));
         assert_eq!(body.len(), length);
-        let response = server.exchange(media, &[&body.as_bytes()[..511], &body.as_bytes()[511..]]);
+        let response = server.exchange(
+            media,
+            &[&body.as_bytes()[..511], &body.as_bytes()[511..]],
+            length == 1025,
+        );
         status(&response, expected);
     }
-    let response = server.exchange("application/json", &[b"{\"id\":\"tr_NEXTGEN_PRIVATE\"}"]);
+    let response = server.exchange(
+        "application/json",
+        &[b"{\"id\":\"tr_NEXTGEN_PRIVATE\"}"],
+        false,
+    );
     status(&response, "HTTP/1.1 415 Unsupported Media Type");
     assert_eq!(custody(&pool).await, (2, 2, 2, 2));
     let response = server.incomplete_body(true);
@@ -177,12 +240,12 @@ async fn chunked_transport_obeys_limits_and_binary_logs_never_retain_request_or_
     assert_eq!(custody(&pool).await, (2, 2, 2, 2));
     pool.execute("CREATE FUNCTION callback_private_failure_fixture() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN RAISE EXCEPTION 'transport-private-database-marker'; END $$; CREATE TRIGGER callback_private_failure_fixture BEFORE INSERT ON callback_intakes FOR EACH ROW EXECUTE FUNCTION callback_private_failure_fixture()")
         .await.expect("actual private database exception");
-    let response = server.exchange(media, &[b"id=tr_DATABASE_PRIVATE"]);
+    let response = server.exchange(media, &[b"id=tr_DATABASE_PRIVATE"], false);
     status(&response, "HTTP/1.1 503 Service Unavailable");
     pool.execute("DROP TRIGGER callback_private_failure_fixture ON callback_intakes; DROP FUNCTION callback_private_failure_fixture()")
         .await.expect("restore healthy database");
     assert_eq!(custody(&pool).await, (2, 2, 2, 2));
-    let response = server.exchange(media, &[b"id=tr_AFTER_FAILURE"]);
+    let response = server.exchange(media, &[b"id=tr_AFTER_FAILURE"], false);
     status(&response, "HTTP/1.1 200 OK");
     assert_eq!(custody(&pool).await, (3, 3, 3, 3));
     no_financial_effects(&pool).await;

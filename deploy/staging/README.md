@@ -198,15 +198,27 @@ migration checksums. Apply forward migrations only in the clone.
 Verify accepted image identities, private health/admin/privacy guards and disabled
 features before cutover.
 
-Assert the old router's web/API containers are stopped before enabling the
-candidate router. Recreate candidate web/API together because the API shares the
-web network namespace; then verify proper TLS, served revision and access mode.
-Rollback stops candidate router services first and restarts the preserved old
-containers against their unchanged database. Retain candidate data and evidence.
-If any business writes occur after the snapshot, require reviewed catch-up and
-reconciliation before switching either way; do not blindly copy or discard them.
-This snapshot procedure does not replace production's separate compatible
-migration/coexistence/recovery plan.
+Before switching, stop the exact original API and web containers in that order.
+Keep the source database on its isolated backend. Verify the source has no other
+database clients or prepared transactions while capturing the final snapshot,
+and compare the table contents, migration history and sequence state with the
+clone's original source snapshot.
+
+Verify that Traefik has removed both preview routers before starting the
+candidate. Docker may retain an external bridge endpoint for an exited
+container. Check actual router state as well as exact container state; Docker
+network records alone do not establish which backend Traefik serves. Start the
+candidate web before its API because they share the web network namespace.
+Verify private API readiness, the only active preview backend, trusted HTTPS,
+served revision and storefront/admin access from an external client.
+
+For rollback, stop the exact candidate API and web and verify its routes are
+absent. Retain both databases and compare their data with the verified
+snapshots before moving traffic. If either database has business writes after
+its snapshot, require reviewed catch-up and reconciliation before moving
+traffic either way. Start the preserved original web and API against their
+original database, then repeat the namespace, route and HTTPS checks. Keep
+this preview evidence separate from the production migration and recovery plan.
 
 Keep database volumes and private environments. `docker compose down` stops only
 the explicitly selected project; never add `--volumes` during routine rollback.

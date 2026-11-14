@@ -27,6 +27,7 @@ pub struct LoginConfig {
     pub(crate) limits: AdmissionLimits,
     pub(crate) csrf_transport: bool,
     pub(crate) favourites_transport: bool,
+    pub(crate) linked_orders_transport: bool,
     pub(crate) restock_transport: bool,
     pub(crate) restock_mutation_transport: bool,
 }
@@ -46,6 +47,14 @@ impl LoginConfig {
             Some("1") if environment == Some("test") => true,
             _ => return Err("Invalid test favourites transport"),
         };
+        let linked_orders_transport = match values
+            .get("TEST_LINKED_ORDERS_TRANSPORT")
+            .map(String::as_str)
+        {
+            None => false,
+            Some("1") if environment == Some("test") => true,
+            _ => return Err("Invalid test linked orders transport"),
+        };
         let restock_transport = match values.get("TEST_RESTOCK_TRANSPORT").map(String::as_str) {
             None => false,
             Some("1") if environment == Some("test") => true,
@@ -59,18 +68,19 @@ impl LoginConfig {
             Some("1") if environment == Some("test") => true,
             _ => return Err("Invalid test restock mutation transport"),
         };
+        let transport_requested = [
+            csrf_transport,
+            favourites_transport,
+            linked_orders_transport,
+            restock_transport,
+            restock_mutation_transport,
+        ]
+        .contains(&true);
         match (
             values.get("TEST_LOGIN_ORIGIN"),
             values.get("TEST_LOGIN_ADMISSION_KEY"),
         ) {
-            (None, None)
-                if !csrf_transport
-                    && !favourites_transport
-                    && !restock_transport
-                    && !restock_mutation_transport =>
-            {
-                Ok(None)
-            }
+            (None, None) if !transport_requested => Ok(None),
             (Some(origin), Some(key)) if environment == Some("test") => {
                 let origin = GuestOrigin::parse(origin).map_err(|_| "Invalid test login origin")?;
                 let bytes = decode_hex(key).ok_or("Invalid test login admission key")?;
@@ -83,6 +93,7 @@ impl LoginConfig {
                     limits,
                     csrf_transport,
                     favourites_transport,
+                    linked_orders_transport,
                     restock_transport,
                     restock_mutation_transport,
                 }))

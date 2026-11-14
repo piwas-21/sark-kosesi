@@ -7,6 +7,9 @@ use sha2::{Digest, Sha256};
 use sqlx::{PgPool, Postgres, Transaction};
 use zeroize::Zeroize;
 
+mod revocation;
+pub use revocation::{RevocationError, revoke_self};
+
 // Intentionally no Debug/Serialize: a bearer credential is never response/log data.
 pub struct SessionToken([u8; 32]);
 impl SessionToken {
@@ -67,12 +70,8 @@ struct StaffRow {
     mfa_verified_at: Option<i64>,
     revoked: bool,
 }
-pub(super) async fn lock_staff(
-    pool: &PgPool,
-    token: &SessionToken,
-    clock: &dyn Clock,
-    capability: Capability,
-) -> Result<StaffTransaction, StaffError> {
+// The guard and self-revocation use the same bounded transaction policy.
+async fn begin(pool: &PgPool) -> Result<Transaction<'static, Postgres>, sqlx::Error> {
     let mut tx = pool.begin().await?;
     sqlx::query("SET TRANSACTION ISOLATION LEVEL READ COMMITTED")
         .execute(&mut *tx)
@@ -83,6 +82,16 @@ pub(super) async fn lock_staff(
     sqlx::query("SET LOCAL statement_timeout='2s'")
         .execute(&mut *tx)
         .await?;
+    Ok(tx)
+}
+
+pub(super) async fn lock_staff(
+    pool: &PgPool,
+    token: &SessionToken,
+    clock: &dyn Clock,
+    capability: Capability,
+) -> Result<StaffTransaction, StaffError> {
+    let mut tx = begin(pool).await?;
     // SHARE blocks disabling, revocation and grant deletion through the operation's
     // commit. KEY SHARE would incorrectly permit changes to non-key security fields.
     let authority=sqlx::query_as::<_,StaffRow>("SELECT s.staff_id,a.enabled,s.created_at,s.expires_at,s.mfa_verified_at,s.revoked_at IS NOT NULL AS revoked

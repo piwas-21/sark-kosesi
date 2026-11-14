@@ -671,6 +671,11 @@ closed reason, generation and whether any late receipt exists. No provider
 identifiers, network access, state changes or financial or recovery authority
 follow from this detached summary. Migration 0064
 follows separately reserved migrations 0062 and 0063.
+A separate private inbox scans at most one review-state candidate by the indexed
+`(updated_at, id)` key, then revalidates its complete custody and exact candidate
+binding under one attempt claim. A live cursor requires refresh for earlier changes.
+The same held staff authority is rechecked even for empty or damaged results; the
+summary and cursor do not grant provider, retry, payment or fulfilment authority.
 
 Order, payment, fulfilment and return states are separate. Late paid payments after reservation expiry attempt atomic reallocation; failure creates a visible finance/support exception and recovery/refund process. Payment success cannot be discarded because stock expired. Partial refunds cannot exceed captured less refunded amounts; preserve tax/discount allocation and credit-document links. A refund does not automatically restock goods. Chargebacks are finance events.
 
@@ -684,6 +689,13 @@ It must authenticate staff, lock and reconstruct complete committed history, bin
 idempotent effects, revalidate order/payment/stock state and persist its event.
 A variant may need multiple physical packages. Accounting for a whole unit then
 requires custody of its packages and components.
+The separate pure component projection checks every caller-supplied original
+BOM and frozen allocation member against the accepted SKU, BOM revision, ordered
+units, fill and exact component totals before expanding proposed whole units.
+Shared component codes must agree on kind and their demand is summed in code
+order. These inputs still require
+trusted sealed source and allocation custody; the calculation neither defines
+packages nor establishes warehouse, shipment or dispatch evidence.
 
 Write domain changes and outbox events in one transaction. Workers claim leases using PostgreSQL, retry with backoff and stable effect identifiers, and recover abandoned leases. Emails, stock alerts and fulfilment requests are idempotent. Record provider acceptance separately from customer delivery. Failed jobs are visible and replayable only through bounded, audited admin actions.
 
@@ -1536,6 +1548,13 @@ operations with no new HTTP route. P4 must supply genuine login/MFA verification
 session issuance, cookie/CSRF controls and revocation endpoints before admin use;
 the current tests use labelled session attestations in disposable databases.
 
+A separate private self-revocation operation hashes the supplied bearer and locks
+only its exact session row. With a valid clock, missing and already-revoked tokens are successful
+no-ops; stale MFA or expiry does not prevent relinquishing authority. The row
+claim serializes with existing staff-operation claims. This does not issue or
+authenticate a session, create a browser route or enforce a database-wide
+revocation policy against other trusted writers.
+
 Public catalogue HTML is cacheable by explicit locale/product version. Private cart, account, admin and quote data are never shared-cache responses. Invalidation follows publication/price/stock changes. Public facts and JSON-LD come from the same approved catalogue projection.
 
 Room planning starts with local dimensions and a calibrated 2D footprint. A photo overlay is an explicitly approximate visual aid. Camera AR is deferred until measured product assets/device support and accessibility fallback are proven. Default room images stay on-device; opt-in persistence uses private storage, quotas, expiry and deletion.
@@ -1904,7 +1923,12 @@ including the selected Dutch source approval for non-Dutch copy. Later
 catalogue changes leave accepted titles intact. History seeks up to eight
 entries in descending link time and order identity. The cursor is a live
 position. Refresh from the beginning to include newer links. Browser
-exposure and verified delivery remain separate.
+exposure and verified delivery remain separate. A separately enabled test-only
+history transport requires preview authority, the exact configured Origin and
+the current customer cookie. Its optional canonical time and order ID pair is
+only a position, never authorization; each page claims the live owner again.
+It exposes the same bounded commercial projection with decimal times and amounts.
+It does not link orders or provide a proof-delivery or public account route.
 
 ### Credential admission
 

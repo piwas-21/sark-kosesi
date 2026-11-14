@@ -70,7 +70,9 @@ Server-side staff session/grant consumers now separate catalogue/BOM inspection
 from warehouse mutations. They require an enabled account, matching capability,
 unrevoked/unexpired session and recent MFA attestation, with locks held through
 the operation and clock checks after lock waits. Warehouse changes require explicit confirmation; audit identity comes
-from the session. Installation has no staff authority. Actual login/MFA/session
+from the session. A private bearer-only self-revocation primitive can invalidate
+an existing session without issuing new authority. Installation has no staff
+authority. Actual login/MFA/session
 issuance and HTTP mutations remain P4 work; no preview token grants staff access.
 
 Draft price history now uses the catalogue capability guard. Each immutable
@@ -416,12 +418,14 @@ supervision or live provider activation follows from deploying the empty preview
    checkpoints only against the matching authenticated journal receipt. A private,
    unseeded recent-MFA `reversal.review` capability can inspect one exact item
    review stop, its bounded operation history and any exact-effect late receipt
-   under the same staff and attempt claims. Its redacted result grants no retry
-   or financial authority. A separate local/test worker review command accepts
-   exactly 32 raw staff-session bytes on non-terminal stdin with a five-second
-   EOF deadline, then reports only the closed review summary. Credentials do not
-   appear in arguments or logs. Staff session issuance remains unimplemented;
-   this command does not establish production operator access. Add operator review recovery and scheduling before
+   under the same staff and attempt claims. A private inbox uses the same authority
+   and full proof to return one candidate with a live keyset cursor. Its redacted
+   result grants no retry or financial authority and produces no provider or state
+   effects. The local/test worker's exact-item review accepts exactly 32 raw staff
+   session bytes on non-terminal stdin with a five-second EOF deadline and returns
+   a closed summary. Credentials do not appear in arguments or logs. Staff session
+   issuance and production operator access remain open. Add operator recovery and
+   scheduling before
    provider acceptance. An exact
    GET, 404, empty page, ended scan or capped scan
    leaves the provider history and net balance unresolved. Complete provider-side
@@ -434,8 +438,11 @@ supervision or live provider activation follows from deploying the empty preview
 
 A pure whole-variant shipment quantity check compares an accepted order's
 captured SKU quantities with complete caller-supplied prior counts and a bounded
-proposal. Before dispatch, persist authenticated fulfilment history and record
-physical package evidence for the components in each shipment.
+proposal. A pure component projection cross-checks each supplied original BOM
+and frozen allocation member against that order and returns the expected summed
+physical demand. It does not authenticate those inputs or prove packages. Before
+dispatch, persist authenticated fulfilment history and record physical package
+evidence for the components in each shipment.
 
 Trusted whole-basket reservation primitives now provide immutable manifests,
 exact fresh child bindings and aggregated component claims in one transaction.
@@ -570,8 +577,12 @@ customer session for the verified buyer mailbox consumes it and records the
 immutable link in one transaction. Private detail and history reads hold
 the live session claim while validating the reciprocal link and the original
 order. Return captured items and amounts through a minimal projection.
-Cookie and Origin checks, safe proof delivery, rate limits and public order
-journeys remain separate work.
+An independently enabled test-only history route requires preview authority,
+the configured Origin and the customer cookie. It returns up to eight linked
+guest orders and uses the last order's linked time and ID as a live position
+when more remain. Decimal strings carry times and amounts. No linking or proof
+delivery route is installed. Public browser controls, safe proof delivery, rate
+limits and public order journeys remain separate work.
 
 ## P5 room-fit foundation
 

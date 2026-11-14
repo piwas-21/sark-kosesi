@@ -141,6 +141,8 @@ async fn limits(tx: &mut Transaction<'_, Postgres>) -> Result<(), LateStockError
     sqlx::query("SET LOCAL statement_timeout='2s'")
         .execute(&mut **tx)
         .await?;
+    #[cfg(test)]
+    crate::late_stock_wait_budget::apply(tx).await?;
     Ok(())
 }
 fn now(clock: &dyn Clock) -> Result<i64, LateStockError> {
@@ -209,5 +211,40 @@ mod tests {
             .expect("same received attempt authorizes its exact order");
         assert_eq!(&bound.order.identity.id, order);
         tx.rollback().await.expect("read-only transaction");
+    }
+}
+
+#[cfg(test)]
+mod wait_budget_tests {
+    use super::limits;
+    use crate::{MIGRATOR, late_stock_wait_budget};
+    use sqlx::PgPool;
+
+    #[sqlx::test(migrator = "MIGRATOR")]
+    async fn wait_budget_is_explicit_task_scoped_and_transaction_local(pool: PgPool) {
+        let mut tx = pool.begin().await.expect("default transaction");
+        limits(&mut tx).await.expect("default limits");
+        assert_eq!(
+            late_stock_wait_budget::settings(&mut tx).await,
+            ("1s".into(), "2s".into())
+        );
+        tx.rollback().await.expect("release");
+        late_stock_wait_budget::scope(async {
+            let mut tx = pool.begin().await.expect("scoped transaction");
+            limits(&mut tx).await.expect("scoped limits");
+            assert_eq!(
+                late_stock_wait_budget::settings(&mut tx).await,
+                ("10s".into(), "20s".into())
+            );
+            tx.rollback().await.expect("release");
+        })
+        .await;
+        let mut tx = pool.begin().await.expect("post-scope transaction");
+        limits(&mut tx).await.expect("post-scope limits");
+        assert_eq!(
+            late_stock_wait_budget::settings(&mut tx).await,
+            ("1s".into(), "2s".into())
+        );
+        tx.rollback().await.expect("release");
     }
 }

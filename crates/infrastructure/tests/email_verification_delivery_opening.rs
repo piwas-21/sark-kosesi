@@ -15,7 +15,7 @@ use commerce_infrastructure::{
 };
 use ring::aead::{AES_256_GCM, Aad, LessSafeKey, Nonce, UnboundKey};
 use sha2::{Digest, Sha256};
-use sqlx::{Executor, PgPool};
+use sqlx::{Executor, PgConnection, PgPool};
 use std::sync::{
     Arc,
     atomic::{AtomicBool, AtomicU64, AtomicUsize, Ordering},
@@ -232,6 +232,50 @@ async fn wait_for(pool: &PgPool, sql: &'static str) {
     .await
     .expect("expected actual lock wait");
 }
+// The caller controls whether the transaction's activity snapshot is refreshed.
+async fn blocked_waiters(connection: &mut PgConnection, blocking_pid: i32) -> Vec<i32> {
+    sqlx::query_scalar(
+        "SELECT pid FROM pg_stat_activity WHERE datname=current_database() AND wait_event_type='Lock' AND $1=ANY(pg_blocking_pids(pid)) AND query LIKE '%email_verification_challenges%FOR UPDATE%' ORDER BY pid LIMIT 2",
+    )
+    .bind(blocking_pid)
+    .fetch_all(&mut *connection)
+    .await
+    .expect("observe exact blocking transaction")
+}
+
+// The observed waiter must be blocked by the specific transaction we hold.
+async fn wait_for_blocked(
+    connection: &mut PgConnection,
+    blocking_pid: i32,
+    expected_pid: i32,
+    phase: &'static str,
+) {
+    let mut observed_waiters = 0;
+    let mut expected_waiting = false;
+    let observed = tokio::time::timeout(std::time::Duration::from_secs(2), async {
+        loop {
+            // pg_stat_activity retains its first snapshot for this transaction.
+            sqlx::query("SELECT pg_stat_clear_snapshot()")
+                .execute(&mut *connection)
+                .await
+                .expect("refresh activity snapshot");
+            let waiters = blocked_waiters(connection, blocking_pid).await;
+            observed_waiters = waiters.len();
+            expected_waiting = waiters.contains(&expected_pid);
+            assert!(observed_waiters <= 1, "ambiguous waiter at {phase}");
+            if expected_waiting {
+                break;
+            }
+            tokio::time::sleep(std::time::Duration::from_millis(5)).await;
+        }
+    })
+    .await;
+    assert!(
+        observed.is_ok(),
+        "expected actual lock wait at {phase}; selected_waiting={expected_waiting}, matching_waiters={observed_waiters}"
+    );
+}
+
 fn start_gate_sql() -> &'static str {
     "SELECT EXISTS(SELECT 1 FROM pg_stat_activity WHERE datname=current_database() AND wait_event_type='Lock' AND wait_event='advisory' AND query LIKE '%INSERT INTO email_verification_delivery_starts%')"
 }
@@ -294,17 +338,102 @@ async fn consumption_queued_before_fresh_open_denies_callback_but_keeps_start(po
 }
 
 #[sqlx::test(migrator = "MIGRATOR")]
+async fn activity_snapshot_must_refresh_to_observe_a_later_wait(pool: PgPool) {
+    let (_, _, verifier) = fixture(&pool).await;
+    let mut blocker = pool.begin().await.expect("source blocker");
+    let blocker_pid: i32 = sqlx::query_scalar("SELECT pg_backend_pid()")
+        .fetch_one(&mut *blocker)
+        .await
+        .expect("blocker PID");
+    sqlx::query("SELECT verifier FROM email_verification_challenges WHERE verifier=$1 FOR UPDATE")
+        .bind(verifier.as_slice())
+        .execute(&mut *blocker)
+        .await
+        .expect("hold source");
+    // Capture activity before the waiter starts, in the same blocker transaction.
+    assert!(blocked_waiters(&mut blocker, blocker_pid).await.is_empty());
+    let (sender, receiver) = tokio::sync::oneshot::channel();
+    let worker_pool = pool.clone();
+    let waiter = tokio::spawn(async move {
+        let mut tx = worker_pool.begin().await.expect("waiter transaction");
+        sqlx::query("SET LOCAL lock_timeout='3s'")
+            .execute(&mut *tx)
+            .await
+            .expect("test wait budget");
+        let pid: i32 = sqlx::query_scalar("SELECT pg_backend_pid()")
+            .fetch_one(&mut *tx)
+            .await
+            .expect("waiter PID");
+        sender.send(pid).expect("test receiver");
+        sqlx::query(
+            "SELECT verifier FROM email_verification_challenges WHERE verifier=$1 FOR UPDATE",
+        )
+        .bind(verifier.as_slice())
+        .execute(&mut *tx)
+        .await
+        .expect("source after release");
+        tx.rollback().await.expect("waiter rollback");
+    });
+    let waiter_pid = receiver.await.expect("waiter identity");
+    // A different connection proves the exact waiter is already blocked.
+    let mut monitor = pool.acquire().await.expect("independent monitor");
+    wait_for_blocked(&mut monitor, blocker_pid, waiter_pid, "independent monitor").await;
+    assert!(
+        blocked_waiters(&mut blocker, blocker_pid).await.is_empty(),
+        "transaction snapshot is stale"
+    );
+    // The refreshed blocker observation now sees the same exact wait.
+    wait_for_blocked(&mut blocker, blocker_pid, waiter_pid, "refreshed monitor").await;
+    blocker.rollback().await.expect("release source");
+    waiter.await.expect("waiter task");
+}
+
+#[sqlx::test(migrator = "MIGRATOR")]
 async fn expiry_while_fresh_open_waits_for_challenge_denies_callback(pool: PgPool) {
     let (time, key, verifier) = fixture(&pool).await;
-    pool.execute("CREATE FUNCTION test_opening_expiry_start_wait() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN PERFORM pg_advisory_xact_lock(1936876991,1); RETURN NEW; END; $$; CREATE TRIGGER z_test_opening_expiry_start_wait AFTER INSERT ON email_verification_delivery_starts FOR EACH ROW EXECUTE FUNCTION test_opening_expiry_start_wait()").await.expect("start gate");
-    let mut gate = pool.begin().await.expect("gate");
-    sqlx::query("SELECT pg_advisory_xact_lock(1936876991,1)")
-        .execute(&mut *gate)
-        .await
-        .expect("hold gate");
+    let held = Arc::new(tokio::sync::Notify::new());
+    let resume = Arc::new(tokio::sync::Notify::new());
+    let opener_pid = Arc::new(std::sync::atomic::AtomicI32::new(0));
+    let first_release = Arc::new(AtomicBool::new(true));
+    // Hold the single pool connection after its first transaction returns it.
+    // The independent start-count check below proves that COMMIT succeeded.
+    let opening_pool = sqlx::postgres::PgPoolOptions::new()
+        .max_connections(1)
+        .after_release({
+            let held = held.clone();
+            let resume = resume.clone();
+            let opener_pid = opener_pid.clone();
+            let first_release = first_release.clone();
+            move |connection, _| {
+                let held = held.clone();
+                let resume = resume.clone();
+                let opener_pid = opener_pid.clone();
+                let first_release = first_release.clone();
+                Box::pin(async move {
+                    if first_release.swap(false, Ordering::SeqCst) {
+                        let pid: i32 = sqlx::query_scalar("SELECT pg_backend_pid()")
+                            .fetch_one(connection)
+                            .await?;
+                        opener_pid.store(pid, Ordering::SeqCst);
+                        held.notify_one();
+                        if tokio::time::timeout(
+                            std::time::Duration::from_secs(5),
+                            resume.notified(),
+                        )
+                        .await
+                        .is_err()
+                        {
+                            return Ok(false);
+                        }
+                    }
+                    Ok(true)
+                })
+            }
+        })
+        .connect_lazy_with(pool.connect_options().as_ref().clone());
     let calls = Arc::new(AtomicUsize::new(0));
-    let opening = tokio::spawn({
-        let pool = pool.clone();
+    let mut opening = tokio::spawn({
+        let pool = opening_pool.clone();
         let time = time.clone();
         let key = key.clone();
         let calls = calls.clone();
@@ -315,41 +444,48 @@ async fn expiry_while_fresh_open_waits_for_challenge_denies_callback(pool: PgPoo
             .await
         }
     });
-    wait_for(&pool, start_gate_sql()).await;
-    let (held_tx, held_rx) = tokio::sync::oneshot::channel();
-    let (release_tx, release_rx) = tokio::sync::oneshot::channel();
-    let blocker = tokio::spawn({
-        let pool = pool.clone();
-        async move {
-            let mut tx = pool.begin().await.expect("second source blocker");
-            sqlx::query(
-                "SELECT verifier FROM email_verification_challenges WHERE verifier=$1 FOR UPDATE",
-            )
-            .bind(verifier.as_slice())
-            .execute(&mut *tx)
-            .await
-            .expect("claim source after start");
-            held_tx.send(()).expect("signal held source");
-            release_rx.await.expect("release signal");
-            tx.rollback().await.expect("release source");
-        }
-    });
-    wait_for(&pool, challenge_wait_sql()).await;
-    gate.rollback().await.expect("commit start");
-    tokio::time::timeout(std::time::Duration::from_secs(2), held_rx)
+    tokio::time::timeout(std::time::Duration::from_secs(5), held.notified())
         .await
-        .expect("blocker acquired source")
-        .expect("blocker signal");
-    wait_for(&pool, challenge_wait_sql()).await;
+        .expect("first connection release deadline");
+    assert_eq!(starts(&pool).await, 1, "start committed before source lock");
+    let mut blocker = pool.begin().await.expect("source blocker");
+    let blocker_pid: i32 = sqlx::query_scalar("SELECT pg_backend_pid()")
+        .fetch_one(&mut *blocker)
+        .await
+        .expect("source blocker backend");
+    sqlx::query("SELECT verifier FROM email_verification_challenges WHERE verifier=$1 FOR UPDATE")
+        .bind(verifier.as_slice())
+        .execute(&mut *blocker)
+        .await
+        .expect("hold source after committed start");
+    let selected_pid = opener_pid.load(Ordering::SeqCst);
+    assert!(selected_pid > 0, "opening backend selected");
+    resume.notify_one();
+    tokio::select! {
+        () = wait_for_blocked(&mut blocker, blocker_pid, selected_pid, "fresh opening") => {},
+        result = &mut opening => {
+            let outcome = match result {
+                Ok(Ok(OpenOutcome::Opened)) => "opened",
+                Ok(Ok(OpenOutcome::AlreadyStarted)) => "already_started",
+                Ok(Err(VerificationError::Denied)) => "denied",
+                Ok(Err(VerificationError::Unavailable)) => "unavailable",
+                Err(_) => "task_failed",
+            };
+            panic!("opening completed before actual source wait: {outcome}");
+        },
+    }
     time.0.store(1900, Ordering::SeqCst);
-    release_tx.send(()).expect("release source blocker");
-    blocker.await.expect("blocker task");
+    blocker
+        .rollback()
+        .await
+        .expect("release source after expiry");
     assert!(matches!(
         opening.await.expect("opening task"),
         Err(VerificationError::Denied)
     ));
     assert_eq!(calls.load(Ordering::SeqCst), 0);
     assert_eq!(starts(&pool).await, 1);
+    opening_pool.close().await;
 }
 
 #[sqlx::test(migrator = "MIGRATOR")]
