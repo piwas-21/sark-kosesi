@@ -115,6 +115,12 @@ class QuoteLoadObservations(unittest.TestCase):
         deadline["quote_count_after"] -= 1
         self.assertEqual(observations.evaluate(deadline)["burst"]["failures"], 1)
 
+    def test_burst_observations_must_start_after_the_steady_window(self):
+        early = fixture()
+        early["requests"][-1]["started_ms"] = early["steady_end_ms"] - 1
+        with self.assertRaisesRegex(ValueError, "^quote burst started before"):
+            observations.evaluate(early)
+
     def test_last_valid_cycle_can_end_just_outside_nominal_ten_second_edge(self):
         full = fixture()
         for row in full["requests"][:-50]:

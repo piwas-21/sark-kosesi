@@ -133,6 +133,8 @@ export function steadyQuote() {
 }
 
 export function burstQuote() {
+  // Wait for the steady window to close across k6 scenario startup offsets.
+  sleep(0.25);
   request("burst", exec.scenario.iterationInTest, 0);
 }
 

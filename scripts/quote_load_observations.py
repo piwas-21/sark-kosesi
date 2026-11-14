@@ -129,7 +129,9 @@ def evaluate(document):
             invalid()
         if workload == "steady" and first >= end:
             invalid()
-        if workload == "burst" and (first < start + 600_000 or sequence != 0):
+        if workload == "burst" and first < end:
+            raise ValueError("quote burst started before the steady window ended")
+        if workload == "burst" and sequence != 0:
             invalid()
         if row["replayed"] not in (True, False, None) or type(row["replayed"]) not in (
             bool,
