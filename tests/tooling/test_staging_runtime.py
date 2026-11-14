@@ -7,15 +7,10 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[2]
 DOCKERFILE = ROOT / "deploy/staging/Dockerfile"
 NODE = "node:24.22.3-bookworm-slim@sha256:dc26ae92c9fb15cf6b1d63e20f0944b2efe0f115b20e00be48fb23fceb061c54"
-DEBIAN = (
-    "debian:trixie-slim@sha256:a72b4433de1cf7d6bae0c4cee74d0547f58601a643b3375f070c51600d63b6b2"
-)
-IDENTITY = "RUN groupadd --gid 1000 node && useradd --uid 1000 --gid 1000 --create-home --shell /bin/bash node"
+DEBIAN = "gcr.io/distroless/cc-debian13:nonroot@sha256:cb87acc574abe719b6e5c547384defa2f7b1f24af9605d3f618cf852495d8be2"
 RUNTIME_INPUTS = [
-    "RUN apt-get update \\",
-    "    && apt-get install --yes --no-install-recommends zlib1g=1:1.3.dfsg+really1.3.1-1+deb13u1 \\",
-    "    && rm -rf /var/lib/apt/lists/*",
-    IDENTITY,
+    "COPY --from=node-runtime /etc/passwd /etc/passwd",
+    "COPY --from=node-runtime /etc/group /etc/group",
 ]
 NODE_COPIES = {
     "COPY --from=node-runtime /usr/local/bin/node /usr/local/bin/node",
@@ -105,8 +100,9 @@ class StagingRuntime(unittest.TestCase):
             source.replace(
                 'ENTRYPOINT ["/app/commerce-api"]', 'USER root\nENTRYPOINT ["/app/commerce-api"]'
             ),
-            source.replace(IDENTITY, "RUN useradd node"),
-            source.replace("zlib1g=1:1.3.dfsg+really1.3.1-1+deb13u1", "zlib1g"),
+            source.replace(RUNTIME_INPUTS[0] + "\n", ""),
+            source.replace(RUNTIME_INPUTS[1] + "\n", ""),
+            source.replace(DEBIAN, "gcr.io/distroless/cc-debian13:nonroot"),
         ):
             self.assertNotEqual(changed, source)
             self.assertFalse(valid_runtime(changed))

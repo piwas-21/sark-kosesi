@@ -4,11 +4,12 @@ This deploys the non-selling preview for P3 integration work. It does not releas
 `main`, configure a live payment key or establish provider/product acceptance.
 Read AGENTS.md and the operations/security requirements first.
 
-The minimal runtime uses digest-pinned Debian trixie and an exact zlib
-security package version from Debian's signed package indices. The base image
-alone still contains the earlier zlib build. The runtime copies Node and its
-licence only for the component that needs the executable. Rebuild, scan the
-exact images and privately verify startup before reuse.
+The runtime uses a digest-pinned distroless Debian 13 C/C++ base with
+Debian's patched zlib from DSA-6613-1. It preserves the existing UID/GID
+1000 account mapping from the pinned Node build image. The web and
+callback-edge images also copy the pinned Node executable and its licence.
+Health checks use direct executable commands. Build and scan each exact image
+and verify private startup before reuse.
 
 ## Isolation and credentials
 

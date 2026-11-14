@@ -24,11 +24,9 @@ ENV NEXT_TELEMETRY_DISABLED=1
 ENV NODE_OPTIONS=--max-old-space-size=1536
 RUN npm run build --workspace @piwas/web
 
-FROM debian:trixie-slim@sha256:a72b4433de1cf7d6bae0c4cee74d0547f58601a643b3375f070c51600d63b6b2 AS runtime
-RUN apt-get update \
-    && apt-get install --yes --no-install-recommends zlib1g=1:1.3.dfsg+really1.3.1-1+deb13u1 \
-    && rm -rf /var/lib/apt/lists/*
-RUN groupadd --gid 1000 node && useradd --uid 1000 --gid 1000 --create-home --shell /bin/bash node
+FROM gcr.io/distroless/cc-debian13:nonroot@sha256:cb87acc574abe719b6e5c547384defa2f7b1f24af9605d3f618cf852495d8be2 AS runtime
+COPY --from=node-runtime /etc/passwd /etc/passwd
+COPY --from=node-runtime /etc/group /etc/group
 
 FROM runtime AS api
 ARG SOURCE_REVISION
