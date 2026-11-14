@@ -237,7 +237,7 @@ class QuoteHttpSmoke(unittest.TestCase):
 
             class Child:
                 def wait(self, timeout=None):
-                    return 0
+                    return 7
 
             def fake_cluster(path, _binaries):
                 nonlocal directory
