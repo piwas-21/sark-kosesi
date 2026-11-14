@@ -8,8 +8,8 @@ contracts remain separate and pending.
 | Dependencies                                                                   | Reviewed licence                     | Handling                                                                                                                                                                         |
 | ------------------------------------------------------------------------------ | ------------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | Axum, Tokio, serde, SQLx, tracing, utoipa, tower, subtle, getrandom, sha2      | MIT / Apache-2.0                     | Retain notices; Rust licence/source allowlist enforced by cargo-deny                                                                                                             |
-| Next.js 16.4.3, React 19.3.1, Tailwind 4.3.3, openapi-fetch 0.17.0, TS tooling | MIT / Apache-2.0                     | Self-hosted SSR; no Vercel service required                                                                                                                                      |
-| TypeScript 5.9.3, @hey-api/openapi-ts 0.97.3                                   | Apache-2.0 / MIT                     | Exact development versions; generator output and the owned openapi-fetch adapter are checked against Rust OpenAPI                                                                |
+| Next.js 16.4.6, React 19.3.1, Tailwind 4.3.5, openapi-fetch 0.17.0, TS tooling | MIT / Apache-2.0                     | Self-hosted SSR; no Vercel service required                                                                                                                                      |
+| TypeScript 5.9.3, @hey-api/openapi-ts 0.99.0                                   | Apache-2.0 / MIT                     | Exact development versions; generator output and the owned openapi-fetch adapter are checked against Rust OpenAPI                                                                |
 | Bricolage Grotesque, DM Sans                                                   | OFL-1.1                              | Existing project font sources subset to WOFF; licences retained in public/fonts; no reserved font names declared in supplied notices                                             |
 | PostgreSQL                                                                     | PostgreSQL licence                   | Disposable native cluster or digest-pinned official image; no shared database                                                                                                    |
 | cargo-llvm-cov, cargo-audit, cargo-deny                                        | MIT / Apache-2.0                     | Checksum-pinned unmodified CLI tools                                                                                                                                             |
@@ -129,8 +129,8 @@ application and lint paths. Recheck usage and the advisory on dependency, lint
 configuration or build-path changes. This is a source and installed-graph review;
 the runtime image has not been inspected for this assessment.
 
-The contract generator uses `@hey-api/openapi-ts` 0.97.3 (MIT) for schema and
-parameter types. The upstream parser 1.4.2 exact-pins vulnerable `js-yaml` 4.1.1;
+The contract generator uses `@hey-api/openapi-ts` 0.99.0 (MIT) for schema and
+parameter types. The upstream parser 1.4.4 pins `js-yaml` 4.2.0;
 a narrow development-only npm override selects the same-major security release
 4.3.2 (MIT). This departs from that parser's exact pin and requires review and
 contract regeneration controls when either tool changes. The schema-only output
