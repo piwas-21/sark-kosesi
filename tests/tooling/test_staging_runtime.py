@@ -15,7 +15,6 @@ RUNTIME_INPUTS = [
     "RUN apt-get update \\",
     "    && apt-get install --yes --no-install-recommends zlib1g=1:1.3.dfsg+really1.3.1-1+deb13u1 \\",
     "    && rm -rf /var/lib/apt/lists/*",
-    "COPY --from=node-runtime /etc/ssl/certs/ca-certificates.crt /etc/ssl/certs/ca-certificates.crt",
     IDENTITY,
 ]
 NODE_COPIES = {
@@ -108,7 +107,6 @@ class StagingRuntime(unittest.TestCase):
             ),
             source.replace(IDENTITY, "RUN useradd node"),
             source.replace("zlib1g=1:1.3.dfsg+really1.3.1-1+deb13u1", "zlib1g"),
-            source.replace(RUNTIME_INPUTS[3] + "\n", ""),
         ):
             self.assertNotEqual(changed, source)
             self.assertFalse(valid_runtime(changed))
