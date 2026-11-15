@@ -327,6 +327,15 @@ supervision or live provider activation follows from deploying the empty preview
    the one-use start to a matching authenticated GET and durable observation;
    any post-start failure stays uncertain and existing starts reconcile without
    another POST. It installs no route, scheduler, key or redirect. Bounded private
+   initial-dispatch provenance binds the fresh consumed create response and matching
+   verified GET to the same-transaction observation/event and earlier committed
+   start. A bounded canonical observation digest binds the retained provider identity
+   and other stored source fields to that receipt; a validating read checks both.
+   Before acknowledging this receipt, the supported writer requires PostgreSQL
+   fsync and transaction-local synchronous commit.
+   Generic/callback receipts and preexisting observations are not upgraded.
+   Migration 0073 follows the independently queued 0068–0072 prerequisites.
+   This is local custody, not provider or checkout acceptance. Bounded private
    unknown-ID list pages now return metadata-associated identity hints, preserving duplicate critical fields
    and validated fixed-origin cursors. Every candidate needs a separate checked
    GET; no/partial results cannot authorize another POST. Private verified-fetch
