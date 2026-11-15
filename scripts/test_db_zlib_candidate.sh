@@ -36,6 +36,7 @@ trap cleanup EXIT
 printf 'source_revision=%s\nbase=%s\nscanner=%s\n' "$ZLIB_SOURCE_REVISION" "$base" "$scanner" > "$evidence/identity.txt"
 mkdir "$scratch/build-context"
 cp ops/db-zlib-candidate/Dockerfile "$scratch/build-context/Dockerfile"
+cp ops/db-zlib-candidate/sanitize_apt_failure.sh "$scratch/build-context/sanitize_apt_failure.sh"
 cp /etc/ssl/certs/ca-certificates.crt "$scratch/build-context/ca-certificates.crt"
 test -s "$scratch/build-context/ca-certificates.crt" || fail 'runner CA bundle is unavailable'
 sha256sum "$scratch/build-context/ca-certificates.crt" | awk '{print $1}' > "$evidence/build-ca-sha256.txt"

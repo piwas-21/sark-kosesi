@@ -16,6 +16,51 @@ SPEC.loader.exec_module(compare)
 
 
 class CompareZlibScanTests(unittest.TestCase):
+    def test_apt_failures_emit_only_fixed_diagnostics(self):
+        script = (
+            Path(__file__).resolve().parents[2] / "ops/db-zlib-candidate/sanitize_apt_failure.sh"
+        )
+        cases = {
+            "TLS certificate verification failed": "tls_certificate",
+            "Signature verification succeeded\nTLS certificate verification failed": "tls_certificate",
+            "Temporary failure resolving mirror": "dns",
+            "NO_PUBKEY: invalid signature": "signature",
+            "HTTP error 503": "http",
+            "Unable to locate package": "package_unavailable",
+            "unexpected opaque failure": "generic_exit",
+        }
+        with tempfile.TemporaryDirectory() as directory:
+            log = Path(directory) / "private.log"
+            for message, category in cases.items():
+                with self.subTest(category=category):
+                    log.write_text(f"Authorization: Bearer do-not-emit-this\n{message}\n")
+                    result = subprocess.run(
+                        ["sh", str(script), "apt_update", "100", str(log)],
+                        capture_output=True,
+                        text=True,
+                        check=False,
+                    )
+                    self.assertEqual(result.returncode, 0)
+                    self.assertEqual(result.stdout, "")
+                    self.assertEqual(
+                        result.stderr,
+                        f"zlib candidate: stage=apt_update category={category} exit=100\n",
+                    )
+                    self.assertNotIn("do-not-emit-this", result.stdout + result.stderr)
+
+    def test_apt_failure_rejects_untrusted_stage_without_echoing_it(self):
+        script = (
+            Path(__file__).resolve().parents[2] / "ops/db-zlib-candidate/sanitize_apt_failure.sh"
+        )
+        result = subprocess.run(
+            ["sh", str(script), "Bearer-do-not-emit-this", "100", "/missing"],
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        self.assertNotEqual(result.returncode, 0)
+        self.assertNotIn("do-not-emit-this", result.stdout + result.stderr)
+
     def test_non_hosted_execution_stops_before_creating_scratch(self):
         script = Path(__file__).resolve().parents[2] / "scripts/test_db_zlib_candidate.sh"
         with tempfile.TemporaryDirectory() as directory:
