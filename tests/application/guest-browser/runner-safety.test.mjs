@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
 import { test } from "node:test";
+import { allowsBrowserHistory } from "./link-policy.mjs";
 
 const runner = "tests/application/guest-browser/runner.mjs";
 function rejected(url, extra = {}) {
@@ -25,4 +26,32 @@ test("malformed database URL and connect options fail without disclosing input",
   rejected(`${goodShape}?options=-csark.disposable_marker%3Dforged`);
   rejected(`${goodShape}#fragment`);
   rejected(goodShape, { PGOPTIONS: "-c sark.disposable_marker=forged" });
+});
+
+test("only same-origin browser history GET can use the private Origin bridge", () => {
+  const expected = "https://127.0.0.1:12345";
+  const request = {
+    method: "GET",
+    url: "/api/test/customer/linked-orders",
+    site: "same-origin",
+    origin: undefined,
+  };
+  assert.equal(allowsBrowserHistory(request, expected), true);
+  assert.equal(
+    allowsBrowserHistory({ ...request, origin: expected }, expected),
+    true,
+  );
+  for (const change of [
+    { method: "POST" },
+    { url: "/api/test/customer/linked-orders?other=1" },
+    { url: "/api/test/customer/guest-order-link/redeem" },
+    { site: "same-site" },
+    { site: "cross-site" },
+    { site: undefined },
+    { origin: "https://other.invalid" },
+  ])
+    assert.equal(
+      allowsBrowserHistory({ ...request, ...change }, expected),
+      false,
+    );
 });
