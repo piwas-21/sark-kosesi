@@ -103,3 +103,12 @@ fn identifier(value: &str) -> bool {
             .bytes()
             .all(|b| b.is_ascii_digit() || (b'a'..=b'f').contains(&b))
 }
+
+// A source failure may follow a database wait; it is observable only under current custody.
+fn check_authority(
+    scope: &mut BasketScope,
+    session: Option<&crate::customer_sessions::HeldSession>,
+) -> Result<(), QuoteStoreError> {
+    let at = scope.checked_at()?;
+    promoted::check_session(session, at)
+}

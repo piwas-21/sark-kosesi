@@ -470,6 +470,13 @@ its decimal revision avoids JavaScript integer precision loss. It does not provi
 controls or production abuse and retention policy. Migration 0063 follows the
 customer-session CSRF migration 0062.
 
+A separate test-only SET route requires preview authority, the exact configured
+Origin, the customer cookie and its session-bound synchronizer. The same database
+transaction validates the proof and applies the owned change. Removal can target
+a hidden SKU; addition requires current publication. Stale changes conflict,
+while an already-satisfied request returns the current revision. This transport
+is disabled by default and provides no public browser or privacy acceptance.
+
 ## P4 private restock opt-in custody
 
 An explicit private subscription retains one current merchant SKU per verified

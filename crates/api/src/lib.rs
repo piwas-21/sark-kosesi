@@ -13,11 +13,13 @@ pub use routing::{
 pub mod published;
 pub mod published_types;
 mod test_favourites;
+mod test_favourites_mutation;
 mod test_linked_orders;
 pub mod test_login;
 mod test_login_input;
 mod test_restock;
 mod test_restock_mutation;
+mod test_revision;
 mod test_session;
 pub mod verification;
 

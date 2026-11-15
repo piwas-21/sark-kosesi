@@ -1,7 +1,7 @@
 //! Explicit test-only subscription changes; no public route or notification.
 use crate::{
     ApiError, AppState, error, guest::origin::single_header, test_login::LoginConfig,
-    test_session::customer_cookie, verification::decode_hex,
+    test_revision::revision, test_session::customer_cookie, verification::decode_hex,
 };
 use axum::{
     Extension, Json,
@@ -32,18 +32,6 @@ pub(crate) struct TestRestockMutation {
 pub(crate) struct TestRestockReceipt {
     #[schema(pattern = "^(0|[1-9][0-9]*)$", max_length = 19)]
     revision: String,
-}
-
-fn revision(value: &str) -> Option<i64> {
-    let bytes = value.as_bytes();
-    if bytes.is_empty()
-        || bytes.len() > 19
-        || (bytes.len() > 1 && bytes[0] == b'0')
-        || !bytes.iter().all(u8::is_ascii_digit)
-    {
-        return None;
-    }
-    value.parse().ok()
 }
 
 #[utoipa::path(put, operation_id="test_customer_restock_set", path="/api/test/customer/restock/{locale}/{sku}", params(("locale"=String,Path),("sku"=String,Path),("Origin"=String,Header),("x-csrf-token"=String,Header)), request_body=TestRestockMutation, responses((status=200,body=TestRestockReceipt,description="Resulting private bucket revision"),(status=400,body=ApiError),(status=401,body=ApiError),(status=403,body=ApiError),(status=409,body=ApiError),(status=413,body=ApiError),(status=415,body=ApiError),(status=503,body=ApiError),(status=504,body=ApiError)), security(("preview"=[],"customer_test"=[])))]
