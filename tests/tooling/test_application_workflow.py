@@ -100,6 +100,9 @@ def check_application_graph(text):
     upload_conditions = re.findall(r"(?m)^(?:        )?if:\s*(.*?)\s*$", browser_upload)
     if upload_conditions != ["always()"]:
         raise ValueError("browser evidence must upload unconditionally after failure")
+    gate_conditions = re.findall(r"(?m)^    if:\s*(.*?)\s*$", gate)
+    if gate_conditions != ["always()"]:
+        raise ValueError("application aggregate must always run")
     gate_step = step(gate, "name: Require both application legs")
     if re.search(r"(?m)^(?:        )?if:", gate_step):
         raise ValueError("application aggregate guard cannot be conditional")
@@ -165,6 +168,10 @@ class ApplicationWorkflow(unittest.TestCase):
 
     def test_required_step_conditions_cannot_be_disabled(self):
         mutations = (
+            (
+                "  application:\n    name: Application gate\n    if: always()",
+                "  application:\n    name: Application gate\n    if: always() && false",
+            ),
             (
                 "      - name: Require both application legs\n",
                 "      - name: Require both application legs\n        if: false\n",
