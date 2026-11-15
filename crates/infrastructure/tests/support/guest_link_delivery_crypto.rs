@@ -9,15 +9,7 @@ fn reservation(key: &DeliveryKey, c: &Context<'_>) -> NonceReservation {
     }
 }
 fn open(key: &DeliveryKey, c: &Context<'_>, bytes: &[u8]) -> Result<Vec<u8>, LinkError> {
-    let cipher = LessSafeKey::new(
-        UnboundKey::new(&AES_256_GCM, key.derived.as_slice())
-            .map_err(|_| LinkError::Unavailable)?,
-    );
-    let mut copy = bytes.to_vec();
-    let result = cipher
-        .open_in_place(nonce(c.counter)?, Aad::from(aad(c)?.as_slice()), &mut copy)
-        .map_err(LinkError::from)?;
-    Ok(result.to_vec())
+    super::open(key, c, bytes).map(|token| token.expose_bytes().to_vec())
 }
 #[test]
 fn guest_order_link_delivery_purpose_derived_key_matches_independent_hkdf_vector_and_context_is_authenticated()

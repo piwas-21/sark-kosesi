@@ -1,8 +1,10 @@
-//! Private encrypted guest-link proof custody; no delivery start or transport.
+//! Private encrypted guest-link custody and one in-process start; no transport.
 use super::*;
 use commerce_domain::{checkout_quotes::MAX_QUOTE_UNIX_SECONDS, email_identity::normalize_email};
 use sha2::{Digest, Sha256};
 mod crypto;
+mod opening;
+pub use opening::{OpenOutcome, claim_and_open};
 
 /// Privately supplied root key, purpose-derived before encryption.
 pub struct DeliveryKey {

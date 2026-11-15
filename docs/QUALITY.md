@@ -1067,7 +1067,13 @@ proof/envelope reciprocity, a prior synchronously committed nonce and burn on
 failure. Race key allocations and an actual wait through guest expiry. Test the
 HKDF vector, purpose/context/ciphertext changes, key aliases, legacy direct proof
 upgrade and redemption. No ciphertext or receipt may copy the recipient or bearer.
-This does not establish an opening path or mailbox delivery.
+For the local start and opening, check concurrent one-winner custody, exact
+bearer authentication, bad keys, untrusted ciphertext, expiry after real lock
+waits, immutable starts and the absence of retry after a committed failure. A
+populated schema upgrade preserves prior direct proofs and encrypted envelopes.
+The native durability guard assumes the supported Rust writer leaves the commit
+check in its specified sequence; arbitrary SQL can force a deferred check early.
+These controls do not establish transport or mailbox delivery.
 
 ### Private guest-order links
 

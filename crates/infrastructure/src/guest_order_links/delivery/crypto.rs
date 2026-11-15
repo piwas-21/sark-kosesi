@@ -97,6 +97,34 @@ pub(super) fn seal(
     Ok(std::mem::take(&mut *sealed))
 }
 
+/// Authenticate the complete stored context before constructing the private bearer.
+pub(super) fn open(
+    key: &DeliveryKey,
+    c: &Context<'_>,
+    ciphertext: &[u8],
+) -> Result<GuestOrderLinkToken, LinkError> {
+    if c.key_id != key.id || c.fingerprint != &key.fingerprint || ciphertext.len() != 48 {
+        return Err(LinkError::Unavailable);
+    }
+    let cipher = LessSafeKey::new(UnboundKey::new(&AES_256_GCM, key.derived.as_slice())?);
+    let mut buffer = Zeroizing::new(ciphertext.to_vec());
+    let bytes = cipher.open_in_place(
+        nonce(c.counter)?,
+        Aad::from(aad(c)?.as_slice()),
+        &mut buffer,
+    )?;
+    use subtle::ConstantTimeEq;
+    if bytes.len() != 32 {
+        return Err(LinkError::Unavailable);
+    }
+    let mut token = GuestOrderLinkToken(Zeroizing::new([0; 32]));
+    token.0.copy_from_slice(bytes);
+    if !bool::from(token.verifier().ct_eq(c.verifier)) {
+        return Err(LinkError::Unavailable);
+    }
+    Ok(token)
+}
+
 #[cfg(test)]
 #[path = "../../../tests/support/guest_link_delivery_crypto.rs"]
 mod tests;

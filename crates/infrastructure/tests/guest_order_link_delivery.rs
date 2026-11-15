@@ -111,6 +111,9 @@ async fn guest_order_link_delivery_populated_66_through_68_preserves_legacy_proo
         .await
         .expect("new encrypted proof");
     assert_eq!(counts(&pool).await, (1, 2, 1));
+    MIGRATOR.run_to(69, &pool).await.expect("start upgrade");
+    assert_eq!(read_proof().await, before);
+    assert_eq!(counts(&pool).await, (1, 2, 1));
 
     let email = "buyer@example.test";
     let proof = email_verification::issue(&pool, email, clock.as_ref())
@@ -818,4 +821,398 @@ async fn guest_order_link_delivery_upgrades_async_session_to_durable_commits(poo
         .await
         .expect("session setting");
     assert_eq!(setting, "off");
+}
+
+#[sqlx::test(migrator = "MIGRATOR")]
+async fn guest_link_open_commits_one_start_and_only_fresh_winner_receives_bearer(pool: PgPool) {
+    use delivery::OpenOutcome;
+    use sha2::{Digest, Sha256};
+    quote::seed(&pool).await;
+    let (store, clock) = quote::store(&pool, 1100);
+    let (session, csrf) = quote::guest(&store).await;
+    let guest = GuestCredential::from_session(&session).expect("guest");
+    let id = order(&store, &guest, &csrf, "open").await;
+    let key = key();
+    delivery::register_key(&pool, clock.as_ref(), &key)
+        .await
+        .expect("key");
+    let receipt = delivery::issue_for_delivery(&store, &guest, &csrf, &id, &key)
+        .await
+        .expect("issue");
+    let wrong = DeliveryKey::capture("guest-key-1", [8; 32]).expect("wrong key");
+    assert!(matches!(
+        delivery::claim_and_open(
+            &pool,
+            &receipt.verifier,
+            clock.as_ref(),
+            &wrong,
+            |_, _| panic!("wrong key opened")
+        )
+        .await,
+        Err(LinkError::Denied)
+    ));
+    let mut captured = None;
+    let result = delivery::claim_and_open(
+        &pool,
+        &receipt.verifier,
+        clock.as_ref(),
+        &key,
+        |email, token| {
+            assert_eq!(email, "buyer@example.test");
+            captured = Some(*token.expose_bytes());
+        },
+    )
+    .await
+    .expect("open");
+    assert_eq!(result, OpenOutcome::Opened);
+    let verifier = Sha256::new()
+        .chain_update(b"piwas:guest-order-link:verifier:v1\0")
+        .chain_update(captured.expect("bearer"))
+        .finalize();
+    assert_eq!(verifier[..], receipt.verifier);
+    assert_eq!(
+        delivery::claim_and_open(
+            &pool,
+            &receipt.verifier,
+            clock.as_ref(),
+            &key,
+            |_, _| panic!("reopened")
+        )
+        .await
+        .expect("already"),
+        OpenOutcome::AlreadyStarted
+    );
+    let count: i64 = sqlx::query_scalar("SELECT count(*) FROM guest_link_delivery_starts")
+        .fetch_one(&pool)
+        .await
+        .expect("count");
+    assert_eq!(count, 1);
+    assert!(
+        sqlx::query("DELETE FROM guest_link_delivery_starts WHERE verifier=$1")
+            .bind(receipt.verifier.as_slice())
+            .execute(&pool)
+            .await
+            .is_err()
+    );
+    assert!(matches!(
+        delivery::claim_and_open(&pool, &[0; 32], clock.as_ref(), &key, |_, _| panic!(
+            "unknown opened"
+        ))
+        .await,
+        Err(LinkError::Denied)
+    ));
+    use admitted_proofs::{
+        customer_passwords, email_verification, verified_customer_accounts::establish,
+    };
+    let email = "buyer@example.test";
+    let proof = email_verification::issue(&pool, email, clock.as_ref())
+        .await
+        .expect("email proof");
+    establish(&pool, email, &proof, clock.as_ref())
+        .await
+        .expect("account");
+    let proof = customer_passwords::issue(&pool, email, clock.as_ref())
+        .await
+        .expect("password proof");
+    customer_passwords::replace(
+        &pool,
+        email,
+        &proof,
+        "correct horse battery staple",
+        clock.as_ref(),
+    )
+    .await
+    .expect("password");
+    let customer =
+        admitted_login::login(&pool, email, "correct horse battery staple", clock.as_ref())
+            .await
+            .expect("customer");
+    let proof = guest_order_links::GuestOrderLinkToken::from_bytes(captured.expect("bearer"));
+    guest_order_links::link(&pool, &customer.token, &id, &proof, clock.as_ref())
+        .await
+        .expect("opened proof redeems");
+    assert!(matches!(
+        delivery::claim_and_open(
+            &pool,
+            &receipt.verifier,
+            clock.as_ref(),
+            &key,
+            |_, _| panic!("consumed reopened")
+        )
+        .await,
+        Err(LinkError::Denied)
+    ));
+}
+
+#[sqlx::test(migrator = "MIGRATOR")]
+async fn guest_link_open_rechecks_expiry_after_proof_lock_wait(pool: PgPool) {
+    quote::seed(&pool).await;
+    let (store, clock) = quote::store(&pool, 1100);
+    let (session, csrf) = quote::guest(&store).await;
+    let guest = GuestCredential::from_session(&session).expect("guest");
+    let id = order(&store, &guest, &csrf, "open-wait").await;
+    let key = key();
+    delivery::register_key(&pool, clock.as_ref(), &key)
+        .await
+        .expect("key");
+    let receipt = delivery::issue_for_delivery(&store, &guest, &csrf, &id, &key)
+        .await
+        .expect("issue");
+    let mut lock = pool.begin().await.expect("tx");
+    sqlx::query("SELECT verifier FROM guest_order_link_proofs WHERE verifier=$1 FOR UPDATE")
+        .bind(receipt.verifier.as_slice())
+        .fetch_one(&mut *lock)
+        .await
+        .expect("lock");
+    let other = pool.clone();
+    let wait_clock = clock.clone();
+    let verifier = receipt.verifier;
+    let pending = tokio::spawn(async move {
+        delivery::claim_and_open(&other, &verifier, wait_clock.as_ref(), &key, |_, _| {
+            panic!("expired opened")
+        })
+        .await
+    });
+    tokio::time::sleep(Duration::from_millis(150)).await;
+    assert!(!pending.is_finished());
+    clock.0.store(receipt.expires_at as u64, Ordering::SeqCst);
+    lock.commit().await.expect("release");
+    assert!(matches!(
+        pending.await.expect("join"),
+        Err(LinkError::Denied)
+    ));
+    let count: i64 = sqlx::query_scalar("SELECT count(*) FROM guest_link_delivery_starts")
+        .fetch_one(&pool)
+        .await
+        .expect("count");
+    assert_eq!(count, 0);
+}
+
+#[sqlx::test(migrator = "MIGRATOR")]
+async fn guest_link_open_concurrent_start_has_one_winner(pool: PgPool) {
+    use delivery::OpenOutcome;
+    use std::sync::atomic::AtomicUsize;
+    quote::seed(&pool).await;
+    let (store, clock) = quote::store(&pool, 1100);
+    let (session, csrf) = quote::guest(&store).await;
+    let guest = GuestCredential::from_session(&session).expect("guest");
+    let id = order(&store, &guest, &csrf, "open-race").await;
+    let key = key();
+    delivery::register_key(&pool, clock.as_ref(), &key)
+        .await
+        .expect("key");
+    let receipt = delivery::issue_for_delivery(&store, &guest, &csrf, &id, &key)
+        .await
+        .expect("issue");
+    let calls = AtomicUsize::new(0);
+    let (first, second) = tokio::join!(
+        delivery::claim_and_open(&pool, &receipt.verifier, clock.as_ref(), &key, |_, _| {
+            calls.fetch_add(1, Ordering::SeqCst);
+        }),
+        delivery::claim_and_open(&pool, &receipt.verifier, clock.as_ref(), &key, |_, _| {
+            calls.fetch_add(1, Ordering::SeqCst);
+        }),
+    );
+    let outcomes = [first.expect("first"), second.expect("second")];
+    assert!(outcomes.contains(&OpenOutcome::Opened));
+    assert!(outcomes.contains(&OpenOutcome::AlreadyStarted));
+    assert_eq!(calls.load(Ordering::SeqCst), 1);
+}
+
+#[sqlx::test(migrator = "MIGRATOR")]
+async fn guest_link_open_authentication_failure_burns_start_and_cannot_retry(pool: PgPool) {
+    quote::seed(&pool).await;
+    let (store, clock) = quote::store(&pool, 1100);
+    let (session, csrf) = quote::guest(&store).await;
+    let guest = GuestCredential::from_session(&session).expect("guest");
+    let id = order(&store, &guest, &csrf, "open-corrupt").await;
+    let key = key();
+    delivery::register_key(&pool, clock.as_ref(), &key)
+        .await
+        .expect("key");
+    let receipt = delivery::issue_for_delivery(&store, &guest, &csrf, &id, &key)
+        .await
+        .expect("issue");
+    // Simulate an at-rest same-length corruption without changing ordinary writer guards.
+    sqlx::query("ALTER TABLE guest_link_delivery_envelopes DISABLE TRIGGER guard_guest_link_delivery_envelope").execute(&pool).await.expect("disable guard");
+    sqlx::query("UPDATE guest_link_delivery_envelopes SET ciphertext=set_byte(ciphertext,0,get_byte(ciphertext,0) # 1) WHERE verifier=$1").bind(receipt.verifier.as_slice()).execute(&pool).await.expect("corrupt");
+    sqlx::query("ALTER TABLE guest_link_delivery_envelopes ENABLE TRIGGER guard_guest_link_delivery_envelope").execute(&pool).await.expect("restore guard");
+    assert!(matches!(
+        delivery::claim_and_open(
+            &pool,
+            &receipt.verifier,
+            clock.as_ref(),
+            &key,
+            |_, _| panic!("corruption opened")
+        )
+        .await,
+        Err(LinkError::Unavailable)
+    ));
+    assert_eq!(
+        delivery::claim_and_open(
+            &pool,
+            &receipt.verifier,
+            clock.as_ref(),
+            &key,
+            |_, _| panic!("corruption retried")
+        )
+        .await
+        .expect("already"),
+        delivery::OpenOutcome::AlreadyStarted
+    );
+    let count: i64 = sqlx::query_scalar("SELECT count(*) FROM guest_link_delivery_starts")
+        .fetch_one(&pool)
+        .await
+        .expect("count");
+    assert_eq!(count, 1);
+}
+
+#[sqlx::test(migrator = "MIGRATOR")]
+async fn guest_link_start_native_guards_bind_source_and_separate_consumption(pool: PgPool) {
+    use admitted_proofs::{email_verification, verified_customer_accounts::establish};
+    quote::seed(&pool).await;
+    let (store, clock) = quote::store(&pool, 1100);
+    let (session, csrf) = quote::guest(&store).await;
+    let guest = GuestCredential::from_session(&session).expect("guest");
+    let id = order(&store, &guest, &csrf, "start-native").await;
+    let key = key();
+    delivery::register_key(&pool, clock.as_ref(), &key)
+        .await
+        .expect("key");
+    let receipt = delivery::issue_for_delivery(&store, &guest, &csrf, &id, &key)
+        .await
+        .expect("issue");
+    let verify = email_verification::issue(&pool, "buyer@example.test", clock.as_ref())
+        .await
+        .expect("verification");
+    establish(&pool, "buyer@example.test", &verify, clock.as_ref())
+        .await
+        .expect("account");
+    let account: i64 = sqlx::query_scalar(
+        "SELECT id FROM verified_customer_accounts WHERE email_identity='buyer@example.test'",
+    )
+    .fetch_one(&pool)
+    .await
+    .expect("id");
+    let insertion = "INSERT INTO guest_link_delivery_starts(verifier,key_id,nonce_counter,key_fingerprint,started_at) SELECT e.verifier,e.key_id,e.nonce_counter,k.key_fingerprint,$2 FROM guest_link_delivery_envelopes e JOIN guest_link_delivery_keys k ON k.key_id=e.key_id WHERE e.verifier=$1";
+    assert!(
+        sqlx::query(insertion)
+            .bind(receipt.verifier.as_slice())
+            .bind(receipt.expires_at)
+            .execute(&pool)
+            .await
+            .is_err()
+    );
+    let mut tx = pool.begin().await.expect("tx");
+    sqlx::query("SET LOCAL synchronous_commit='on'")
+        .execute(&mut *tx)
+        .await
+        .expect("durable");
+    sqlx::query(insertion)
+        .bind(receipt.verifier.as_slice())
+        .bind(receipt.created_at)
+        .execute(&mut *tx)
+        .await
+        .expect("start");
+    sqlx::query("SET CONSTRAINTS require_guest_link_delivery_start IMMEDIATE")
+        .execute(&mut *tx)
+        .await
+        .expect("flush");
+    let error = sqlx::query("UPDATE guest_order_link_proofs SET consumed_at=$2,consumed_account_id=$3 WHERE verifier=$1")
+        .bind(receipt.verifier.as_slice()).bind(receipt.created_at).bind(account).execute(&mut *tx).await.expect_err("same transaction must fail");
+    assert!(
+        error
+            .to_string()
+            .contains("Start and consumption require separate transactions")
+    );
+    tx.rollback().await.expect("rollback");
+    // Flushing the start check cannot permit linking the same order via a second proof.
+    let second = delivery::issue_for_delivery(&store, &guest, &csrf, &id, &key)
+        .await
+        .expect("second proof");
+    let mut tx = pool.begin().await.expect("tx");
+    sqlx::query("SET LOCAL synchronous_commit='on'")
+        .execute(&mut *tx)
+        .await
+        .expect("durable");
+    sqlx::query(insertion)
+        .bind(receipt.verifier.as_slice())
+        .bind(receipt.created_at)
+        .execute(&mut *tx)
+        .await
+        .expect("start");
+    sqlx::query("SET CONSTRAINTS require_guest_link_delivery_start IMMEDIATE")
+        .execute(&mut *tx)
+        .await
+        .expect("flush");
+    sqlx::query("UPDATE guest_order_link_proofs SET consumed_at=$2,consumed_account_id=$3 WHERE verifier=$1")
+        .bind(second.verifier.as_slice()).bind(second.created_at).bind(account).execute(&mut *tx).await.expect("second proof consumed");
+    let error = sqlx::query("INSERT INTO customer_order_links(order_id,account_id,proof_verifier,linked_at,linked_xid) VALUES($1,$2,$3,$4,NULL)")
+        .bind(&id).bind(account).bind(second.verifier.as_slice()).bind(second.created_at).execute(&mut *tx).await.expect_err("same transaction order linkage must fail");
+    assert!(
+        error
+            .to_string()
+            .contains("Start and order linkage require separate transactions")
+    );
+    tx.rollback().await.expect("rollback");
+    let count: i64 = sqlx::query_scalar("SELECT count(*) FROM guest_link_delivery_starts")
+        .fetch_one(&pool)
+        .await
+        .expect("count");
+    assert_eq!(count, 0);
+}
+
+#[sqlx::test(migrator = "MIGRATOR")]
+async fn guest_link_open_refuses_expiry_after_durable_start(pool: PgPool) {
+    use commerce_application::request_context::{Clock, ContextError};
+    use std::sync::atomic::AtomicUsize;
+    struct ExpiresAfterStart(AtomicUsize);
+    impl Clock for ExpiresAfterStart {
+        fn unix_seconds(&self) -> Result<u64, ContextError> {
+            Ok(if self.0.fetch_add(1, Ordering::SeqCst) < 6 {
+                1100
+            } else {
+                2000
+            })
+        }
+    }
+    quote::seed(&pool).await;
+    let (store, clock) = quote::store(&pool, 1100);
+    let (session, csrf) = quote::guest(&store).await;
+    let guest = GuestCredential::from_session(&session).expect("guest");
+    let id = order(&store, &guest, &csrf, "post-start-expiry").await;
+    let key = key();
+    delivery::register_key(&pool, clock.as_ref(), &key)
+        .await
+        .expect("key");
+    let receipt = delivery::issue_for_delivery(&store, &guest, &csrf, &id, &key)
+        .await
+        .expect("issue");
+    let late = ExpiresAfterStart(AtomicUsize::new(0));
+    assert!(matches!(
+        delivery::claim_and_open(&pool, &receipt.verifier, &late, &key, |_, _| panic!(
+            "expired opened"
+        ))
+        .await,
+        Err(LinkError::Denied)
+    ));
+    let count: i64 =
+        sqlx::query_scalar("SELECT count(*) FROM guest_link_delivery_starts WHERE verifier=$1")
+            .bind(receipt.verifier.as_slice())
+            .fetch_one(&pool)
+            .await
+            .expect("start committed");
+    assert_eq!(count, 1);
+    assert_eq!(
+        delivery::claim_and_open(
+            &pool,
+            &receipt.verifier,
+            clock.as_ref(),
+            &key,
+            |_, _| panic!("uncertain start retried")
+        )
+        .await
+        .expect("already"),
+        delivery::OpenOutcome::AlreadyStarted
+    );
 }

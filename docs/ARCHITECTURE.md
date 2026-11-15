@@ -1960,8 +1960,14 @@ arbitrary SQL can force a deferred GUC check early and later change the setting.
 Its receipt excludes the bearer, ciphertext and recipient; the normalized recipient remains in the immutable order only.
 The AES-256-GCM key is derived with HKDF-SHA256 using a fixed guest-link context;
 its nonce prefix is disjoint from verification delivery. Derived key fingerprints
-are unique within this purpose and each allocation domain. This installs no
-start, opening, delivery provider, or public route.
+are unique within this purpose and each allocation domain. A private consumer commits one immutable, durable local start before it
+relocks the proof then guest order, rechecks the exact source and authenticates
+the envelope. Only the fresh start's in-process synchronous callback receives
+the normalized buyer and bearer; a prior or uncertain start cannot reopen. The
+callback runs after releasing database locks and the order may change after the
+final liveness check. The trusted writer checks durability before committing;
+the database trigger alone cannot prevent an arbitrary SQL writer from forcing
+a deferred setting check early. No delivery provider or public route is installed.
 
 Redemption holds the current customer account and session claims, then
 locks the exact proof and order. Compare the verified account mailbox to the

@@ -609,7 +609,11 @@ Private guest-link delivery issuance now reserves a durable nonce and atomically
 stores the exact owned proof with an AES-GCM envelope. The HKDF-derived key and
 nonce namespace are purpose-specific; the receipt discloses no bearer, ciphertext
 or recipient. Fresh guest/order authority is reacquired after nonce allocation.
-No opening, delivery start, sender, public route or mailbox acceptance is installed.
+A separate trusted in-process consumer commits one durable local start, then
+relocks the exact live guest proof and order before authenticating the envelope.
+Only its fresh winner receives the buyer and proof in a synchronous callback;
+existing or uncertain starts are never reopened automatically. This establishes
+no sender, transport, public route or mailbox acceptance.
 
 Private guest-order linking requires a live guest basket credential and CSRF
 proof to issue a one-use challenge for that exact accepted order. A current

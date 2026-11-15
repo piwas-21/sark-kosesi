@@ -774,8 +774,14 @@ reciprocal checks and checks durability again before commit. A trusted SQL write
 can force a deferred GUC check early and change its setting before commit; native
 constraints alone do not prevent that. Reacquire and recheck the guest and exact
 order after reservation waits. A nonce is not a
-proof of message delivery; no opening or transport is installed. Key generation,
-separate custody, abuse controls and expiry/deletion policy remain release work.
+proof of message delivery. A separate durable local start permits only its fresh
+winner to relock the proof and guest order, revalidate source and key, and open
+the envelope for a trusted synchronous in-process callback. A failed or uncertain
+start cannot be retried automatically, and source state can change after the final
+check. No transport is installed. As with nonce allocation, the durable-commit
+claim relies on the supported Rust writer; a privileged arbitrary SQL writer can
+force the deferred setting check early. Key generation, separate custody, abuse
+controls and expiry/deletion policy remain release work.
 Read linked orders only under live account and session claims. Filter the
 link by the session account, validate its exact consumed proof and accepted
 order, and check session time again before returning. Keep buyer, delivery
