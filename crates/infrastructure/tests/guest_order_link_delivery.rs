@@ -25,6 +25,8 @@ mod fixture;
 #[allow(dead_code)]
 #[path = "support/checkout_quote_fixture.rs"]
 mod quote;
+#[path = "support/restore_connection.rs"]
+mod restore_connection;
 
 async fn order(
     store: &GuestSessionStore,
@@ -360,11 +362,38 @@ async fn guest_order_link_delivery_native_guards_deny_detached_or_same_transacti
     );
 }
 
+async fn redeem_legacy_fixture_proof(
+    pool: &PgPool,
+    clock: &dyn commerce_application::request_context::Clock,
+    id: &str,
+    direct: &guest_order_links::GuestOrderLinkToken,
+) {
+    use admitted_proofs::{customer_passwords, email_verification, verified_customer_accounts};
+    let email = "buyer@example.test";
+    let proof = email_verification::issue(pool, email, clock)
+        .await
+        .expect("email proof");
+    verified_customer_accounts::establish(pool, email, &proof, clock)
+        .await
+        .expect("verified account");
+    let proof = customer_passwords::issue(pool, email, clock)
+        .await
+        .expect("password proof");
+    customer_passwords::replace(pool, email, &proof, "correct horse battery staple", clock)
+        .await
+        .expect("password");
+    let session = admitted_login::login(pool, email, "correct horse battery staple", clock)
+        .await
+        .expect("login");
+    guest_order_links::link(pool, &session.token, id, direct, clock)
+        .await
+        .expect("legacy redemption");
+}
+
 #[sqlx::test(migrations = false)]
 async fn guest_order_link_delivery_populated_upgrade_preserves_existing_direct_proof_redemption(
     pool: PgPool,
 ) {
-    use admitted_proofs::{customer_passwords, email_verification, verified_customer_accounts};
     MIGRATOR.run_to(66, &pool).await.expect("prior schema");
     quote::seed(&pool).await;
     let (store, clock) = quote::store(&pool, 1100);
@@ -382,32 +411,7 @@ async fn guest_order_link_delivery_populated_upgrade_preserves_existing_direct_p
     .await
     .expect("legacy mode");
     assert_eq!(modes, vec![("direct".into(), true)]);
-    let email = "buyer@example.test";
-    let proof = email_verification::issue(&pool, email, clock.as_ref())
-        .await
-        .expect("email proof");
-    verified_customer_accounts::establish(&pool, email, &proof, clock.as_ref())
-        .await
-        .expect("verified account");
-    let proof = customer_passwords::issue(&pool, email, clock.as_ref())
-        .await
-        .expect("password proof");
-    customer_passwords::replace(
-        &pool,
-        email,
-        &proof,
-        "correct horse battery staple",
-        clock.as_ref(),
-    )
-    .await
-    .expect("password");
-    let session =
-        admitted_login::login(&pool, email, "correct horse battery staple", clock.as_ref())
-            .await
-            .expect("login");
-    guest_order_links::link(&pool, &session.token, &id, &direct, clock.as_ref())
-        .await
-        .expect("legacy redemption");
+    redeem_legacy_fixture_proof(&pool, clock.as_ref(), &id, &direct).await;
     assert_eq!(counts(&pool).await, (0, 1, 0));
 }
 
@@ -1407,4 +1411,143 @@ async fn guest_link_open_waits_for_competing_order_link_before_start(pool: PgPoo
 #[sqlx::test(migrator = "MIGRATOR")]
 async fn guest_link_open_waits_for_competing_order_link_after_committed_start(pool: PgPool) {
     compete_link_with_open(pool, true).await;
+}
+
+// These two ignored tests are invoked only by the owned hosted restore adapter.
+// The proof bearer is synthetic and stays in a mode-0600 runner scratch file.
+fn restore_schema66_proof_path() -> std::path::PathBuf {
+    assert_eq!(
+        std::env::var("GITHUB_ACTIONS").ok().as_deref(),
+        Some("true")
+    );
+    assert_eq!(
+        std::env::var("RUNNER_ENVIRONMENT").ok().as_deref(),
+        Some("github-hosted")
+    );
+    let temp = std::path::PathBuf::from(std::env::var_os("RUNNER_TEMP").expect("runner temp"));
+    let scratch = temp.join("db-alpine-gosu-scratch");
+    assert_eq!(scratch.canonicalize().expect("owned scratch"), scratch);
+    scratch.join("schema66-synthetic-proof")
+}
+
+async fn restore_schema66_pool() -> PgPool {
+    let _ = restore_schema66_proof_path();
+    let url = std::env::var("RESTORE_FIXTURE_DATABASE_URL").expect("owned rehearsal URL");
+    let database = std::env::var("RESTORE_FIXTURE_DATABASE_NAME").expect("owned database name");
+    let marker = std::env::var("RESTORE_FIXTURE_MARKER").expect("owned cluster marker");
+    assert!(restore_connection::is_owned_url(&url, &database));
+    assert!(marker.len() == 64 && marker.bytes().all(|b| b.is_ascii_hexdigit()));
+    let pool = commerce_infrastructure::connect(&url)
+        .await
+        .expect("owned database connection");
+    let (actual, actual_marker): (String, String) =
+        sqlx::query_as("SELECT current_database(),current_setting('sark.disposable_marker')")
+            .fetch_one(&pool)
+            .await
+            .expect("owned database identity");
+    assert_eq!(actual, database);
+    assert_eq!(actual_marker, marker);
+    pool
+}
+
+async fn restore_schema66_history(pool: &PgPool, last: i64) -> Vec<(i64, bool, Vec<u8>)> {
+    assert!(!MIGRATOR.ignore_missing);
+    let expected: Vec<_> = MIGRATOR
+        .iter()
+        .filter(|m| !m.migration_type.is_down_migration() && m.version <= last)
+        .map(|m| (m.version, true, m.checksum.to_vec()))
+        .collect();
+    let actual: Vec<(i64, bool, Vec<u8>)> = sqlx::query_as(
+        "SELECT version,success,checksum FROM public._sqlx_migrations ORDER BY version",
+    )
+    .fetch_all(pool)
+    .await
+    .expect("migration history");
+    assert_eq!(actual, expected);
+    actual
+}
+
+#[tokio::test]
+#[ignore = "owned hosted schema 66 restore fixture only"]
+async fn restore_schema66_seed() {
+    use std::{io::Write, os::unix::fs::OpenOptionsExt};
+    let pool = restore_schema66_pool().await;
+    let empty: bool = sqlx::query_scalar("SELECT to_regclass('public._sqlx_migrations') IS NULL")
+        .fetch_one(&pool)
+        .await
+        .expect("empty database");
+    assert!(empty);
+    MIGRATOR.run_to(66, &pool).await.expect("schema 66");
+    assert_eq!(restore_schema66_history(&pool, 66).await.len(), 66);
+    quote::seed(&pool).await;
+    let (store, _) = quote::store(&pool, 1100);
+    let (session, csrf) = quote::guest(&store).await;
+    let guest = GuestCredential::from_session(&session).expect("synthetic guest");
+    let id = order(&store, &guest, &csrf, "restore-66").await;
+    let direct = guest_order_links::issue(&store, &guest, &csrf, &id)
+        .await
+        .expect("legacy proof");
+    let mut output = std::fs::OpenOptions::new()
+        .write(true)
+        .create_new(true)
+        .mode(0o600)
+        .open(restore_schema66_proof_path())
+        .expect("exclusive synthetic proof file");
+    output
+        .write_all(direct.expose_bytes())
+        .expect("write synthetic proof");
+    output.sync_all().expect("sync synthetic proof");
+    drop(output);
+    pool.close().await;
+}
+
+#[tokio::test]
+#[ignore = "owned hosted schema 66 restore fixture only"]
+async fn restore_schema66_upgrade() {
+    use std::os::unix::fs::PermissionsExt;
+    let pool = restore_schema66_pool().await;
+    assert_eq!(restore_schema66_history(&pool, 66).await.len(), 66);
+    let path = restore_schema66_proof_path();
+    let meta = std::fs::symlink_metadata(&path).expect("synthetic proof metadata");
+    assert!(meta.is_file() && meta.len() == 32 && meta.permissions().mode() & 0o077 == 0);
+    let bytes: [u8; 32] = std::fs::read(path)
+        .expect("synthetic proof")
+        .try_into()
+        .expect("proof length");
+    let direct = guest_order_links::GuestOrderLinkToken::from_bytes(bytes);
+    let before: Vec<(String, String, i64, i64, Option<i64>)> = sqlx::query_as(
+        "SELECT order_id,basket_id,created_at,expires_at,consumed_at FROM guest_order_link_proofs",
+    )
+    .fetch_all(&pool)
+    .await
+    .expect("prior proofs");
+    assert_eq!(before.len(), 1);
+    MIGRATOR.run(&pool).await.expect("upgrade restored copy");
+    let latest = MIGRATOR
+        .iter()
+        .filter(|m| !m.migration_type.is_down_migration())
+        .map(|m| m.version)
+        .max()
+        .expect("embedded latest");
+    assert!(latest > 66);
+    let history = restore_schema66_history(&pool, latest).await;
+    MIGRATOR.run(&pool).await.expect("idempotent upgrade");
+    assert_eq!(restore_schema66_history(&pool, latest).await, history);
+    let after: Vec<(String, String, i64, i64, Option<i64>)> = sqlx::query_as(
+        "SELECT order_id,basket_id,created_at,expires_at,consumed_at FROM guest_order_link_proofs",
+    )
+    .fetch_all(&pool)
+    .await
+    .expect("preserved proofs");
+    assert_eq!(before, after);
+    let modes: Vec<(String, bool)> = sqlx::query_as(
+        "SELECT delivery_mode,delivery_transaction_id IS NULL FROM guest_order_link_proofs",
+    )
+    .fetch_all(&pool)
+    .await
+    .expect("legacy direct mode");
+    assert_eq!(modes, vec![("direct".into(), true)]);
+    let (_, clock) = quote::store(&pool, 1100);
+    redeem_legacy_fixture_proof(&pool, clock.as_ref(), &before[0].0, &direct).await;
+    pool.close().await;
 }

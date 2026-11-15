@@ -664,6 +664,19 @@ controls, original/fresh synthetic key checks and database locale metadata are
 recorded. Database clients still run against owned loopback endpoints; no staging
 data, volume, keys or credentials are involved.
 
+The same containers also host a separate pair of freshly created synthetic
+databases for a populated schema-66 rehearsal. The source receives exactly the
+embedded first 66 migrations and an invented guest order and direct linking
+proof. Its held snapshot, table content, migration history and sequence state
+are compared after logical restore into the same candidate image, before any
+upgrade. Only that copy then runs the embedded SQLx migrator to its current
+head, validates all migration versions and checksums, reruns it idempotently,
+and checks the legacy proof remains redeemable. A fresh snapshot verifies the
+preserved source remains unchanged. A temporary mode-0600 synthetic proof bearer
+stays in runner scratch and is excluded from retained evidence. This is one
+representative synthetic history, not proof for the actual staging dataset,
+collations, roles, extensions, providers or deployed application images.
+
 Separate scan and restore status files distinguish a completed scan from a later
 restore failure. Retained checksums cover available evidence even on failure;
 the overall workflow succeeds only when both checks succeed. The restore status
@@ -675,3 +688,25 @@ all schema definitions, roles and grants, application image startup, a router
 switch, business-write reconciliation or an operational rollback. The original
 source has no other writers at the checks; sequence values are not covered by
 the exported MVCC snapshot. Migration and operational acceptance remain separate.
+
+## PostgreSQL Alpine comparison lab
+
+The path-scoped `PostgreSQL Alpine comparison lab` workflow compares the pinned
+PostgreSQL 18.7 Debian AMD64 image with the independently pinned official 18.7
+Alpine 3.24 AMD64 image. It checks registry manifest and config bytes, then uses
+separate disposable containers with network disabled and temporary data volumes.
+A synthetic custom-format compressed dump from Debian is restored into a new
+Alpine database. It checks exact non-ASCII rows, an independently specified
+`C`-collated unique-index order, duplicate rejection, sequence state and an
+invalid-archive negative control. The two systems' PostgreSQL UID/GID, locale
+provider, encoding and collation metadata are recorded rather than presumed equal.
+
+The lab also captures complete unfiltered Trivy reports for both immutable images
+using the same fresh vulnerability database, with a positive finding control for
+CVE-2026-6653. Its comparison reports both presence and absence of that finding;
+it does not waive any finding, establish reachability, or declare either image
+safe. A synthetic logical restore and bytewise `C` ordering cannot establish
+compatibility of an existing physical volume, application extensions or default
+locale semantics across libc implementations. Actual restore, ownership, indexes,
+collations, extension compatibility, current security disposition and deployment
+remain separate gates. The lab never connects to or alters staging or production.

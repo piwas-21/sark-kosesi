@@ -1,0 +1,38 @@
+name: PostgreSQL Alpine comparison lab
+on:
+  workflow_dispatch:
+  pull_request:
+    branches: [develop]
+    paths:
+      - .github/workflows/db-alpine-lab.yml
+      - scripts/test_db_alpine_lab.sh
+      - scripts/check_db_alpine_lab.py
+      - scripts/capture_db_image_scan.py
+      - scripts/inspect_image_scan.py
+      - ops/db-zlib-candidate/pull_verified_base.sh
+      - tests/tooling/test_db_alpine_lab.py
+permissions: {}
+jobs:
+  lab:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 35
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+      - name: Run isolated cross-image lab
+        env:
+          ALPINE_SOURCE_REVISION: ${{ github.event.pull_request.head.sha || github.sha }}
+          ALPINE_EVIDENCE_DIR: ${{ runner.temp }}/db-alpine-evidence
+          ALPINE_SCRATCH_DIR: ${{ runner.temp }}/db-alpine-scratch
+        run: bash scripts/test_db_alpine_lab.sh
+      - name: Retain lab evidence or failure status
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+        with:
+          name: db-alpine-lab-${{ github.event.pull_request.head.sha || github.sha }}
+          path: ${{ runner.temp }}/db-alpine-evidence/
+          if-no-files-found: error
