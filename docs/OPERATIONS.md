@@ -82,6 +82,8 @@ Use the same database, connection role and effective `search_path` as the
 application. The unqualified table name resolves the same way as it does for
 the embedded migrator. Keep connection details out of the artifact. An empty
 migration table produces an empty history, while a missing table fails the capture.
+For the opted-in preapplied preview, set `pg_catalog, public, pg_temp` in the
+read-only capture transaction to match the API pool's fixed search path.
 
 ```sh
 umask 077
