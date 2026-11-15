@@ -242,6 +242,29 @@ class RestoreAdapterTests(unittest.TestCase):
             with self.assertRaises(OSError):
                 socket.create_connection(address, timeout=1)
 
+    def test_relay_forwards_response_after_client_half_close(self):
+        class RespondAfterEof(socketserver.BaseRequestHandler):
+            def handle(self):
+                received = bytearray()
+                while data := self.request.recv(1024):
+                    received.extend(data)
+                self.request.sendall(bytes(received).upper())
+
+        with socketserver.TCPServer(("127.0.0.1", 0), RespondAfterEof) as upstream:
+            thread = threading.Thread(target=upstream.serve_forever, daemon=True)
+            thread.start()
+            relay = loopback.RelayServer("127.0.0.1", upstream.server_address[1])
+            try:
+                with socket.create_connection(relay.server_address, timeout=3) as client:
+                    client.sendall(b"half-close")
+                    client.shutdown(socket.SHUT_WR)
+                    self.assertEqual(client.recv(1024), b"HALF-CLOSE")
+                    self.assertEqual(client.recv(1024), b"")
+            finally:
+                relay.close()
+                upstream.shutdown()
+                thread.join(timeout=3)
+
     def test_client_rejects_unowned_ports_and_non_loopback(self):
         owned = "a" * 64
         env = {

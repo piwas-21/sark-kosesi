@@ -17,13 +17,20 @@ class RelayHandler(socketserver.BaseRequestHandler):
             with socket.create_connection(self.server.target, timeout=5) as remote:
                 remote.settimeout(10)
                 self.request.settimeout(10)
-                while not self.server.stopping.is_set():
-                    ready, _, _ = select.select([self.request, remote], [], [], 0.5)
+                active = [self.request, remote]
+                while active and not self.server.stopping.is_set():
+                    ready, _, _ = select.select(active, [], [], 0.5)
                     for source in ready:
                         data = source.recv(65536)
+                        destination = remote if source is self.request else self.request
                         if not data:
-                            return
-                        (remote if source is self.request else self.request).sendall(data)
+                            active.remove(source)
+                            try:
+                                destination.shutdown(socket.SHUT_WR)
+                            except OSError:
+                                pass
+                        else:
+                            destination.sendall(data)
         except OSError:
             # Closing a failed relay forces the fixture's own database operation to fail.
             return
