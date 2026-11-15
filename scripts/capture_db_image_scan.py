@@ -152,6 +152,9 @@ def write_status(output, stage, outcome, **details):
 
 def capture(output):
     write_status(output, "source", "running")
+    uid, gid = os.geteuid(), os.getegid()
+    if uid == 0 or gid == 0:
+        raise ValueError("capture requires an unprivileged runner identity")
     revision = os.environ["CAPTURE_REVISION"]
     if not re.fullmatch(r"[0-9a-f]{40}", revision):
         raise ValueError("invalid capture revision")
@@ -164,8 +167,7 @@ def capture(output):
     (output / "empty.yml").write_text("{}\n")
     (output / "empty.ignore").write_text("")
     scratch = output / "scratch"
-    scratch.mkdir(mode=0o777)
-    os.chmod(scratch, 0o777)
+    scratch.mkdir(mode=0o700)
     command = [
         "docker",
         "run",
@@ -174,7 +176,7 @@ def capture(output):
         "--cap-drop=ALL",
         "--security-opt=no-new-privileges",
         "--user",
-        "1001:1001",
+        f"{uid}:{gid}",
         "--tmpfs",
         "/tmp:rw,nosuid,nodev",
         "--mount",

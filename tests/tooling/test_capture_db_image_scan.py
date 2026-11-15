@@ -32,6 +32,8 @@ class CaptureTests(unittest.TestCase):
                 ),
                 mock.patch.object(capture.subprocess, "check_output", return_value=revision),
                 mock.patch.object(capture, "verify_staging_image"),
+                mock.patch.object(capture.os, "geteuid", return_value=1001),
+                mock.patch.object(capture.os, "getegid", return_value=1001),
                 mock.patch.object(capture.urllib.request, "urlopen", side_effect=http_error),
                 self.assertRaises(capture.RegistryFailure) as failure,
             ):
@@ -61,6 +63,8 @@ class CaptureTests(unittest.TestCase):
                 mock.patch.object(capture.subprocess, "check_output", return_value=revision),
                 mock.patch.object(capture, "verify_staging_image"),
                 mock.patch.object(capture, "capture_identity"),
+                mock.patch.object(capture.os, "geteuid", return_value=1234),
+                mock.patch.object(capture.os, "getegid", return_value=2345),
                 mock.patch.object(
                     capture.subprocess, "run", return_value=mock.Mock(returncode=2)
                 ) as run,
@@ -72,8 +76,24 @@ class CaptureTests(unittest.TestCase):
             self.assertEqual((status["stage"], status["outcome"]), ("scanner", "failed"))
             command = run.call_args.args[0]
             self.assertEqual(command[command.index("--image-src") + 1], "remote")
+            self.assertEqual(command[command.index("--user") + 1], "1234:2345")
+            self.assertEqual((output / "scratch").stat().st_mode & 0o777, 0o700)
             self.assertNotIn("/var/run/docker.sock", " ".join(command))
             self.assertIn("--show-suppressed", command)
+
+    def test_capture_rejects_privileged_identity_before_running_commands(self):
+        with tempfile.TemporaryDirectory() as directory:
+            output = Path(directory) / "capture"
+            for uid, gid in [(0, 1001), (1001, 0)]:
+                with (
+                    mock.patch.dict(capture.os.environ, {"CAPTURE_OUTPUT": str(output)}),
+                    mock.patch.object(capture.os, "geteuid", return_value=uid),
+                    mock.patch.object(capture.os, "getegid", return_value=gid),
+                    mock.patch.object(capture.subprocess, "check_output") as commands,
+                    self.assertRaisesRegex(ValueError, "unprivileged runner identity"),
+                ):
+                    capture.main()
+                commands.assert_not_called()
 
     def test_staging_image_must_belong_to_db_service(self):
         image = f"postgres:18.7-trixie@{capture.INDEX}"

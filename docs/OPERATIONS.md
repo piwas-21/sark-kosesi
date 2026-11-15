@@ -531,7 +531,8 @@ in configuration without interpolation, and the capture verifies the `db` servic
 staging index, its Linux AMD64 platform manifest and image config. The
 scanner is Trivy 0.70.0 at its pinned Linux AMD64 image digest and accesses the
 registry directly without the Docker socket or credentials. Empty configuration
-and ignore files and a fresh scanner cache are used for each run.
+and ignore files and a fresh scanner cache are used for each run. The scanner
+uses the unprivileged runner's UID and GID to write into owner-only scratch.
 
 The artifact contains the raw report, image and scanner identity documents, empty
 configuration, database metadata, command, scanner log, receipt, offline audit
