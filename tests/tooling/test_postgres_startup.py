@@ -62,6 +62,21 @@ class PostgresStartup(unittest.TestCase):
             native_cluster(Path("/synthetic-owned"), Path("/synthetic-bin"), marker)
         start = command.call_args_list[1].args
         self.assertIn("sark.disposable_marker=" + marker, start[start.index("-o") + 1])
+        self.assertNotIn("fsync=off", start[start.index("-o") + 1])
+
+    def test_native_fsync_fault_is_an_explicit_startup_option(self):
+        from pathlib import Path
+
+        from with_postgres import native_cluster
+
+        rejected = subprocess.CompletedProcess([], 1, stderr="password authentication failed")
+        with (
+            patch("with_postgres.run") as command,
+            patch("with_postgres.subprocess.run", return_value=rejected),
+        ):
+            native_cluster(Path("/synthetic-owned"), Path("/synthetic-bin"), disable_fsync=True)
+        start = command.call_args_list[1].args
+        self.assertTrue(start[start.index("-o") + 1].endswith(" -c fsync=off"))
 
     def test_marker_validation_rejects_values_that_could_change_startup_options(self):
         from with_postgres import disposable_marker
@@ -81,6 +96,7 @@ class PostgresStartup(unittest.TestCase):
         inherited = {
             "P1_POSTGRES_BIN": "/synthetic-bin",
             "P1_POSTGRES_DISPOSABLE_MARKER": "untrusted-old-marker",
+            "P1_POSTGRES_EXPECTED_FSYNC": "off",
             "PGOPTIONS": "-c sark.disposable_marker=forged",
         }
         with (
@@ -96,4 +112,5 @@ class PostgresStartup(unittest.TestCase):
         self.assertEqual(native.call_args.args[2], marker)
         environment = child.call_args.kwargs["env"]
         self.assertEqual(environment["P1_POSTGRES_DISPOSABLE_MARKER"], marker)
+        self.assertEqual(environment["P1_POSTGRES_EXPECTED_FSYNC"], "on")
         self.assertNotIn("PGOPTIONS", environment)

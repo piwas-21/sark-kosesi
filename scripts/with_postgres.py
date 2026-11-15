@@ -33,7 +33,7 @@ def disposable_marker(marker=None):
     return value
 
 
-def native_cluster(directory, binaries, marker=None):
+def native_cluster(directory, binaries, marker=None, *, disable_fsync=False):
     marker = disposable_marker(marker)
     data = directory / "data"
     password = secrets.token_urlsafe(32)
@@ -55,6 +55,12 @@ def native_cluster(directory, binaries, marker=None):
         # initdb reads an anonymous subprocess pipe; no plaintext credential file.
         input=password + "\n",
     )
+    server_options = (
+        f"-c listen_addresses=127.0.0.1 -c unix_socket_directories='' -p {port} "
+        f"-c sark.disposable_marker={marker}"
+    )
+    if disable_fsync:
+        server_options += " -c fsync=off"
     run(
         str(binaries / "pg_ctl"),
         "-D",
@@ -62,8 +68,7 @@ def native_cluster(directory, binaries, marker=None):
         "-l",
         str(directory / "postgres.log"),
         "-o",
-        f"-c listen_addresses=127.0.0.1 -c unix_socket_directories='' -p {port} "
-        f"-c sark.disposable_marker={marker}",
+        server_options,
         "start",
     )
     negative = subprocess.run(
@@ -133,20 +138,25 @@ def docker_cluster(name, marker=None):
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument(
+        "--fsync-off", action="store_true", help="Start the owned native cluster with fsync off"
+    )
     parser.add_argument("command", nargs=argparse.REMAINDER)
     args = parser.parse_args()
     command = args.command[1:] if args.command[:1] == ["--"] else args.command
     if not command:
         parser.error("A real command is required")
+    binaries = Path(os.environ["P1_POSTGRES_BIN"]) if os.environ.get("P1_POSTGRES_BIN") else None
+    if args.fsync_off and binaries is None:
+        parser.error("--fsync-off requires P1_POSTGRES_BIN for an owned native cluster")
     (ROOT / ".local").mkdir(exist_ok=True)
     name = "sark-p1-" + secrets.token_hex(8)
     marker = disposable_marker()
-    binaries = Path(os.environ["P1_POSTGRES_BIN"]) if os.environ.get("P1_POSTGRES_BIN") else None
     with tempfile.TemporaryDirectory(prefix="sark-p1-pg-") as temporary:
         directory = Path(temporary)
         try:
             database = (
-                native_cluster(directory, binaries, marker)
+                native_cluster(directory, binaries, marker, disable_fsync=args.fsync_off)
                 if binaries
                 else docker_cluster(name, marker)
             )
@@ -154,6 +164,7 @@ def main():
                 **{key: value for key, value in os.environ.items() if not key.startswith("PG")},
                 "DATABASE_URL": database,
                 "P1_POSTGRES_DISPOSABLE_MARKER": marker,
+                "P1_POSTGRES_EXPECTED_FSYNC": "off" if args.fsync_off else "on",
                 "APP_ENV": "test",
             }
             result = subprocess.run(command, cwd=ROOT, env=environment, check=False)

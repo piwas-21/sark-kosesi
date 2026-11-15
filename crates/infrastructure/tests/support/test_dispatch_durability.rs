@@ -114,3 +114,57 @@ async fn dispatch_sabotage_rolls_back_start_and_prevents_post(pool: PgPool) {
     });
     async_pool.close().await;
 }
+
+#[sqlx::test(migrator = "MIGRATOR")]
+async fn dispatch_requires_server_fsync_before_post(pool: PgPool) {
+    let expected = std::env::var("P1_POSTGRES_EXPECTED_FSYNC").unwrap_or_else(|_| "on".into());
+    let (actual, marker): (String, Option<String>) = sqlx::query_as(
+        "SELECT current_setting('fsync'), current_setting('sark.disposable_marker',true)",
+    )
+    .fetch_one(&pool)
+    .await
+    .expect("server settings");
+    assert_eq!(actual, expected);
+    if expected == "off" {
+        assert_eq!(std::env::var("APP_ENV").as_deref(), Ok("test"));
+        let owned = std::env::var("P1_POSTGRES_DISPOSABLE_MARKER").expect("owned test marker");
+        assert_eq!(marker.as_deref(), Some(owned.as_str()));
+    }
+
+    let (clock, frozen) = prepared(&pool).await;
+    let body = payment(frozen.snapshot());
+    let server = Server::start(vec![
+        profile(),
+        Reply::Json(201, body.clone()),
+        Reply::Json(200, body),
+    ]);
+    let client = local(&server).verify_profile().await.expect("test profile");
+    let ids = crate::payment_test_fixture::Ids(AtomicU64::new(10000));
+    let outcome = dispatch_and_observe_test_payment(
+        &pool,
+        clock.as_ref(),
+        &ids,
+        &client,
+        &frozen.snapshot().binding.id,
+    )
+    .await;
+    match expected.as_str() {
+        "off" => {
+            assert_eq!(
+                outcome,
+                Err(InitialDispatchError::Start(PaymentStoreError::Unavailable))
+            );
+            assert_eq!(counts(&pool).await, (0, 0, 0, 0));
+            assert_eq!(server.count(), 1, "profile GET only");
+        }
+        "on" => {
+            assert_eq!(outcome, Ok(InitialDispatchOutcome::Observed));
+            assert_eq!(counts(&pool).await, (1, 1, 1, 1));
+            server.inspect(|requests| {
+                let methods: Vec<_> = requests.iter().map(|r| r.method.as_str()).collect();
+                assert_eq!(methods, ["GET", "POST", "GET"]);
+            });
+        }
+        _ => panic!("invalid server fsync expectation"),
+    }
+}
