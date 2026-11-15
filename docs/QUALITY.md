@@ -581,6 +581,8 @@ native isolation guard even when the inherited search path spoofs its setting.
 Also shadow transaction-ID and digest functions in an isolated schema: verify
 real start and observation XIDs, reject a later attempted generic-receipt
 upgrade, and check the fixed canonical digest against its independent oracle.
+Shadow text equality so an unqualified off-to-on comparison lies while the
+actual receipt writer still rejects an unsafe server.
 These controls assume the actual public tables and functions remain owned by
 the trusted migration authority; privileged database rewrites remain outside
 the evidence boundary.

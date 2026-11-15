@@ -347,6 +347,8 @@ async fn initial_provenance_requires_server_fsync() {
         .await.expect("nontransactional receipt witness");
     pool.execute("CREATE FUNCTION public.current_setting(text) RETURNS text LANGUAGE sql STABLE AS $$ SELECT CASE WHEN $1='transaction_isolation' THEN 'read committed' WHEN $1 IN ('fsync','synchronous_commit') THEN 'on' ELSE pg_catalog.current_setting($1) END $$")
         .await.expect("synthetic hostile search path");
+    pool.execute("CREATE FUNCTION public.fixture_lax_text_equal(text,text) RETURNS boolean LANGUAGE sql IMMUTABLE AS $$ SELECT CASE WHEN $1 OPERATOR(pg_catalog.=) 'off' AND $2 OPERATOR(pg_catalog.=) 'on' THEN true ELSE $1 OPERATOR(pg_catalog.=) $2 END $$; CREATE OPERATOR public.= (LEFTARG=pg_catalog.text,RIGHTARG=pg_catalog.text,FUNCTION=public.fixture_lax_text_equal)")
+        .await.expect("synthetic hostile equality operator");
     let writer = PgPoolOptions::new()
         .max_connections(1)
         .after_connect(|connection, _| {
@@ -363,6 +365,9 @@ async fn initial_provenance_requires_server_fsync() {
         .connect_with(options.database(&name))
         .await
         .expect("hostile-search-path writer");
+    let comparisons: (bool, bool, bool, bool) = sqlx::query_as("SELECT 'off'::text='on'::text,'off'::text OPERATOR(pg_catalog.=) 'on'::text,'same'::text='same'::text,'left'::text='right'::text")
+        .fetch_one(&writer).await.expect("spoofed and real equality");
+    assert_eq!(comparisons, (true, false, true, false));
     let settings: (String, String, String, String) = sqlx::query_as("SELECT current_setting('fsync'::text),pg_catalog.current_setting('fsync'),current_setting('synchronous_commit'::text),pg_catalog.current_setting('synchronous_commit')")
         .fetch_one(&writer).await.expect("spoofed and real server settings");
     assert_eq!(

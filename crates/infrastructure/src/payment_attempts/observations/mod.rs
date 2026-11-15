@@ -141,12 +141,12 @@ async fn record(
     }
     now(&clock)?;
     if initial.is_some() {
-        let durable: bool = sqlx::query_scalar(
-            "SELECT pg_catalog.current_setting('fsync')='on' AND pg_catalog.current_setting('synchronous_commit')='on'",
+        let (fsync, synchronous_commit): (String, String) = sqlx::query_as(
+            "SELECT pg_catalog.current_setting('fsync'), pg_catalog.current_setting('synchronous_commit')",
         )
         .fetch_one(&mut *tx)
         .await?;
-        if !durable {
+        if fsync != "on" || synchronous_commit != "on" {
             return Err(PaymentStoreError::Unavailable);
         }
     }
