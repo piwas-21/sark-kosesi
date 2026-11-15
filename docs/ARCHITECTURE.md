@@ -527,6 +527,16 @@ provider identity for later reconciliation, including ambiguous payment matches
 and amounts above the original payment. Financial and inventory transitions are
 outside this evidence path.
 
+A private set inspection claims the same original attempt, revalidates each
+bounded stored reversal receipt and reciprocal event, and returns only a count
+and source-bound digest of the local journal. It also checks that every reversal
+event for the order has its exact journal receipt. A partial index on the
+outbox aggregate supports the order-scoped check. Repeated child observations
+and unknown statuses remain separate. The detached result becomes stale when the
+local set changes and neither proves provider completeness nor a net balance.
+It must not be combined with another detached inspection as if both held the
+same claim.
+
 The private page journal records a verified collection response after network I/O.
 It claims the dispatched attempt, preserves the provider's ordered candidates and
 binds every stored field to a reciprocal outbox digest. Each root starts a separate
@@ -729,6 +739,16 @@ recognition has since changed; it does not report unpacking or restocking. At mo
 64 journal entries per order are admitted, including releases; every active
 record reserves its own release slot. Neither a record nor its release proves physical possession, net payment, dispatch, delivery, stock
 availability or permission to ship. No carrier, payment or stock operation follows.
+An order-scoped partial outbox index supports the reverse event check, including
+malformed or orphan events, without trusting their payload to select the order.
+
+An authenticated warehouse inspection holds the same attempt claim while it
+validates the complete packing history and immutable allocation. It reports the
+ordered, actively asserted and not asserted whole units per SKU, and bounded
+record IDs, actions, release targets and times. Existing records use their
+historical received recognition even if later evidence changes; an empty history
+requires a current validated source. These are packing assertions, not remaining
+unshipped units, physical custody, current net payment or dispatch authority.
 
 Write domain changes and outbox events in one transaction. Workers claim leases using PostgreSQL, retry with backoff and stable effect identifiers, and recover abandoned leases. Emails, stock alerts and fulfilment requests are idempotent. Record provider acceptance separately from customer delivery. Failed jobs are visible and replayable only through bounded, audited admin actions.
 

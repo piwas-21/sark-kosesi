@@ -62,6 +62,277 @@ fn chargeback(reversed: Option<Value>) -> Value {
 }
 
 #[sqlx::test(migrator = "MIGRATOR")]
+async fn reversal_set_inspection_digest_changes_for_same_count_and_restores(pool: PgPool) {
+    use crate::payment_attempts::reversals::inspect_set;
+    let (time, frozen) = observation_cases::prepared(&pool, true).await;
+    let attempt = &frozen.snapshot().binding.id;
+    let verified = fetched(frozen.snapshot(), refund("pending", "12.34"), false).await;
+    let receipt = record(
+        &pool,
+        time.as_ref(),
+        &observation_cases::ids(),
+        "content-control",
+        &verified,
+    )
+    .await
+    .expect("synthetic receipt");
+    let read_exact = || async {
+        sqlx::query_as::<_, (Value, Value)>("SELECT to_jsonb(o),to_jsonb(e) FROM payment_reversal_observations o JOIN commerce_outbox e ON e.id=o.event_id WHERE o.id=$1")
+            .bind(&receipt.id).fetch_one(&pool).await.expect("exact custody")
+    };
+    let before = read_exact().await;
+    let original = inspect_set(&pool, attempt).await.expect("original set");
+    assert_eq!(original.observations, 1);
+
+    pool.execute("ALTER TABLE payment_reversal_observations DISABLE TRIGGER USER; ALTER TABLE commerce_outbox DISABLE TRIGGER USER")
+        .await.expect("isolate content fault");
+    sqlx::query("UPDATE payment_reversal_observations SET amount_minor=1235 WHERE id=$1")
+        .bind(&receipt.id)
+        .execute(&pool)
+        .await
+        .expect("change one minor unit");
+    sqlx::query("UPDATE commerce_outbox e SET payload=payment_reversal_observation_event(o) FROM payment_reversal_observations o WHERE e.id=o.event_id AND o.id=$1")
+        .bind(&receipt.id).execute(&pool).await.expect("rebind exact event");
+    pool.execute("ALTER TABLE payment_reversal_observations ENABLE TRIGGER USER; ALTER TABLE commerce_outbox ENABLE TRIGGER USER")
+        .await.expect("restore guards");
+    let changed = inspect_set(&pool, attempt)
+        .await
+        .expect("valid modified set");
+    assert_eq!(changed.observations, original.observations);
+    assert_ne!(
+        changed.digest, original.digest,
+        "same-count content must affect digest"
+    );
+
+    pool.execute("ALTER TABLE payment_reversal_observations DISABLE TRIGGER USER; ALTER TABLE commerce_outbox DISABLE TRIGGER USER")
+        .await.expect("isolate repair");
+    sqlx::query("UPDATE payment_reversal_observations SET amount_minor=1234 WHERE id=$1")
+        .bind(&receipt.id)
+        .execute(&pool)
+        .await
+        .expect("restore exact amount");
+    sqlx::query("UPDATE commerce_outbox e SET payload=payment_reversal_observation_event(o) FROM payment_reversal_observations o WHERE e.id=o.event_id AND o.id=$1")
+        .bind(&receipt.id).execute(&pool).await.expect("restore exact event");
+    pool.execute("ALTER TABLE payment_reversal_observations ENABLE TRIGGER USER; ALTER TABLE commerce_outbox ENABLE TRIGGER USER")
+        .await.expect("restore guards");
+    assert_eq!(
+        read_exact().await,
+        before,
+        "receipt and event restored exactly"
+    );
+    assert_eq!(
+        inspect_set(&pool, attempt).await.expect("restored set"),
+        original
+    );
+}
+
+#[sqlx::test(migrator = "MIGRATOR")]
+async fn reversal_set_inspection_rejects_orphan_event_and_accepts_repaired_custody(pool: PgPool) {
+    use crate::payment_attempts::reversals::inspect_set;
+    let (time, frozen) = observation_cases::prepared(&pool, true).await;
+    let attempt = &frozen.snapshot().binding.id;
+    let empty = inspect_set(&pool, attempt)
+        .await
+        .expect("healthy empty set");
+    assert_eq!(empty.observations, 0);
+    let verified = fetched(frozen.snapshot(), refund("pending", "12.34"), false).await;
+    let receipt = record(
+        &pool,
+        time.as_ref(),
+        &observation_cases::ids(),
+        "orphan-source",
+        &verified,
+    )
+    .await
+    .expect("authenticated receipt");
+    let healthy = inspect_set(&pool, attempt).await.expect("complete set");
+    assert_eq!(healthy.observations, 1);
+    sqlx::query("CREATE TABLE public.reversal_backup AS SELECT * FROM payment_reversal_observations WHERE id=$1")
+        .bind(&receipt.id).execute(&pool).await.expect("save synthetic source");
+    pool.execute("ALTER TABLE payment_reversal_observations DISABLE TRIGGER USER")
+        .await
+        .expect("isolate missing journal row");
+    sqlx::query("DELETE FROM payment_reversal_observations WHERE id=$1")
+        .bind(&receipt.id)
+        .execute(&pool)
+        .await
+        .expect("remove source only");
+    pool.execute("ALTER TABLE payment_reversal_observations ENABLE TRIGGER USER")
+        .await
+        .expect("restore guard");
+    let counts = crate::payment_test_fixture::counts(&pool).await;
+    assert!(matches!(
+        inspect_set(&pool, attempt).await,
+        Err(PaymentStoreError::InvalidStoredData)
+    ));
+    assert_eq!(counts, crate::payment_test_fixture::counts(&pool).await);
+    pool.execute("ALTER TABLE payment_reversal_observations DISABLE TRIGGER USER; INSERT INTO payment_reversal_observations SELECT * FROM public.reversal_backup; ALTER TABLE payment_reversal_observations ENABLE TRIGGER USER; DROP TABLE public.reversal_backup")
+        .await.expect("restore exact synthetic source");
+    assert_eq!(
+        healthy,
+        inspect_set(&pool, attempt).await.expect("repaired source")
+    );
+}
+
+#[sqlx::test(migrator = "MIGRATOR")]
+async fn reversal_set_inspection_preserves_local_facts_and_detects_damage(pool: PgPool) {
+    use crate::payment_attempts::reversals::inspect_set;
+    let (time, frozen) = observation_cases::prepared(&pool, true).await;
+    let attempt = &frozen.snapshot().binding.id;
+    let empty = inspect_set(&pool, attempt).await.expect("empty local set");
+    assert_eq!(empty.observations, 0);
+    assert_eq!(empty.digest.len(), 64);
+    assert!(inspect_set(&pool, "invalid").await.is_err());
+    let ids = observation_cases::ids();
+    let pending = fetched(frozen.snapshot(), refund("pending", "9999.99"), false).await;
+    let changed = fetched(frozen.snapshot(), refund("refunded", "9999.99"), false).await;
+    let unknown = fetched(frozen.snapshot(), chargeback(None), true).await;
+    let received = fetched(frozen.snapshot(), chargeback(Some(Value::Null)), true).await;
+    let reversed = fetched(
+        frozen.snapshot(),
+        chargeback(Some(json!("2024-03-21T09:13:37.987654321Z"))),
+        true,
+    )
+    .await;
+    for (effect, observation) in [
+        ("set-pending", &pending),
+        ("set-refunded", &changed),
+        ("set-unknown", &unknown),
+        ("set-received", &received),
+        ("set-reversed", &reversed),
+    ] {
+        record(&pool, time.as_ref(), &ids, effect, observation)
+            .await
+            .expect("evidence");
+    }
+    let before = crate::payment_test_fixture::counts(&pool).await;
+    let actual = inspect_set(&pool, attempt)
+        .await
+        .expect("all exact receipts");
+    assert_eq!(actual.observations, 5);
+    assert_ne!(actual.digest, empty.digest);
+    assert_eq!(
+        actual,
+        inspect_set(&pool, attempt).await.expect("stable set")
+    );
+    record(&pool, time.as_ref(), &ids, "set-pending", &pending)
+        .await
+        .expect("idempotent replay");
+    assert_eq!(
+        actual,
+        inspect_set(&pool, attempt).await.expect("same replay")
+    );
+    assert_eq!(crate::payment_test_fixture::counts(&pool).await, before);
+
+    pool.execute("ALTER TABLE commerce_outbox DISABLE TRIGGER USER; UPDATE commerce_outbox SET payload='{}' WHERE id=(SELECT event_id FROM payment_reversal_observations WHERE effect_key='set-unknown'); ALTER TABLE commerce_outbox ENABLE TRIGGER USER").await.expect("isolated event damage");
+    assert!(matches!(
+        inspect_set(&pool, attempt).await,
+        Err(PaymentStoreError::InvalidStoredData)
+    ));
+    pool.execute("ALTER TABLE commerce_outbox DISABLE TRIGGER USER; UPDATE commerce_outbox e SET payload=payment_reversal_observation_event(o) FROM payment_reversal_observations o WHERE e.id=o.event_id AND o.effect_key='set-unknown'; ALTER TABLE commerce_outbox ENABLE TRIGGER USER").await.expect("repair event");
+    assert_eq!(
+        actual,
+        inspect_set(&pool, attempt).await.expect("repaired set")
+    );
+    let started: i64 =
+        sqlx::query_scalar("SELECT started_at FROM payment_dispatch_starts WHERE attempt_id=$1")
+            .bind(attempt)
+            .fetch_one(&pool)
+            .await
+            .expect("dispatch time");
+    pool.execute("ALTER TABLE payment_dispatch_starts DISABLE TRIGGER USER")
+        .await
+        .expect("isolate source fault");
+    sqlx::query("UPDATE payment_dispatch_starts SET started_at=0 WHERE attempt_id=$1")
+        .bind(attempt)
+        .execute(&pool)
+        .await
+        .expect("damage source");
+    assert!(inspect_set(&pool, attempt).await.is_err());
+    sqlx::query("UPDATE payment_dispatch_starts SET started_at=$2 WHERE attempt_id=$1")
+        .bind(attempt)
+        .bind(started)
+        .execute(&pool)
+        .await
+        .expect("restore source");
+    pool.execute("ALTER TABLE payment_dispatch_starts ENABLE TRIGGER USER")
+        .await
+        .expect("restore source guard");
+    assert_eq!(
+        actual,
+        inspect_set(&pool, attempt).await.expect("repaired source")
+    );
+}
+
+#[sqlx::test(migrator = "MIGRATOR")]
+async fn reversal_set_inspection_waits_for_writer_then_reads_committed_fact(pool: PgPool) {
+    use crate::payment_attempts::reversals::inspect_set;
+    let (time, frozen) = observation_cases::prepared(&pool, true).await;
+    let attempt = frozen.snapshot().binding.id.clone();
+    let verified = fetched(frozen.snapshot(), refund("pending", "12.34"), false).await;
+    let ids = observation_cases::ids();
+    let original = record(&pool, time.as_ref(), &ids, "race-original", &verified)
+        .await
+        .expect("seed");
+    let before = inspect_set(&pool, &attempt).await.expect("before");
+    let mut writer = pool.begin().await.expect("writer");
+    sqlx::query("SELECT id FROM payment_attempts WHERE id=$1 FOR UPDATE")
+        .bind(&attempt)
+        .execute(&mut *writer)
+        .await
+        .expect("claim");
+    sqlx::query("INSERT INTO payment_reversal_observations(id,attempt_id,order_id,effect_key,payment_id,child_id,phase,amount_minor,credential_fingerprint,source_created_seconds,source_created_nanos,source_reversed_seconds,source_reversed_nanos,recorded_at,event_id) SELECT 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa1',attempt_id,order_id,'race-new',payment_id,child_id,phase,amount_minor,credential_fingerprint,source_created_seconds,source_created_nanos,source_reversed_seconds,source_reversed_nanos,recorded_at,'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb1' FROM payment_reversal_observations WHERE id=$1").bind(&original.id).execute(&mut *writer).await.expect("new synthetic receipt");
+    sqlx::query("INSERT INTO commerce_outbox(id,aggregate_id,kind,payload,created_at) SELECT event_id,order_id,'payment.reversal_observed.v1',payment_reversal_observation_event(o),recorded_at FROM payment_reversal_observations o WHERE effect_key='race-new'").execute(&mut *writer).await.expect("reciprocal event");
+    let other = pool.clone();
+    let waiting_attempt = attempt.clone();
+    let reader = tokio::spawn(async move { inspect_set(&other, &waiting_attempt).await });
+    tokio::time::timeout(Duration::from_millis(800), async {
+        loop {
+            let waiting: bool = sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM pg_stat_activity WHERE datname=current_database() AND wait_event_type='Lock' AND query LIKE 'SELECT left(basket_id,33) FROM payment_attempts%FOR UPDATE')").fetch_one(&pool).await.expect("wait probe");
+            if waiting { break; }
+            tokio::time::sleep(Duration::from_millis(5)).await;
+        }
+    }).await.expect("reader reached attempt claim");
+    writer.commit().await.expect("commit exact fact");
+    let after = reader.await.expect("reader").expect("committed set");
+    assert_eq!((before.observations, after.observations), (1, 2));
+    assert_ne!(before.digest, after.digest);
+    assert_eq!(after, inspect_set(&pool, &attempt).await.expect("stable"));
+}
+
+#[sqlx::test(migrator = "MIGRATOR")]
+async fn reversal_set_inspection_enforces_128_receipt_bound(pool: PgPool) {
+    use crate::payment_attempts::reversals::inspect_set;
+    let (time, frozen) = observation_cases::prepared(&pool, true).await;
+    let attempt = &frozen.snapshot().binding.id;
+    let verified = fetched(frozen.snapshot(), refund("pending", "12.34"), false).await;
+    let seed = record(
+        &pool,
+        time.as_ref(),
+        &observation_cases::ids(),
+        "bound-seed",
+        &verified,
+    )
+    .await
+    .expect("seed");
+    let mut tx = pool.begin().await.expect("synthetic bounded history");
+    sqlx::query("INSERT INTO payment_reversal_observations(id,attempt_id,order_id,effect_key,payment_id,child_id,phase,amount_minor,credential_fingerprint,source_created_seconds,source_created_nanos,source_reversed_seconds,source_reversed_nanos,recorded_at,event_id) SELECT lpad(to_hex(1000+n),32,'0'),o.attempt_id,o.order_id,'bound-'||n,o.payment_id,o.child_id,o.phase,o.amount_minor,o.credential_fingerprint,o.source_created_seconds,o.source_created_nanos,o.source_reversed_seconds,o.source_reversed_nanos,o.recorded_at,lpad(to_hex(2000+n),32,'0') FROM payment_reversal_observations o CROSS JOIN generate_series(1,127) n WHERE o.id=$1")
+        .bind(&seed.id).execute(&mut *tx).await.expect("127 synthetic facts");
+    sqlx::query("INSERT INTO commerce_outbox(id,aggregate_id,kind,payload,created_at) SELECT event_id,order_id,'payment.reversal_observed.v1',payment_reversal_observation_event(o),recorded_at FROM payment_reversal_observations o WHERE effect_key LIKE 'bound-%' AND effect_key<>'bound-seed'")
+        .execute(&mut *tx).await.expect("exact synthetic events");
+    tx.commit().await.expect("commit bounded history");
+    let full = inspect_set(&pool, attempt)
+        .await
+        .expect("maximum valid history");
+    assert_eq!(full.observations, 128);
+    pool.execute("ALTER TABLE payment_reversal_observations DISABLE TRIGGER USER; INSERT INTO payment_reversal_observations(id,attempt_id,order_id,effect_key,payment_id,child_id,phase,amount_minor,credential_fingerprint,source_created_seconds,source_created_nanos,source_reversed_seconds,source_reversed_nanos,recorded_at,event_id,transaction_id) SELECT 'ffffffffffffffffffffffffffffffff',attempt_id,order_id,'overflow',payment_id,child_id,phase,amount_minor,credential_fingerprint,source_created_seconds,source_created_nanos,source_reversed_seconds,source_reversed_nanos,recorded_at,'eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee',transaction_id FROM payment_reversal_observations WHERE effect_key='bound-seed'; ALTER TABLE payment_reversal_observations ENABLE TRIGGER USER").await.expect("isolated over-bound corruption");
+    assert!(matches!(
+        inspect_set(&pool, attempt).await,
+        Err(PaymentStoreError::InvalidStoredData)
+    ));
+}
+
+#[sqlx::test(migrator = "MIGRATOR")]
 async fn authenticated_fact_replays_once_and_does_not_transition_money_or_stock(pool: PgPool) {
     let (time, frozen) = observation_cases::prepared(&pool, true).await;
     let before = crate::payment_test_fixture::counts(&pool).await;

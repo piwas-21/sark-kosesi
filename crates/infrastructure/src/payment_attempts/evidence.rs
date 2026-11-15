@@ -26,6 +26,15 @@ pub(crate) async fn context(
     id: &str,
     claim: bool,
 ) -> Result<(FrozenAttempt, i64), PaymentStoreError> {
+    let (frozen, _, started_at) = context_with_start(tx, id, claim).await?;
+    Ok((frozen, started_at))
+}
+
+pub(super) async fn context_with_start(
+    tx: &mut Transaction<'_, Postgres>,
+    id: &str,
+    claim: bool,
+) -> Result<(FrozenAttempt, String, i64), PaymentStoreError> {
     let owner: Option<String> = if claim {
         sqlx::query_scalar("SELECT left(basket_id,33) FROM payment_attempts WHERE id=$1 FOR UPDATE")
             .bind(id)
@@ -58,7 +67,7 @@ pub(crate) async fn context(
     {
         return Err(PaymentStoreError::InvalidStoredData);
     }
-    Ok((frozen, started_at))
+    Ok((frozen, start_id, started_at))
 }
 pub(super) fn now(clock: &dyn Clock) -> Result<i64, PaymentStoreError> {
     let at = i64::try_from(
