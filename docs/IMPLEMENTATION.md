@@ -440,7 +440,9 @@ A pure whole-variant shipment quantity check compares an accepted order's
 captured SKU quantities with complete caller-supplied prior counts and a bounded
 proposal. A pure component projection cross-checks each supplied original BOM
 and frozen allocation member against that order and returns the expected summed
-physical demand. It does not authenticate those inputs or prove packages. Before
+physical demand. The private warehouse read loads those inputs under a current
+staff claim and requires current received recognition and an exact completed
+allocation. Each estimate uses the original order as its upper bound. Before
 dispatch, persist authenticated fulfilment history and record physical package
 evidence for the components in each shipment.
 
