@@ -379,6 +379,10 @@ async fn expiry_after_real_bucket_wait_denies_stale_cancellation_and_rolls_back(
         .execute(&mut *held)
         .await
         .expect("claim");
+    let blocker: i32 = sqlx::query_scalar("SELECT pg_backend_pid()")
+        .fetch_one(&mut *held)
+        .await
+        .expect("held bucket backend");
     let moving = std::sync::Arc::new(MovingClock(std::sync::atomic::AtomicU64::new(1100)));
     let task_clock = moving.clone();
     let task_pool = pool.clone();
@@ -388,7 +392,7 @@ async fn expiry_after_real_bucket_wait_denies_stale_cancellation_and_rolls_back(
     });
     tokio::time::timeout(std::time::Duration::from_millis(800), async {
         loop {
-            let count: i64 = sqlx::query_scalar("SELECT count(*) FROM pg_stat_activity WHERE datname=current_database() AND wait_event_type='Lock' AND query LIKE 'SELECT revision FROM customer_restock_buckets%'").fetch_one(&pool).await.expect("waiter");
+            let count: i64 = sqlx::query_scalar("SELECT count(*) FROM pg_stat_activity a WHERE a.datname=current_database() AND a.wait_event_type='Lock' AND a.query LIKE 'SELECT revision FROM customer_restock_buckets%' AND $1=ANY(pg_blocking_pids(a.pid))").bind(blocker).fetch_one(&pool).await.expect("waiter blocked by held bucket");
             if count == 1 { break; }
             tokio::time::sleep(std::time::Duration::from_millis(10)).await;
         }
@@ -413,6 +417,10 @@ async fn expiry_after_real_bucket_wait_denies_stale_cancellation_and_rolls_back(
         .execute(&mut *source)
         .await
         .expect("claim source");
+    let source_blocker: i32 = sqlx::query_scalar("SELECT pg_backend_pid()")
+        .fetch_one(&mut *source)
+        .await
+        .expect("held source backend");
     let moving = std::sync::Arc::new(MovingClock(std::sync::atomic::AtomicU64::new(1100)));
     let task_clock = moving.clone();
     let task_pool = pool.clone();
@@ -430,7 +438,7 @@ async fn expiry_after_real_bucket_wait_denies_stale_cancellation_and_rolls_back(
     });
     tokio::time::timeout(std::time::Duration::from_millis(800), async {
         loop {
-            let count: i64 = sqlx::query_scalar("SELECT count(*) FROM pg_stat_activity WHERE datname=current_database() AND wait_event_type='Lock' AND query LIKE 'SELECT sku FROM catalogue_variants WHERE sku=ANY%'").fetch_one(&pool).await.expect("source waiter");
+            let count: i64 = sqlx::query_scalar("SELECT count(*) FROM pg_stat_activity a WHERE a.datname=current_database() AND a.wait_event_type='Lock' AND (a.query LIKE 'SELECT * FROM public.claim_published_variants%' OR a.query LIKE 'SELECT sku FROM catalogue_variants WHERE sku=ANY%') AND $1=ANY(pg_blocking_pids(a.pid))").bind(source_blocker).fetch_one(&pool).await.expect("waiter blocked by held source");
             if count == 1 { break; }
             tokio::time::sleep(std::time::Duration::from_millis(10)).await;
         }
