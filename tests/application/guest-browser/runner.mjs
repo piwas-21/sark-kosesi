@@ -613,6 +613,17 @@ try {
   const loginPath = "/api/test/customer/login-with-csrf";
   const redeemPath = "/api/test/customer/guest-order-link/redeem";
   const historyPath = "/api/test/customer/linked-orders";
+  const linkBody = { order_id: first.body.id, proof };
+  assert.equal(
+    (await call(redeemPath, "POST", linkBody, "0".repeat(64))).status,
+    401,
+  );
+  assert.equal((await call(historyPath, "GET")).status, 401);
+  await run(
+    "cargo",
+    [...testArgs, "guest_browser_link::verify_browser_link_unconsumed"],
+    env,
+  );
   const password = "synthetic horse battery staple";
   const otherContext = await browser.newContext();
   await otherContext.route("**/*", (route) => {
@@ -630,7 +641,6 @@ try {
   });
   assert.equal(otherLogin.status, 200);
   assert.match(otherLogin.body.csrf_token, /^[a-f0-9]{64}$/);
-  const linkBody = { order_id: first.body.id, proof };
   assert.equal(
     (
       await callWith(
@@ -663,6 +673,30 @@ try {
   assert.equal(customerCookie.sameSite, "Lax");
   assert.equal(customerCookie.path, "/");
   assert.equal(await page.evaluate(() => document.cookie), "");
+  // Probe the actual API with valid owner custody but no server preview bearer.
+  // Never log the cookie, synchronizer, proof, or response body.
+  const withoutPreview = await fetch(`${api}${redeemPath}`, {
+    method: "POST",
+    headers: {
+      origin,
+      cookie: `__Host-piwas-customer=${customerCookie.value}`,
+      "content-type": "application/json",
+      "x-csrf-token": ownerCsrf,
+    },
+    body: JSON.stringify(linkBody),
+    signal: AbortSignal.timeout(5000),
+  });
+  await withoutPreview.arrayBuffer();
+  assert.equal(withoutPreview.status, 401);
+  const historyWithoutPreview = await fetch(`${api}${historyPath}`, {
+    headers: {
+      origin,
+      cookie: `__Host-piwas-customer=${customerCookie.value}`,
+    },
+    signal: AbortSignal.timeout(5000),
+  });
+  await historyWithoutPreview.arrayBuffer();
+  assert.equal(historyWithoutPreview.status, 401);
   assert.equal(
     (await call(redeemPath, "POST", linkBody, "0".repeat(64))).status,
     401,
