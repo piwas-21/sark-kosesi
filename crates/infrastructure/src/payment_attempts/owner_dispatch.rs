@@ -47,27 +47,25 @@ async fn inspect(
         ).await?;
         // Basket admission and cancellation already hold the basket claim. Dispatch
         // locks the attempt, so read its start only after this same claim completes.
-        let attempts: Vec<(String, String)> = sqlx::query_as("SELECT left(id,33),left(basket_id,33) FROM payment_attempts WHERE order_id=$1 LIMIT 2 FOR UPDATE /* owned dispatch status */")
+        let attempts: Vec<(String, String)> = sqlx::query_as("SELECT pg_catalog.left(id,33),pg_catalog.left(basket_id,33) FROM public.payment_attempts WHERE order_id OPERATOR(pg_catalog.=) $1 LIMIT 2 FOR UPDATE /* owned dispatch status */")
             .bind(order_id).fetch_all(&mut **scope.transaction()).await?;
         let attempt_id = match attempts.as_slice() {
             [] => return Err(PaymentStoreError::Unavailable),
             [(id, basket)] if identifier(id) && basket == &owner => id,
             _ => return Err(PaymentStoreError::InvalidStoredData),
         };
-        let frozen = stored::by_order(scope.transaction(), &owner, order_id, account)
-            .await?.ok_or(PaymentStoreError::InvalidStoredData)?;
-        if &frozen.snapshot().binding.id != attempt_id {
-            return Err(PaymentStoreError::InvalidStoredData);
-        }
+        // The bounded locked ID is used for the exact source read; the decoder
+        // checks that same row ID against the validated frozen snapshot.
+        let frozen = stored::by_id(scope.transaction(), &owner, attempt_id, checkout_orders::OrderAccess::Owned(account)).await?;
         let (start_id, started_at) = evidence::started(scope.transaction(), &frozen).await?;
-        let canceled: bool = sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM checkout_order_cancellations WHERE order_id=$1)")
+        let canceled: bool = sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM public.checkout_order_cancellations WHERE order_id OPERATOR(pg_catalog.=) $1)")
             .bind(order_id).fetch_one(&mut **scope.transaction()).await?;
         if canceled {
             return Err(PaymentStoreError::InvalidStoredData);
         }
         // The existing unique order/kind index includes this event kind. Read at
         // most two rows so damaged duplicate custody cannot be treated as valid.
-        let events: Vec<(String, i64, bool)> = sqlx::query_as("SELECT left(id,33),created_at,payload=jsonb_build_object('schema_version',1,'order_id',$1::text,'attempt_id',$2::text,'dispatch_id',$3::text) FROM commerce_outbox WHERE aggregate_id=$1 AND kind='payment.reconciliation_required.v1' LIMIT 2")
+        let events: Vec<(String, i64, bool)> = sqlx::query_as("SELECT pg_catalog.left(id,33),created_at,payload OPERATOR(pg_catalog.=) pg_catalog.jsonb_build_object('schema_version',1,'order_id',$1::pg_catalog.text,'attempt_id',$2::pg_catalog.text,'dispatch_id',$3::pg_catalog.text) FROM public.commerce_outbox WHERE aggregate_id OPERATOR(pg_catalog.=) $1 AND kind OPERATOR(pg_catalog.=) 'payment.reconciliation_required.v1' LIMIT 2")
             .bind(order_id).bind(attempt_id).bind(&start_id)
             .fetch_all(&mut **scope.transaction()).await?;
         if !matches!(events.as_slice(), [(id, at, true)] if identifier(id) && *at == started_at) {

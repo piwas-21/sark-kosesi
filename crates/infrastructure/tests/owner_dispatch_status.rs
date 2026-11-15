@@ -55,6 +55,28 @@ async fn owner_reads_only_recorded_dispatch_and_rejects_damaged_event(pool: PgPo
         Err(PaymentStoreError::Unavailable)
     );
     let id = &prepared.frozen.snapshot().binding.id;
+    let id_checks: Vec<(String, String)> = sqlx::query_as("SELECT pg_catalog.quote_ident(c.conname),pg_catalog.pg_get_constraintdef(c.oid) FROM pg_catalog.pg_constraint c WHERE c.conrelid='public.payment_attempts'::pg_catalog.regclass AND c.contype='c' AND c.conkey=ARRAY[(SELECT attnum FROM pg_catalog.pg_attribute WHERE attrelid=c.conrelid AND attname='id')]::smallint[] AND pg_catalog.pg_get_constraintdef(c.oid) LIKE '%~%'")
+        .fetch_all(&pool).await.expect("attempt ID check");
+    assert_eq!(id_checks.len(), 1);
+    let (check, definition) = &id_checks[0];
+    sqlx::raw_sql(sqlx::AssertSqlSafe(format!("ALTER TABLE payment_attempts DISABLE TRIGGER guard_payment_attempt; ALTER TABLE payment_attempts DROP CONSTRAINT {check}")))
+        .execute(&pool).await.expect("synthetic imported ID fault");
+    sqlx::query("UPDATE payment_attempts SET id='invalid-import' WHERE id=$1")
+        .bind(id)
+        .execute(&pool)
+        .await
+        .expect("invalid attempt identity");
+    assert_eq!(
+        owned_dispatch_status(&store, &key, oid).await,
+        Err(PaymentStoreError::InvalidStoredData)
+    );
+    sqlx::query("UPDATE payment_attempts SET id=$1 WHERE id='invalid-import'")
+        .bind(id)
+        .execute(&pool)
+        .await
+        .expect("restore attempt identity");
+    sqlx::raw_sql(sqlx::AssertSqlSafe(format!("ALTER TABLE payment_attempts ADD CONSTRAINT {check} {definition}; ALTER TABLE payment_attempts ENABLE TRIGGER guard_payment_attempt")))
+        .execute(&pool).await.expect("restore attempt checks");
     assert!(matches!(
         start_dispatch(
             &pool,
@@ -100,6 +122,51 @@ async fn owner_reads_only_recorded_dispatch_and_rejects_damaged_event(pool: PgPo
     pool.execute("ALTER TABLE commerce_outbox DISABLE TRIGGER guard_commerce_outbox")
         .await
         .expect("synthetic fault");
+    sqlx::query("UPDATE commerce_outbox SET created_at=created_at+1 WHERE id=$1")
+        .bind(&saved.0)
+        .execute(&pool)
+        .await
+        .expect("damage event time");
+    assert_eq!(
+        owned_dispatch_status(&store, &key, oid).await,
+        Err(PaymentStoreError::InvalidStoredData)
+    );
+    sqlx::query("UPDATE commerce_outbox SET created_at=$2 WHERE id=$1")
+        .bind(&saved.0)
+        .bind(saved.1)
+        .execute(&pool)
+        .await
+        .expect("restore event time");
+    let id_checks: Vec<(String, String)> = sqlx::query_as("SELECT pg_catalog.quote_ident(c.conname),pg_catalog.pg_get_constraintdef(c.oid) FROM pg_catalog.pg_constraint c WHERE c.conrelid='public.commerce_outbox'::pg_catalog.regclass AND c.contype='c' AND c.conkey=ARRAY[(SELECT attnum FROM pg_catalog.pg_attribute WHERE attrelid=c.conrelid AND attname='id')]::smallint[] AND pg_catalog.pg_get_constraintdef(c.oid) LIKE '%~%'")
+        .fetch_all(&pool).await.expect("event ID check");
+    assert_eq!(id_checks.len(), 1);
+    let (check, definition) = &id_checks[0];
+    sqlx::raw_sql(sqlx::AssertSqlSafe(format!(
+        "ALTER TABLE commerce_outbox DROP CONSTRAINT {check}"
+    )))
+    .execute(&pool)
+    .await
+    .expect("synthetic imported event fault");
+    sqlx::query("UPDATE commerce_outbox SET id='invalid-import' WHERE id=$1")
+        .bind(&saved.0)
+        .execute(&pool)
+        .await
+        .expect("damage event ID");
+    assert_eq!(
+        owned_dispatch_status(&store, &key, oid).await,
+        Err(PaymentStoreError::InvalidStoredData)
+    );
+    sqlx::query("UPDATE commerce_outbox SET id=$1 WHERE id='invalid-import'")
+        .bind(&saved.0)
+        .execute(&pool)
+        .await
+        .expect("restore event ID");
+    sqlx::raw_sql(sqlx::AssertSqlSafe(format!(
+        "ALTER TABLE commerce_outbox ADD CONSTRAINT {check} {definition}"
+    )))
+    .execute(&pool)
+    .await
+    .expect("restore event check");
     sqlx::query("UPDATE commerce_outbox SET payload=jsonb_set(payload,'{dispatch_id}',to_jsonb('bad'::text)) WHERE id=$1")
         .bind(&saved.0).execute(&pool).await.expect("damage event");
     assert_eq!(
@@ -164,6 +231,34 @@ async fn owner_reads_only_recorded_dispatch_and_rejects_damaged_event(pool: PgPo
         owned_dispatch_status(&store, &key, oid).await,
         Ok(RecordedDispatch)
     );
+    let other_basket: String =
+        sqlx::query_scalar("SELECT id FROM guest_baskets WHERE id<>$1 LIMIT 1")
+            .bind(&order.identity.basket_id)
+            .fetch_one(&pool)
+            .await
+            .expect("other valid basket");
+    pool.execute("ALTER TABLE payment_attempts DISABLE TRIGGER guard_payment_attempt")
+        .await
+        .expect("attempt owner fault");
+    sqlx::query("UPDATE payment_attempts SET basket_id=$2 WHERE id=$1")
+        .bind(id)
+        .bind(&other_basket)
+        .execute(&pool)
+        .await
+        .expect("damage attempt owner");
+    assert_eq!(
+        owned_dispatch_status(&store, &key, oid).await,
+        Err(PaymentStoreError::InvalidStoredData)
+    );
+    sqlx::query("UPDATE payment_attempts SET basket_id=$2 WHERE id=$1")
+        .bind(id)
+        .bind(&order.identity.basket_id)
+        .execute(&pool)
+        .await
+        .expect("restore attempt owner");
+    pool.execute("ALTER TABLE payment_attempts ENABLE TRIGGER guard_payment_attempt")
+        .await
+        .expect("restore attempt owner guard");
     let original_body: String =
         sqlx::query_scalar("SELECT request_body FROM payment_attempts WHERE id=$1")
             .bind(id)
