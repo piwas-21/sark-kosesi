@@ -10,10 +10,10 @@ use commerce_infrastructure::{
 
 #[allow(dead_code)]
 #[path = "../../../infrastructure/tests/support/checkout_order_fixture.rs"]
-mod order_fixture;
+pub(super) mod order_fixture;
 #[allow(dead_code)]
 #[path = "../../../infrastructure/tests/support/checkout_quote_fixture.rs"]
-mod quote_fixture;
+pub(super) mod quote_fixture;
 
 const URL: &str = "/api/test/customer/linked-orders";
 fn history_app(pool: &PgPool, clock: Arc<Time>) -> axum::Router {

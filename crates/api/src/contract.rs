@@ -10,6 +10,7 @@ use utoipa::{
 #[derive(OpenApi)]
 #[openapi(
     paths(
+        crate::test_guest_link_redeem::redeem,
         crate::guest::cancellation::cancel,
         crate::guest::test_orders::create,
         crate::test_favourites_mutation::set,

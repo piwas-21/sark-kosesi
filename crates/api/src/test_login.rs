@@ -29,6 +29,7 @@ pub struct LoginConfig {
     pub(crate) favourites_transport: bool,
     pub(crate) favourites_mutation_transport: bool,
     pub(crate) linked_orders_transport: bool,
+    pub(crate) guest_link_redeem_transport: bool,
     pub(crate) restock_transport: bool,
     pub(crate) restock_mutation_transport: bool,
 }
@@ -64,6 +65,14 @@ impl LoginConfig {
             Some("1") if environment == Some("test") => true,
             _ => return Err("Invalid test linked orders transport"),
         };
+        let guest_link_redeem_transport = match values
+            .get("TEST_GUEST_LINK_REDEEM_TRANSPORT")
+            .map(String::as_str)
+        {
+            None => false,
+            Some("1") if environment == Some("test") => true,
+            _ => return Err("Invalid test guest link redeem transport"),
+        };
         let restock_transport = match values.get("TEST_RESTOCK_TRANSPORT").map(String::as_str) {
             None => false,
             Some("1") if environment == Some("test") => true,
@@ -82,6 +91,7 @@ impl LoginConfig {
             favourites_transport,
             favourites_mutation_transport,
             linked_orders_transport,
+            guest_link_redeem_transport,
             restock_transport,
             restock_mutation_transport,
         ]
@@ -105,6 +115,7 @@ impl LoginConfig {
                     favourites_transport,
                     favourites_mutation_transport,
                     linked_orders_transport,
+                    guest_link_redeem_transport,
                     restock_transport,
                     restock_mutation_transport,
                 }))

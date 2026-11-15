@@ -163,3 +163,58 @@ fn new_id(identifiers: &dyn Identifiers) -> Result<String, PaymentStoreError> {
             PaymentStoreError::Boundary(checkout_orders::OrderStoreError::EntropyUnavailable)
         })
 }
+
+/// Result of one explicitly invoked private test dispatch. Neither variant grants
+/// payment, stock, redirect or fulfilment authority.
+#[derive(Debug, PartialEq, Eq)]
+pub enum InitialDispatchOutcome {
+    Observed,
+    Reconcile,
+}
+/// Once a start commits, any later failure is uncertain, including a lost
+/// observation commit. The durable recovery event retains the original attempt.
+#[derive(Debug, PartialEq, Eq)]
+pub enum InitialDispatchError {
+    /// Start failed; a database commit error can still leave a durable start.
+    /// Retry only this entry, which rechecks the serialized start before I/O.
+    Start(PaymentStoreError),
+    Uncertain,
+}
+/// Start once, POST once, GET the returned ID and retain only authenticated facts.
+/// This trusted internal entry installs no route, scheduler, credentials or worker.
+pub async fn dispatch_and_observe_test_payment(
+    pool: &PgPool,
+    clock: &dyn Clock,
+    identifiers: &dyn Identifiers,
+    client: &crate::mollie::VerifiedTestClient,
+    attempt_id: &str,
+) -> Result<InitialDispatchOutcome, InitialDispatchError> {
+    let outcome = start_dispatch(pool, clock, identifiers, attempt_id, client.configuration())
+        .await
+        .map_err(InitialDispatchError::Start)?;
+    let DispatchOutcome::Start(permit) = outcome else {
+        return Ok(InitialDispatchOutcome::Reconcile);
+    };
+    // The binding comes exclusively from the committed permit, not a caller or
+    // the create response. Neither the ID hint nor any checkout URL is retained.
+    let snapshot = permit.frozen.snapshot().clone();
+    let hint = client
+        .create(permit, clock)
+        .await
+        .map_err(|_| InitialDispatchError::Uncertain)?;
+    let verified = client
+        .fetch(&snapshot, hint.provider_id())
+        .await
+        .map_err(|_| InitialDispatchError::Uncertain)?;
+    observations::record_verified(
+        pool,
+        clock,
+        identifiers,
+        attempt_id,
+        &format!("initial-fetch-{attempt_id}"),
+        &verified,
+    )
+    .await
+    .map_err(|_| InitialDispatchError::Uncertain)?;
+    Ok(InitialDispatchOutcome::Observed)
+}
