@@ -1185,3 +1185,8 @@ credential on the server and forwards only the fixture's private checkout routes
 Database checks verify one order, one cancellation, two component reservation
 movements and zero payment attempts. The storefront checkout UI, provider and
 production accessibility still need their own acceptance evidence.
+
+Private Test dispatch controls use isolated PostgreSQL and synthetic loopback.
+An inherited asynchronous session proves the start and recovery event commit with
+synchronous WAL settings; a post-insert setting change rolls both back before any
+POST. These tests do not establish provider or production acceptance.
