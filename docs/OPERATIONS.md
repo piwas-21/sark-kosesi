@@ -68,6 +68,62 @@ The check reads delivery policy and application-file presence from the committed
 
 Before release: all required CI and independent reviews; populated Sonar with zero issues/hotspots; application/security/performance/discovery evidence; real market/provider/product/legal acceptance; isolated restore and compatible rollback. Create a release PR develop → main; no direct push. Build immutable digest-tagged images from the reviewed revision, sign/attest provenance, deploy staging and verify served version/health/routes before production. Add the deployment workflow only when these gates are real; merging foundation does not deploy anything.
 
+For an offline preliminary review of a Debian image vulnerability scan, use
+`scripts/inspect_image_scan.py`. Keep the raw Trivy JSON with all packages listed,
+the exact single-platform OCI manifest and its config bytes, and a separate capture
+receipt. Do not substitute a finding-count summary for the raw report. The receipt
+has these exact fields (replace the explanatory strings with actual values):
+
+```json
+{
+  "schema_version": 1,
+  "source_revision": "40-character lowercase commit ID",
+  "manifest_digest": "sha256:platform-manifest-digest",
+  "scanner_digest": "sha256:scanner-image-digest",
+  "report_digest": "sha256:raw-report-bytes-digest",
+  "scanned_at": "2026-11-15T11:00:00Z",
+  "exit_code": 0,
+  "database": {
+    "version": 2,
+    "updated_at": "2026-11-15T10:00:00Z",
+    "next_update": "2026-11-16T10:00:00Z"
+  },
+  "scope": {
+    "scanners": ["vuln"],
+    "package_types": ["os", "library"],
+    "severities": ["UNKNOWN", "LOW", "MEDIUM", "HIGH", "CRITICAL"],
+    "include_unfixed": true,
+    "include_all_packages": true,
+    "ignore_rules": false,
+    "vex": false
+  }
+}
+```
+
+Use RFC 3339 UTC timestamps from the capture and vulnerability database metadata,
+and run the audit with independently verified source revision, scanner image digest,
+platform manifest digest, and platform:
+
+```sh
+python3 scripts/inspect_image_scan.py --receipt PRIVATE_RECEIPT.json \
+  --manifest OCI_PLATFORM_MANIFEST.json --image-config OCI_CONFIG.json \
+  --report RAW_TRIVY.json --revision REVIEWED_COMMIT \
+  --image-digest sha256:VERIFIED_PLATFORM_MANIFEST_DIGEST \
+  --scanner-digest sha256:VERIFIED_SCANNER_IMAGE_DIGEST --platform linux/amd64
+```
+
+The audit requires a populated Debian inventory, matching manifest/config and scan
+identity, a successful unfiltered scope and a database valid both at scan time and
+at audit time. It rejects modified findings, malformed evidence, stale database
+metadata and any reported HIGH or CRITICAL finding. Its zero finding result means
+only that none were reported in the supplied evidence. Scope, scanner execution,
+database metadata, source/build provenance and artifact custody must be established
+by trusted capture and independent review; self-declared receipt fields cannot prove
+them. The audit provides no waivers and does not replace release evidence or human
+security assessment. Review other severities, package reachability, SBOM, provenance
+and runtime separately. See the [Trivy report schema](https://github.com/aquasecurity/trivy/blob/v0.70.0/pkg/types/report.go)
+and [vulnerability scan configuration](https://trivy.dev/docs/latest/guide/scanner/vulnerability/).
+
 Migrations follow expand/contract. Apply backward-compatible schema before switching services; test old/new code coexistence. Prove actual startup compatibility between each image's embedded migration manifest and the stored versions/checksums: an older SQLx migrator can reject newer history even when its queries still work. Irreversible data migrations need explicit backup/recovery design and approval. Roll back images only if that compatibility is proven; never delete migration history, reverse migrations or reset financial data to force an old image to start. Production requires its own compatible migration, coexistence and recovery plan. Reconcile provider outcomes after incidents before retrying financial effects.
 
 The API executable accepts `migration-manifest` without configuration, filesystem
