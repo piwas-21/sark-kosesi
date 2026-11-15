@@ -298,7 +298,9 @@ checkout interface and deployed ingress still need acceptance.
 Private durable owned-order test attempts and one serialized dispatch-start fact
 now compose the frozen request policy, existing physically backed reservation and
 minimal transactional recovery events. Fresh commercial and clock checks protect
-new work; original receipts remain historical. Runtime dispatch remains uninstalled. Started/unknown attempts must reconcile without automatic replacement.
+new work; original receipts remain historical. An explicit private test dispatch
+now composes the one-use start, create, authenticated GET and durable observation;
+failures remain uncertain. Runtime dispatch remains uninstalled. Started/unknown attempts must reconcile without automatic replacement.
 The private test-key HTTP client now verifies its authenticated profile and
 separately fetches checked minimal payment evidence, with bounded one-use permit
 transport. Bounded private payment-list pages now return exact metadata-associated
