@@ -62,6 +62,71 @@ fn chargeback(reversed: Option<Value>) -> Value {
 }
 
 #[sqlx::test(migrator = "MIGRATOR")]
+async fn reversal_set_inspection_digest_changes_for_same_count_and_restores(pool: PgPool) {
+    use crate::payment_attempts::reversals::inspect_set;
+    let (time, frozen) = observation_cases::prepared(&pool, true).await;
+    let attempt = &frozen.snapshot().binding.id;
+    let verified = fetched(frozen.snapshot(), refund("pending", "12.34"), false).await;
+    let receipt = record(
+        &pool,
+        time.as_ref(),
+        &observation_cases::ids(),
+        "content-control",
+        &verified,
+    )
+    .await
+    .expect("synthetic receipt");
+    let read_exact = || async {
+        sqlx::query_as::<_, (Value, Value)>("SELECT to_jsonb(o),to_jsonb(e) FROM payment_reversal_observations o JOIN commerce_outbox e ON e.id=o.event_id WHERE o.id=$1")
+            .bind(&receipt.id).fetch_one(&pool).await.expect("exact custody")
+    };
+    let before = read_exact().await;
+    let original = inspect_set(&pool, attempt).await.expect("original set");
+    assert_eq!(original.observations, 1);
+
+    pool.execute("ALTER TABLE payment_reversal_observations DISABLE TRIGGER USER; ALTER TABLE commerce_outbox DISABLE TRIGGER USER")
+        .await.expect("isolate content fault");
+    sqlx::query("UPDATE payment_reversal_observations SET amount_minor=1235 WHERE id=$1")
+        .bind(&receipt.id)
+        .execute(&pool)
+        .await
+        .expect("change one minor unit");
+    sqlx::query("UPDATE commerce_outbox e SET payload=payment_reversal_observation_event(o) FROM payment_reversal_observations o WHERE e.id=o.event_id AND o.id=$1")
+        .bind(&receipt.id).execute(&pool).await.expect("rebind exact event");
+    pool.execute("ALTER TABLE payment_reversal_observations ENABLE TRIGGER USER; ALTER TABLE commerce_outbox ENABLE TRIGGER USER")
+        .await.expect("restore guards");
+    let changed = inspect_set(&pool, attempt)
+        .await
+        .expect("valid modified set");
+    assert_eq!(changed.observations, original.observations);
+    assert_ne!(
+        changed.digest, original.digest,
+        "same-count content must affect digest"
+    );
+
+    pool.execute("ALTER TABLE payment_reversal_observations DISABLE TRIGGER USER; ALTER TABLE commerce_outbox DISABLE TRIGGER USER")
+        .await.expect("isolate repair");
+    sqlx::query("UPDATE payment_reversal_observations SET amount_minor=1234 WHERE id=$1")
+        .bind(&receipt.id)
+        .execute(&pool)
+        .await
+        .expect("restore exact amount");
+    sqlx::query("UPDATE commerce_outbox e SET payload=payment_reversal_observation_event(o) FROM payment_reversal_observations o WHERE e.id=o.event_id AND o.id=$1")
+        .bind(&receipt.id).execute(&pool).await.expect("restore exact event");
+    pool.execute("ALTER TABLE payment_reversal_observations ENABLE TRIGGER USER; ALTER TABLE commerce_outbox ENABLE TRIGGER USER")
+        .await.expect("restore guards");
+    assert_eq!(
+        read_exact().await,
+        before,
+        "receipt and event restored exactly"
+    );
+    assert_eq!(
+        inspect_set(&pool, attempt).await.expect("restored set"),
+        original
+    );
+}
+
+#[sqlx::test(migrator = "MIGRATOR")]
 async fn reversal_set_inspection_rejects_orphan_event_and_accepts_repaired_custody(pool: PgPool) {
     use crate::payment_attempts::reversals::inspect_set;
     let (time, frozen) = observation_cases::prepared(&pool, true).await;
