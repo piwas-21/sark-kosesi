@@ -285,9 +285,9 @@ def coverage_script(text):
 
 def check_coverage_commands(scripts):
     expected = {
-        "test:coverage:stable": "CARGO_TARGET_DIR=.local/coverage-target-stable cargo llvm-cov clean --workspace && CARGO_TARGET_DIR=.local/coverage-target-stable python3 scripts/with_postgres.py -- cargo llvm-cov --workspace --all-features --locked --json --output-path coverage/rust-stable.json",
-        "test:coverage:nightly": "CARGO_TARGET_DIR=.local/coverage-target-nightly cargo +nightly-2026-10-25 llvm-cov clean --workspace && CARGO_TARGET_DIR=.local/coverage-target-nightly python3 scripts/with_postgres.py -- cargo +nightly-2026-10-25 llvm-cov --workspace --all-features --locked --branch --json --output-path coverage/rust.json && CARGO_TARGET_DIR=.local/coverage-target-nightly cargo +nightly-2026-10-25 llvm-cov report --lcov --output-path coverage/rust.lcov",
-        "test:coverage:typescript": "vitest run --coverage",
+        "test:coverage:stable": "mkdir -p coverage && CARGO_TARGET_DIR=.local/coverage-target-stable cargo llvm-cov clean --workspace && CARGO_TARGET_DIR=.local/coverage-target-stable python3 scripts/with_postgres.py -- cargo llvm-cov --workspace --all-features --locked --json --output-path coverage/rust-stable.json",
+        "test:coverage:nightly": "mkdir -p coverage && CARGO_TARGET_DIR=.local/coverage-target-nightly cargo +nightly-2026-10-25 llvm-cov clean --workspace && CARGO_TARGET_DIR=.local/coverage-target-nightly python3 scripts/with_postgres.py -- cargo +nightly-2026-10-25 llvm-cov --workspace --all-features --locked --branch --json --output-path coverage/rust.json && CARGO_TARGET_DIR=.local/coverage-target-nightly cargo +nightly-2026-10-25 llvm-cov report --lcov --output-path coverage/rust.lcov",
+        "test:coverage:typescript": "mkdir -p coverage && vitest run --coverage",
         "test:coverage": "npm run test:coverage:stable && npm run test:coverage:nightly && npm run test:coverage:typescript && python3 scripts/check_coverage_reports.py",
     }
     if any(scripts.get(name) != command for name, command in expected.items()):
@@ -363,6 +363,34 @@ class ApplicationWorkflow(unittest.TestCase):
         ):
             with self.subTest(name=name), self.assertRaises(ValueError):
                 check_coverage_commands({**scripts, name: "echo skipped"})
+
+    def test_each_coverage_producer_prepares_a_fresh_output_directory(self):
+        scripts = json.loads(PACKAGE.read_text())["scripts"]
+        for name in ("test:coverage:stable", "test:coverage:nightly", "test:coverage:typescript"):
+            with self.subTest(name=name), tempfile.TemporaryDirectory() as temp:
+                root = Path(temp)
+                bin_dir = root / "bin"
+                bin_dir.mkdir()
+                # Stand-ins reject missing output directories before any actual build or test.
+                for command in ("cargo", "python3", "vitest"):
+                    executable = bin_dir / command
+                    executable.write_text("#!/bin/sh\ntest -d coverage || exit 47\n")
+                    executable.chmod(0o755)
+                env = {**os.environ, "PATH": f"{bin_dir}:{os.environ['PATH']}"}
+
+                def run(program, cwd=root, environment=env):
+                    return subprocess.run(
+                        ["sh", "-c", program],
+                        cwd=cwd,
+                        env=environment,
+                        capture_output=True,
+                        check=False,
+                    ).returncode
+
+                without_directory_setup = scripts[name].removeprefix("mkdir -p coverage && ")
+                self.assertEqual(run(without_directory_setup), 47)
+                self.assertEqual(run(scripts[name]), 0)
+                self.assertTrue((root / "coverage").is_dir())
 
     def test_coverage_assembly_fails_for_each_missing_file_and_failed_validation(self):
         program = coverage_script(self.workflow)
