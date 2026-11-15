@@ -36,6 +36,7 @@ pub mod publication;
 pub mod published_catalogue;
 pub mod quotes;
 pub mod runtime;
+pub mod shipment_planning;
 pub mod specifications;
 pub mod staff_access;
 pub mod staff_operations;

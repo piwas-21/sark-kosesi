@@ -697,6 +697,13 @@ order. These inputs still require
 trusted sealed source and allocation custody; the calculation neither defines
 packages nor establishes warehouse, shipment or dispatch evidence.
 
+A private read-only warehouse projection now loads the current received gross
+recognition, validated original or late allocation and sealed order-bound BOMs
+under the payment-attempt claim and fresh staff authority. It assumes zero prior
+units only to bound one proposed batch against the original order. It cannot
+establish remaining unshipped units, physical packages or dispatch eligibility;
+refund and chargeback disposition remains independent.
+
 Write domain changes and outbox events in one transaction. Workers claim leases using PostgreSQL, retry with backoff and stable effect identifiers, and recover abandoned leases. Emails, stock alerts and fulfilment requests are idempotent. Record provider acceptance separately from customer delivery. Failed jobs are visible and replayable only through bounded, audited admin actions.
 
 ### Initial test-attempt model
