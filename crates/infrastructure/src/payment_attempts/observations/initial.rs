@@ -45,7 +45,14 @@ pub(super) async fn insert(
     let exact: bool = sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM public.payment_initial_dispatch_provenance p WHERE p.attempt_id OPERATOR(pg_catalog.=) $1 AND p.observation_id OPERATOR(pg_catalog.=) $2 AND p.observation_event_id OPERATOR(pg_catalog.=) $3 AND p.transaction_id OPERATOR(pg_catalog.=) pg_catalog.pg_current_xact_id() AND public.payment_initial_dispatch_provenance_exact(p))")
         .bind(&observation.attempt_id).bind(&observation.id).bind(event_id)
         .fetch_one(&mut **tx).await?;
-    if !exact || read_source(tx, frozen, started_at).await?.as_ref() != Some(observation) {
+    // Preserve the short circuit: a missing exact receipt never causes another
+    // source read. A present receipt must also decode to the inserted snapshot.
+    let source = if exact {
+        read_source(tx, frozen, started_at).await?
+    } else {
+        None
+    };
+    if (exact, source.as_ref()) != (true, Some(observation)) {
         return Err(PaymentStoreError::InvalidStoredData);
     }
     Ok(())

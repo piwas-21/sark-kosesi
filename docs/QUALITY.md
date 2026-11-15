@@ -561,7 +561,10 @@ retain its normal exact replay while the initial path remains uncertain and cann
 mint or later attach a provenance receipt. A receipt-write fault must roll back the
 observation and event while retaining the original start and reconciliation path.
 A silently suppressed receipt insert must also leave an independent write witness
-and roll back, without a second POST. An authenticated loopback GET bound to a
+and roll back, without a second POST. An isolated post-insert deletion fault
+retains the native insertion checks, witnesses the exact row being removed, and
+requires the final readback to fail with the same rollback and no retry. An
+authenticated loopback GET bound to a
 synthetic, different frozen request must be rejected; the stored original must
 still be accepted. Legacy transaction fields remain nullable, historical reads
 continue to work, and an absent origin receipt remains unproven. Verify the source

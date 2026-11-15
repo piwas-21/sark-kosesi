@@ -390,6 +390,74 @@ async fn suppressed_initial_provenance_rolls_back_and_never_reposts(pool: PgPool
 }
 
 #[sqlx::test(migrator = "MIGRATOR")]
+async fn vanished_initial_receipt_rolls_back_and_never_reposts(pool: PgPool) {
+    let (time, frozen) = prepared(&pool).await;
+    let id = &frozen.snapshot().binding.id;
+
+    // Retain the real insert guard verbatim. This isolated fault fixture only
+    // permits its own post-insert DELETE so final readback sees a missing row.
+    let guard: String = sqlx::query_scalar(
+        "SELECT pg_catalog.pg_get_functiondef('public.guard_payment_initial_dispatch_provenance()'::pg_catalog.regprocedure)",
+    )
+    .fetch_one(&pool)
+    .await
+    .expect("native guard definition");
+    let insertion_guard = "IF TG_OP<>'INSERT' THEN";
+    assert_eq!(guard.matches(insertion_guard).count(), 1);
+    assert!(guard.contains("public.payment_initial_dispatch_provenance_exact(NEW)"));
+    let fault_guard = guard.replace(
+        insertion_guard,
+        "IF TG_OP='DELETE' THEN RETURN OLD; ELSIF TG_OP<>'INSERT' THEN",
+    );
+    sqlx::query(sqlx::AssertSqlSafe(fault_guard))
+        .execute(&pool)
+        .await
+        .expect("allow fixture deletion only");
+    pool.execute("CREATE SEQUENCE fixture_initial_vanished_witness; CREATE FUNCTION fixture_remove_initial_receipt() RETURNS trigger LANGUAGE plpgsql AS $$ DECLARE removed integer; BEGIN IF NOT public.payment_initial_dispatch_provenance_exact(NEW) THEN RAISE EXCEPTION 'fixture requires exact inserted receipt'; END IF; DELETE FROM public.payment_initial_dispatch_provenance WHERE attempt_id=NEW.attempt_id; GET DIAGNOSTICS removed = ROW_COUNT; IF removed<>1 THEN RAISE EXCEPTION 'fixture did not remove receipt'; END IF; PERFORM nextval('fixture_initial_vanished_witness'); RETURN NEW; END $$; CREATE TRIGGER zz_fixture_remove_initial_receipt AFTER INSERT ON public.payment_initial_dispatch_provenance FOR EACH ROW EXECUTE FUNCTION fixture_remove_initial_receipt()")
+        .await.expect("install post-insert fault");
+
+    let pay = payment(frozen.snapshot());
+    let server = Server::start(vec![
+        profile(),
+        Reply::Json(201, pay.clone()),
+        Reply::Json(200, pay),
+    ]);
+    let client = local(&server).verify_profile().await.expect("verified");
+    let ids = crate::payment_test_fixture::Ids(AtomicU64::new(10000));
+    assert_eq!(
+        dispatch_and_observe_test_payment(&pool, time.as_ref(), &ids, &client, id).await,
+        Err(InitialDispatchError::Uncertain)
+    );
+    let witness: (i64, bool) =
+        sqlx::query_as("SELECT last_value,is_called FROM fixture_initial_vanished_witness")
+            .fetch_one(&pool)
+            .await
+            .expect("exact receipt was inserted and removed");
+    assert_eq!(witness, (1, true));
+    assert_eq!(counts(&pool).await, (1, 1, 0, 0));
+    let receipts: i64 =
+        sqlx::query_scalar("SELECT count(*) FROM payment_initial_dispatch_provenance")
+            .fetch_one(&pool)
+            .await
+            .expect("no retained receipt");
+    assert_eq!(receipts, 0);
+    assert_eq!(
+        dispatch_and_observe_test_payment(&pool, time.as_ref(), &ids, &client, id).await,
+        Ok(InitialDispatchOutcome::Reconcile)
+    );
+    server.inspect(|requests| {
+        assert_eq!(requests.len(), 3);
+        assert_eq!(
+            requests
+                .iter()
+                .filter(|request| request.method == "POST")
+                .count(),
+            1
+        );
+    });
+}
+
+#[sqlx::test(migrator = "MIGRATOR")]
 async fn callback_effect_collision_never_upgrades_a_historical_observation(pool: PgPool) {
     use crate::payment_attempts::callbacks;
     let (time, frozen) = prepared(&pool).await;
