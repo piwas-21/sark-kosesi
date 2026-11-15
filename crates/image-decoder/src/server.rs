@@ -231,7 +231,15 @@ mod tests {
             .expect("request task");
         assert!(result.is_ok());
         let mut byte = [0_u8; 1];
-        assert_eq!(peer.read(&mut byte).await.expect("closed socket"), 0);
+        let closed = timeout(Duration::from_secs(1), peer.read(&mut byte))
+            .await
+            .expect("peer closure deadline");
+        // Linux may reset a connection when teardown leaves client bytes unread.
+        match closed {
+            Ok(0) => {}
+            Err(error) if error.kind() == io::ErrorKind::ConnectionReset => {}
+            other => panic!("expected shutdown without a reply, got {other:?}"),
+        }
     }
 
     #[tokio::test]
