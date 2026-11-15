@@ -274,7 +274,11 @@ P2 collection acceptance adds exact variant and locale navigation, served HTML/X
 image agreement, genuine unavailable-SKU 404s and actual read-through stock,
 draft-price, explicit publication and withdrawal effects. The test-only effect
 example requires the per-run guard of the disposable browser database; its
-credentials never enter evidence. TypeScript boundaries reject private/unknown
+credentials never enter evidence. Discovery fixture effects run as bounded
+asynchronous children, and their HTTP checks close each connection and discard
+unused error bodies. Tooling controls exercise socket closure, event-loop progress,
+child failure and timeout without retrying or weakening discovery assertions.
+TypeScript boundaries reject private/unknown
 fields, malformed cursor/product identities and unbounded image streams. Money
 formatting checks the maximum exact public integer without dividing a float.
 
