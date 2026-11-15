@@ -111,3 +111,7 @@ async fn terminate(child: &mut Child) {
 #[cfg(test)]
 #[path = "tests.rs"]
 mod tests;
+
+#[cfg(test)]
+#[path = "pipe_tests.rs"]
+mod pipe_tests;
