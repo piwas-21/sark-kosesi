@@ -518,3 +518,25 @@ in for proxy identity. Then require exact-revision TLS and isolated provider
 delivery acceptance. The committed source and Compose checks prove none of these
 runtime states. Rollback disables both callback ingress and the separate web
 ingress flag before recreating only this project's services.
+
+## Isolated PostgreSQL zlib candidate
+
+`ops/db-zlib-candidate/Dockerfile` and `scripts/test_db_zlib_candidate.sh`
+prepare a disposable AMD64-only candidate from the pinned PostgreSQL platform
+manifest. The candidate obtains one exact `zlib1g` security package from the
+Debian security archive using the pinned base's Debian archive keyring, checks
+APT's authenticated index and a pinned package SHA-256, and rejects any change
+to another installed package. It preserves APT metadata, the keyring, logs and
+before/after inventories in the candidate evidence. Treat those records as
+review evidence, not independent attestation by themselves.
+
+The path-scoped PostgreSQL zlib candidate workflow runs the script on a
+throwaway Linux runner when its candidate files change in a PR. It uses only
+synthetic rows, no external network for either database container, an actual
+compressed custom-format dump/restore and a rejected invalid-archive control.
+It scans the pinned base and built candidate using the same fresh vulnerability
+database, retains both raw reports, and checks the target zlib package and
+finding delta. Success establishes only the checks actually recorded. Review
+image and package provenance, other vulnerabilities, restore and rollback,
+operational configuration and exact-revision release gates separately. The
+workflow does not update staging, activate production or accept any risk.
