@@ -102,6 +102,8 @@ def applied_migrations(document):
 
 def compare(manifest, history, *, require_applied=False):
     forward = manifest_migrations(manifest)
+    if require_applied and manifest["ignore_missing"]:
+        raise ValueError("Preapplied startup requires a strict embedded migration policy")
     applied = applied_migrations(history)
     unknown = sorted(applied.keys() - forward.keys())
     if unknown and not manifest["ignore_missing"]:
@@ -126,7 +128,9 @@ def main():
     parser.add_argument("manifest", type=Path)
     parser.add_argument("history", type=Path)
     parser.add_argument(
-        "--require-applied", action="store_true", help="reject any pending migration"
+        "--require-applied",
+        action="store_true",
+        help="require a strict manifest and complete history for preapplied startup",
     )
     args = parser.parse_args()
     try:

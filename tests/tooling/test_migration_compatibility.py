@@ -61,6 +61,14 @@ class MigrationHistory(unittest.TestCase):
             compare(manifest(entry("1")), newer_history)
         permissive = manifest(entry("1"), ignore_missing=True)
         self.assertEqual(compare(permissive, newer_history)["ignored_applied_versions"], ["2"])
+        exact_history = history(applied("1"))
+        self.assertEqual(compare(permissive, exact_history)["pending_versions"], [])
+        for retained in (exact_history, newer_history):
+            with (
+                self.subTest(retained=retained),
+                self.assertRaisesRegex(ValueError, "requires a strict"),
+            ):
+                compare(permissive, retained, require_applied=True)
         with self.assertRaisesRegex(ValueError, "Checksum differs for applied version 1"):
             compare(permissive, history(applied("1", "b"), applied("2")))
         with self.assertRaisesRegex(ValueError, "dirty at version 2"):
@@ -121,6 +129,12 @@ class MigrationHistory(unittest.TestCase):
                     "history_sha256": hashlib.sha256(history_bytes).hexdigest(),
                 },
             )
+            image_file.write_text(json.dumps(manifest(entry("1"), ignore_missing=True)))
+            rejected = subprocess.run(args, capture_output=True, text=True, check=False)
+            self.assertNotEqual(rejected.returncode, 0)
+            self.assertEqual(rejected.stdout, "")
+            self.assertIn("requires a strict", rejected.stderr)
+            image_file.write_bytes(manifest_bytes)
             database_file.write_bytes(b'{"schema_version":1,"migrations":[],"migrations":[]}')
             rejected = subprocess.run(args, capture_output=True, text=True, check=False)
             self.assertNotEqual(rejected.returncode, 0)

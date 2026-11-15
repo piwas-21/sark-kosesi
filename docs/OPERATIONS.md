@@ -108,8 +108,9 @@ and missing applied versions when `ignore_missing` is false. It lists pending
 forward versions and any applied versions permitted by `ignore_missing`. The
 report records SHA-256 digests of both captured files. After applying candidate
 migrations to an isolated copy, recapture that copy's history and compare it
-with both binaries. Add `--require-applied` when checking a binary expected to
-start without applying migrations. Retain the image digest and database
+with both binaries. Add `--require-applied` to check the preview's startup
+requirements for a strict manifest and complete history. Retain the image
+digest and database
 snapshot identity alongside the report. Prove image provenance, migration
 execution, query compatibility and actual startup separately. Older binaries
 may lack the manifest command.
