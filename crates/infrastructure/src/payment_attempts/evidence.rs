@@ -53,10 +53,19 @@ pub(super) async fn context_with_start(
         checkout_orders::OrderAccess::Internal,
     )
     .await?;
+    let (start_id, started_at) = started(tx, &frozen).await?;
+    Ok((frozen, start_id, started_at))
+}
+
+// The caller must hold the attempt claim when a fresh serialized result matters.
+pub(super) async fn started(
+    tx: &mut Transaction<'_, Postgres>,
+    frozen: &FrozenAttempt,
+) -> Result<(String, i64), PaymentStoreError> {
     let (start_id, started_at): (String, i64) = sqlx::query_as(
         "SELECT left(id,33),started_at FROM payment_dispatch_starts WHERE attempt_id=$1",
     )
-    .bind(id)
+    .bind(&frozen.snapshot().binding.id)
     .fetch_optional(&mut **tx)
     .await?
     .ok_or(PaymentStoreError::Unavailable)?;
@@ -67,7 +76,7 @@ pub(super) async fn context_with_start(
     {
         return Err(PaymentStoreError::InvalidStoredData);
     }
-    Ok((frozen, start_id, started_at))
+    Ok((start_id, started_at))
 }
 pub(super) fn now(clock: &dyn Clock) -> Result<i64, PaymentStoreError> {
     let at = i64::try_from(
