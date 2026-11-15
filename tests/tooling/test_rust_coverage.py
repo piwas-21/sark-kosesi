@@ -57,6 +57,9 @@ class RustCoverage(unittest.TestCase):
     def test_inventory_and_stock_each_require_critical_coverage(self):
         files = self.document["data"][0]["files"]
         for name, zero_allowed in (
+            ("crates/image-codec/src/framing.rs", False),
+            ("crates/image-codec/src/processing.rs", False),
+            ("crates/image-codec/src/wire.rs", False),
             ("crates/domain/src/inventory.rs", False),
             ("crates/domain/src/quotes/mod.rs", False),
             ("crates/domain/src/quotes/policy.rs", False),
