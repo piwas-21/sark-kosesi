@@ -567,6 +567,16 @@ Exercise an inherited asynchronous session and a post-receipt setting sabotage:
 observe the inserted-write witness, rollback of observation/event/receipt, an
 uncertain outcome and no second POST. PostgreSQL fsync must be enabled; these
 settings do not prove underlying storage flush behavior.
+For the isolated server-fsync control, after the disposable PostgreSQL wrapper
+with `--fsync-off` is composed, run the same infrastructure lib test binary in
+two separate owned native clusters. Set `P1_POSTGRES_BIN` to the pinned native
+PostgreSQL 18 directory, then invoke `python3 scripts/with_postgres.py` once
+with `--fsync-off` and once without it, each followed by
+`-- <infrastructure-lib-test> --exact mollie::tests::test_initial_provenance_durability::initial_provenance_requires_server_fsync --ignored`.
+The fixture checks the wrapper's disposable marker before creating its own
+database. It seeds a synthetic historical start and constructs synthetic create
+evidence bound to an authenticated loopback GET; it sends no create POST and
+does not prove real provider origin.
 
 Compiled provider controls bypass authenticated-profile verification, fetched
 payment matching, the early streamed-byte limit, duplicate-field preservation and

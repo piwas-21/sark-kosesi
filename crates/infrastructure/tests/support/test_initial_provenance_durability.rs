@@ -126,3 +126,143 @@ async fn initial_provenance_late_async_sabotage_is_uncertain_and_never_reposts(p
         assert_eq!(requests.iter().filter(|r| r.method == "POST").count(), 1);
     });
 }
+
+// Run only through the disposable-cluster wrapper. Unlike sqlx::test, this
+// validates the server marker before creating a database or writing fixtures.
+#[tokio::test]
+#[ignore = "manual fsync control requires its own wrapper-owned PostgreSQL cluster"]
+async fn initial_provenance_requires_server_fsync() {
+    use crate::{
+        mollie::CreatedPayment,
+        payment_attempts::{PaymentStoreError, observations},
+    };
+    use sqlx::postgres::PgConnectOptions;
+
+    assert_eq!(std::env::var("APP_ENV").as_deref(), Ok("test"));
+    assert!(std::env::var_os("PGOPTIONS").is_none());
+    let expected = std::env::var("P1_POSTGRES_EXPECTED_FSYNC").expect("fsync expectation");
+    assert!(expected == "on" || expected == "off");
+    let marker = std::env::var("P1_POSTGRES_DISPOSABLE_MARKER").expect("disposable marker");
+    assert!(
+        marker.len() == 64
+            && marker
+                .bytes()
+                .all(|b| b.is_ascii_digit() || (b'a'..=b'f').contains(&b))
+    );
+    let url = std::env::var("DATABASE_URL").expect("disposable database");
+    let parsed = url::Url::parse(&url).expect("valid database URL");
+    assert!(parsed.query().is_none() && parsed.fragment().is_none());
+    let options: PgConnectOptions = url.parse().expect("valid database options");
+    assert!(options.get_options().is_none());
+    assert_eq!(options.get_host(), "127.0.0.1");
+    assert_eq!(options.get_username(), "p1_test");
+    assert_eq!(options.get_database(), Some("postgres"));
+    let parent = PgPoolOptions::new()
+        .max_connections(1)
+        .connect_with(options.clone())
+        .await
+        .expect("disposable cluster");
+    let (actual, server_marker, database, username): (String, Option<String>, String, String) =
+        sqlx::query_as("SELECT current_setting('fsync'),current_setting('sark.disposable_marker',true),current_database(),current_user")
+            .fetch_one(&parent).await.expect("read cluster identity");
+    assert_eq!(actual, expected);
+    assert_eq!(server_marker.as_deref(), Some(marker.as_str()));
+    assert_eq!(
+        (database.as_str(), username.as_str()),
+        ("postgres", "p1_test")
+    );
+
+    // The name is made only from the checked wrapper marker. Both the seed and
+    // any failure remain in the disposable cluster, never a shared database.
+    let name = format!("initial_fsync_{}", &marker[..20]);
+    let create = format!("CREATE DATABASE {name}");
+    sqlx::query(sqlx::AssertSqlSafe(create))
+        .execute(&parent)
+        .await
+        .expect("fresh test database");
+    let pool = PgPoolOptions::new()
+        .max_connections(4)
+        .connect_with(options.database(&name))
+        .await
+        .expect("fixture database");
+    MIGRATOR.run(&pool).await.expect("fixture migrations");
+    let (time, frozen) = prepared(&pool).await;
+    let binding = &frozen.snapshot().binding;
+    let dispatch_id = "d".repeat(32);
+    let mut tx = pool.begin().await.expect("synthetic historical start");
+    sqlx::query("INSERT INTO payment_dispatch_starts(attempt_id,id,started_at) VALUES($1,$2,1500)")
+        .bind(&binding.id)
+        .bind(&dispatch_id)
+        .execute(&mut *tx)
+        .await
+        .expect("historical start");
+    sqlx::query("INSERT INTO commerce_outbox(id,aggregate_id,kind,payload,created_at) VALUES($1,$2,'payment.reconciliation_required.v1',$3,1500)")
+        .bind("c".repeat(32)).bind(&binding.order_id)
+        .bind(serde_json::json!({"schema_version":1,"order_id":binding.order_id,"attempt_id":binding.id,"dispatch_id":dispatch_id}))
+        .execute(&mut *tx).await.expect("reciprocal recovery event");
+    tx.commit().await.expect("historical fixture committed");
+    assert_eq!(counts(&pool).await, (1, 1, 0, 0, 0));
+    pool.execute("CREATE SEQUENCE fixture_fsync_receipt_witness; CREATE FUNCTION fixture_witness_fsync_receipt() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN PERFORM nextval('fixture_fsync_receipt_witness'); RETURN NEW; END $$; CREATE TRIGGER zz_witness_fsync_receipt AFTER INSERT ON payment_initial_dispatch_provenance FOR EACH ROW EXECUTE FUNCTION fixture_witness_fsync_receipt()")
+        .await.expect("nontransactional receipt witness");
+
+    let server = Server::start(vec![
+        profile(),
+        Reply::Json(200, payment(frozen.snapshot())),
+    ]);
+    let client = local(&server)
+        .verify_profile()
+        .await
+        .expect("verified test profile");
+    let fetched = client
+        .fetch(frozen.snapshot(), "tr_SYNTHETIC_NotARealPayment")
+        .await
+        .expect("authenticated synthetic GET");
+    // The start and create evidence are synthetic: this checks the actual
+    // receipt writer and matching logic, not a real or simulated create POST.
+    let initial = CreatedPayment {
+        provider_id: "tr_SYNTHETIC_NotARealPayment".into(),
+        attempt: frozen.snapshot().clone(),
+    }
+    .bind(fetched)
+    .expect("exact synthetic pair");
+    let ids = crate::payment_test_fixture::Ids(AtomicU64::new(10000));
+    let result =
+        observations::fixture_record_initial(&pool, time.as_ref(), &ids, &binding.id, initial)
+            .await;
+    let witness: (i64, bool) =
+        sqlx::query_as("SELECT last_value,is_called FROM fixture_fsync_receipt_witness")
+            .fetch_one(&pool)
+            .await
+            .expect("receipt insertion reached");
+    assert_eq!(witness, (1, true));
+    if expected == "off" {
+        assert!(matches!(result, Err(PaymentStoreError::Unavailable)));
+        assert_eq!(counts(&pool).await, (1, 1, 0, 0, 0));
+    } else {
+        assert!(result.is_ok());
+        assert_eq!(counts(&pool).await, (1, 1, 1, 1, 1));
+        let exact: bool = sqlx::query_scalar("SELECT payment_initial_dispatch_provenance_exact(p) FROM payment_initial_dispatch_provenance p WHERE p.attempt_id=$1")
+            .bind(&binding.id).fetch_one(&pool).await.expect("exact receipt");
+        assert!(exact);
+    }
+    server.inspect(|requests| {
+        let actual: Vec<_> = requests
+            .iter()
+            .map(|r| (r.method.as_str(), r.path.as_str()))
+            .collect();
+        assert_eq!(
+            actual,
+            [
+                ("GET", "/v2/profiles/me"),
+                ("GET", "/v2/payments/tr_SYNTHETIC_NotARealPayment")
+            ]
+        );
+    });
+    pool.close().await;
+    let drop_db = format!("DROP DATABASE {name}");
+    sqlx::query(sqlx::AssertSqlSafe(drop_db))
+        .execute(&parent)
+        .await
+        .expect("retire fixture database");
+    parent.close().await;
+}

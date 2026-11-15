@@ -49,6 +49,19 @@ pub(super) async fn record_initial(
     .await
 }
 
+// Test-only entry for an isolated historical-start/fsync fixture. Its synthetic
+// create evidence does not establish that a real provider POST occurred.
+#[cfg(test)]
+pub(crate) async fn fixture_record_initial(
+    pool: &PgPool,
+    clock: &dyn Clock,
+    identifiers: &dyn Identifiers,
+    attempt_id: &str,
+    initial: crate::mollie::InitialFetch,
+) -> Result<ObservationReceipt, PaymentStoreError> {
+    record_initial(pool, clock, identifiers, attempt_id, initial).await
+}
+
 async fn record(
     pool: &PgPool,
     clock: &dyn Clock,
