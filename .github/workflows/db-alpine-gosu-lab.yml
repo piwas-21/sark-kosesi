@@ -1,0 +1,49 @@
+name: PostgreSQL Alpine Gosu comparison
+on:
+  workflow_dispatch:
+  pull_request:
+    branches: [develop]
+    paths:
+      - .github/workflows/db-alpine-gosu-lab.yml
+      - ops/db-alpine-gosu-candidate/**
+      - ops/db-gosu-candidate/**
+      - scripts/test_gosu_candidate.sh
+      - scripts/test_db_alpine_gosu.sh
+      - scripts/check_db_alpine_gosu.py
+      - scripts/check_alpine_gosu_image.py
+      - scripts/capture_db_image_scan.py
+      - tests/tooling/test_db_alpine_gosu*.py
+      - tests/tooling/test_alpine_gosu_image.py
+permissions: {}
+jobs:
+  lab:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+      - name: Rebuild verified Gosu in isolated containers
+        env:
+          GOSU_SOURCE_REVISION: ${{ github.event.pull_request.head.sha || github.sha }}
+          GOSU_EVIDENCE_DIR: ${{ runner.temp }}/db-gosu-evidence
+          GOSU_SCRATCH_DIR: ${{ runner.temp }}/db-gosu-scratch
+        run: bash scripts/test_gosu_candidate.sh
+      - name: Compare isolated Alpine candidate
+        env:
+          ALPINE_GOSU_SOURCE_REVISION: ${{ github.event.pull_request.head.sha || github.sha }}
+          ALPINE_GOSU_EVIDENCE_DIR: ${{ runner.temp }}/db-alpine-gosu-evidence
+          ALPINE_GOSU_SCRATCH_DIR: ${{ runner.temp }}/db-alpine-gosu-scratch
+        run: bash scripts/test_db_alpine_gosu.sh
+      - name: Retain comparison evidence
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+        with:
+          name: db-alpine-gosu-${{ github.event.pull_request.head.sha || github.sha }}
+          path: |
+            ${{ runner.temp }}/db-gosu-evidence/
+            ${{ runner.temp }}/db-alpine-gosu-evidence/
+          if-no-files-found: error
