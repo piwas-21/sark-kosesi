@@ -15,6 +15,23 @@ class IsolationFailure(ValueError):
     """A fixed, non-sensitive Docker isolation invariant failed."""
 
 
+def suitable_private_ipv4(value):
+    """Accept only private IPv4 without special-use addressing flags."""
+    return (
+        value.version == 4
+        and value.is_private
+        and not any(
+            (
+                value.is_loopback,
+                value.is_link_local,
+                value.is_reserved,
+                value.is_unspecified,
+                value.is_multicast,
+            )
+        )
+    )
+
+
 class RelayHandler(socketserver.BaseRequestHandler):
     def handle(self):
         try:
@@ -103,9 +120,9 @@ def verified_addresses(network_name, marker, containers, images):
     if not isinstance(configs, list) or len(configs) != 1:
         raise IsolationFailure("network_subnet_shape")
     subnet = ipaddress.ip_network(configs[0]["Subnet"], strict=True)
-    private_ranges = ("10.0.0.0/8", "172.16.0.0/12", "192.168.0.0/16")
-    if subnet.version != 4 or not any(
-        subnet.subnet_of(ipaddress.ip_network(block)) for block in private_ranges
+    if not all(
+        suitable_private_ipv4(value)
+        for value in (subnet, subnet.network_address, subnet.broadcast_address)
     ):
         raise IsolationFailure("network_subnet_policy")
     addresses = []
@@ -136,7 +153,7 @@ def verified_addresses(network_name, marker, containers, images):
         address = ipaddress.ip_address(connections[network_name]["IPAddress"])
         member_address = ipaddress.ip_interface(members[container]["IPv4Address"])
         if (
-            address.version != 4
+            not suitable_private_ipv4(address)
             or address not in subnet
             or address in (subnet.network_address, subnet.broadcast_address)
             or member_address.ip != address
