@@ -357,7 +357,7 @@ jobs:
           PY_GATE
   sonar:
     name: SonarQube
-    needs: [application]
+    needs: [application_coverage]
     if: always()
     runs-on: ubuntu-24.04
     timeout-minutes: 20
@@ -366,6 +366,17 @@ jobs:
     env:
       ANALYSIS_REVISION: ${{ github.event.pull_request.head.sha || github.sha }}
     steps:
+      - name: Require successful application coverage
+        env:
+          RESULTS: ${{ toJSON(needs) }}
+        run: |
+          python3 - <<'PY_SONAR'
+          import json, os
+          results = json.loads(os.environ['RESULTS'])
+          if not isinstance(results, dict) or set(results) != {'application_coverage'} or not isinstance(results['application_coverage'], dict) or results['application_coverage'].get('result') != 'success':
+              raise SystemExit('Application coverage failed, was cancelled, skipped or missing.')
+          print('Application coverage succeeded.')
+          PY_SONAR
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
           ref: ${{ github.event.pull_request.head.sha || github.sha }}
