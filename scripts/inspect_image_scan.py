@@ -25,6 +25,7 @@ SCOPE = {
     "severities": list(SEVERITIES),
     "include_unfixed": True,
     "include_all_packages": True,
+    "show_suppressed": True,
     "ignore_rules": False,
     "vex": False,
 }
@@ -152,7 +153,13 @@ def inspect(
     require(
         all(
             type(scope[key]) is bool and scope[key] is SCOPE[key]
-            for key in ("include_unfixed", "include_all_packages", "ignore_rules", "vex")
+            for key in (
+                "include_unfixed",
+                "include_all_packages",
+                "show_suppressed",
+                "ignore_rules",
+                "vex",
+            )
         ),
         "scan scope incomplete or filtered",
     )

@@ -152,6 +152,8 @@ class ImageScanEvidence(unittest.TestCase):
         for key, value in (
             ("include_unfixed", False),
             ("include_all_packages", False),
+            ("show_suppressed", False),
+            ("show_suppressed", 1),
             ("ignore_rules", True),
             ("vex", True),
             ("include_unfixed", 1),
@@ -162,6 +164,57 @@ class ImageScanEvidence(unittest.TestCase):
             data[0]["scope"][key] = value
             with self.subTest(key=key, value=value), self.assertRaises(InvalidEvidence):
                 evaluate(data)
+        data = fixture()
+        del data[0]["scope"]["show_suppressed"]
+        with self.assertRaises(InvalidEvidence):
+            evaluate(data)
+
+    def test_pinned_trivy_debian_result_field_compatibility(self):
+        # Upstream v0.70.0 debian-buster.json.golden has these raw target and
+        # finding fields, but intentionally lacks Packages: TestTar runs with
+        # --list-all-pkgs=false. This is a field control, not a complete scan.
+        data = fixture()
+        data[3]["Metadata"]["OS"]["Name"] = "10.1"
+        data[3]["Results"] = [
+            {
+                "Target": "testdata/fixtures/images/debian-buster.tar.gz (debian 10.1)",
+                "Class": "os-pkgs",
+                "Type": "debian",
+                "Packages": [{"Name": "bash", "Version": "5.0-4"}],
+                "Vulnerabilities": [
+                    {
+                        "VulnerabilityID": "CVE-2019-18276",
+                        "PkgName": "bash",
+                        "InstalledVersion": "5.0-4",
+                        "Severity": "LOW",
+                    }
+                ],
+            }
+        ]
+        result = evaluate(seal(data))
+        self.assertEqual(result["status"], "no_reported_high_or_critical")
+        self.assertEqual(result["severity_counts"]["LOW"], 1)
+        # The pinned busybox-with-lockfile.json.golden supplies this separate
+        # language target and finding; its package entry is synthetic as above.
+        data[3]["Results"].append(
+            {
+                "Target": "Cargo.lock",
+                "Class": "lang-pkgs",
+                "Type": "cargo",
+                "Packages": [{"Name": "ammonia", "Version": "1.9.0"}],
+                "Vulnerabilities": [
+                    {
+                        "VulnerabilityID": "CVE-2019-15542",
+                        "PkgName": "ammonia",
+                        "InstalledVersion": "1.9.0",
+                        "Severity": "HIGH",
+                    }
+                ],
+            }
+        )
+        result = evaluate(seal(data))
+        self.assertEqual(result["status"], "blocked")
+        self.assertEqual(result["severity_counts"]["HIGH"], 1)
 
     def test_time_revision_digest_platform_and_scanner_are_bound(self):
         for mutate in (
