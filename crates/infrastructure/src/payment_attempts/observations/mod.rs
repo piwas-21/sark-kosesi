@@ -7,6 +7,7 @@ use commerce_domain::payment_attempts::observations::{
     MAX_OBSERVATION_REVISION, ObservationIntent, ObservationSnapshot,
 };
 use sqlx::PgPool;
+pub(crate) mod initial;
 pub(crate) mod rows;
 /// A durable fetched fact, never payment/stock/fulfilment authority.
 pub struct ObservationReceipt {
@@ -23,6 +24,53 @@ pub async fn record_verified(
     effect: &str,
     verified: &VerifiedPayment,
 ) -> Result<ObservationReceipt, PaymentStoreError> {
+    record(pool, clock, identifiers, attempt_id, effect, verified, None).await
+}
+
+/// This entry alone accepts the create-only capability. A generic replay can
+/// never upgrade an earlier observation into initial-dispatch provenance.
+pub(super) async fn record_initial(
+    pool: &PgPool,
+    clock: &dyn Clock,
+    identifiers: &dyn Identifiers,
+    attempt_id: &str,
+    initial: crate::mollie::InitialFetch,
+) -> Result<ObservationReceipt, PaymentStoreError> {
+    let effect = format!("initial-fetch-{attempt_id}");
+    record(
+        pool,
+        clock,
+        identifiers,
+        attempt_id,
+        &effect,
+        initial.fetched(),
+        Some(initial.attempt()),
+    )
+    .await
+}
+
+// Test-only entry for an isolated historical-start/fsync fixture. Its synthetic
+// create evidence does not establish that a real provider POST occurred.
+#[cfg(test)]
+pub(crate) async fn fixture_record_initial(
+    pool: &PgPool,
+    clock: &dyn Clock,
+    identifiers: &dyn Identifiers,
+    attempt_id: &str,
+    initial: crate::mollie::InitialFetch,
+) -> Result<ObservationReceipt, PaymentStoreError> {
+    record_initial(pool, clock, identifiers, attempt_id, initial).await
+}
+
+async fn record(
+    pool: &PgPool,
+    clock: &dyn Clock,
+    identifiers: &dyn Identifiers,
+    attempt_id: &str,
+    effect: &str,
+    verified: &VerifiedPayment,
+    initial: Option<&AttemptSnapshot>,
+) -> Result<ObservationReceipt, PaymentStoreError> {
     input(attempt_id, effect)?;
     let intent = ObservationIntent {
         payment: verified.payment().clone(),
@@ -30,11 +78,22 @@ pub async fn record_verified(
     };
     let mut tx = pool.begin().await?;
     limits(&mut tx).await?;
+    if initial.is_some() {
+        sqlx::query("SET LOCAL synchronous_commit='on'")
+            .execute(&mut *tx)
+            .await?;
+    }
     let (frozen, started_at) = context(&mut tx, attempt_id, true).await?;
+    if initial.is_some_and(|attempt| attempt != frozen.snapshot()) {
+        return Err(PaymentStoreError::Conflict);
+    }
     intent
         .validate(frozen.snapshot())
         .map_err(|_| PaymentStoreError::Conflict)?;
     if let Some(previous) = rows::by_effect(&mut tx, &frozen, started_at, effect).await? {
+        if initial.is_some() {
+            return Err(PaymentStoreError::Conflict);
+        }
         if previous.intent != intent {
             return Err(PaymentStoreError::Conflict);
         }
@@ -44,10 +103,10 @@ pub async fn record_verified(
             replayed: true,
         });
     }
-    let initial = clock
+    let initial_time = clock
         .unix_seconds()
         .map_err(|_| PaymentStoreError::ClockUnavailable)?;
-    let clock = ObservedClock::new(clock, initial);
+    let clock = ObservedClock::new(clock, initial_time);
     let at = now(&clock)?;
     let previous = rows::latest(&mut tx, &frozen, started_at).await?;
     if at < started_at || previous.as_ref().is_some_and(|p| at < p.recorded_at) {
@@ -69,14 +128,28 @@ pub async fn record_verified(
     snapshot
         .validate(frozen.snapshot(), started_at)
         .map_err(|_| PaymentStoreError::InvalidStoredData)?;
+    let event_id = fresh_id(identifiers)?;
     rows::insert(
         &mut tx,
         &snapshot,
         &frozen.snapshot().binding.order_id,
-        &fresh_id(identifiers)?,
+        &event_id,
     )
     .await?;
+    if initial.is_some() {
+        initial::insert(&mut tx, &snapshot, &event_id, &frozen, started_at).await?;
+    }
     now(&clock)?;
+    if initial.is_some() {
+        let (fsync, synchronous_commit): (String, String) = sqlx::query_as(
+            "SELECT pg_catalog.current_setting('fsync'), pg_catalog.current_setting('synchronous_commit')",
+        )
+        .fetch_one(&mut *tx)
+        .await?;
+        if fsync != "on" || synchronous_commit != "on" {
+            return Err(PaymentStoreError::Unavailable);
+        }
+    }
     tx.commit().await?;
     Ok(ObservationReceipt {
         snapshot,
