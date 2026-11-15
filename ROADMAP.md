@@ -319,11 +319,13 @@ crash-resumable discovery without treating empty/end pages as absence. No creden
 sticky paid facts, with visible ambiguity, operation receipts and atomic events.
 Profile-scoped supervised GET-only recovery now persists leases, search/fetch/poll
 checkpoints, bounded retries and explicit review reasons through a local/test
-worker command. No runtime key or scheduler is installed. Private finance-authorized transient
+worker command. A separate read-only command inspects one checkpoint with a
+redacted summary and no provider credential. No runtime key or scheduler is installed. Private finance-authorized transient
 recovery now retains immutable full-checkpoint decisions and permits at most three
 lifetime resumes without resetting claim, poll or scan budgets. Fresh session/MFA,
 exact generation and confirmation protect every call, including receipt replay.
-Paid, ambiguous, capped and invalid-custody stops remain unresolved. Private
+A private original-attempt preflight validates bounded retained evidence without
+provider access or job enrollment. Paid, ambiguous, capped and invalid-custody stops remain unresolved. Private
 callback-ID GETs now obtain exact-profile minimal evidence and use authenticated
 metadata only to locate and fully match the original frozen order/attempt/dispatch
 before atomic observation/outbox custody. No callback body or return status grants
@@ -364,7 +366,11 @@ consumption cases stay stopped. Complete actual proxy/resource-limit/no-bypass
 and TLS/provider acceptance before public activation, remaining operator
 dispositions and separate order/fulfilment/refund/invoice transitions. A pure
 whole-variant quantity check now bounds a shipment proposal against an accepted
-order and caller-supplied prior counts. A pure projection checks supplied original
-BOMs against frozen members and the order, then sums expected component demand.
-Shipment history, authenticated inputs, package contents and dispatch authority
-still need evidence. Dispatch and payment require separate authorization.
+order and caller-supplied prior counts. A private warehouse projection uses
+current received payment recognition, validated original or late stock allocation
+and sealed order-bound BOMs to compute the expected components for a proposed
+batch. Private packing custody now records confirmed staff assertions of bounded
+whole units and package components, with serialized occupancy, replay and an
+audited release. These assertions do not establish unshipped units, physical
+contents or dispatch authority. Complete shipment handover and delivery custody,
+reversal/refund disposition and physical fulfilment evidence separately.
