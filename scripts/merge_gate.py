@@ -81,7 +81,7 @@ def observe_json(endpoint):
 def reviewed_tree(head):
     """Read the immutable tree of the exact locally verified head."""
     response = subprocess.run(
-        ["git", "rev-parse", "--verify", f"{head}^{{tree}}"],
+        ["git", "--no-replace-objects", "rev-parse", "--verify", f"{head}^{{tree}}"],
         check=True,
         cwd=ROOT,
         text=True,
@@ -160,7 +160,9 @@ def merge_once(command, repo, number, head, base, base_ref, head_ref, protected_
             confirmed = False
         if not confirmed:
             raise ValueError("Merge outcome unresolved; no retry was attempted") from error
-        print("Exact merge observed on the target branch; branch deletion was not checked")
+        print(
+            "Confirmed the exact merge on the target branch. Verify feature branch deletion separately."
+        )
 
 
 def main():

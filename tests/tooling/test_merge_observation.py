@@ -2,10 +2,12 @@
 
 import json
 import subprocess
+import tempfile
 import unittest
+from pathlib import Path
 from unittest.mock import patch
 
-from merge_gate import merge_once, observe_json, observed_exact_merge
+from merge_gate import merge_once, observe_json, observed_exact_merge, reviewed_tree
 
 REPO = "example/project"
 NUMBER = 42
@@ -124,13 +126,44 @@ class MergeObservation(unittest.TestCase):
     def test_reviewed_tree_is_read_from_exact_local_commit_with_timeout(self):
         result = subprocess.CompletedProcess([], 0, stdout=TREE + "\n", stderr="")
         with patch("merge_gate.subprocess.run", return_value=result) as run:
-            from merge_gate import reviewed_tree
-
             self.assertEqual(reviewed_tree(HEAD), TREE)
         self.assertEqual(
-            run.call_args.args[0], ["git", "rev-parse", "--verify", f"{HEAD}^{{tree}}"]
+            run.call_args.args[0],
+            ["git", "--no-replace-objects", "rev-parse", "--verify", f"{HEAD}^{{tree}}"],
         )
         self.assertEqual(run.call_args.kwargs["timeout"], 5)
+
+    def test_reviewed_tree_ignores_git_replacement_refs(self):
+        with tempfile.TemporaryDirectory() as directory:
+
+            def git(*arguments, input=None):
+                return subprocess.run(
+                    [
+                        "git",
+                        "-c",
+                        "user.name=Fixture",
+                        "-c",
+                        "user.email=fixture@example.test",
+                        *arguments,
+                    ],
+                    input=input,
+                    cwd=directory,
+                    check=True,
+                    capture_output=True,
+                    text=True,
+                    timeout=5,
+                ).stdout.strip()
+
+            git("init", "--quiet")
+            exact_tree = git("mktree", input="")
+            exact_head = git("commit-tree", exact_tree, "-m", "Exact reviewed commit")
+            blob = git("hash-object", "-w", "--stdin", input="replacement")
+            different_tree = git("mktree", input=f"100644 blob {blob}\treplacement.txt\n")
+            replacement = git("commit-tree", different_tree, "-m", "Replacement commit")
+            git("replace", exact_head, replacement)
+            self.assertEqual(git("rev-parse", f"{exact_head}^{{tree}}"), different_tree)
+            with patch("merge_gate.ROOT", Path(directory)):
+                self.assertEqual(reviewed_tree(exact_head), exact_tree)
 
     def test_failed_merge_never_retries_and_only_exact_observation_succeeds(self):
         command = ["gh", "pr", "merge", str(NUMBER), "--match-head-commit", HEAD, "--squash"]

@@ -11,9 +11,8 @@ AGENTS.md is authoritative. Read ROADMAP and the relevant specification; inspect
    If the merge command fails, the gate may make bounded read-only checks of the
    recorded PR, exact merge parents, reviewed-head tree and target-branch
    ancestry. It reports a confirmed merge only when those checks bind the
-   reviewed head and base; an
-   unconfirmed result remains a failure and does not trigger another merge or
-   branch-deletion operation. Branch deletion is not established by observation.
+   reviewed head and base. It exits with a failure when the outcome remains
+   unresolved. Verify feature branch deletion separately.
 7. Update current-state docs and ROADMAP. Handoff states what exists, which exact checks passed, what remains unimplemented and the next executable slice. Separate source, CI, provider, deployment and operational acceptance. Do not create another AI session unless requested.
 
 Human review uses the same evidence shape. A tool-generated report cannot establish that a human reviewed code. Never claim independent review based only on a filename or approval string. Findings must be specific enough to reproduce; prioritize real correctness/security/accessibility issues over subjective style already enforced by tools.
