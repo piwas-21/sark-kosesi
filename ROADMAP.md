@@ -17,8 +17,11 @@ history and reports pending forward migrations. Actual startup and rollback
 remain rehearsal gates.
 
 An opt-in staging startup can validate preapplied SQLx history without running
-migrations. A restricted runtime role, the catalogue's row-locking privileges,
-grant provisioning and deployment evidence remain separate work.
+migrations. Narrow bounded catalogue lock functions retain the existing read
+claims without granting the caller direct row-update privileges. Existing roles
+without both helper grants retain their direct claims. Provisioning the
+restricted runtime and non-login helper owner, full read grants and deployment
+evidence remain separate work.
 
 Product families, separable variants, shared cover/foam components and sealed,
 immutable BOM revisions are implemented behind the existing read-only preview.
@@ -323,6 +326,11 @@ failures remain uncertain. A fresh create/GET pair can retain a same-transaction
 origin receipt that commits its exact source observation digest; legacy or callback
 observations cannot acquire that origin by replay. Runtime dispatch remains
 uninstalled. Started/unknown attempts must reconcile without automatic replacement.
+Private offline test continuation custody can retain one source-derived callback
+lookup operation and inspect retained history. The explicit private Test
+continuation can use its durably fenced start for one authenticated GET and
+store the verified receipt. Missing receipts stay unknown after a start.
+Release still requires operator, provider and deployment acceptance.
 The private test-key HTTP client now verifies its authenticated profile and
 separately fetches checked minimal payment evidence, with bounded one-use permit
 transport. Bounded private payment-list pages now return exact metadata-associated

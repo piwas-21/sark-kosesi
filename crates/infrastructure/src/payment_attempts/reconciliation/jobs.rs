@@ -121,6 +121,10 @@ pub(crate) async fn enqueue(
 ) -> Result<(), RecoveryError> {
     let mut tx = pool.begin().await?;
     limits(&mut tx).await?;
+    // The continuation prefilter must resolve against the real custody schema.
+    sqlx::query("SET LOCAL search_path=pg_catalog,public,pg_temp")
+        .execute(&mut *tx)
+        .await?;
     let at = now(clock)?;
     sqlx::query(r#"INSERT INTO payment_reconciliation_jobs(attempt_id,source_event_id,created_at,updated_at,due_at)
  SELECT a.id,e.id,s.started_at,$1,$1 FROM payment_attempts a JOIN payment_dispatch_starts s ON s.attempt_id=a.id
@@ -128,6 +132,7 @@ pub(crate) async fn enqueue(
  WHERE a.snapshot->'binding'->'profile'->>'id'=$2 AND s.started_at<=$1
  AND e.created_at=s.started_at AND e.payload=jsonb_build_object('schema_version',1,'order_id',a.order_id,'attempt_id',a.id,'dispatch_id',s.id)
  AND NOT EXISTS(SELECT 1 FROM payment_reconciliation_jobs j WHERE j.attempt_id=a.id)
+ AND NOT public.payment_test_continuation_fenced(a.id)
  ORDER BY s.started_at,a.id LIMIT 100 ON CONFLICT(attempt_id) DO NOTHING"#).bind(at).bind(profile).execute(&mut *tx).await?;
     if now(clock)? < at {
         return Err(RecoveryError::ClockUnavailable);

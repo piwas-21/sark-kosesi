@@ -1044,5 +1044,10 @@ mod payment_custody_preflight;
 #[path = "test_payment_orchestration.rs"]
 mod test_payment_orchestration;
 
+#[path = "test_continuation_custody.rs"]
+mod test_continuation_custody;
 #[path = "test_initial_provenance_durability.rs"]
 mod test_initial_provenance_durability;
+
+#[path = "populated_commerce_upgrade.rs"]
+mod populated_commerce_upgrade;

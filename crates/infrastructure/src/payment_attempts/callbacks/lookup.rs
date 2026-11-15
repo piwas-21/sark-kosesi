@@ -10,6 +10,7 @@ use crate::mollie::{
 use commerce_application::request_context::{Clock, Identifiers, ObservedClock};
 use commerce_domain::payment_attempts::callbacks::{LookupOperationSnapshot, LookupSnapshot};
 use sqlx::PgPool;
+pub mod continuation;
 mod rows;
 /// Constructed only after an operation commits or its durable row is revalidated.
 pub struct LookupOperation {
@@ -44,6 +45,7 @@ pub async fn start_lookup(
     let mut tx = pool.begin().await?;
     limits(&mut tx).await?;
     let stored = rows::operation(&mut tx, &operation.snapshot.id, true).await?;
+    rows::require_generic(&mut tx, &stored.id).await?;
     if stored != operation.snapshot {
         return Err(PaymentStoreError::InvalidStoredData);
     }
@@ -73,6 +75,7 @@ pub(crate) async fn commit_started(
     until: i64,
 ) -> Result<LookupFetchPermit, PaymentStoreError> {
     let stored = rows::operation(&mut tx, &operation.id, true).await?;
+    rows::require_generic(&mut tx, &stored.id).await?;
     let start: Option<i64> = sqlx::query_scalar(
         "SELECT started_at FROM callback_lookup_fetch_starts WHERE operation_id=$1",
     )
@@ -126,6 +129,16 @@ pub(crate) async fn prepare_in_transaction(
     profile_id: &str,
     provider_id: &str,
 ) -> Result<LookupOperationSnapshot, PaymentStoreError> {
+    prepare_with_source(tx, clock, ids, profile_id, provider_id, None).await
+}
+async fn prepare_with_source(
+    tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
+    clock: &dyn Clock,
+    ids: &dyn Identifiers,
+    profile_id: &str,
+    provider_id: &str,
+    continuation_attempt_id: Option<&str>,
+) -> Result<LookupOperationSnapshot, PaymentStoreError> {
     let snapshot = LookupOperationSnapshot {
         schema_version: 1,
         id: fresh_id(ids)?,
@@ -136,8 +149,8 @@ pub(crate) async fn prepare_in_transaction(
     snapshot
         .validate()
         .map_err(|_| PaymentStoreError::InvalidRequest)?;
-    sqlx::query("INSERT INTO callback_lookup_operations(id,profile_id,provider_id,created_at) VALUES($1,$2,$3,$4)")
-        .bind(&snapshot.id).bind(&snapshot.profile_id).bind(&snapshot.provider_id).bind(snapshot.created_at)
+    sqlx::query("INSERT INTO callback_lookup_operations(id,profile_id,provider_id,created_at,continuation_attempt_id) VALUES($1,$2,$3,$4,$5)")
+        .bind(&snapshot.id).bind(&snapshot.profile_id).bind(&snapshot.provider_id).bind(snapshot.created_at).bind(continuation_attempt_id)
         .execute(&mut **tx).await?;
     Ok(snapshot)
 }
@@ -166,6 +179,7 @@ pub async fn record_lookup(
     let mut tx = pool.begin().await?;
     limits(&mut tx).await?;
     let operation = rows::operation(&mut tx, operation_id, true).await?;
+    rows::require_generic(&mut tx, &operation.id).await?;
     if fetched.operation() != &operation {
         return Err(PaymentStoreError::Conflict);
     }
@@ -204,6 +218,7 @@ pub async fn read_lookup(
     let mut tx = pool.begin().await?;
     limits(&mut tx).await?;
     let operation = rows::operation(&mut tx, operation_id, false).await?;
+    rows::require_generic(&mut tx, &operation.id).await?;
     let receipt = rows::receipt(&mut tx, &operation).await?;
     tx.rollback().await?;
     Ok(receipt)

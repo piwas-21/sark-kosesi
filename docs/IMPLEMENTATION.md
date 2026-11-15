@@ -227,6 +227,18 @@ and live commerce remain rejected. The staging runbook owns resource caps, exact
 source labels, read-only smoke checks and rollback. No fixture seeding, worker
 supervision or live provider activation follows from deploying the empty preview.
 
+Catalogue projection uses bounded schema-qualified lock-only functions for its
+variant and media claims. Provision and verify a separate restricted runtime and
+NOLOGIN function owner before enabling such an identity; the migration grants no
+runtime access, and removes inherited named execution defaults from the two
+functions. Legacy roles without both grants retain direct claims. Preserve
+variant-before-asset lock ordering and the transaction fence. PostgreSQL protocol READ ONLY cannot execute these locking claims.
+
+A queued restricted-preview integrity helper checks one current original hash
+without returning original bytes. The read path keeps its legacy direct-byte
+fallback for existing roles and pre-helper schemas. Actual role provisioning,
+full workload bounds and operational acceptance remain separate.
+
 1. Server quotes now read exact currently eligible catalogue publications under
    variant/asset claims and check aggregated basket demand against physical
    component balances. The closed request contains only destination and SKU/unit
@@ -334,8 +346,20 @@ supervision or live provider activation follows from deploying the empty preview
    Before acknowledging this receipt, the supported writer requires PostgreSQL
    fsync and transaction-local synchronous commit.
    Generic/callback receipts and preexisting observations are not upgraded.
-   Migration 0073 follows the independently queued 0068–0072 prerequisites.
-   This is local custody, not provider or checkout acceptance. Bounded private
+   Private offline continuation custody can bind one derived callback lookup
+   operation to that exact source without contacting a provider. A missing or
+   invalid source cannot produce an operation or authorize another POST.
+   Migration 0076 adds a persistent native dispatch-start fence between a
+   marked continuation start and original-attempt supervisor enrollment. Generic
+   lookup execution rejects marked operations. An explicit private Test-only
+   continuation can consume the sealed start in one source-bound GET, then
+   revalidate the original source and retain the minimal receipt and event. An
+   absent receipt after a start is unknown and cannot authorize another GET.
+   Offline historical inspection requires no client, clock or entropy. No route,
+   scheduler, observation or financial transition is installed. Supervisor
+   admission uses READ COMMITTED and skips valid fenced attempts. Migration
+   0077 checks the original source and exact processing event before accepting a
+   receipt. Live provider and checkout acceptance remain open. Bounded private
    unknown-ID list pages now return metadata-associated identity hints, preserving duplicate critical fields
    and validated fixed-origin cursors. Every candidate needs a separate checked
    GET; no/partial results cannot authorize another POST. Private verified-fetch

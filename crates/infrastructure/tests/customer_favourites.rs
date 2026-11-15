@@ -39,12 +39,15 @@ async fn expired_while_waiting(
     source_lock: bool,
 ) -> Result<i64, FavouriteError> {
     let mut held = pool.begin().await.expect("hold serialization claim");
-    let pattern = if source_lock {
+    let (pattern, alternate) = if source_lock {
         sqlx::query("SELECT sku FROM catalogue_variants WHERE sku='SET-FILLED' FOR UPDATE")
             .execute(&mut *held)
             .await
             .expect("lock catalogue source");
-        "SELECT sku FROM catalogue_variants WHERE sku=ANY%"
+        (
+            "SELECT * FROM public.claim_published_variants%",
+            "SELECT sku FROM catalogue_variants WHERE sku=ANY%",
+        )
     } else {
         sqlx::query(
             "SELECT revision FROM customer_favourite_buckets WHERE account_id=$1 FOR UPDATE",
@@ -53,8 +56,15 @@ async fn expired_while_waiting(
         .execute(&mut *held)
         .await
         .expect("lock account bucket");
-        "SELECT revision FROM customer_favourite_buckets%"
+        (
+            "SELECT revision FROM customer_favourite_buckets%",
+            "SELECT revision FROM customer_favourite_buckets%",
+        )
     };
+    let blocker: i32 = sqlx::query_scalar("SELECT pg_backend_pid()")
+        .fetch_one(&mut *held)
+        .await
+        .expect("held claim backend");
     let moving = std::sync::Arc::new(MovingClock(std::sync::atomic::AtomicU64::new(1100)));
     let waiting_clock = moving.clone();
     let waiting_pool = pool.clone();
@@ -86,8 +96,8 @@ async fn expired_while_waiting(
     });
     tokio::time::timeout(std::time::Duration::from_millis(800), async {
         loop {
-            let count: i64 = sqlx::query_scalar("SELECT count(*) FROM pg_stat_activity WHERE datname=current_database() AND wait_event_type='Lock' AND query LIKE $1")
-                .bind(pattern).fetch_one(pool).await.expect("observe waiting operation");
+            let count: i64 = sqlx::query_scalar("SELECT count(*) FROM pg_stat_activity a WHERE a.datname=current_database() AND a.wait_event_type='Lock' AND (a.query LIKE $1 OR a.query LIKE $2) AND $3=ANY(pg_blocking_pids(a.pid))")
+                .bind(pattern).bind(alternate).bind(blocker).fetch_one(pool).await.expect("observe operation blocked by held claim");
             if count == 1 { break; }
             tokio::time::sleep(std::time::Duration::from_millis(10)).await;
         }

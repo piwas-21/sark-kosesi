@@ -320,10 +320,6 @@ async fn verified_promoted_order_requires_the_exact_second_promoted_read(pool: s
     tx.rollback().await.expect("no effects");
 }
 
-#[allow(dead_code)]
-#[path = "admitted_proofs.rs"]
-mod admitted_proofs;
-
 #[sqlx::test(migrations = false)]
 async fn populated_promoted_order_survives_schema_upgrade_and_rejects_partial_account_custody(
     pool: sqlx::PgPool,
@@ -332,7 +328,8 @@ async fn populated_promoted_order_survives_schema_upgrade_and_rejects_partial_ac
         order as order_fixture, promotion as promotion_fixture, quote,
     };
     use crate::{
-        checkout_orders, checkout_quotes::issue_promoted_quote, guest_baskets::GuestCredential,
+        admitted_proofs, checkout_orders, checkout_quotes::issue_promoted_quote,
+        guest_baskets::GuestCredential,
     };
     use commerce_application::Locale;
     use sqlx::Executor;
