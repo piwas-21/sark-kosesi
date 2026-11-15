@@ -790,3 +790,61 @@ async fn create_capability_rejects_a_different_verified_provider_identity(pool: 
             .expect("no origin receipt");
     assert_eq!(receipts, 0);
 }
+
+#[sqlx::test(migrator = "MIGRATOR")]
+async fn create_capability_rejects_same_provider_payment_for_another_order(pool: PgPool) {
+    use crate::payment_attempts::{DispatchOutcome, start_dispatch};
+    use commerce_domain::payment_attempts::match_provider;
+
+    let (time, frozen) = prepared(&pool).await;
+    let id = &frozen.snapshot().binding.id;
+    let mut other = frozen.snapshot().clone();
+    other.binding.order_id = "f".repeat(32);
+    assert_ne!(other.binding.order_id, frozen.snapshot().binding.order_id);
+    other.validate().expect("valid different order binding");
+    let server = Server::start(vec![
+        profile(),
+        Reply::Json(201, payment(frozen.snapshot())),
+        Reply::Json(200, payment(&other)),
+    ]);
+    let client = local(&server).verify_profile().await.expect("test profile");
+    let ids = crate::payment_test_fixture::Ids(AtomicU64::new(10000));
+    let DispatchOutcome::Start(permit) =
+        start_dispatch(&pool, time.as_ref(), &ids, id, client.configuration())
+            .await
+            .expect("durable original start")
+    else {
+        panic!("fresh start")
+    };
+    let hint = client
+        .create(permit, time.as_ref())
+        .await
+        .expect("one original create");
+    let fetched = client
+        .fetch(&other, hint.provider_id())
+        .await
+        .expect("authenticated payment for other order");
+    assert_eq!(hint.provider_id(), fetched.payment().id);
+    assert!(match_provider(&other, fetched.payment()).is_ok());
+    assert!(match_provider(frozen.snapshot(), fetched.payment()).is_err());
+    assert!(matches!(
+        hint.bind(fetched),
+        Err(MollieError::PaymentMismatch)
+    ));
+    assert_eq!(counts(&pool).await, (1, 1, 0, 0));
+    let receipts: i64 =
+        sqlx::query_scalar("SELECT count(*) FROM payment_initial_dispatch_provenance")
+            .fetch_one(&pool)
+            .await
+            .expect("no origin receipt");
+    assert_eq!(receipts, 0);
+    server.inspect(|requests| {
+        assert_eq!(requests.len(), 3);
+        assert_eq!(requests[1].method, "POST");
+        assert_eq!(requests[2].method, "GET");
+        assert_eq!(
+            requests[2].path,
+            "/v2/payments/tr_SYNTHETIC_NotARealPayment"
+        );
+    });
+}
