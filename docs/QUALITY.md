@@ -1077,3 +1077,15 @@ existing credential after rejection while the admission debit remains committed,
 then retry successfully. A real account-lock wait advances the clock through
 snapshot expiry and demonstrates rollback. Synthetic test digests are not an
 operational corpus or evidence of its review.
+
+### Isolated guest browser transport
+
+`npm run test:guest-browser` starts its own disposable PostgreSQL cluster and a
+randomly named, marker-guarded synthetic database. It runs a loopback Rust API and ephemeral
+HTTPS-only browser bridge. A Chromium session checks the actual guest cookie,
+Origin and CSRF controls through quote, order acceptance, cancellation and
+exact replay. The bridge keeps its independently generated API credential on
+the server and rejects other routes; the test never uses a deployed target.
+Database checks retain one order and cancellation with only component
+reservations, and no payment attempt. The HTML fixture is not a storefront
+checkout UI, provider acceptance, or a production accessibility assessment.

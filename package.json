@@ -31,6 +31,7 @@
     "test:contracts": "python3 scripts/check_contracts.py",
     "test:coverage": "CARGO_TARGET_DIR=.local/coverage-target-stable cargo llvm-cov clean --workspace && CARGO_TARGET_DIR=.local/coverage-target-stable python3 scripts/with_postgres.py -- cargo llvm-cov --workspace --all-features --locked --json --output-path coverage/rust-stable.json && CARGO_TARGET_DIR=.local/coverage-target-nightly cargo +nightly-2026-10-25 llvm-cov clean --workspace && CARGO_TARGET_DIR=.local/coverage-target-nightly python3 scripts/with_postgres.py -- cargo +nightly-2026-10-25 llvm-cov --workspace --all-features --locked --branch --json --output-path coverage/rust.json && CARGO_TARGET_DIR=.local/coverage-target-nightly cargo +nightly-2026-10-25 llvm-cov report --lcov --output-path coverage/rust.lcov && vitest run --coverage && python3 scripts/check_coverage_reports.py",
     "test:e2e": "python3 scripts/with_postgres.py -- node tests/application/serve.mjs e2e",
+    "test:guest-browser": "python3 scripts/with_postgres.py -- node tests/application/guest-browser/runner.mjs",
     "test:accessibility": "python3 scripts/with_postgres.py -- node tests/application/serve.mjs accessibility",
     "test:visual": "python3 scripts/with_postgres.py -- node tests/application/serve.mjs visual",
     "test:security": "python3 scripts/with_postgres.py -- node tests/application/serve.mjs security",
