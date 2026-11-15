@@ -301,8 +301,10 @@ owned order before payment dispatch starts, including after an admitted test
 attempt. Cancellation shares the basket claim with admission and the attempt
 claim with dispatch. An independently enabled test-only guest route exposes that
 pre-dispatch command with exact Origin, cookie, CSRF and explicit confirmation;
-account-bound orders remain unavailable on this route. Normal hold expiry still
-governs stock, and lifetime promotion usage stays recorded. Complete post-dispatch disposition and trusted-edge
+account-bound orders remain unavailable on this route. A private owner-scoped read
+can validate a recorded test dispatch and its reconciliation event under the
+attempt claim; this point-in-time fact grants no payment or cancellation decision.
+Normal hold expiry still governs stock, and lifetime promotion usage stays recorded. Complete post-dispatch disposition and trusted-edge
 abuse controls before exposing customer routes.
 An independently enabled test-only guest order POST uses the same session,
 Origin and CSRF checks, with an explicit server-only test seller policy. It
