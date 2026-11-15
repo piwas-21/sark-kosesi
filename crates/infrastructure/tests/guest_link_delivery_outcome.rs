@@ -346,6 +346,98 @@ async fn guest_link_outcome_rejects_ciphertext_changed_after_callback_opening(po
 }
 
 #[sqlx::test(migrator = "MIGRATOR")]
+async fn guest_link_outcome_rejects_changed_start_after_callback(pool: PgPool) {
+    let (clock, key, verifier, _) = sample(&pool, "changed-start").await;
+    let options = (*pool.connect_options()).clone();
+    let result = delivery::claim_open_and_record(&pool, &verifier, clock.as_ref(), &key, |_, _| {
+        std::thread::spawn(move || {
+            let runtime = tokio::runtime::Builder::new_current_thread().enable_all().build().expect("runtime");
+            runtime.block_on(async move {
+                let other = sqlx::postgres::PgPoolOptions::new().max_connections(2).connect_with(options).await.expect("separate pool");
+                tokio::time::timeout(Duration::from_secs(5), async {
+                    other.execute("ALTER TABLE guest_link_delivery_starts DISABLE TRIGGER USER").await.expect("fault setup");
+                    sqlx::query("UPDATE guest_link_delivery_starts SET started_at=started_at+1 WHERE verifier=$1").bind(verifier.as_slice()).execute(&other).await.expect("alter start");
+                    other.execute("ALTER TABLE guest_link_delivery_starts ENABLE TRIGGER USER").await.expect("restore guards");
+                }).await.expect("callback must not retain locks");
+                other.close().await;
+            });
+        }).join().expect("callback thread");
+        TransportOutcome::Accepted
+    }).await;
+    assert_eq!(result, Err(LinkError::Unavailable));
+    assert_eq!(
+        outcome::inspect(&pool, &verifier).await,
+        Ok(DeliveryState::Unknown)
+    );
+    let count: i64 = sqlx::query_scalar("SELECT count(*) FROM guest_link_delivery_outcomes")
+        .fetch_one(&pool)
+        .await
+        .expect("no outcome");
+    assert_eq!(count, 0);
+}
+
+#[sqlx::test(migrator = "MIGRATOR")]
+async fn guest_link_outcome_rejects_competing_committed_history(pool: PgPool) {
+    let (clock, key, verifier, _) = sample(&pool, "competing-outcome").await;
+    let options = (*pool.connect_options()).clone();
+    let result = delivery::claim_open_and_record(&pool, &verifier, clock.as_ref(), &key, |_, _| {
+        std::thread::spawn(move || {
+            let runtime = tokio::runtime::Builder::new_current_thread().enable_all().build().expect("runtime");
+            runtime.block_on(async move {
+                let other = sqlx::postgres::PgPoolOptions::new().max_connections(2).connect_with(options).await.expect("separate pool");
+                tokio::time::timeout(Duration::from_secs(5),
+                    sqlx::query("INSERT INTO guest_link_delivery_outcomes(verifier,start_transaction_id,ciphertext_sha256,outcome,observed_at) SELECT s.verifier,s.transaction_id,sha256(e.ciphertext),'uncertain',1100 FROM guest_link_delivery_starts s JOIN guest_link_delivery_envelopes e USING(verifier) WHERE s.verifier=$1")
+                        .bind(verifier.as_slice()).execute(&other)
+                ).await.expect("callback must not retain locks").expect("committed concurrent outcome");
+                other.close().await;
+            });
+        }).join().expect("callback thread");
+        TransportOutcome::Accepted
+    }).await;
+    assert_eq!(result, Err(LinkError::Unavailable));
+    assert_eq!(
+        outcome::inspect(&pool, &verifier).await,
+        Ok(DeliveryState::Recorded(TransportOutcome::Uncertain))
+    );
+    let count: i64 = sqlx::query_scalar("SELECT count(*) FROM guest_link_delivery_outcomes")
+        .fetch_one(&pool)
+        .await
+        .expect("one outcome");
+    assert_eq!(count, 1);
+}
+
+#[sqlx::test(migrator = "MIGRATOR")]
+async fn guest_link_outcome_rejects_altered_insert_readback(pool: PgPool) {
+    let (clock, key, verifier, _) = sample(&pool, "altered-outcome").await;
+    pool.execute("CREATE SEQUENCE guest_outcome_insert_seen START 1; CREATE FUNCTION observe_guest_link_outcome_insert() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN PERFORM nextval('guest_outcome_insert_seen'); RETURN NEW; END $$; CREATE TRIGGER z_observe_guest_link_outcome AFTER INSERT ON guest_link_delivery_outcomes FOR EACH ROW EXECUTE FUNCTION observe_guest_link_outcome_insert()")
+        .await.expect("nontransactional insert probe");
+    pool.execute("CREATE FUNCTION alter_guest_link_outcome() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN NEW.observed_at=NEW.observed_at+1; RETURN NEW; END $$; CREATE TRIGGER z_alter_guest_link_outcome BEFORE INSERT ON guest_link_delivery_outcomes FOR EACH ROW EXECUTE FUNCTION alter_guest_link_outcome()")
+        .await.expect("synthetic readback fault after native guard");
+    assert_eq!(
+        delivery::claim_open_and_record(&pool, &verifier, clock.as_ref(), &key, |_, _| {
+            TransportOutcome::Accepted
+        })
+        .await,
+        Err(LinkError::Unavailable)
+    );
+    let seen: (i64, bool) =
+        sqlx::query_as("SELECT last_value,is_called FROM guest_outcome_insert_seen")
+            .fetch_one(&pool)
+            .await
+            .expect("insert observed before rollback");
+    assert_eq!(seen, (1, true));
+    assert_eq!(
+        outcome::inspect(&pool, &verifier).await,
+        Ok(DeliveryState::Unknown)
+    );
+    let count: i64 = sqlx::query_scalar("SELECT count(*) FROM guest_link_delivery_outcomes")
+        .fetch_one(&pool)
+        .await
+        .expect("rollback");
+    assert_eq!(count, 0);
+}
+
+#[sqlx::test(migrator = "MIGRATOR")]
 async fn guest_link_outcome_after_redemption_and_expiry_stays_historical(pool: PgPool) {
     use admitted_proofs::{
         customer_passwords, email_verification, verified_customer_accounts::establish,

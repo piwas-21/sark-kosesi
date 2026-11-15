@@ -114,9 +114,7 @@ pub(super) fn open(
         &mut buffer,
     )?;
     use subtle::ConstantTimeEq;
-    if bytes.len() != 32 {
-        return Err(LinkError::Unavailable);
-    }
+    let bytes: &[u8; 32] = (&*bytes).try_into().map_err(|_| LinkError::Unavailable)?;
     let mut token = GuestOrderLinkToken(Zeroizing::new([0; 32]));
     token.0.copy_from_slice(bytes);
     if !bool::from(token.verifier().ct_eq(c.verifier)) {

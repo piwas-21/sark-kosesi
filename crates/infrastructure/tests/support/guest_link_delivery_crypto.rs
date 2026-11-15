@@ -37,6 +37,45 @@ fn guest_order_link_delivery_purpose_derived_key_matches_independent_hkdf_vector
     };
     let sealed = seal(&key, &context, &token, reservation(&key, &context)).expect("seal");
     assert_eq!(sealed.len(), 48);
+    // Independent Python cryptography AESGCM/HKDF vectors over the specified
+    // framed context; these values use only synthetic keys and bearer bytes.
+    let expected_ciphertext = [
+        0x9d, 0xb4, 0x6b, 0x4e, 0xea, 0x14, 0x2b, 0x4d, 0x26, 0xe2, 0xb1, 0x82, 0x31, 0x82, 0x11,
+        0x82, 0xf7, 0x05, 0xe5, 0x0a, 0x8e, 0x5f, 0xbd, 0xaf, 0x45, 0x8f, 0x84, 0x66, 0x26, 0xaa,
+        0x01, 0x5e, 0x56, 0xb4, 0x32, 0x22, 0x7a, 0x6c, 0xe7, 0x7a, 0x49, 0xdb, 0xf3, 0x29, 0xa0,
+        0x00, 0xf7, 0x4b,
+    ];
+    assert_eq!(sealed, expected_ciphertext);
+    let wrong_plaintext = [
+        0x9c, 0xb5, 0x6a, 0x4f, 0xeb, 0x15, 0x2a, 0x4c, 0x27, 0xe3, 0xb0, 0x83, 0x30, 0x83, 0x10,
+        0x83, 0xf6, 0x04, 0xe4, 0x0b, 0x8f, 0x5e, 0xbc, 0xae, 0x44, 0x8e, 0x85, 0x67, 0x27, 0xab,
+        0x00, 0x5f, 0x0b, 0x8e, 0xd4, 0x04, 0x77, 0xef, 0xf1, 0x9a, 0x2a, 0x0e, 0x1f, 0xe9, 0x47,
+        0x4f, 0xd2, 0xfe,
+    ];
+    let cipher =
+        LessSafeKey::new(UnboundKey::new(&AES_256_GCM, key.derived.as_slice()).expect("key"));
+    let mut authenticated = wrong_plaintext;
+    assert_eq!(
+        cipher
+            .open_in_place(
+                nonce(1).expect("nonce"),
+                Aad::from(aad(&context).expect("AAD").as_slice()),
+                &mut authenticated
+            )
+            .expect("valid tag"),
+        &[8; 32]
+    );
+    assert_eq!(
+        open(&key, &context, &wrong_plaintext),
+        Err(LinkError::Unavailable)
+    );
+    assert_eq!(
+        open(&key, &context, &sealed[..47]),
+        Err(LinkError::Unavailable)
+    );
+    let mut long = sealed.clone();
+    long.push(0);
+    assert_eq!(open(&key, &context, &long), Err(LinkError::Unavailable));
     assert_ne!(&sealed[..32], token.expose_bytes());
     assert_eq!(
         open(&key, &context, &sealed).expect("open"),
