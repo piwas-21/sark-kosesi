@@ -213,6 +213,91 @@ async fn packing_inspection_masks_outcome_when_mfa_expires_during_attempt_wait(p
 }
 
 #[sqlx::test(migrator = "MIGRATOR")]
+async fn packing_inspection_rejects_invalid_and_unavailable_empty_sources(pool: PgPool) {
+    let f = fixture::accepted(&pool, false, true).await;
+    setup(&pool).await;
+    let order = &f.order.identity.id;
+    assert!(matches!(
+        inspect(&pool, &token(71), f.time.as_ref(), "invalid").await,
+        Err(Error::InvalidRequest)
+    ));
+    assert!(matches!(
+        inspect(&pool, &token(71), f.time.as_ref(), &"f".repeat(32)).await,
+        Err(Error::Unavailable)
+    ));
+    settle(&pool, f.time.as_ref(), f.ids.as_ref(), order)
+        .await
+        .expect("settlement");
+    assert!(
+        inspect(&pool, &token(71), f.time.as_ref(), order)
+            .await
+            .expect("current source")
+            .history
+            .is_empty()
+    );
+    fixture::observe(&pool, &f, "tr_SETTLEMENT", "open", "inspect-empty-stale").await;
+    assert!(matches!(
+        inspect(&pool, &token(71), f.time.as_ref(), order).await,
+        Err(Error::Unavailable)
+    ));
+    let count: i64 = sqlx::query_scalar("SELECT count(*) FROM packing_custody")
+        .fetch_one(&pool)
+        .await
+        .expect("unchanged journal");
+    assert_eq!(count, 0);
+}
+
+#[sqlx::test(migrator = "MIGRATOR")]
+async fn packing_inspection_expired_wait_masks_damaged_history(pool: PgPool) {
+    use std::sync::atomic::Ordering;
+    let f = fixture::accepted(&pool, false, true).await;
+    setup(&pool).await;
+    let order = &f.order.identity.id;
+    settle(&pool, f.time.as_ref(), f.ids.as_ref(), order)
+        .await
+        .expect("settlement");
+    let items = [units("SET-FILLED")];
+    let packages = [vec![part("SEAT-COVER", 2), part("SEAT-FOAM", 2)]];
+    record(
+        &pool,
+        &token(71),
+        f.time.as_ref(),
+        f.ids.as_ref(),
+        packed(order, "inspect-expired-damage", &items, &packages),
+    )
+    .await
+    .expect("pack");
+    pool.execute("ALTER TABLE commerce_outbox DISABLE TRIGGER USER; UPDATE commerce_outbox SET payload='{}' WHERE kind='order.packing_custody_recorded.v1'; ALTER TABLE commerce_outbox ENABLE TRIGGER USER").await.expect("isolated damage");
+    assert!(matches!(
+        inspect(&pool, &token(71), f.time.as_ref(), order).await,
+        Err(Error::InvalidStoredData)
+    ));
+    let mut blocker = pool.begin().await.expect("blocker");
+    sqlx::query("SELECT id FROM payment_attempts WHERE id=$1 FOR UPDATE")
+        .bind(&f.frozen.snapshot().binding.id)
+        .execute(&mut *blocker)
+        .await
+        .expect("lock attempt");
+    let (p, clock, order) = (pool.clone(), f.time.clone(), order.clone());
+    let task = tokio::spawn(async move { inspect(&p, &token(71), clock.as_ref(), &order).await });
+    tokio::time::timeout(std::time::Duration::from_millis(800), async {
+        loop {
+            let waiting: i64 = sqlx::query_scalar("SELECT count(*) FROM pg_stat_activity WHERE datname=current_database() AND wait_event_type='Lock' AND query LIKE 'SELECT id FROM payment_attempts WHERE id=%'").fetch_one(&pool).await.expect("waiter");
+            if waiting > 0 { break; }
+            tokio::time::sleep(std::time::Duration::from_millis(5)).await;
+        }
+    }).await.expect("attempt waiter");
+    f.time.0.store(2351, Ordering::SeqCst);
+    blocker.commit().await.expect("unlock");
+    assert!(matches!(task.await.expect("task"), Err(Error::Denied)));
+    let count: i64 = sqlx::query_scalar("SELECT count(*) FROM packing_custody")
+        .fetch_one(&pool)
+        .await
+        .expect("unchanged journal");
+    assert_eq!(count, 1);
+}
+
+#[sqlx::test(migrator = "MIGRATOR")]
 async fn custody_records_packages_replays_and_releases_without_stock_effects(pool: PgPool) {
     let f = fixture::accepted(&pool, false, true).await;
     setup(&pool).await;

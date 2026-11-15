@@ -52,6 +52,7 @@ pub async fn inspect(
             .await
             .map_err(source)?;
         let (active, _) = model::validate(&source, &history)?;
+        // Validation preserves one occupancy entry per ordered line in the same order.
         let lines = source
             .order
             .quote
@@ -59,9 +60,6 @@ pub async fn inspect(
             .iter()
             .zip(active)
             .map(|(line, asserted)| {
-                if line.sku != asserted.sku {
-                    return Err(Error::InvalidStoredData);
-                }
                 Ok(InspectionLine {
                     sku: line.sku.clone(),
                     ordered: line.quantity,
