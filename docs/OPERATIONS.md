@@ -615,3 +615,27 @@ using one fresh vulnerability database and records all finding deltas, including
 remaining and new findings. Comparison results describe scanner reports only;
 they do not accept a vulnerability, prove reachability, or establish real data
 migration, operational compatibility, production readiness or deployment.
+
+The separate opt-in `PostgreSQL Gosu 1.20 candidate` workflow selects a fixed
+profile of the same builder against the pinned Alpine AMD64 PostgreSQL image.
+It uses unmodified upstream [Gosu 1.20 source](https://github.com/tianon/gosu/releases/tag/1.20)
+at commit `29b939aa5bd4dc588af765b8248f6e39150d2565` and observed codeload
+archive SHA-256 `2b70da8a5480fafedc16bb1fc91b572f064d03df736cbd91a616af2f1b66ab51`.
+That digest is our pin, not an upstream signed checksum or proof that our build
+matches the separately signed upstream release executable. This source archive
+does not include a vendor directory; the experiment downloads the exact
+`go.mod`/`go.sum` dependencies and vendors them before two offline builds.
+Gosu and Moby user use Apache-2.0; x/sys uses BSD-3-Clause. The compiled metadata
+must identify Moby user v0.4.1 and x/sys v0.1.0. The [Moby advisory](https://github.com/moby/sys/security/advisories/GHSA-mjcv-p78q-w5fw)
+identifies v0.4.1 as fixing CVE-2026-61801. A bounded synthetic group file
+compares the stock Gosu 1.19's behavior with the candidate's oversized-line
+rejection; normal identity and denial controls remain separate. This does not
+prove all privilege and compatibility cases.
+
+The unmodified source imports `golang.org/x/sys/unix` for Linux. Its pinned
+x/sys v0.1.0 is within the version range for [CVE-2026-39824](https://pkg.go.dev/vuln/GO-2026-5024),
+whose affected package and symbol are Windows-specific. This observation is not
+a vulnerability scan, an automatic suppression, or a risk acceptance. A future
+paired full-image scan must retain all raw rows, including any x/sys finding,
+and independently evaluate exact binary reachability and current advisories.
+The optional profile creates no deployment or registry publication.
