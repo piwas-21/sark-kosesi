@@ -43,6 +43,115 @@ async fn verified_refund_page(
 }
 
 #[sqlx::test(migrations = false)]
+async fn schema71_preserves_existing_reversal_and_indexes_sparse_order_events(pool: PgPool) {
+    use crate::payment_attempts::reversals::inspect_set;
+
+    fn uses_order_index(node: &Value) -> bool {
+        let scoped_scan = node["Index Name"] == "commerce_outbox_reversal_observation_order"
+            && node["Index Cond"]
+                .as_str()
+                .is_some_and(|condition| condition.contains("aggregate_id"));
+        scoped_scan
+            || node["Plans"]
+                .as_array()
+                .is_some_and(|children| children.iter().any(uses_order_index))
+    }
+
+    MIGRATOR.run_to(70, &pool).await.expect("earlier schema");
+    let (time, frozen) = observation_cases::prepared(&pool, true).await;
+    let binding = &frozen.snapshot().binding;
+    let verified = fetched(frozen.snapshot(), refund("pending", "12.34"), false).await;
+    let receipt = record(
+        &pool,
+        time.as_ref(),
+        &observation_cases::ids(),
+        "before-order-index",
+        &verified,
+    )
+    .await
+    .expect("existing reversal receipt");
+    let order_events = || {
+        sqlx::query_scalar::<_, Value>(
+            "SELECT to_jsonb(e) FROM commerce_outbox e WHERE aggregate_id=$1 ORDER BY id",
+        )
+        .bind(&binding.order_id)
+        .fetch_all(&pool)
+    };
+    let before = order_events().await.expect("original order events");
+
+    // Planner volume only. Synthetic unrelated aggregates have no orders, so
+    // both the FK and custody triggers are disabled inside this test transaction.
+    let mut generated = pool.begin().await.expect("synthetic planner transaction");
+    sqlx::raw_sql(
+        "ALTER TABLE commerce_outbox DISABLE TRIGGER ALL;
+         INSERT INTO commerce_outbox(id,aggregate_id,kind,payload,created_at)
+         SELECT md5('planner-event:' || n),md5('planner-order:' || (n / 64)),
+                'payment.reversal_observed.v1',jsonb_build_object('observation_id', md5('planner-observation:' || n)),0
+         FROM generate_series(1,16384) AS source(n);
+         ALTER TABLE commerce_outbox ENABLE TRIGGER ALL;",
+    )
+    .execute(&mut *generated)
+    .await
+    .expect("unrelated planner volume");
+    generated.commit().await.expect("commit planner fixtures");
+
+    MIGRATOR.run_to(71, &pool).await.expect("order index");
+    assert_eq!(
+        order_events().await.expect("preserved order events"),
+        before
+    );
+    assert_eq!(
+        lookup(&pool, &binding.id, "before-order-index")
+            .await
+            .expect("existing receipt validates")
+            .expect("receipt exists")
+            .id,
+        receipt.id
+    );
+    pool.execute("ANALYZE commerce_outbox")
+        .await
+        .expect("planner statistics");
+    let plan: Value = sqlx::query_scalar(
+        "EXPLAIN (ANALYZE, FORMAT JSON) SELECT count(*) FROM (SELECT 1 FROM commerce_outbox WHERE aggregate_id=$1 AND kind='payment.reversal_observed.v1' LIMIT 129) AS scoped",
+    )
+    .bind(&binding.order_id)
+    .fetch_one(&pool)
+    .await
+    .expect("sparse order query plan");
+    let root = &plan[0]["Plan"];
+    let limit = &root["Plans"][0];
+    assert_eq!(limit["Actual Rows"].as_f64(), Some(1.0));
+    assert!(
+        uses_order_index(root),
+        "expected order-scoped index: {plan}"
+    );
+    assert_eq!(
+        inspect_set(&pool, &binding.id)
+            .await
+            .expect("healthy sparse journal remains readable")
+            .observations,
+        1
+    );
+
+    sqlx::query("ALTER TABLE commerce_outbox DISABLE TRIGGER USER")
+        .execute(&pool)
+        .await
+        .expect("inject malformed outbox fixture");
+    sqlx::query("INSERT INTO commerce_outbox(id,aggregate_id,kind,payload,created_at) VALUES (md5('planner-orphan'),$1,'payment.reversal_observed.v1','{}',0)")
+        .bind(&binding.order_id)
+        .execute(&pool)
+        .await
+        .expect("malformed order-scoped orphan");
+    pool.execute("ALTER TABLE commerce_outbox ENABLE TRIGGER USER")
+        .await
+        .expect("restore custody guards");
+    assert!(matches!(
+        inspect_set(&pool, &binding.id).await,
+        Err(PaymentStoreError::InvalidStoredData)
+    ));
+}
+
+#[sqlx::test(migrations = false)]
 async fn schema44_preserves_prior_outbox_and_accepts_both_evidence_kinds(pool: PgPool) {
     MIGRATOR.run_to(43, &pool).await.expect("schema 43");
     let (time, frozen) = observation_cases::prepared(&pool, true).await;
