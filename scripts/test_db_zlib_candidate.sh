@@ -34,8 +34,13 @@ cleanup() {
 trap cleanup EXIT
 
 printf 'source_revision=%s\nbase=%s\nscanner=%s\n' "$ZLIB_SOURCE_REVISION" "$base" "$scanner" > "$evidence/identity.txt"
+mkdir "$scratch/build-context"
+cp ops/db-zlib-candidate/Dockerfile "$scratch/build-context/Dockerfile"
+cp /etc/ssl/certs/ca-certificates.crt "$scratch/build-context/ca-certificates.crt"
+test -s "$scratch/build-context/ca-certificates.crt" || fail 'runner CA bundle is unavailable'
+sha256sum "$scratch/build-context/ca-certificates.crt" | awk '{print $1}' > "$evidence/build-ca-sha256.txt"
 docker build --pull --platform linux/amd64 --tag "$image" \
-  --file ops/db-zlib-candidate/Dockerfile ops/db-zlib-candidate > "$evidence/build.log" 2>&1
+  --file "$scratch/build-context/Dockerfile" "$scratch/build-context" > "$evidence/build.log" 2>&1
 base_id=$(docker image inspect "$base" --format '{{.Id}}')
 candidate_id=$(docker image inspect "$image" --format '{{.Id}}')
 [[ "$base_id" == sha256:3cccc725163a95947178f4da5e9bf16add75cb286170ac5a2cd2f6513534955d ]] || fail 'unexpected base image identity'

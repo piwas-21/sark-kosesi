@@ -526,7 +526,9 @@ prepare a disposable AMD64-only candidate from the pinned PostgreSQL platform
 manifest. The candidate obtains one exact `zlib1g` security package from the
 Debian security archive using the pinned base's Debian archive keyring, checks
 APT's authenticated index and a pinned package SHA-256, and rejects any change
-to another installed package. It preserves APT metadata, the keyring, logs and
+to another installed package. A read-only build mount provides the hosted
+runner's CA bundle for HTTPS; APT signature verification remains mandatory.
+It preserves APT metadata, the keyring, CA bundle, logs and
 before/after inventories in the candidate evidence. Treat those records as
 review evidence, not independent attestation by themselves.
 
