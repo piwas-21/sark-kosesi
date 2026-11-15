@@ -34,11 +34,15 @@ def archive(entries):
 class CandidateImageTests(unittest.TestCase):
     def setUp(self):
         self.binary = b"synthetic-gosu-bytes"
+        self.base_layers = [
+            archive([("usr/base-file", b"synthetic base", 0o644, 0, tarfile.REGTYPE)]),
+            archive([("etc/base-config", b"second layer", 0o644, 0, tarfile.REGTYPE)]),
+        ]
         self.stock = {
             "os": "linux",
             "architecture": "amd64",
             "config": {"Env": ["PATH=/usr/local/bin"], "Entrypoint": ["entry"]},
-            "rootfs": {"type": "layers", "diff_ids": ["sha256:" + "a" * 64]},
+            "rootfs": {"type": "layers", "diff_ids": [sha(layer) for layer in self.base_layers]},
         }
         self.entries = [("usr/local/bin/gosu", self.binary, 0o755, 0, tarfile.REGTYPE)]
 
@@ -49,6 +53,12 @@ class CandidateImageTests(unittest.TestCase):
         wrong_diff=False,
         wrong_candidate=False,
         compressed=False,
+        base_compressed=False,
+        omit_base=False,
+        corrupt_base=False,
+        malformed_gzip=False,
+        nonregular_base=False,
+        duplicate_base=False,
     ):
         layer = archive(self.entries if entries is None else entries)
         candidate = json.loads(json.dumps(self.stock))
@@ -59,21 +69,29 @@ class CandidateImageTests(unittest.TestCase):
         stock_raw = json.dumps(self.stock).encode()
         candidate_id = "sha256:" + "c" * 64 if wrong_candidate else sha(candidate_raw)
         manifest = json.dumps(
-            [{"Config": "config.json", "Layers": ["base.tar", "new.tar"]}]
+            [{"Config": "config.json", "Layers": ["base-0.tar", "base-1.tar", "new.tar"]}]
         ).encode()
-        data = archive(
-            [
-                ("manifest.json", manifest, 0o644, 0, tarfile.REGTYPE),
-                ("config.json", candidate_raw, 0o644, 0, tarfile.REGTYPE),
-                (
-                    "new.tar",
-                    gzip.compress(layer) if compressed else layer,
-                    0o644,
-                    0,
-                    tarfile.REGTYPE,
-                ),
-            ]
+        outer_entries = [
+            ("manifest.json", manifest, 0o644, 0, tarfile.REGTYPE),
+            ("config.json", candidate_raw, 0o644, 0, tarfile.REGTYPE),
+        ]
+        for index, raw_base in enumerate(self.base_layers):
+            if omit_base and index == 1:
+                continue
+            base = gzip.compress(raw_base) if base_compressed else raw_base
+            if corrupt_base and index == 1:
+                base = b"changed base layer"
+            if malformed_gzip and index == 1:
+                base = b"\x1f\x8bnot-a-valid-gzip-stream"
+            kind = tarfile.SYMTYPE if nonregular_base and index == 1 else tarfile.REGTYPE
+            outer_entries.append((f"base-{index}.tar", base, 0o644, 0, kind))
+            if duplicate_base and index == 1:
+                outer_entries.append((f"base-{index}.tar", base, 0o644, 0, kind))
+        outer_entries.append(("base.tar", base, 0o644, 0, tarfile.REGTYPE))
+        outer_entries.append(
+            ("new.tar", gzip.compress(layer) if compressed else layer, 0o644, 0, tarfile.REGTYPE)
         )
+        data = archive(outer_entries)
         with tempfile.TemporaryDirectory() as directory:
             path = Path(directory) / "saved.tar"
             path.write_bytes(data)
@@ -87,8 +105,26 @@ class CandidateImageTests(unittest.TestCase):
         raw, result = self.evaluate()
         self.assertEqual(json.loads(raw)["config"]["Entrypoint"], ["entry"])
         self.assertIn("only Gosu", result["meaning"])
-        _, compressed_result = self.evaluate(compressed=True)
+        _, compressed_result = self.evaluate(compressed=True, base_compressed=True)
         self.assertEqual(result["last_diff_id"], compressed_result["last_diff_id"])
+        self.assertEqual(result["verified_stock_layers"], 2)
+
+    def test_missing_corrupt_or_malformed_stock_layer_is_rejected(self):
+        for args in (
+            {"omit_base": True},
+            {"corrupt_base": True},
+            {"malformed_gzip": True},
+            {"nonregular_base": True},
+            {"duplicate_base": True},
+        ):
+            with self.subTest(args=args), self.assertRaises((ValueError, OSError, EOFError)):
+                self.evaluate(**args)
+
+    def test_layer_size_bounds_reject_raw_and_gzip_expansion(self):
+        with patch.object(check, "MAX_ARCHIVED_LAYER", 1024), self.assertRaises(ValueError):
+            self.evaluate()
+        with patch.object(check, "MAX_UNCOMPRESSED_LAYER", 1024), self.assertRaises(ValueError):
+            self.evaluate(base_compressed=True)
 
     def test_changed_config_or_unbound_layer_is_rejected(self):
         for args in ({"changed_config": True}, {"wrong_diff": True}, {"wrong_candidate": True}):

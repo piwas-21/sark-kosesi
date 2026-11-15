@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Inspect the saved candidate's config and last layer without extracting to disk."""
+"""Verify every saved layer and inspect the candidate layer without extracting to disk."""
 
 import gzip
 import hashlib
@@ -14,19 +14,27 @@ from pathlib import Path
 STOCK_CONFIG = "sha256:0f6c51e48b3458e87ab43692e49c9dafc72ffe0a0dbde3fd8cdb6ab92d5c025e"
 GOSU_SHA256 = "8177d9590273ed8699065bf0c9776b634fde24bfc75375c83e927134ce868b7a"
 LIMIT = 8 * 1024 * 1024
+MAX_ARCHIVED_LAYER = 1024 * 1024 * 1024
+MAX_UNCOMPRESSED_LAYER = 2 * 1024 * 1024 * 1024
+CHUNK = 1024 * 1024
 
 
 def digest(raw):
     return "sha256:" + hashlib.sha256(raw).hexdigest()
 
 
-def read_member(tar, name, limit=LIMIT):
+def find_member(tar, name, limit):
     matches = [item for item in tar.getmembers() if item.name == name]
     if len(matches) != 1:
         raise ValueError("ambiguous or missing archive member")
     item = matches[0]
     if not item.isfile() or not 0 < item.size <= limit:
         raise ValueError("invalid archive member")
+    return item
+
+
+def read_member(tar, name, limit=LIMIT):
+    item = find_member(tar, name, limit)
     stream = tar.extractfile(item)
     if stream is None:
         raise ValueError("archive member unavailable")
@@ -34,6 +42,35 @@ def read_member(tar, name, limit=LIMIT):
     if len(data) != item.size:
         raise ValueError("incomplete archive member")
     return data
+
+
+def verify_layer(tar, name, expected, capture=False):
+    if not isinstance(expected, str) or not re.fullmatch(r"sha256:[0-9a-f]{64}", expected):
+        raise ValueError("invalid layer digest")
+    item = find_member(tar, name, LIMIT if capture else MAX_ARCHIVED_LAYER)
+    stream = tar.extractfile(item)
+    if stream is None:
+        raise ValueError("layer unavailable")
+    magic = stream.read(2)
+    stream.seek(0)
+    reader = gzip.GzipFile(fileobj=stream) if magic == b"\x1f\x8b" else stream
+    max_size = LIMIT if capture else MAX_UNCOMPRESSED_LAYER
+    hasher = hashlib.sha256()
+    total = 0
+    captured = io.BytesIO() if capture else None
+    while True:
+        chunk = reader.read(CHUNK)
+        if not chunk:
+            break
+        total += len(chunk)
+        if total > max_size:
+            raise ValueError("uncompressed layer too large")
+        hasher.update(chunk)
+        if captured is not None:
+            captured.write(chunk)
+    if total == 0 or "sha256:" + hasher.hexdigest() != expected:
+        raise ValueError("saved layer digest mismatch")
+    return captured.getvalue() if captured is not None else None
 
 
 def inspect(archive_path, stock_raw, candidate_id):
@@ -71,12 +108,11 @@ def inspect(archive_path, stock_raw, candidate_id):
         layers = record["Layers"]
         if not isinstance(layers, list) or len(layers) != len(diff):
             raise ValueError("image layer inventory mismatch")
-        layer = read_member(tar, layers[-1])
-    if layer.startswith(b"\x1f\x8b"):
-        with gzip.GzipFile(fileobj=io.BytesIO(layer)) as zipped:
-            layer = zipped.read(LIMIT + 1)
-    if len(layer) > LIMIT or digest(layer) != diff[-1]:
-        raise ValueError("candidate layer digest mismatch")
+        for name, expected in zip(layers[:-1], diff[:-1], strict=True):
+            verify_layer(tar, name, expected)
+        layer = verify_layer(tar, layers[-1], diff[-1], capture=True)
+    if layer is None:
+        raise ValueError("candidate layer unavailable")
     allowed_dirs = {".", "usr", "usr/local", "usr/local/bin"}
     seen = set()
     with tarfile.open(fileobj=io.BytesIO(layer), mode="r:") as tar:
@@ -106,6 +142,7 @@ def inspect(archive_path, stock_raw, candidate_id):
     return config_raw, {
         "stock_config": STOCK_CONFIG,
         "candidate_config": candidate_id,
+        "verified_stock_layers": len(base_diff),
         "last_diff_id": diff[-1],
         "gosu_sha256": GOSU_SHA256,
         "meaning": "one verified layer replaces only Gosu; image provenance and security acceptance remain separate",
