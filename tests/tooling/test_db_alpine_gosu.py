@@ -160,6 +160,54 @@ class CompareTests(unittest.TestCase):
                     self.compare()
                 self.stock, self.candidate = stock, candidate
 
+    def test_only_candidate_gosu_root_may_lack_version(self):
+        root = {
+            "Name": "github.com/tianon/gosu",
+            "ID": "github.com/tianon/gosu",
+            "Relationship": "root",
+        }
+        self.candidate["Results"][1]["Packages"].append(copy.deepcopy(root))
+        self.assertEqual(self.compare()["finding_counts"]["candidate"], 1)
+
+        for change in (
+            "stock",
+            "name",
+            "id",
+            "relationship",
+            "null",
+            "empty",
+            "target",
+            "type",
+            "stdlib",
+            "dependency",
+        ):
+            with self.subTest(change=change):
+                stock, candidate = copy.deepcopy(self.stock), copy.deepcopy(self.candidate)
+                package = self.candidate["Results"][1]["Packages"][-1]
+                if change == "stock":
+                    self.stock["Results"][1]["Packages"].append(copy.deepcopy(root))
+                elif change == "name":
+                    package["Name"] = "github.com/other/module"
+                elif change == "id":
+                    package["ID"] += "@unknown"
+                elif change == "relationship":
+                    package["Relationship"] = "direct"
+                elif change == "null":
+                    package["Version"] = None
+                elif change == "empty":
+                    package["Version"] = ""
+                elif change == "target":
+                    self.candidate["Results"][1]["Target"] = "usr/local/bin/other"
+                elif change == "type":
+                    self.candidate["Results"][1]["Type"] = "other"
+                elif change == "stdlib":
+                    self.candidate["Results"][1]["Packages"][0].pop("Version")
+                else:
+                    self.candidate["Results"][1]["Packages"].append({"Name": "golang.org/x/sys"})
+                with self.assertRaises(ValueError):
+                    self.compare()
+                self.stock, self.candidate = stock, candidate
+
     def test_identity_and_inventory_fail_closed(self):
         for change in (
             "raw",

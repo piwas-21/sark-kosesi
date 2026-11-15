@@ -55,7 +55,7 @@ def timestamp(value):
         raise ValueError("invalid timestamp") from None
 
 
-def inspect(report, config_raw, config, image_id, gosu_version):
+def inspect(report, config_raw, config, image_id, gosu_version, allow_unversioned_main=False):
     require(
         "sha256:" + hashlib.sha256(config_raw).hexdigest() == image_id, "config digest mismatch"
     )
@@ -117,7 +117,21 @@ def inspect(report, config_raw, config, image_id, gosu_version):
         require(isinstance(packages, list) and bool(packages), "missing package inventory")
         require(
             all(
-                isinstance(p, dict) and bounded(p.get("Name")) and bounded(p.get("Version"))
+                isinstance(p, dict)
+                and bounded(p.get("Name"))
+                and (
+                    bounded(p.get("Version"))
+                    or (
+                        allow_unversioned_main
+                        and target["Class"] == "lang-pkgs"
+                        and target["Type"] == "gobinary"
+                        and target["Target"].lstrip("/") == "usr/local/bin/gosu"
+                        and p.get("Name") == "github.com/tianon/gosu"
+                        and p.get("ID") == "github.com/tianon/gosu"
+                        and p.get("Relationship") == "root"
+                        and "Version" not in p
+                    )
+                )
                 for p in packages
             ),
             "invalid package inventory",
@@ -223,7 +237,12 @@ def compare(
     )
     before, stock_gosu, stock_os = inspect(stock, stock_raw, stock_config, BASE_CONFIG, "v1.24.6")
     after, _, candidate_os = inspect(
-        candidate, candidate_raw, candidate_config, candidate_id, "v1.27.4"
+        candidate,
+        candidate_raw,
+        candidate_config,
+        candidate_id,
+        "v1.27.4",
+        allow_unversioned_main=True,
     )
     require(stock_os == candidate_os, "Alpine OS version mismatch")
     require(
