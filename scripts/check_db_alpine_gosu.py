@@ -13,6 +13,12 @@ BASE_CONFIG = "sha256:0f6c51e48b3458e87ab43692e49c9dafc72ffe0a0dbde3fd8cdb6ab92d
 DIGEST = re.compile(r"sha256:[0-9a-f]{64}\Z")
 SEVERITIES = ("UNKNOWN", "LOW", "MEDIUM", "HIGH", "CRITICAL")
 LIMIT = 64 * 1024 * 1024
+CANDIDATE_MODULES = {
+    "github.com/tianon/gosu": None,
+    "github.com/moby/sys/user": "v0.4.1",
+    "golang.org/x/sys": "v0.1.0",
+    "stdlib": "v1.27.4",
+}
 
 
 def require(condition, message):
@@ -170,6 +176,32 @@ def inspect(report, config_raw, config, image_id, gosu_version, allow_unversione
     return rows, gosu[0], os_info["Name"]
 
 
+def validate_candidate_modules(target):
+    packages = target["Packages"]
+    require(len(packages) == len(CANDIDATE_MODULES), "unexpected candidate module count")
+    seen = set()
+    for package in packages:
+        name = package["Name"]
+        require(name in CANDIDATE_MODULES and name not in seen, "unexpected candidate module")
+        seen.add(name)
+        version = CANDIDATE_MODULES[name]
+        suffix = f"@{version}" if version is not None else ""
+        require(package.get("ID") == name + suffix, "candidate module ID mismatch")
+        require(package.get("Version") == version, "candidate module version mismatch")
+        identifier = package.get("Identifier")
+        require(
+            isinstance(identifier, dict)
+            and identifier.get("PURL") == "pkg:golang/" + name + suffix,
+            "candidate module PURL mismatch",
+        )
+        if version is None:
+            require(
+                "Version" not in package and package.get("Relationship") == "root",
+                "candidate root mismatch",
+            )
+    require(seen == set(CANDIDATE_MODULES), "missing candidate module")
+
+
 def comparison_target(row):
     # The image reference in an OS target varies between remote and archive scans.
     return "<os-packages>" if row["class"] == "os-pkgs" else row["target"]
@@ -236,7 +268,7 @@ def compare(
         "stale or future vulnerability database or scan",
     )
     before, stock_gosu, stock_os = inspect(stock, stock_raw, stock_config, BASE_CONFIG, "v1.24.6")
-    after, _, candidate_os = inspect(
+    after, candidate_gosu, candidate_os = inspect(
         candidate,
         candidate_raw,
         candidate_config,
@@ -244,6 +276,7 @@ def compare(
         "v1.27.4",
         allow_unversioned_main=True,
     )
+    validate_candidate_modules(candidate_gosu)
     require(stock_os == candidate_os, "Alpine OS version mismatch")
     require(
         any(

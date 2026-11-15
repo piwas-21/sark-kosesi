@@ -73,6 +73,25 @@ class CompareTests(unittest.TestCase):
         self.candidate_raw, self.candidate_config, self.candidate_id = config("b")
         self.stock = report(self.stock_id, "a", "v1.24.6")
         self.candidate = report(self.candidate_id, "b", "v1.27.4")
+        packages = []
+        for name, version in (
+            ("stdlib", "v1.27.4"),
+            ("github.com/moby/sys/user", "v0.4.1"),
+            ("golang.org/x/sys", "v0.1.0"),
+            ("github.com/tianon/gosu", None),
+        ):
+            identity = name + (f"@{version}" if version else "")
+            package = {
+                "Name": name,
+                "ID": identity,
+                "Identifier": {"PURL": "pkg:golang/" + identity},
+            }
+            if version:
+                package["Version"] = version
+            else:
+                package["Relationship"] = "root"
+            packages.append(package)
+        self.candidate["Results"][1]["Packages"] = packages
         self.stock["Results"][1]["Vulnerabilities"] = [
             finding("CVE-2025-68121"),
             finding("CVE-OLD", "CRITICAL"),
@@ -161,12 +180,7 @@ class CompareTests(unittest.TestCase):
                 self.stock, self.candidate = stock, candidate
 
     def test_only_candidate_gosu_root_may_lack_version(self):
-        root = {
-            "Name": "github.com/tianon/gosu",
-            "ID": "github.com/tianon/gosu",
-            "Relationship": "root",
-        }
-        self.candidate["Results"][1]["Packages"].append(copy.deepcopy(root))
+        root = self.candidate["Results"][1]["Packages"][-1]
         self.assertEqual(self.compare()["finding_counts"]["candidate"], 1)
 
         for change in (
@@ -207,6 +221,34 @@ class CompareTests(unittest.TestCase):
                 with self.assertRaises(ValueError):
                     self.compare()
                 self.stock, self.candidate = stock, candidate
+
+    def test_candidate_module_versions_and_purls_are_exact(self):
+        for change in ("missing", "duplicate", "version", "id", "purl", "extra"):
+            with self.subTest(change=change):
+                original = copy.deepcopy(self.candidate)
+                packages = self.candidate["Results"][1]["Packages"]
+                if change == "missing":
+                    packages.pop(2)
+                elif change == "duplicate":
+                    packages[2] = copy.deepcopy(packages[1])
+                elif change == "version":
+                    packages[1]["Version"] = "v0.1.0"
+                elif change == "id":
+                    packages[2]["ID"] = "golang.org/x/sys@v0.2.0"
+                elif change == "purl":
+                    packages[2]["Identifier"]["PURL"] = "pkg:golang/other@v0.1.0"
+                else:
+                    packages.append({"Name": "extra", "Version": "v1"})
+                with self.assertRaises(ValueError):
+                    self.compare()
+                self.candidate = original
+
+    def test_unknown_xsys_finding_is_retained(self):
+        row = finding("CVE-2026-39824", "UNKNOWN", "v0.1.0", "golang.org/x/sys")
+        self.candidate["Results"][1]["Vulnerabilities"].append(row)
+        result = self.compare()
+        self.assertEqual(result["severity_counts"]["candidate"]["UNKNOWN"], 1)
+        self.assertIn(row, [item["finding"] for item in result["candidate_findings"]])
 
     def test_identity_and_inventory_fail_closed(self):
         for change in (
