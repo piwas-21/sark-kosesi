@@ -2,14 +2,18 @@
 
 import json
 import os
+import socket
+import socketserver
 import subprocess
 import tempfile
+import threading
 import unittest
 from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import patch
 
 import rehearse_alpine_gosu_restore as lab
+import restore_loopback as loopback
 
 
 class RestoreAdapterTests(unittest.TestCase):
@@ -117,35 +121,126 @@ class RestoreAdapterTests(unittest.TestCase):
                     with self.assertRaises(ValueError):
                         lab.validate_context(candidate, revision, scratch, evidence)
 
-    def test_container_uses_private_binding_and_does_not_put_password_in_arguments(self):
+    def test_container_has_no_published_port_and_password_not_in_arguments(self):
         with patch.object(lab, "run", return_value=SimpleNamespace(stdout="a" * 64)) as run:
             self.assertEqual(
                 lab.start_container("image", "isolated", "owned", "marker", "secret"), "a" * 64
             )
         args = run.call_args.args
-        self.assertIn("127.0.0.1::5432", args)
+        self.assertNotIn("--publish", args)
+        self.assertNotIn("-p", args)
+        self.assertIn("isolated", args)
         self.assertIn("POSTGRES_PASSWORD", args)
         self.assertNotIn("secret", " ".join(args))
         self.assertEqual(run.call_args.kwargs["env"]["POSTGRES_PASSWORD"], "secret")
 
-    def test_inspection_rejects_wrong_image_or_non_loopback(self):
-        image = "sha256:" + "b" * 64
-        data = [
+    def test_inspection_requires_owned_internal_network_and_exact_members(self):
+        import copy
+
+        ids = ["a" * 64, "b" * 64]
+        images = ["sha256:" + "c" * 64, "sha256:" + "d" * 64]
+        net_id = "e" * 64
+        network = {
+            "Name": "owned",
+            "Id": net_id,
+            "Driver": "bridge",
+            "Internal": True,
+            "Labels": {"sark.restore.owner": "marker"},
+            "IPAM": {"Config": [{"Subnet": "172.31.0.0/16"}]},
+            "Containers": {
+                ids[0]: {"IPv4Address": "172.31.0.2/16"},
+                ids[1]: {"IPv4Address": "172.31.0.3/16"},
+            },
+        }
+        containers = [
             {
+                "Id": ident,
                 "Image": image,
+                "State": {"Running": True},
+                "Config": {"Labels": {"sark.restore.owner": "marker"}},
+                "HostConfig": {"PortBindings": {}},
                 "NetworkSettings": {
-                    "Ports": {"5432/tcp": [{"HostIp": "127.0.0.1", "HostPort": "12345"}]}
+                    "Ports": {"5432/tcp": None},
+                    "Networks": {"owned": {"NetworkID": net_id, "IPAddress": address}},
                 },
             }
+            for ident, image, address in zip(ids, images, ("172.31.0.2", "172.31.0.3"), strict=True)
         ]
-        with patch.object(lab, "run", return_value=SimpleNamespace(stdout=json.dumps(data))):
-            self.assertEqual(lab.inspect_port("a" * 64, image), "12345")
-            with self.assertRaises(ValueError):
-                lab.inspect_port("a" * 64, lab.BASE_ID)
-        data[0]["NetworkSettings"]["Ports"]["5432/tcp"][0]["HostIp"] = "0.0.0.0"
-        with patch.object(lab, "run", return_value=SimpleNamespace(stdout=json.dumps(data))):
-            with self.assertRaises(ValueError):
-                lab.inspect_port("a" * 64, image)
+
+        def inspect(net, records):
+            output = [SimpleNamespace(stdout=json.dumps([obj])) for obj in [net, *records]]
+            with patch.object(loopback, "run", side_effect=output):
+                return loopback.verified_addresses("owned", "marker", ids, images)
+
+        self.assertEqual(inspect(network, containers), ["172.31.0.2", "172.31.0.3"])
+        for change in (
+            "external",
+            "label",
+            "member",
+            "image",
+            "binding",
+            "port",
+            "address",
+            "subnet",
+            "network_id",
+            "extra_network",
+            "stopped",
+        ):
+            with self.subTest(change=change):
+                net, records = copy.deepcopy(network), copy.deepcopy(containers)
+                if change == "external":
+                    net["Internal"] = False
+                elif change == "label":
+                    net["Labels"]["sark.restore.owner"] = "foreign"
+                elif change == "member":
+                    net["Containers"].pop(ids[1])
+                elif change == "image":
+                    records[0]["Image"] = images[1]
+                elif change == "binding":
+                    records[0]["HostConfig"]["PortBindings"] = {
+                        "5432/tcp": [{"HostIp": "127.0.0.1"}]
+                    }
+                elif change == "port":
+                    records[0]["NetworkSettings"]["Ports"]["5432/tcp"] = [{"HostIp": "0.0.0.0"}]
+                elif change == "address":
+                    records[0]["NetworkSettings"]["Networks"]["owned"]["IPAddress"] = "172.31.0.8"
+                elif change == "subnet":
+                    net["IPAM"]["Config"][0]["Subnet"] = "8.8.8.0/24"
+                elif change == "network_id":
+                    records[0]["NetworkSettings"]["Networks"]["owned"]["NetworkID"] = "f" * 64
+                elif change == "stopped":
+                    records[0]["State"]["Running"] = False
+                else:
+                    records[0]["NetworkSettings"]["Networks"]["extra"] = {}
+                with self.assertRaises(ValueError):
+                    inspect(net, records)
+
+    def test_loopback_relay_forwards_bidirectionally_and_closes(self):
+        class Echo(socketserver.BaseRequestHandler):
+            def handle(self):
+                while data := self.request.recv(100):
+                    self.request.sendall(data[::-1])
+
+        with socketserver.TCPServer(("127.0.0.1", 0), Echo) as upstream:
+            thread = threading.Thread(target=upstream.serve_forever, daemon=True)
+            thread.start()
+            relay = loopback.RelayServer("127.0.0.1", upstream.server_address[1])
+            address = relay.server_address
+            client = None
+            try:
+                self.assertEqual(address[0], "127.0.0.1")
+                client = socket.create_connection(address, timeout=3)
+                for value in (b"fixture", b"second"):
+                    client.sendall(value)
+                    self.assertEqual(client.recv(100), value[::-1])
+            finally:
+                relay.close()
+                if client is not None:
+                    client.close()
+                upstream.shutdown()
+                thread.join(timeout=3)
+            with self.assertRaises(OSError):
+                socket.create_connection(address, timeout=1)
 
     def test_client_rejects_unowned_ports_and_non_loopback(self):
         owned = "a" * 64

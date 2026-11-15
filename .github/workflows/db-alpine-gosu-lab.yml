@@ -10,6 +10,7 @@ on:
       - scripts/test_gosu_candidate.sh
       - scripts/test_db_alpine_gosu.sh
       - scripts/rehearse_alpine_gosu_restore.py
+      - scripts/restore_loopback.py
       - scripts/rehearse_restore.py
       - scripts/with_postgres.py
       - crates/**

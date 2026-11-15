@@ -23,6 +23,7 @@ from rehearse_restore import (
     sequence_inventory,
     source_state,
 )
+from restore_loopback import RelayServer, verified_addresses
 from with_postgres import ROOT, run
 
 BASE_ID = "sha256:3cccc725163a95947178f4da5e9bf16add75cb286170ac5a2cd2f6513534955d"
@@ -71,8 +72,6 @@ def start_container(image, network, name, marker, password):
         f"sark.restore.owner={marker}",
         "--network",
         network,
-        "--publish",
-        "127.0.0.1::5432",
         "--memory",
         "1g",
         "--cpus",
@@ -96,17 +95,6 @@ def start_container(image, network, name, marker, password):
     if not re.fullmatch(r"[0-9a-f]{64}", container):
         raise ValueError("Invalid container identity")
     return container
-
-
-def inspect_port(container, image):
-    info = json.loads(run("docker", "inspect", container).stdout)[0]
-    bindings = info["NetworkSettings"]["Ports"]["5432/tcp"]
-    if info["Image"] != image or len(bindings) != 1 or bindings[0]["HostIp"] != "127.0.0.1":
-        raise ValueError("Unexpected image or port binding")
-    port = bindings[0]["HostPort"]
-    if not re.fullmatch(r"[1-9][0-9]{0,4}", port) or int(port) > 65535:
-        raise ValueError("Invalid loopback port")
-    return port
 
 
 def checked_command(args, env, *, input_bytes=None):
@@ -203,6 +191,7 @@ def main(candidate, revision, scratch, evidence):
     password = secrets.token_urlsafe(32)
     containers = []
     container_names = []
+    relays = []
     try:
         run(
             "docker",
@@ -217,10 +206,10 @@ def main(candidate, revision, scratch, evidence):
             name = f"{network}-{suffix}"
             container_names.append(name)
             containers.append(start_container(image, network, name, marker, password))
-        ports = [
-            inspect_port(container, image)
-            for container, image in zip(containers, (BASE_ID, candidate), strict=True)
-        ]
+        addresses = verified_addresses(network, marker, containers, (BASE_ID, candidate))
+        for address in addresses:
+            relays.append(RelayServer(address))
+        ports = [str(relay.server_address[1]) for relay in relays]
         if len(set(ports)) != 2:
             raise ValueError("Overlapping database ports")
         wrapper = scratch / "restore-client"
@@ -459,7 +448,14 @@ def main(candidate, revision, scratch, evidence):
             }
         (evidence / "app-restore.json").write_text(json.dumps(report, indent=2) + "\n")
     finally:
-        if not cleanup_resources(container_names, network, marker):
+        relay_failed = False
+        for relay in relays:
+            try:
+                relay.close()
+            except (OSError, RuntimeError):
+                relay_failed = True
+        cleaned = cleanup_resources(container_names, network, marker)
+        if relay_failed or not cleaned:
             raise RuntimeError("Could not remove owned disposable resources")
 
 

@@ -647,8 +647,11 @@ migration, operational compatibility, production readiness or deployment.
 
 The same hosted job additionally restores an application-schema synthetic dump
 from the pinned Debian image into the exact verified Alpine Gosu image ID. Two
-new disposable containers use a private internal network, loopback-only host
-bindings, random credentials and ownership markers. The existing synthetic
+new disposable containers use a private internal network without published
+ports, random credentials and ownership markers. Small runner-owned loopback
+relays forward fixture connections only to the inspected owned container IPv4
+addresses; network identity, membership, image identity and absent port
+bindings are checked first. The existing synthetic
 migration, order, stock and encrypted-envelope fixture and snapshot/table and
 sequence comparison are reused. A preserved, quiescent source is checked again
 as a limited rollback control; the candidate is separately changed to prove
