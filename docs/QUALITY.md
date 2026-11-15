@@ -1189,7 +1189,9 @@ production accessibility still need their own acceptance evidence.
 Private Test dispatch controls use isolated PostgreSQL and synthetic loopback.
 An inherited asynchronous session proves the start and recovery event commit with
 synchronous WAL settings; a post-insert setting change rolls both back before any
-POST. The server-fsync control runs with ordinary settings in application CI. Run
+POST. The standalone integration test checks the same refusal through the
+exported start API, then verifies repaired custody and a reconcile-only replay.
+The server-fsync control runs with ordinary settings in application CI. Run
 the same exact compiled `dispatch_requires_server_fsync_before_post` test with
 `P1_POSTGRES_BIN=/path/to/postgresql18/bin python3 scripts/with_postgres.py --fsync-off -- <test-binary> --exact mollie::tests::test_payment_orchestration::durability::dispatch_requires_server_fsync_before_post`
 to exercise an owned native server started with fsync disabled. It verifies the

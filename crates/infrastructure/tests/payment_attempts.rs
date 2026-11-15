@@ -7,7 +7,7 @@ use commerce_infrastructure::{
     MIGRATOR, checkout_orders::OrderStoreError, guest_baskets::*, payment_attempts::*,
 };
 use sqlx::{Executor, PgPool};
-use std::sync::atomic::Ordering;
+use std::sync::atomic::{AtomicU64, Ordering};
 
 #[sqlx::test(migrator = "MIGRATOR")]
 async fn accepted_order_uses_its_own_scarce_hold_after_quote_expiry_and_cart_changes(pool: PgPool) {
@@ -247,5 +247,72 @@ async fn physically_unbacked_or_missing_balances_and_expired_holds_block_new_att
         prepare_attempt(&store, &key, &csrf, "pay", &intent, &config)
             .await
             .is_ok()
+    );
+}
+
+#[sqlx::test(migrator = "MIGRATOR")]
+async fn direct_dispatch_grants_no_permit_when_the_recovery_event_weakens_wal(pool: PgPool) {
+    let (store, clock, session, csrf, order) = fixture::accepted(&pool).await;
+    let owner = GuestCredential::from_session(&session).expect("owner");
+    let config = fixture::config();
+    let prepared = prepare_attempt(
+        &store,
+        &owner,
+        &csrf,
+        "pay",
+        &fixture::intent(&order),
+        &config,
+    )
+    .await
+    .expect("accepted attempt");
+    let attempt = &prepared.frozen.snapshot().binding.id;
+    let baseline = fixture::counts(&pool).await;
+    pool.execute(
+        "CREATE FUNCTION fixture_async_recovery_event() RETURNS trigger LANGUAGE plpgsql AS $$
+          BEGIN PERFORM set_config('synchronous_commit','off',true); RETURN NEW; END $$;
+         CREATE TRIGGER fixture_async_recovery_event BEFORE INSERT ON commerce_outbox
+          FOR EACH ROW WHEN (NEW.kind='payment.reconciliation_required.v1')
+          EXECUTE FUNCTION fixture_async_recovery_event()",
+    )
+    .await
+    .expect("weaken only this recovery event");
+    let ids = fixture::Ids(AtomicU64::new(10000));
+    assert!(matches!(
+        start_dispatch(&pool, clock.as_ref(), &ids, attempt, &config).await,
+        Err(PaymentStoreError::Unavailable)
+    ));
+    let custody_counts = || {
+        sqlx::query_as::<_, (i64, i64)>(
+            "SELECT (SELECT count(*) FROM payment_dispatch_starts),
+                    (SELECT count(*) FROM commerce_outbox
+                     WHERE kind='payment.reconciliation_required.v1')",
+        )
+        .fetch_one(&pool)
+    };
+    assert_eq!(
+        custody_counts().await.expect("no committed start or event"),
+        (0, 0)
+    );
+    assert_eq!(fixture::counts(&pool).await, baseline);
+
+    pool.execute("DROP TRIGGER fixture_async_recovery_event ON commerce_outbox")
+        .await
+        .expect("restore durable writer");
+    assert!(matches!(
+        start_dispatch(&pool, clock.as_ref(), &ids, attempt, &config).await,
+        Ok(DispatchOutcome::Start(_))
+    ));
+    assert!(matches!(
+        start_dispatch(&pool, clock.as_ref(), &ids, attempt, &config).await,
+        Ok(DispatchOutcome::Reconcile { frozen, .. }) if frozen.snapshot().binding.id == *attempt
+    ));
+    assert_eq!(
+        custody_counts().await.expect("one exact start and event"),
+        (1, 1)
+    );
+    let (attempts, outbox, groups, holds, movements) = baseline;
+    assert_eq!(
+        fixture::counts(&pool).await,
+        (attempts, outbox + 1, groups, holds, movements)
     );
 }
