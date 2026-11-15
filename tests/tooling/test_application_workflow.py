@@ -97,8 +97,12 @@ def check_application_graph(text):
         if re.search(r"(?m)^(?:        )?if:", step(browser, command)):
             raise ValueError(f"conditional browser command: {command}")
     browser_upload = step(browser, "name: application-browser-${{ env.ANALYSIS_REVISION }}")
-    if "if: always()" not in browser_upload:
-        raise ValueError("browser evidence must upload after failure")
+    upload_conditions = re.findall(r"(?m)^(?:        )?if:\s*(.*?)\s*$", browser_upload)
+    if upload_conditions != ["always()"]:
+        raise ValueError("browser evidence must upload unconditionally after failure")
+    gate_step = step(gate, "name: Require both application legs")
+    if re.search(r"(?m)^(?:        )?if:", gate_step):
+        raise ValueError("application aggregate guard cannot be conditional")
     for line in (
         "name: Application gate",
         "if: always()",
@@ -157,6 +161,25 @@ class ApplicationWorkflow(unittest.TestCase):
             ("python3 scripts/check_coverage_reports.py", "echo skipped"),
         ):
             with self.subTest(old=old), self.assertRaises(ValueError):
+                check_application_graph(self.workflow.replace(old, new, 1))
+
+    def test_required_step_conditions_cannot_be_disabled(self):
+        mutations = (
+            (
+                "      - name: Require both application legs\n",
+                "      - name: Require both application legs\n        if: false\n",
+            ),
+            (
+                "if: always()\n        with:\n          name: application-browser-",
+                "if: always() && false\n        with:\n          name: application-browser-",
+            ),
+            ("      - run: npm run build\n", "      - if: false\n        run: npm run build\n"),
+            ("      - id: browser\n", "      - id: browser\n        if: false\n"),
+            ("      - id: coverage\n", "      - id: coverage\n        if: false\n"),
+        )
+        for old, new in mutations:
+            with self.subTest(old=old), self.assertRaises(ValueError):
+                self.assertIn(old, self.workflow)
                 check_application_graph(self.workflow.replace(old, new, 1))
 
     def test_no_application_job_or_step_can_continue_on_error(self):
