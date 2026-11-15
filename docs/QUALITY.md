@@ -397,7 +397,10 @@ verified account for the last allowance. Admit a different verified account
 while global capacity remains. Check counts across a new approval and denial
 after anonymous usage, exact replay, expiry after a write wait, and rollback of
 stock, order, debit and event. Exercise legacy guest read, payment and link denial
-against an account-bound order.
+against an account-bound order. Use actual component and order-read lock waits
+to confirm expired guest or account authority takes precedence over source
+errors. Check the expected source error and a successful retry under fresh
+authority.
 
 For account-bound payment preparation, assert the literal discounted charge and
 original stock group. Exercise guest and wrong-account read and replay denial,

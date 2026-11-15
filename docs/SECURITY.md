@@ -369,7 +369,9 @@ Fresh guest ownership/CSRF and current reviewed sources protect an atomic order,
 complete component reservation and minimal PII-free outbox event. Buyer/address/
 seller snapshots intentionally lack Debug; the boundary maps database errors to
 static classes and never returns failed-row detail. Stored bounded closed objects
-and source/header bindings are revalidated on reads and retries. Address/email
+and source/header bindings are revalidated on reads and retries. Source-dependent
+errors, including a replay intent conflict, are withheld unless the held guest
+and any verified account session remain current after source waits. Address/email
 syntax is neither ownership nor delivery proof. Seller/legal snapshots require
 trusted configuration; installation supplies none. Public routes, abuse controls,
 retention/erasure operations, coupon accounting and payment authority remain gates.
