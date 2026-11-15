@@ -1,6 +1,9 @@
 import assert from "node:assert/strict";
 import { JSDOM } from "jsdom";
-import { spawnSync } from "node:child_process";
+import {
+  fetchWithoutReuse,
+  runFixtureProcess,
+} from "./published-discovery-io.mjs";
 import { mkdir, writeFile } from "node:fs/promises";
 const base = process.env.WEB_BASE_URL;
 if (!base || !process.env.PREVIEW_TOKEN || process.env.APP_ENV !== "test")
@@ -8,7 +11,7 @@ if (!base || !process.env.PREVIEW_TOKEN || process.env.APP_ENV !== "test")
 const authorization = `Basic ${Buffer.from(`preview:${process.env.PREVIEW_TOKEN}`).toString("base64")}`;
 const observations = [];
 async function get(path, status = 200, extra = {}) {
-  const response = await fetch(base + path, {
+  const response = await fetchWithoutReuse(base + path, {
     headers: {
       Authorization: authorization,
       "User-Agent": "HTML-limited-crawler",
@@ -19,6 +22,7 @@ async function get(path, status = 200, extra = {}) {
   assert.equal(response.status, status, path);
   assert.match(response.headers.get("cache-control") ?? "", /no-store/);
   assert.match(response.headers.get("x-robots-tag") ?? "", /noindex/);
+  if (status !== 200) await response.body?.cancel();
   return response;
 }
 function inspect(html, sku, price, availability) {
@@ -107,36 +111,43 @@ async function check(price = "98.76", availability = "in_stock") {
   observations.push({ sku: "SET-COVERS", price, availability, image });
   return { html, feed: text, image };
 }
-function effect(action) {
-  const result = spawnSync(
-    "cargo",
-    [
-      "run",
-      "--locked",
-      "--quiet",
-      "-p",
-      "commerce-infrastructure",
-      "--example",
-      "browser-fixture-effect",
-      "--",
-      action,
-    ],
-    { env: process.env, encoding: "utf8", timeout: 120000 },
-  );
-  if (result.status !== 0)
+async function effect(action) {
+  console.log(`Published discovery: applying ${action}`);
+  try {
+    await runFixtureProcess(
+      "cargo",
+      [
+        "run",
+        "--locked",
+        "--quiet",
+        "-p",
+        "commerce-infrastructure",
+        "--example",
+        "browser-fixture-effect",
+        "--",
+        action,
+      ],
+      120000,
+    );
+  } catch {
     throw new Error(`Owned fixture effect failed: ${action}; details withheld`);
+  }
 }
 await mkdir(".local/evidence", { recursive: true });
+console.log("Published discovery: checking initial fixture");
 const initial = await check();
 const optimizerQuery = new URLSearchParams({
   url: initial.image,
   w: "640",
   q: "75",
 });
-const optimizer = await fetch(base + "/_next/image?" + optimizerQuery, {
-  headers: { Authorization: authorization },
-  redirect: "manual",
-});
+const optimizer = await fetchWithoutReuse(
+  base + "/_next/image?" + optimizerQuery,
+  {
+    headers: { Authorization: authorization },
+    redirect: "manual",
+  },
+);
 assert.equal(optimizer.status, 404, "Next image optimizer must be disabled");
 await optimizer.body?.cancel();
 await writeFile(".local/evidence/published-product.html", initial.html);
@@ -202,29 +213,29 @@ assert.throws(() =>
     "in_stock",
   ),
 );
-effect("quarantine");
+await effect("quarantine");
 await check("98.76", "out_of_stock");
-effect("release");
+await effect("release");
 await check();
-effect("price");
+await effect("price");
 await get("/nl/collection/isolated-room?variant=SET-COVERS", 404);
 await get(initial.image, 404);
 assert.doesNotMatch(
   await (await get("/nl/catalogue.xml")).text(),
   /<sku>SET-COVERS<\/sku>/,
 );
-effect("republish");
+await effect("republish");
 const republished = await check("111.11");
 assert.notEqual(republished.image, initial.image);
 await get(initial.image, 404);
-effect("withdraw");
+await effect("withdraw");
 await get("/nl/collection/isolated-room?variant=SET-COVERS", 404);
 await get(republished.image, 404);
 assert.doesNotMatch(
   await (await get("/nl/catalogue.xml")).text(),
   /<sku>SET-COVERS<\/sku>/,
 );
-effect("restore");
+await effect("restore");
 await check();
 await get(initial.image, 404);
 await writeFile(

@@ -79,6 +79,7 @@ def validate(document, root, branches=True):
             "crates/api/src/test_favourites.rs",
             "crates/api/src/test_favourites_mutation.rs",
             "crates/api/src/test_linked_orders.rs",
+            "crates/api/src/test_guest_link_redeem.rs",
             "crates/api/src/test_restock.rs",
             "crates/api/src/test_restock_mutation.rs",
             "crates/api/src/test_revision.rs",

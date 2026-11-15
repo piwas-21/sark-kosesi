@@ -1291,3 +1291,6 @@ async fn restock_and_linked_order_routes_coexist_under_one_login(pool: PgPool) {
 
 #[path = "support/test_favourites_mutation.rs"]
 mod favourites_mutation;
+
+#[path = "support/test_guest_link_redeem.rs"]
+mod test_guest_link_redeem;
