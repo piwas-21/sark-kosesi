@@ -662,6 +662,19 @@ controls, original/fresh synthetic key checks and database locale metadata are
 recorded. Database clients still run against owned loopback endpoints; no staging
 data, volume, keys or credentials are involved.
 
+The same containers also host a separate pair of freshly created synthetic
+databases for a populated schema-66 rehearsal. The source receives exactly the
+embedded first 66 migrations and an invented guest order and direct linking
+proof. Its held snapshot, table content, migration history and sequence state
+are compared after logical restore into the same candidate image, before any
+upgrade. Only that copy then runs the embedded SQLx migrator to its current
+head, validates all migration versions and checksums, reruns it idempotently,
+and checks the legacy proof remains redeemable. A fresh snapshot verifies the
+preserved source remains unchanged. A temporary mode-0600 synthetic proof bearer
+stays in runner scratch and is excluded from retained evidence. This is one
+representative synthetic history, not proof for the actual staging dataset,
+collations, roles, extensions, providers or deployed application images.
+
 Separate scan and restore status files distinguish a completed scan from a later
 restore failure. Retained checksums cover available evidence even on failure;
 the overall workflow succeeds only when both checks succeed. The restore status

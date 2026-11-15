@@ -11,6 +11,7 @@ import sys
 import time
 from pathlib import Path
 
+from rehearse_alpine_schema66 import run_rehearsal as run_schema66
 from rehearse_restore import (
     Snapshot,
     digest_file,
@@ -551,6 +552,22 @@ def main(candidate, revision, scratch, evidence, progress=None):
             }
         progress.enter("write_evidence")
         (evidence / "app-restore.json").write_text(json.dumps(report, indent=2) + "\n")
+        try:
+            run_schema66(
+                wrapper,
+                envs,
+                urls,
+                client_env,
+                containers,
+                marker,
+                scratch,
+                evidence,
+                candidate,
+                revision,
+                progress,
+            )
+        finally:
+            (scratch / "schema66-synthetic-proof").unlink(missing_ok=True)
     finally:
         handling_failure = sys.exc_info()[0] is not None
         if handling_failure:

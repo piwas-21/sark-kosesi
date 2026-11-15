@@ -10,6 +10,7 @@ on:
       - scripts/test_gosu_candidate.sh
       - scripts/test_db_alpine_gosu.sh
       - scripts/rehearse_alpine_gosu_restore.py
+      - scripts/rehearse_alpine_schema66.py
       - scripts/restore_loopback.py
       - scripts/rehearse_restore.py
       - scripts/with_postgres.py
@@ -24,6 +25,7 @@ on:
       - tests/tooling/test_db_alpine_gosu*.py
       - tests/tooling/test_alpine_gosu_image.py
       - tests/tooling/test_alpine_gosu_restore.py
+      - tests/tooling/test_alpine_schema66.py
 permissions: {}
 jobs:
   lab:

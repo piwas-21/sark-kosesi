@@ -1,4 +1,6 @@
 //! Synthetic data for the owned, native PostgreSQL restore rehearsal only.
+#[path = "restore_connection.rs"]
+mod restore_connection;
 use crate::{
     MIGRATOR,
     customer_credential_admission::{AdmissionKey, AdmissionLimits},
@@ -22,15 +24,7 @@ impl Clock for FixtureClock {
 async fn fixture_pool() -> sqlx::PgPool {
     let url = std::env::var("RESTORE_FIXTURE_DATABASE_URL").expect("owned rehearsal URL");
     let database = std::env::var("RESTORE_FIXTURE_DATABASE_NAME").expect("owned database name");
-    assert!(database.starts_with("sark_restore_"));
-    assert_eq!(database.len(), "sark_restore_".len() + 32);
-    assert!(
-        database["sark_restore_".len()..]
-            .bytes()
-            .all(|b| b.is_ascii_hexdigit())
-    );
-    assert!(url.starts_with("postgresql://p1_test:") && url.contains("@127.0.0.1:"));
-    assert!(url.ends_with(&format!("/{database}")));
+    assert!(restore_connection::is_owned_url(&url, &database));
     let pool = crate::connect(&url)
         .await
         .expect("owned database connection");
