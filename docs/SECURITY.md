@@ -47,6 +47,12 @@ The independently opted-in test-only GET requires preview authentication, exact
 test Origin and the issued customer cookie. Its existing list primitive may
 initialize the empty bucket. Private no-store responses and a disabled-by-default
 route do not establish public ingress, privacy retention or browser acceptance.
+The independently enabled test-only SET requires preview authority, one exact
+Origin, the customer cookie and its session synchronizer. The proof is checked
+under the same session claim and transaction as the membership change. Bodies
+and revision values are bounded; responses contain only the revision. Hidden
+entries can be removed. The write role remains trusted, and this route does not
+establish public CSRF, abuse, retention or browser controls.
 
 ## Private restock opt-in boundary
 

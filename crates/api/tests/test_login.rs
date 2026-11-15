@@ -1288,3 +1288,6 @@ async fn restock_and_linked_order_routes_coexist_under_one_login(pool: PgPool) {
         assert!(actual == expected, "unexpected owned result");
     }
 }
+
+#[path = "support/test_favourites_mutation.rs"]
+mod favourites_mutation;
