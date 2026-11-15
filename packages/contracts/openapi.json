@@ -1843,6 +1843,300 @@
         ]
       }
     },
+    "/api/test/guest/orders": {
+      "post": {
+        "tags": [
+          "crate::guest::test_orders"
+        ],
+        "operationId": "test_guest_order_create",
+        "parameters": [
+          {
+            "name": "Origin",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "x-csrf-token",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/TestOrderInput"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TestOrderReceipt"
+                }
+              }
+            }
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "410": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "413": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "415": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "429": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "504": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "guest": [],
+            "preview": []
+          }
+        ]
+      }
+    },
+    "/api/test/guest/orders/{id}/cancellation": {
+      "post": {
+        "tags": [
+          "crate::guest::cancellation"
+        ],
+        "operationId": "test_guest_cancel_order",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "Origin",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "x-csrf-token",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CancellationRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CancellationResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "413": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "415": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "504": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "guest": [],
+            "preview": []
+          }
+        ]
+      }
+    },
     "/api/test/verification/redeem": {
       "post": {
         "tags": [
@@ -1947,6 +2241,46 @@
   },
   "components": {
     "schemas": {
+      "AddressInput": {
+        "type": "object",
+        "required": [
+          "recipient",
+          "line1",
+          "city",
+          "country",
+          "postcode"
+        ],
+        "properties": {
+          "city": {
+            "type": "string"
+          },
+          "country": {
+            "type": "string"
+          },
+          "line1": {
+            "type": "string"
+          },
+          "line2": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "postcode": {
+            "type": "string"
+          },
+          "recipient": {
+            "type": "string"
+          },
+          "region": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "additionalProperties": false
+      },
       "ApiError": {
         "type": "object",
         "required": [
@@ -1965,6 +2299,22 @@
           "out_of_stock"
         ]
       },
+      "BuyerInput": {
+        "type": "object",
+        "required": [
+          "name",
+          "email"
+        ],
+        "properties": {
+          "email": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": false
+      },
       "CallbackForm": {
         "type": "object",
         "required": [
@@ -1980,6 +2330,38 @@
           }
         },
         "additionalProperties": false
+      },
+      "CancellationRequest": {
+        "type": "object",
+        "required": [
+          "effect_key",
+          "confirmed"
+        ],
+        "properties": {
+          "confirmed": {
+            "type": "boolean",
+            "description": "Must be true to confirm the pre-dispatch cancellation."
+          },
+          "effect_key": {
+            "type": "string",
+            "description": "Stable identifier for exact retries of this cancellation.",
+            "maxLength": 128,
+            "minLength": 1,
+            "pattern": "^[a-zA-Z0-9-]+$"
+          }
+        },
+        "additionalProperties": false
+      },
+      "CancellationResponse": {
+        "type": "object",
+        "required": [
+          "replayed"
+        ],
+        "properties": {
+          "replayed": {
+            "type": "boolean"
+          }
+        }
       },
       "Catalogue": {
         "type": "object",
@@ -2776,6 +3158,47 @@
           }
         }
       },
+      "TestOrderInput": {
+        "type": "object",
+        "required": [
+          "effect_key",
+          "quote_id",
+          "expected_basket_revision",
+          "buyer",
+          "shipping_address",
+          "billing_address",
+          "accepted_terms_version",
+          "confirmed"
+        ],
+        "properties": {
+          "accepted_terms_version": {
+            "type": "string"
+          },
+          "billing_address": {
+            "$ref": "#/components/schemas/AddressInput"
+          },
+          "buyer": {
+            "$ref": "#/components/schemas/BuyerInput"
+          },
+          "confirmed": {
+            "type": "boolean"
+          },
+          "effect_key": {
+            "type": "string"
+          },
+          "expected_basket_revision": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "quote_id": {
+            "type": "string"
+          },
+          "shipping_address": {
+            "$ref": "#/components/schemas/AddressInput"
+          }
+        },
+        "additionalProperties": false
+      },
       "TestOrderLine": {
         "type": "object",
         "required": [
@@ -2798,6 +3221,21 @@
           },
           "title": {
             "type": "string"
+          }
+        }
+      },
+      "TestOrderReceipt": {
+        "type": "object",
+        "required": [
+          "id",
+          "replayed"
+        ],
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "replayed": {
+            "type": "boolean"
           }
         }
       },

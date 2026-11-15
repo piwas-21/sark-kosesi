@@ -79,6 +79,7 @@ def check_application_graph(text):
         "- run: npm run build",
         "- run: npx playwright install --with-deps chromium firefox webkit",
         "run: npm run test:browser",
+        "run: npm run test:guest-browser",
         "if: failure() && steps.browser.outcome == 'failure' && "
         "steps.browser.outputs.visual_candidates != 'complete'",
         "run: python3 scripts/with_postgres.py -- node tests/application/serve.mjs capture",
@@ -93,7 +94,11 @@ def check_application_graph(text):
     application_upload = step(checks, "name: application-${{ env.ANALYSIS_REVISION }}")
     if re.search(r"(?m)^(?:        )?if:", application_upload):
         raise ValueError("application evidence upload cannot be conditional")
-    for command in ("run: npm run build\n", "run: npm run test:browser\n"):
+    for command in (
+        "run: npm run build\n",
+        "run: npm run test:browser\n",
+        "run: npm run test:guest-browser\n",
+    ):
         if re.search(r"(?m)^(?:        )?if:", step(browser, command)):
             raise ValueError(f"conditional browser command: {command}")
     browser_upload = step(browser, "name: application-browser-${{ env.ANALYSIS_REVISION }}")
@@ -159,6 +164,7 @@ class ApplicationWorkflow(unittest.TestCase):
                 "- if: false\n        run: npm run test:integration",
             ),
             ("run: npm run test:browser", "run: echo skipped"),
+            ("run: npm run test:guest-browser", "run: echo skipped"),
             ("name: application-browser-${{ env.ANALYSIS_REVISION }}", "name: other-browser"),
             ("needs: [application]", "needs: [application_checks]"),
             ("python3 scripts/check_coverage_reports.py", "echo skipped"),
@@ -182,6 +188,10 @@ class ApplicationWorkflow(unittest.TestCase):
             ),
             ("      - run: npm run build\n", "      - if: false\n        run: npm run build\n"),
             ("      - id: browser\n", "      - id: browser\n        if: false\n"),
+            (
+                "      - name: Exercise private guest checkout in Chromium\n",
+                "      - name: Exercise private guest checkout in Chromium\n        if: false\n",
+            ),
             ("      - id: coverage\n", "      - id: coverage\n        if: false\n"),
         )
         for old, new in mutations:
