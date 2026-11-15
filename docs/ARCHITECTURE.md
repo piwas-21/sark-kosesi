@@ -719,6 +719,14 @@ recognition has since changed; it does not report unpacking or restocking. At mo
 record reserves its own release slot. Neither a record nor its release proves physical possession, net payment, dispatch, delivery, stock
 availability or permission to ship. No carrier, payment or stock operation follows.
 
+An authenticated warehouse inspection holds the same attempt claim while it
+validates the complete packing history and immutable allocation. It reports the
+ordered, actively asserted and not asserted whole units per SKU, and bounded
+record IDs, actions, release targets and times. Existing records use their
+historical received recognition even if later evidence changes; an empty history
+requires a current validated source. These are packing assertions, not remaining
+unshipped units, physical custody, current net payment or dispatch authority.
+
 Write domain changes and outbox events in one transaction. Workers claim leases using PostgreSQL, retry with backoff and stable effect identifiers, and recover abandoned leases. Emails, stock alerts and fulfilment requests are idempotent. Record provider acceptance separately from customer delivery. Failed jobs are visible and replayable only through bounded, audited admin actions.
 
 ### Initial test-attempt model

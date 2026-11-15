@@ -366,3 +366,5 @@ whole units and package components, with serialized occupancy, replay and an
 audited release. These assertions do not establish unshipped units, physical
 contents or dispatch authority. Complete shipment handover and delivery custody,
 reversal/refund disposition and physical fulfilment evidence separately.
+Authenticated warehouse inspection can read the bounded validated assertion
+history and per-SKU recorded occupancy without granting shipment authority.

@@ -467,6 +467,9 @@ that source and a serialized, append-only history, with an audited release. The
 assertion establishes physical custody, remaining unshipped units, net payment
 or permission to dispatch. Before dispatch,
 complete shipment/handover lifecycle, reversal disposition and physical evidence.
+An authenticated private inspection reconstructs recorded active packing and
+unasserted units from complete custody history without changing that authority
+boundary. It does not establish remaining unshipped stock or payment eligibility.
 
 Trusted whole-basket reservation primitives now provide immutable manifests,
 exact fresh child bindings and aggregated component claims in one transaction.

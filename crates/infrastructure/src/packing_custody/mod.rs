@@ -1,5 +1,6 @@
 //! Private staff packing assertions. No stock, physical shipment or provider effect.
 mod command;
+mod inspection;
 mod model;
 mod store;
 use crate::{
@@ -10,6 +11,7 @@ use commerce_application::{
     request_context::{Clock, Identifiers, ObservedClock},
     staff_access::Capability,
 };
+pub use inspection::{Inspection, InspectionEntry, InspectionLine, inspect};
 pub use model::{Component, Packages, Record, Units};
 use sqlx::PgPool;
 
