@@ -4,6 +4,7 @@
 import json
 import os
 import re
+import secrets
 import shutil
 import socket
 import struct
@@ -18,8 +19,8 @@ ROOT = Path(__file__).resolve().parents[1]
 MAX_RESPONSE = 20 + 3 * (20 + 250 * 1024)
 
 
-def run(args, *, env=None, capture=False, check=True):
-    return subprocess.run(args, cwd=ROOT, env=env, text=True, capture_output=capture, check=check)
+def run(args, *, env=None, capture=False, check=True, cwd=ROOT):
+    return subprocess.run(args, cwd=cwd, env=env, text=True, capture_output=capture, check=check)
 
 
 def chunk(kind, data):
@@ -198,7 +199,11 @@ def main():
     actual = run(["git", "rev-parse", "HEAD"], capture=True).stdout.strip()
     if actual != revision:
         raise ValueError("checkout is not the requested revision")
-    temp = Path(tempfile.mkdtemp(prefix="decoder-smoke-", dir="/tmp"))
+    runner_temp = Path(os.environ["RUNNER_TEMP"]).resolve(strict=True)
+    metadata = runner_temp.stat()
+    if not runner_temp.is_dir() or metadata.st_uid != os.geteuid() or metadata.st_mode & 0o022:
+        raise ValueError("decoder smoke requires a protected runner directory")
+    temp = Path(tempfile.mkdtemp(prefix="decoder-smoke-", dir=runner_temp))
     temp.chmod(0o755)
     socket_dir = temp / "socket"
     script = temp / "client.py"
@@ -215,9 +220,9 @@ def main():
         {
             "STAGING_REVISION": revision,
             "STAGING_IMAGE_DECODER_DIR": str(socket_dir),
-            "STAGING_DATABASE_PASSWORD": "synthetic-unused",
+            "STAGING_DATABASE_PASSWORD": secrets.token_urlsafe(32),
             "STAGING_HOST": "example.invalid",
-            "STAGING_PREVIEW_TOKEN": "synthetic-unused",
+            "STAGING_PREVIEW_TOKEN": secrets.token_urlsafe(32),
         }
     )
     compose = [
@@ -304,11 +309,12 @@ def main():
                     "1000",
                     "--clear-groups",
                     "python3",
-                    str(script),
+                    script.name,
                     "--client",
                     mode,
-                    str(path),
-                ]
+                    str(Path(socket_dir.name) / path.name),
+                ],
+                cwd=temp,
             )
         print("Unauthorized UID was denied and the isolated container recovered")
         run(compose + ["stop", "-t", "10", "image-decoder"], env=env)
