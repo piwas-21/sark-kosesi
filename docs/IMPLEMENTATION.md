@@ -613,6 +613,23 @@ and a duplicate request is denied. No session-read or public route is installed.
 Complete secure delivery, trusted ingress, timing and browser controls before
 exposing the flow beyond this test boundary.
 
+Private guest-link delivery issuance now reserves a durable nonce and atomically
+stores the exact owned proof with an AES-GCM envelope. The HKDF-derived key and
+nonce namespace are purpose-specific; the receipt discloses no bearer, ciphertext
+or recipient. Fresh guest/order authority is reacquired after nonce allocation.
+A separate trusted in-process consumer commits one durable local start, then
+relocks the exact live guest proof and order before authenticating the envelope.
+Only its fresh winner receives the buyer and proof in a synchronous callback;
+existing or uncertain starts are never reopened automatically. An optional
+synthetic callback returns only a closed classification, recorded in a separate
+durable transaction bound to its exact start. A missing result stays unknown;
+it has only relational custody, not an authenticated ciphertext commitment.
+A recorded result binds the exact authenticated ciphertext by SHA-256, which is
+checked against the retained envelope. Redemption or expiry does not erase
+historical custody. This establishes no
+sender, transport, public route or mailbox acceptance. Migration 0070 follows
+the protected 0067 and the queued 0068 and 0069 prerequisites.
+
 Private guest-order linking requires a live guest basket credential and CSRF
 proof to issue a one-use challenge for that exact accepted order. A current
 customer session for the verified buyer mailbox consumes it and records the

@@ -207,6 +207,49 @@ def projected_branches(item):
     return project_rows(rows)
 
 
+def projected_lines(item, maximum):
+    """Project LLVM file segments into the exact line records exported to LCOV."""
+    segments = item.get("segments")
+    if not isinstance(segments, list) or not segments:
+        raise ValueError("Missing native Rust line segments")
+    by_line = {}
+    previous = (0, 0)
+    for segment in segments:
+        if not isinstance(segment, list) or len(segment) != 6:
+            raise ValueError("Invalid native Rust line segment")
+        line, column, hits, has_count, entry, gap = segment
+        if (
+            type(line) is not int
+            or type(column) is not int
+            or not 1 <= line <= maximum
+            or column < 1
+            or (line, column) <= previous
+            or type(hits) is not int
+            # LLVM's JSON exporter clamps at INT64_MAX, which loses precision.
+            or not 0 <= hits < (1 << 63) - 1
+            or any(type(flag) is not bool for flag in (has_count, entry, gap))
+        ):
+            raise ValueError("Invalid native Rust line segment")
+        by_line.setdefault(line, []).append(segment)
+        previous = (line, column)
+
+    # LLVM iterates through the last segment line and carries forward the last
+    # segment on any preceding line. Gap entries map a line without contributing
+    # their own count. A skipped entry suppresses a wrapped count only when the
+    # line has no counted entry of its own.
+    result, wrapped = {}, None
+    for line in range(segments[0][0], previous[0] + 1):
+        current = by_line.get(line, ())
+        entries = [segment for segment in current if segment[3] and segment[4]]
+        skipped = bool(current) and not current[0][3] and current[0][4]
+        if entries or (wrapped is not None and wrapped[3] and not skipped):
+            hits = wrapped[2] if wrapped is not None else 0
+            result[line] = max([hits, *(segment[2] for segment in entries if not segment[5])])
+        if current:
+            wrapped = current[-1]
+    return result
+
+
 def function_branches(document, root, exported):
     """Independently project function branches using each function's filename table."""
     by_file = {}
@@ -307,11 +350,10 @@ def validate_lcov(text, document, root):
         locations = [*record["lines"], *(key[0] for key in record["branches"])]
         if not record["lines"] or any(number < 1 or number > maximum for number in locations):
             raise ValueError("Rust LCOV line records missing or outside source")
-        if (
-            len(record["lines"]) > lines
-            or sum(value > 0 for value in record["lines"].values()) > covered_lines
-        ):
-            raise ValueError("Rust LCOV line population exceeds native summaries")
+        if record["lines"] != projected_lines(item, maximum):
+            raise ValueError(
+                f"Rust LCOV line population differs from native segments: {path.relative_to(root)}"
+            )
         branch_hits = record["branches"]
         if (
             len(branch_hits) < branches

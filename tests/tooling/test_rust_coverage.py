@@ -19,6 +19,7 @@ class RustCoverage(unittest.TestCase):
             files.append(
                 {
                     "filename": str(source),
+                    "segments": [[1, 1, 1, True, True, False], [20, 6, 0, False, False, False]],
                     "branches": [[line, 1, line, 2, 1, 1, 0, 0, 4] for line in range(1, 11)],
                     "expansions": [],
                     "summary": {
@@ -238,6 +239,52 @@ class RustCoverage(unittest.TestCase):
         native["data"][0]["files"][0]["summary"]["lines"] = {"count": 22, "covered": 22}
         text = self.lcov().replace("LF:20\nLH:20", "LF:22\nLH:22", 1)
         self.assertEqual(validate_lcov(text, native, self.root), 5)
+
+    def test_mapped_line_detail_can_exceed_native_hit_summary(self):
+        from rust_coverage import validate_lcov
+
+        native = copy.deepcopy(self.document)
+        first = native["data"][0]["files"][0]
+        first["segments"] = [
+            [1, 1, 3, True, True, False],
+            [2, 1, 0, False, True, False],
+            [3, 2, 9, True, True, True],
+            [4, 1, 5, True, True, False],
+            [4, 8, 2, True, True, False],
+            [6, 2, 0, False, False, False],
+            [8, 1, 0, True, True, False],
+        ]
+        first["summary"]["lines"] = {"count": 9, "covered": 3}
+        original = "".join(f"DA:{line},1\n" for line in range(1, 21))
+        expected = "DA:1,3\nDA:3,0\nDA:4,9\nDA:5,2\nDA:6,2\nDA:8,0\n"
+        text = self.lcov().replace(original, expected, 1).replace("LF:20\nLH:20", "LF:9\nLH:3", 1)
+        self.assertEqual(validate_lcov(text, native, self.root), 5)
+        for line in ("", "DA:6,1\n", "DA:7,2\n"):
+            with self.subTest(line=line), self.assertRaisesRegex(ValueError, "line population"):
+                validate_lcov(text.replace("DA:6,2\n", line, 1), native, self.root)
+
+    def test_invalid_native_line_segments_fail_closed(self):
+        from rust_coverage import validate_lcov
+
+        def segment(*values):
+            return [[1, 1, 1, True, True, False], list(values)]
+
+        for invalid in (
+            None,
+            [],
+            segment(20, 6, 0, False, False),
+            segment(1, 1, 0, False, False, False),
+            [[20, 6, 0, False, False, False], [1, 1, 1, True, True, False]],
+            segment(21, 6, 0, False, False, False),
+            segment(20, 0, 0, False, False, False),
+            segment(20, 6, 0, 0, False, False),
+            segment(20, 6, -1, False, False, False),
+            segment(20, 6, (1 << 63) - 1, True, True, False),
+        ):
+            native = copy.deepcopy(self.document)
+            native["data"][0]["files"][0]["segments"] = invalid
+            with self.subTest(invalid=invalid), self.assertRaisesRegex(ValueError, "line segment"):
+                validate_lcov(self.lcov(), native, self.root)
 
     def test_unified_branch_details_can_exceed_native_covered_summary(self):
         from rust_coverage import validate_lcov

@@ -159,6 +159,10 @@ clone, asynchronous replica promotion or uncertain rollback, provision a fresh
 active encryption key before resuming issuance. Retain earlier keys only under
 approved historical read and retention controls. Rehearse restoration with
 synthetic ciphertext and separately stored keys before activation.
+Apply the same single allocation-domain and fresh-key-after-restore rules to
+the purpose-derived guest-link delivery key. A nonce prefix and HKDF purpose
+separation do not make rollback of the same key's counter safe. The new key
+has no configured runtime provisioner or delivery transport.
 A delivery start with no provider outcome is ambiguous after interruption.
 Keep it visible as unknown. Define provider idempotency or a reviewed recovery
 policy before connecting transport or retrying any ambiguous delivery.

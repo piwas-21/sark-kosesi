@@ -186,8 +186,10 @@ issued to the guest basket owner and a current customer session for the verified
 buyer mailbox. Private detail and bounded history reads return the linked
 order's captured items and amounts under live customer authority. An independently
 enabled test-only history route exposes bounded linked guest orders to the current
-session; linking and safe proof delivery remain separate. Private
-credential admission provides shared purpose and mailbox quotas. A private
+session; linking and safe proof delivery remain separate. The encrypted guest-link
+custody now supports one durable local start, trusted in-process opening and a
+redacted synthetic outcome without a transport. Sender custody, real mailbox acceptance and
+retention remain open. Private credential admission provides shared purpose and mailbox quotas. A private
 session variant binds a synchronizer digest to issuance and protects revocation
 under the same session claim. The separately enabled test transport is described
 below; public browser ingress and production CSRF policy remain open. Login,
@@ -232,6 +234,11 @@ retention and cancellation policy remain open.
 An independently enabled test-only mutation uses a bound session proof to add or
 cancel a subscription; it is not public ingress or notification delivery.
 
+A private guest-link issuer now atomically stores a proof and purpose-separated
+encrypted bearer after a durable nonce reservation. It returns no recipient or
+bearer. A trusted in-process opening and redacted synthetic outcome retain local
+custody without installing a sender or public route. Key operations, recovery,
+retention, anti-abuse and real mailbox delivery remain open.
 A default-off test-only guest-order redemption route binds the customer session
 synchronizer to proof consumption and linking in the same transaction. Proof
 delivery, public linking and browser acceptance remain open.

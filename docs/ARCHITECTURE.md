@@ -1826,6 +1826,17 @@ ciphertext and matches the recovered verifier. It releases the transaction befor
 passing short-lived borrowed values to its caller. A prior start cannot be used to
 reconstruct the in-process authority.
 
+The guest-link fresh opener can optionally retain one synthetic callback
+classification: accepted, explicit rejection or uncertain. A separate durable
+transaction binds the result to that exact committed start and a database-assigned
+transaction identity. Inspection validates its original proof, envelope and
+nonce history without requiring the proof to remain unconsumed or unexpired.
+The outcome commits a SHA-256 digest of the exact ciphertext authenticated by
+the fresh opener, checked against the stored envelope at record and inspection.
+An absent result remains unknown and checks relational history only; it cannot
+attest ciphertext authentication or authorize another opening. The
+classification is local caller evidence, not provider or mailbox acceptance.
+
 A separate immutable outcome can retain only a closed accepted, explicit rejection
 or uncertain classification, observation time and exact prior start transaction.
 Only the fresh-opening in-process path can record it. The callback runs without a
@@ -1966,6 +1977,24 @@ Issue a 15-minute order-link proof only after checking the live guest basket
 session, its CSRF proof and the exact immutable order in that basket. The
 proof has an independent random bearer and verifier domain. Return it to
 the trusted caller after the issuance transaction commits.
+
+The separate private delivery issuer captures the live guest and order, then
+commits a purpose-specific nonce reservation before reacquiring and revalidating
+the same authority. It commits one encrypted bearer envelope and proof together,
+under reciprocal native constraints. The trusted Rust writer leaves the nonce
+commit check deferred and checks durability immediately before both commits;
+arbitrary SQL can force a deferred GUC check early and later change the setting.
+Its receipt excludes the bearer, ciphertext and recipient; the normalized recipient remains in the immutable order only.
+The AES-256-GCM key is derived with HKDF-SHA256 using a fixed guest-link context;
+its nonce prefix is disjoint from verification delivery. Derived key fingerprints
+are unique within this purpose and each allocation domain. A private consumer commits one immutable, durable local start before it
+relocks the proof then guest order, rechecks the exact source and authenticates
+the envelope. Only the fresh start's in-process synchronous callback receives
+the normalized buyer and bearer; a prior or uncertain start cannot reopen. The
+callback runs after releasing database locks and the order may change after the
+final liveness check. The trusted writer checks durability before committing;
+the database trigger alone cannot prevent an arbitrary SQL writer from forcing
+a deferred setting check early. No delivery provider or public route is installed.
 
 Redemption holds the current customer account and session claims, then
 locks the exact proof and order. Compare the verified account mailbox to the
