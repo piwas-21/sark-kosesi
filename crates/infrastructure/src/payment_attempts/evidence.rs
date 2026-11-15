@@ -26,6 +26,15 @@ pub(crate) async fn context(
     id: &str,
     claim: bool,
 ) -> Result<(FrozenAttempt, i64), PaymentStoreError> {
+    let (frozen, _, started_at) = context_with_start(tx, id, claim).await?;
+    Ok((frozen, started_at))
+}
+
+pub(super) async fn context_with_start(
+    tx: &mut Transaction<'_, Postgres>,
+    id: &str,
+    claim: bool,
+) -> Result<(FrozenAttempt, String, i64), PaymentStoreError> {
     let owner: Option<String> = if claim {
         sqlx::query_scalar("SELECT left(basket_id,33) FROM payment_attempts WHERE id=$1 FOR UPDATE")
             .bind(id)
@@ -44,8 +53,8 @@ pub(crate) async fn context(
         checkout_orders::OrderAccess::Internal,
     )
     .await?;
-    let (_, started_at) = started(tx, &frozen).await?;
-    Ok((frozen, started_at))
+    let (start_id, started_at) = started(tx, &frozen).await?;
+    Ok((frozen, start_id, started_at))
 }
 
 // The caller must hold the attempt claim when a fresh serialized result matters.

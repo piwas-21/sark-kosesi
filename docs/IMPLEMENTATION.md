@@ -437,7 +437,10 @@ supervision or live provider activation follows from deploying the empty preview
    pages without candidates or a continuation. The private observation journal
    appends exact child facts after network I/O and
    serializes bounded custody with a reciprocal event. Same-effect retries
-   verify the original observation. The page journal keeps a bounded linear scan
+   verify the original observation. A separate private read claims the attempt
+   and validates the complete bounded local observation set, returning its count
+   and source-bound digest without inferring provider completeness or net balance.
+   The page journal keeps a bounded linear scan
    and exact reciprocal events. A validated open tip restores a continuation
    under the same key. A rotated key starts a new root. The private page
    supervisor enrolls from an exact paid observation, commits a single-use
@@ -484,6 +487,9 @@ that source and a serialized, append-only history, with an audited release. The
 assertion establishes physical custody, remaining unshipped units, net payment
 or permission to dispatch. Before dispatch,
 complete shipment/handover lifecycle, reversal disposition and physical evidence.
+An authenticated private inspection reconstructs recorded active packing and
+unasserted units from complete custody history without changing that authority
+boundary. It does not establish remaining unshipped stock or payment eligibility.
 
 Trusted whole-basket reservation primitives now provide immutable manifests,
 exact fresh child bindings and aggregated component claims in one transaction.
