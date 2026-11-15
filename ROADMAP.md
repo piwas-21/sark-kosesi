@@ -11,6 +11,10 @@ Current-revision CI, independent review and the merge gate remain mandatory.
 The API's offline migration-manifest command reports the compiled SQLx migration
 versions, types, checksums and missing-version policy. It does not prove image
 provenance, database state or startup compatibility.
+The offline compatibility check compares a captured manifest with a database
+history snapshot. It binds both files by digest, rejects dirty or incompatible
+history and reports pending forward migrations. Actual startup and rollback
+remain rehearsal gates.
 
 An opt-in staging startup can validate preapplied SQLx history without running
 migrations. A restricted runtime role, the catalogue's row-locking privileges,
