@@ -64,6 +64,25 @@ async fn competing_calls_post_once_then_store_verified_observation(pool: PgPool)
         )
     ));
     assert_eq!(counts(&pool).await, (1, 1, 1, 1));
+    let exact: bool = sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM payment_initial_dispatch_provenance p WHERE p.attempt_id=$1 AND payment_initial_dispatch_provenance_exact(p))")
+        .bind(id).fetch_one(&pool).await.expect("exact native provenance");
+    assert!(exact);
+    assert!(
+        sqlx::query(
+            "UPDATE payment_initial_dispatch_provenance SET start_id=start_id WHERE attempt_id=$1"
+        )
+        .bind(id)
+        .execute(&pool)
+        .await
+        .is_err()
+    );
+    assert!(
+        sqlx::query("DELETE FROM payment_initial_dispatch_provenance WHERE attempt_id=$1")
+            .bind(id)
+            .execute(&pool)
+            .await
+            .is_err()
+    );
     let observation = read_recorded(&pool, id, &format!("initial-fetch-{id}"))
         .await
         .expect("stored read")
@@ -312,4 +331,188 @@ async fn clock_failure_after_committed_start_is_uncertain_without_a_post(pool: P
         Ok(InitialDispatchOutcome::Reconcile)
     );
     assert_eq!(server.count(), 1);
+}
+
+#[sqlx::test(migrator = "MIGRATOR")]
+async fn initial_provenance_insert_failure_rolls_back_observation_and_event(pool: PgPool) {
+    let (time, frozen) = prepared(&pool).await;
+    let id = &frozen.snapshot().binding.id;
+    pool.execute("CREATE FUNCTION fixture_reject_initial_provenance() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN RAISE EXCEPTION 'synthetic'; END $$; CREATE TRIGGER fixture_reject_initial_provenance BEFORE INSERT ON payment_initial_dispatch_provenance FOR EACH ROW EXECUTE FUNCTION fixture_reject_initial_provenance()")
+        .await.expect("fault setup");
+    let pay = payment(frozen.snapshot());
+    let server = Server::start(vec![
+        profile(),
+        Reply::Json(201, pay.clone()),
+        Reply::Json(200, pay),
+    ]);
+    let client = local(&server).verify_profile().await.expect("verified");
+    let ids = crate::payment_test_fixture::Ids(AtomicU64::new(10000));
+    assert_eq!(
+        dispatch_and_observe_test_payment(&pool, time.as_ref(), &ids, &client, id).await,
+        Err(InitialDispatchError::Uncertain)
+    );
+    assert_eq!(counts(&pool).await, (1, 1, 0, 0));
+    let receipts: i64 =
+        sqlx::query_scalar("SELECT count(*) FROM payment_initial_dispatch_provenance")
+            .fetch_one(&pool)
+            .await
+            .expect("no receipt");
+    assert_eq!(receipts, 0);
+    assert_eq!(
+        dispatch_and_observe_test_payment(&pool, time.as_ref(), &ids, &client, id).await,
+        Ok(InitialDispatchOutcome::Reconcile)
+    );
+    assert_eq!(server.count(), 3);
+}
+
+#[sqlx::test(migrator = "MIGRATOR")]
+async fn callback_effect_collision_never_upgrades_a_historical_observation(pool: PgPool) {
+    use crate::payment_attempts::callbacks;
+    let (time, frozen) = prepared(&pool).await;
+    let id = frozen.snapshot().binding.id.clone();
+    let pay = payment(frozen.snapshot());
+    let gate = Arc::new(AtomicBool::new(false));
+    let server = Server::start(vec![
+        profile(),
+        profile(),
+        Reply::Json(201, pay.clone()),
+        Reply::GateJson(gate.clone(), pay.clone()),
+        Reply::Json(200, pay),
+    ]);
+    let client = Arc::new(
+        local(&server)
+            .verify_profile()
+            .await
+            .expect("initial profile"),
+    );
+    let callback_client = local(&server)
+        .verify_profile()
+        .await
+        .expect("callback profile")
+        .into_reconciliation();
+    let ids = Arc::new(crate::payment_test_fixture::Ids(AtomicU64::new(10000)));
+    let task = {
+        let (pool, time, ids, client, id) = (
+            pool.clone(),
+            time.clone(),
+            ids.clone(),
+            client.clone(),
+            id.clone(),
+        );
+        tokio::spawn(async move {
+            dispatch_and_observe_test_payment(
+                &pool,
+                time.as_ref(),
+                ids.as_ref(),
+                client.as_ref(),
+                &id,
+            )
+            .await
+        })
+    };
+    tokio::time::timeout(Duration::from_secs(2), async {
+        while server.count() < 4 {
+            tokio::time::sleep(Duration::from_millis(2)).await;
+        }
+    })
+    .await
+    .expect("initial GET held outside DB");
+    let callback = callback_client
+        .fetch_callback("tr_SYNTHETIC_NotARealPayment")
+        .await
+        .expect("authenticated callback GET");
+    let effect = format!("initial-fetch-{id}");
+    let first = callbacks::record_fetched(&pool, time.as_ref(), ids.as_ref(), &effect, &callback)
+        .await
+        .expect("callback receipt");
+    assert!(!first.replayed);
+    gate.store(true, Ordering::SeqCst);
+    assert_eq!(
+        task.await.expect("initial task"),
+        Err(InitialDispatchError::Uncertain)
+    );
+    // Model an observation that existed before 0073: nullable transaction
+    // custody must not change accepted historical reads or generic replay.
+    pool.execute("ALTER TABLE payment_observations DISABLE TRIGGER USER")
+        .await
+        .expect("isolated legacy fixture");
+    sqlx::query("UPDATE payment_observations SET source_transaction_id=NULL WHERE attempt_id=$1")
+        .bind(&id)
+        .execute(&pool)
+        .await
+        .expect("pre-migration row");
+    pool.execute("ALTER TABLE payment_observations ENABLE TRIGGER USER")
+        .await
+        .expect("restore native guards");
+    assert!(
+        read_recorded(&pool, &id, &effect)
+            .await
+            .expect("legacy read")
+            .is_some()
+    );
+    let replay = callbacks::record_fetched(&pool, time.as_ref(), ids.as_ref(), &effect, &callback)
+        .await
+        .expect("generic exact replay");
+    assert!(replay.replayed);
+    assert_eq!(counts(&pool).await, (1, 1, 1, 1));
+    let receipts: i64 =
+        sqlx::query_scalar("SELECT count(*) FROM payment_initial_dispatch_provenance")
+            .fetch_one(&pool)
+            .await
+            .expect("no origin receipt");
+    assert_eq!(receipts, 0);
+    // A later native transaction cannot attach the old observation/event to a new receipt.
+    let upgrade = sqlx::query("INSERT INTO payment_initial_dispatch_provenance(attempt_id,start_id,observation_id,observation_event_id) SELECT s.attempt_id,s.id,o.id,e.id FROM payment_dispatch_starts s JOIN payment_observations o ON o.attempt_id=s.attempt_id JOIN commerce_outbox e ON e.kind='payment.observation_recorded.v1' AND e.payload->>'observation_id'=o.id WHERE s.attempt_id=$1")
+        .bind(&id).execute(&pool).await;
+    assert!(upgrade.is_err());
+    assert_eq!(
+        dispatch_and_observe_test_payment(&pool, time.as_ref(), ids.as_ref(), client.as_ref(), &id)
+            .await,
+        Ok(InitialDispatchOutcome::Reconcile)
+    );
+    server
+        .inspect(|requests| assert_eq!(requests.iter().filter(|r| r.method == "POST").count(), 1));
+}
+
+#[sqlx::test(migrator = "MIGRATOR")]
+async fn create_capability_rejects_a_different_verified_provider_identity(pool: PgPool) {
+    use crate::payment_attempts::{DispatchOutcome, start_dispatch};
+    let (time, frozen) = prepared(&pool).await;
+    let id = &frozen.snapshot().binding.id;
+    let pay = payment(frozen.snapshot());
+    let mut other = pay.clone();
+    other["id"] = "tr_DIFFERENT_Synthetic".into();
+    let server = Server::start(vec![
+        profile(),
+        Reply::Json(201, pay),
+        Reply::Json(200, other),
+    ]);
+    let client = local(&server).verify_profile().await.expect("verified");
+    let ids = crate::payment_test_fixture::Ids(AtomicU64::new(10000));
+    let DispatchOutcome::Start(permit) =
+        start_dispatch(&pool, time.as_ref(), &ids, id, client.configuration())
+            .await
+            .expect("start")
+    else {
+        panic!("fresh start")
+    };
+    let hint = client
+        .create(permit, time.as_ref())
+        .await
+        .expect("initial POST");
+    let other = client
+        .fetch(frozen.snapshot(), "tr_DIFFERENT_Synthetic")
+        .await
+        .expect("authenticated different ID");
+    assert!(matches!(
+        hint.bind(other),
+        Err(MollieError::PaymentMismatch)
+    ));
+    assert_eq!(counts(&pool).await, (1, 1, 0, 0));
+    let receipts: i64 =
+        sqlx::query_scalar("SELECT count(*) FROM payment_initial_dispatch_provenance")
+            .fetch_one(&pool)
+            .await
+            .expect("no origin receipt");
+    assert_eq!(receipts, 0);
 }

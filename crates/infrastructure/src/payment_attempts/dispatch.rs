@@ -206,15 +206,11 @@ pub async fn dispatch_and_observe_test_payment(
         .fetch(&snapshot, hint.provider_id())
         .await
         .map_err(|_| InitialDispatchError::Uncertain)?;
-    observations::record_verified(
-        pool,
-        clock,
-        identifiers,
-        attempt_id,
-        &format!("initial-fetch-{attempt_id}"),
-        &verified,
-    )
-    .await
-    .map_err(|_| InitialDispatchError::Uncertain)?;
+    let initial = hint
+        .bind(verified)
+        .map_err(|_| InitialDispatchError::Uncertain)?;
+    observations::record_initial(pool, clock, identifiers, attempt_id, initial)
+        .await
+        .map_err(|_| InitialDispatchError::Uncertain)?;
     Ok(InitialDispatchOutcome::Observed)
 }
