@@ -9,8 +9,9 @@ AGENTS.md is authoritative. Read ROADMAP and the relevant specification; inspect
 5. Push through installed hooks, open a PR to develop and read every required check on its current SHA. Review CI/Sonar findings and discussions, fix causes, rerun affected tests and re-review changes. No self-approved receipt, bypass, force merge or screenshot-baseline reset to silence a failure.
 6. Merge with `python3 scripts/merge_gate.py PR --merge`. It verifies live GitHub policy, exact head/base, required checks, resolved conversations, populated CodeQL scans and Sonar evidence. Feature PRs squash/delete feature branch; release and synchronization PRs preserve protected branches.
    If the merge command fails, the gate may make bounded read-only checks of the
-   recorded PR, exact merge parents and target-branch ancestry. It reports a
-   confirmed merge only when those checks bind the reviewed head and base; an
+   recorded PR, exact merge parents, reviewed-head tree and target-branch
+   ancestry. It reports a confirmed merge only when those checks bind the
+   reviewed head and base; an
    unconfirmed result remains a failure and does not trigger another merge or
    branch-deletion operation. Branch deletion is not established by observation.
 7. Update current-state docs and ROADMAP. Handoff states what exists, which exact checks passed, what remains unimplemented and the next executable slice. Separate source, CI, provider, deployment and operational acceptance. Do not create another AI session unless requested.

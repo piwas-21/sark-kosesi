@@ -78,6 +78,22 @@ def observe_json(endpoint):
     return json.loads(response.stdout)
 
 
+def reviewed_tree(head):
+    """Read the immutable tree of the exact locally verified head."""
+    response = subprocess.run(
+        ["git", "rev-parse", "--verify", f"{head}^{{tree}}"],
+        check=True,
+        cwd=ROOT,
+        text=True,
+        capture_output=True,
+        timeout=5,
+    )
+    tree = response.stdout.strip()
+    if not re.fullmatch("[0-9a-f]{40}", tree):
+        raise ValueError("Invalid reviewed tree")
+    return tree
+
+
 def observed_exact_merge(repo, number, head, base, base_ref, head_ref, protected_head):
     """Confirm only a recorded merge descended from the exact reviewed base."""
     pr = observe_json(f"repos/{repo}/pulls/{number}")
@@ -103,6 +119,7 @@ def observed_exact_merge(repo, number, head, base, base_ref, head_ref, protected
         or not isinstance(parents, list)
         or any(not isinstance(parent, dict) for parent in parents)
         or [parent.get("sha") for parent in parents] != expected
+        or commit.get("commit", {}).get("tree", {}).get("sha") != reviewed_tree(head)
     ):
         return False
     ref = observe_json(f"repos/{repo}/git/ref/heads/{base_ref}")

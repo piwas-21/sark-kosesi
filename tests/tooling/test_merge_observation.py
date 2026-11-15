@@ -13,6 +13,7 @@ HEAD = "a" * 40
 BASE = "b" * 40
 MERGED = "c" * 40
 TIP = "d" * 40
+TREE = "e" * 40
 
 
 def pull():
@@ -28,7 +29,11 @@ def pull():
 
 
 def commit(parents=None):
-    return {"sha": MERGED, "parents": [{"sha": x} for x in (parents or [BASE])]}
+    return {
+        "sha": MERGED,
+        "parents": [{"sha": x} for x in (parents or [BASE])],
+        "commit": {"tree": {"sha": TREE}},
+    }
 
 
 def ref(target=MERGED):
@@ -45,7 +50,8 @@ def compare():
 
 def observe(values, protected=False, head_ref="codex/feature"):
     with patch("merge_gate.observe_json", side_effect=values) as reader:
-        result = observed_exact_merge(REPO, NUMBER, HEAD, BASE, "develop", head_ref, protected)
+        with patch("merge_gate.reviewed_tree", return_value=TREE):
+            result = observed_exact_merge(REPO, NUMBER, HEAD, BASE, "develop", head_ref, protected)
     return result, reader.call_args_list
 
 
@@ -56,6 +62,7 @@ class MergeObservation(unittest.TestCase):
         self.assertEqual(len(calls), 3)
         result, calls = observe([pull(), commit(), ref(TIP), compare()])
         self.assertTrue(result)
+        self.assertEqual(calls[-2].args, (f"repos/{REPO}/git/ref/heads/develop",))
         self.assertEqual(calls[-1].args, (f"repos/{REPO}/compare/{MERGED}...{TIP}",))
 
     def test_release_requires_the_exact_two_commit_parents(self):
@@ -82,14 +89,26 @@ class MergeObservation(unittest.TestCase):
             {"sha": TIP, "parents": [{"sha": BASE}]},
             commit([TIP]),
             commit([BASE, HEAD]),
+            {**commit(), "commit": {"tree": {"sha": TIP}}},
+            {**commit(), "commit": {"tree": {"sha": None}}},
         ):
             with self.subTest(commit=value):
                 self.assertFalse(observe([pull(), value])[0])
         self.assertFalse(observe([pull(), commit(), {**ref(), "ref": "refs/heads/main"}])[0])
+        self.assertFalse(
+            observe([pull(), commit(), {**ref(), "object": {"type": "tag", "sha": TIP}}])[0]
+        )
+        self.assertFalse(
+            observe([pull(), commit(), {**ref(), "object": {"type": "commit", "sha": "invalid"}}])[
+                0
+            ]
+        )
         for value in (
             {**compare(), "status": "diverged"},
             {**compare(), "base_commit": {"sha": TIP}},
             {**compare(), "merge_base_commit": {"sha": BASE}},
+            {"status": "ahead", "merge_base_commit": {"sha": MERGED}},
+            {"status": "ahead", "base_commit": {"sha": MERGED}},
         ):
             with self.subTest(comparison=value):
                 self.assertFalse(observe([pull(), commit(), ref(TIP), value])[0])
@@ -101,6 +120,17 @@ class MergeObservation(unittest.TestCase):
         self.assertEqual(run.call_args.args[0], ["gh", "api", "repos/example/project/pulls/42"])
         self.assertEqual(run.call_args.kwargs["timeout"], 5)
         self.assertTrue(run.call_args.kwargs["check"])
+
+    def test_reviewed_tree_is_read_from_exact_local_commit_with_timeout(self):
+        result = subprocess.CompletedProcess([], 0, stdout=TREE + "\n", stderr="")
+        with patch("merge_gate.subprocess.run", return_value=result) as run:
+            from merge_gate import reviewed_tree
+
+            self.assertEqual(reviewed_tree(HEAD), TREE)
+        self.assertEqual(
+            run.call_args.args[0], ["git", "rev-parse", "--verify", f"{HEAD}^{{tree}}"]
+        )
+        self.assertEqual(run.call_args.kwargs["timeout"], 5)
 
     def test_failed_merge_never_retries_and_only_exact_observation_succeeds(self):
         command = ["gh", "pr", "merge", str(NUMBER), "--match-head-commit", HEAD, "--squash"]
