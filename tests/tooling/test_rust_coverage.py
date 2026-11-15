@@ -66,6 +66,7 @@ class RustCoverage(unittest.TestCase):
             ("crates/domain/src/order_stock.rs", False),
             ("crates/domain/src/order_shipments.rs", False),
             ("crates/domain/src/order_shipment_components.rs", False),
+            ("crates/infrastructure/src/shipment_planning.rs", False),
             ("crates/infrastructure/src/order_stock/mod.rs", False),
             ("crates/infrastructure/src/order_stock/source.rs", False),
             ("crates/infrastructure/src/order_stock/rows.rs", False),
