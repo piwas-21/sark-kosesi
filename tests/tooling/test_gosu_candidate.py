@@ -109,11 +109,14 @@ def check_workflow(source):
     source = active_lines(source)
     require(source, r"^  workflow_dispatch:$", "manual dispatch")
     require(source, r"^  pull_request:$", "pull request event")
-    require(
-        source,
-        r"^    if: github\.event_name == 'workflow_dispatch' \|\| contains\(github\.event\.pull_request\.labels\.\*\.name, 'run-gosu-candidate'\)$",
-        "optional job condition",
-    )
+    require(source, r"^    paths:$", "scoped pull request paths")
+    for path in (
+        ".github/workflows/db-gosu-candidate.yml",
+        "ops/db-gosu-candidate/**",
+        "scripts/test_gosu_candidate.sh",
+        "tests/tooling/test_gosu_candidate.py",
+    ):
+        require(source, rf"^      - {re.escape(path)}$", "owned candidate path")
     require(source, r"^permissions: \{\}$", "default no permissions")
     require(source, r"^      contents: read$", "read-only contents")
     require(source, r"^        run: bash scripts/test_gosu_candidate\.sh$", "candidate script")
@@ -209,12 +212,12 @@ class GosuCandidatePolicy(unittest.TestCase):
                 with self.assertRaises(ValueError):
                     check_candidate_execution(source.replace(old, new))
 
-    def test_workflow_is_optional_and_has_no_release_action(self):
+    def test_workflow_is_path_scoped_and_has_no_release_action(self):
         source = (ROOT / ".github/workflows/db-gosu-candidate.yml").read_text()
         check_workflow(source)
         for old, new in (
             ("workflow_dispatch:", "# workflow_dispatch:"),
-            ("run-gosu-candidate", "different-label"),
+            ("    paths:", "    paths-ignore:"),
             ("permissions: {}", "permissions: write-all"),
             ("contents: read", "contents: write"),
             ("run: bash scripts/test_gosu_candidate.sh", "run: docker push example"),
