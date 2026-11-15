@@ -599,23 +599,6 @@ privilege-drop and entrypoint compatibility, persistent-data restore/rollback,
 and current full-image scans and symbol-aware findings. The separate libxml2
 and other image vulnerabilities remain open; no risk acceptance follows.
 
-## Alpine plus rebuilt Gosu comparison
-
-The path-scoped Alpine Gosu workflow first runs the reviewed, isolated Gosu
-rebuild and checks its complete evidence and exact executable digest. It then
-creates a disposable derivative of the pinned PostgreSQL Alpine platform by
-replacing only `/usr/local/bin/gosu`. An offline archive check verifies the
-stock root filesystem prefix, unchanged runtime configuration and the single
-root-owned executable layer; the image is neither published nor deployed.
-
-On the disposable runner, the lab checks UID/GID 70, group-set equality with the
-stock image, non-root denial, executable identity and an isolated synthetic
-PostgreSQL startup/query. It retains full stock and derivative Trivy reports
-using one fresh vulnerability database and records all finding deltas, including
-remaining and new findings. Comparison results describe scanner reports only;
-they do not accept a vulnerability, prove reachability, or establish real data
-migration, operational compatibility, production readiness or deployment.
-
 The separate opt-in `PostgreSQL Gosu 1.20 candidate` workflow selects a fixed
 profile of the same builder against the pinned Alpine AMD64 PostgreSQL image.
 It uses unmodified upstream [Gosu 1.20 source](https://github.com/tianon/gosu/releases/tag/1.20)
@@ -639,3 +622,56 @@ a vulnerability scan, an automatic suppression, or a risk acceptance. A future
 paired full-image scan must retain all raw rows, including any x/sys finding,
 and independently evaluate exact binary reachability and current advisories.
 The optional profile creates no deployment or registry publication.
+
+## Alpine plus rebuilt Gosu comparison
+
+The path-scoped Alpine Gosu workflow selects the fixed Gosu 1.20 rebuild profile
+and checks its complete evidence and exact executable digest. The builder's
+disposable derivative of the pinned PostgreSQL Alpine platform replaces only
+`/usr/local/bin/gosu`. The same image ID is used for the builder's identity and
+oversized-group checks, the full-image scan and the application restore. An offline archive check verifies the
+stock root filesystem prefix, unchanged runtime configuration and the single
+root-owned executable layer; the image is neither published nor deployed.
+
+On the disposable runner, the lab checks UID/GID 70, group-set equality with the
+stock image, non-root denial, executable identity and an isolated synthetic
+PostgreSQL startup/query. It retains full stock and derivative Trivy reports
+using one fresh vulnerability database and records all finding deltas, including
+remaining and new findings. The comparison requires the expected exact Gosu,
+Go standard library, Moby user and x/sys package identities; it retains raw
+findings including unknown-severity rows. The x/sys Windows-specific advisory
+scope above does not suppress a report row or establish binary reachability.
+Comparison results describe scanner reports only;
+they do not accept a vulnerability, prove reachability, or establish real data
+migration, operational compatibility, production readiness or deployment.
+
+The same hosted job additionally restores an application-schema synthetic dump
+from the pinned Debian image into the exact verified Alpine Gosu image ID. Two
+new disposable containers use a private internal network without published
+ports, random credentials and ownership markers. Small runner-owned loopback
+relays forward fixture connections only to the inspected owned container IPv4
+addresses; network identity, membership, image identity and absent port
+bindings are checked first. The runner accepts only subnets within the three
+reviewed RFC 1918 networks in `ops/db-gosu-candidate/restore-private-ipv4.json`;
+the verifier pins and strictly parses that file before using it. Both disposable databases explicitly initialize
+TCP authentication with SCRAM; correct credentials and an incorrect-password
+rejection are checked before seeding. The existing synthetic
+migration, order, stock and encrypted-envelope fixture and snapshot/table and
+sequence comparison are reused. A preserved, quiescent source is checked again
+as a limited rollback control; the candidate is separately changed to prove
+content and sequence differences are detected. Duplicate and invalid-archive
+controls, original/fresh synthetic key checks and database locale metadata are
+recorded. Database clients still run against owned loopback endpoints; no staging
+data, volume, keys or credentials are involved.
+
+Separate scan and restore status files distinguish a completed scan from a later
+restore failure. Retained checksums cover available evidence even on failure;
+the overall workflow succeeds only when both checks succeed. The restore status
+artifact reports fixed stage/invariant codes, elapsed time and cleanup outcome;
+it does not include database credentials, exception text or process output.
+
+This does not prove physical-volume portability, default-locale equivalence,
+all schema definitions, roles and grants, application image startup, a router
+switch, business-write reconciliation or an operational rollback. The original
+source has no other writers at the checks; sequence values are not covered by
+the exported MVCC snapshot. Migration and operational acceptance remain separate.

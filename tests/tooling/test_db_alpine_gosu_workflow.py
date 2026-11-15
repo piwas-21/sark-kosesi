@@ -16,7 +16,12 @@ def validate(source):
         '[[ "$(cat "$gosu_evidence/status.txt")" == \'stage=complete outcome=success\' ]]',
         '(cd "$gosu_evidence" && sha256sum -c SHA256SUMS >/dev/null)',
         "source_revision=$ALPINE_GOSU_SOURCE_REVISION",
-        "expected_gosu=8177d9590273ed8699065bf0c9776b634fde24bfc75375c83e927134ce868b7a",
+        "expected_gosu=ad2e645f69d82e23e0b54a208828589ff4a021a343ad5090cd36f2a2ae7aa556",
+        "grep -Fxq 'profile=1.20'",
+        "candidate_id=$(sed -n",
+        'image="$candidate_id"',
+        "ops/db-zlib-candidate/pull_verified_base.sh",
+        'scripts/rehearse_alpine_gosu_restore.py "$candidate_id"',
         'cmp "$gosu_scratch/one/gosu" "$gosu_scratch/two/gosu"',
         "stock_config='sha256:0f6c51e48b3458e87ab43692e49c9dafc72ffe0a0dbde3fd8cdb6ab92d5c025e'",
         '"$uid" == 70 && "$gid" == 70 && "$group_set" == "$stock_group_set"',
@@ -38,6 +43,8 @@ class AlpineGosuWorkflowTests(unittest.TestCase):
         self.assertTrue(validate(source))
         for old, new in (
             ("sha256sum -c SHA256SUMS", "true"),
+            ("grep -Fxq 'profile=1.20'", "true"),
+            ('image="$candidate_id"', 'image="other"'),
             ('cmp "$gosu_scratch/one/gosu" "$gosu_scratch/two/gosu"', "true"),
             ('"$group_set" == "$stock_group_set"', "true"),
             ('",$group_set," != *,0,*', "true"),
@@ -49,10 +56,17 @@ class AlpineGosuWorkflowTests(unittest.TestCase):
                 self.assertIn(old, source)
                 self.assertFalse(validate(source.replace(old, new)))
         workflow = WORKFLOW.read_text()
+        self.assertIn('GOSU_PROFILE: "1.20"', workflow)
         self.assertLess(
             workflow.index("bash scripts/test_gosu_candidate.sh"),
             workflow.index("bash scripts/test_db_alpine_gosu.sh"),
         )
+        self.assertLess(
+            source.index('scripts/check_db_alpine_gosu.py "$evidence"'),
+            source.index('scripts/rehearse_alpine_gosu_restore.py "$candidate_id"'),
+        )
+        self.assertIn('outcome=success\\n\' > "$evidence/scan-status.txt"', source)
+        self.assertIn('outcome=success\\n\' > "$evidence/restore-status.txt"', source)
 
     def test_non_hosted_request_never_invokes_docker_or_creates_outputs(self):
         with tempfile.TemporaryDirectory() as directory:
