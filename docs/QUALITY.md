@@ -979,6 +979,11 @@ The separately enabled test-only GET additionally exercises real login cookies,
 customer isolation, live publication and session checks, first-read bucket
 initialization, invalid credentials and private response headers. It is not a
 public browser or privacy-policy acceptance test.
+For the independently enabled test SET, exercise foreign-session proofs, owner
+isolation, disabled configuration, canonical paths and revisions, bounded closed
+bodies, hidden removal, stale replay and concurrent duplicate requests. Use real
+isolated PostgreSQL to prove session claims survive through commit and expiry
+after a bucket wait rolls back. Check unchanged stock, outbox and delivery state.
 
 ### Private restock opt-in custody
 
