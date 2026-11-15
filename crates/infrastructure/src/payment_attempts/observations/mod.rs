@@ -142,7 +142,7 @@ async fn record(
     now(&clock)?;
     if initial.is_some() {
         let durable: bool = sqlx::query_scalar(
-            "SELECT current_setting('fsync')='on' AND current_setting('synchronous_commit')='on'",
+            "SELECT pg_catalog.current_setting('fsync')='on' AND pg_catalog.current_setting('synchronous_commit')='on'",
         )
         .fetch_one(&mut *tx)
         .await?;
