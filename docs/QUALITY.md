@@ -49,6 +49,8 @@ No fake commands or passing jobs before code exists. Pin the following free tool
 | `npm run test:discovery`                     | Served HTML, sitemap, canonical/hreflang, product/feed and negative controls in DISCOVERY                                                                                                                     |
 | `npm run test:performance`                   | Production-build Lighthouse CI and payload budgets; k6 isolated API/load fixture in performance config                                                                                                        |
 
+The required `Application gate` aggregates two independently checked-out jobs at the same candidate revision. `Application checks` retains the Rust, TypeScript, integration, migration, contract and coverage commands and publishes the revision-bound application artifact for Sonar. `Application browser` builds the production application and runs the full browser suite with its own isolated database, fallback capture and evidence upload. Both jobs must succeed; failed, skipped, cancelled or missing results fail the aggregate. Sonar validates the coverage and Clippy artifacts after that aggregate. Parallel jobs do not establish release or provider acceptance.
+
 Rust line/region coverage runs on the pinned stable release. Rust branch instrumentation currently requires nightly in cargo-llvm-cov: P1 must pin a separate tested nightly toolchain for the branch-coverage job and run `cargo +<pinned-nightly> llvm-cov --branch`. Production builds remain on stable. Missing branch data fails the coverage gate; do not report it as 100% or silently substitute line coverage. See the [upstream coverage requirements](https://github.com/taiki-e/cargo-llvm-cov#readme).
 
 The API migration-manifest CLI test runs without configuration or a database,
@@ -395,7 +397,10 @@ verified account for the last allowance. Admit a different verified account
 while global capacity remains. Check counts across a new approval and denial
 after anonymous usage, exact replay, expiry after a write wait, and rollback of
 stock, order, debit and event. Exercise legacy guest read, payment and link denial
-against an account-bound order.
+against an account-bound order. Use actual component and order-read lock waits
+to confirm expired guest or account authority takes precedence over source
+errors. Check the expected source error and a successful retry under fresh
+authority.
 
 For account-bound payment preparation, assert the literal discounted charge and
 original stock group. Exercise guest and wrong-account read and replay denial,
@@ -405,8 +410,11 @@ legacy guest attempt replay across the migration.
 For pre-attempt cancellation, race cancellation and first payment preparation
 in isolated PostgreSQL and verify one effect survives. Check both guest and
 account ownership, exact replay, prepared and started attempt refusal, native
-event binding and rollback after expiry during a write wait. Verify that the
-original stock and redemption remain available to their respective readers.
+event binding and rollback after expiry during a write wait. Real attempt-lock
+waits also require expired guest and account authority to mask a dispatch conflict,
+with a fresh-authority conflict control; a blocked receipt read tests the same
+rule for a missing receipt. Verify that the original stock and redemption remain
+available to their respective readers.
 
 Whole-basket reservation logic retains 95% critical native line/branch thresholds.
 Independent PostgreSQL oracles cover a last shared component, complete loser
@@ -984,6 +992,11 @@ The separately enabled test-only GET additionally exercises real login cookies,
 customer isolation, live publication and session checks, first-read bucket
 initialization, invalid credentials and private response headers. It is not a
 public browser or privacy-policy acceptance test.
+For the independently enabled test SET, exercise foreign-session proofs, owner
+isolation, disabled configuration, canonical paths and revisions, bounded closed
+bodies, hidden removal, stale replay and concurrent duplicate requests. Use real
+isolated PostgreSQL to prove session claims survive through commit and expiry
+after a bucket wait rolls back. Check unchanged stock, outbox and delivery state.
 
 ### Private restock opt-in custody
 

@@ -1,6 +1,6 @@
-//! Private, bounded customer favourites. No HTTP route or delivery is installed.
+//! Private, bounded customer favourites. No public route or delivery is installed.
 use crate::{
-    customer_sessions::{self, CustomerSessionToken, SessionError},
+    customer_sessions::{self, CustomerCsrfToken, CustomerSessionToken, SessionError},
     published_catalogue,
 };
 use commerce_application::{
@@ -120,6 +120,51 @@ pub async fn set(
     desired: bool,
     expected_revision: i64,
 ) -> Result<i64, FavouriteError> {
+    set_inner(
+        pool,
+        (token, None),
+        clock,
+        locale,
+        sku,
+        desired,
+        expected_revision,
+    )
+    .await
+}
+
+/// Set membership only under the exact live session's bound synchronizer.
+#[allow(clippy::too_many_arguments)]
+pub async fn set_with_csrf(
+    pool: &PgPool,
+    token: &CustomerSessionToken,
+    csrf: &CustomerCsrfToken,
+    clock: &dyn Clock,
+    locale: Locale,
+    sku: &str,
+    desired: bool,
+    expected_revision: i64,
+) -> Result<i64, FavouriteError> {
+    set_inner(
+        pool,
+        (token, Some(csrf)),
+        clock,
+        locale,
+        sku,
+        desired,
+        expected_revision,
+    )
+    .await
+}
+
+async fn set_inner(
+    pool: &PgPool,
+    authority: (&CustomerSessionToken, Option<&CustomerCsrfToken>),
+    clock: &dyn Clock,
+    locale: Locale,
+    sku: &str,
+    desired: bool,
+    expected_revision: i64,
+) -> Result<i64, FavouriteError> {
     if !merchant_code(sku) || expected_revision < 0 {
         return Err(FavouriteError::InvalidRequest);
     }
@@ -128,9 +173,13 @@ pub async fn set(
     let mut tx = customer_sessions::begin(pool)
         .await
         .map_err(session_failure)?;
-    let session = customer_sessions::claim_session(&mut tx, token, &observed)
-        .await
-        .map_err(session_failure)?;
+    let session = match authority {
+        (token, Some(csrf)) => {
+            customer_sessions::claim_session_with_csrf(&mut tx, token, csrf, &observed).await
+        }
+        (token, None) => customer_sessions::claim_session(&mut tx, token, &observed).await,
+    }
+    .map_err(session_failure)?;
     let account = session.account_id();
     let revision = bucket(&mut tx, account).await?;
     let skus = saved(&mut tx, account).await?;

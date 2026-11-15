@@ -28,17 +28,24 @@ async fn replay(
     session: Option<&crate::customer_sessions::HeldSession>,
 ) -> Result<OrderReceipt, OrderStoreError> {
     let mut scope = scope;
+    check_authority(&mut scope, session)?;
     if existing.1 != *intent {
         return Err(OrderStoreError::Conflict);
     }
-    let at = scope.checked_at()?;
-    check_session(session, at)?;
     scope.rollback().await?;
     Ok(OrderReceipt {
         snapshot: existing.0,
         replayed: true,
     })
 }
+fn check_authority(
+    scope: &mut BasketScope,
+    session: Option<&crate::customer_sessions::HeldSession>,
+) -> Result<(), OrderStoreError> {
+    let at = scope.checked_at()?;
+    check_session(session, at)
+}
+
 pub(super) async fn create(
     store: &GuestSessionStore,
     key: &GuestCredential,
@@ -60,9 +67,50 @@ pub(super) async fn create(
         return Err(OrderStoreError::InvalidRequest);
     }
     let owner = scope.basket_id().to_owned();
-    if let Some(prior) = stored::by_effect(scope.transaction(), &owner, effect, account).await? {
+    let prior = stored::by_effect(scope.transaction(), &owner, effect, account).await;
+    let prior = match prior {
+        Ok(prior) => prior,
+        Err(error) => {
+            check_authority(&mut scope, session.as_ref())?;
+            return Err(error);
+        }
+    };
+    if let Some(prior) = prior {
         return replay(scope, prior, intent, session.as_ref()).await;
     }
+    let result = prepare(
+        &mut scope,
+        account,
+        session.as_ref(),
+        effect,
+        intent,
+        seller,
+    )
+    .await;
+    let snapshot = match result {
+        Ok(snapshot) => snapshot,
+        Err(error) => {
+            // Source errors may follow a lock wait; withhold them if authority expired.
+            check_authority(&mut scope, session.as_ref())?;
+            return Err(error);
+        }
+    };
+    scope.commit().await?;
+    Ok(OrderReceipt {
+        snapshot,
+        replayed: false,
+    })
+}
+
+async fn prepare(
+    scope: &mut BasketScope,
+    account: Option<i64>,
+    session: Option<&crate::customer_sessions::HeldSession>,
+    effect: &str,
+    intent: &OrderIntent,
+    seller: &SellerPolicy,
+) -> Result<OrderSnapshot, OrderStoreError> {
+    let owner = scope.basket_id().to_owned();
     if stored::by_quote(scope.transaction(), &owner, &intent.quote_id, account)
         .await?
         .is_some()
@@ -107,7 +155,7 @@ pub(super) async fn create(
     };
     let policy =
         market_policies::reviewed_policy_in_transaction(scope.transaction(), &input).await?;
-    let current_promotion = redemption::claim(&mut scope, promoted.as_ref(), account).await?;
+    let current_promotion = redemption::claim(scope, promoted.as_ref(), account).await?;
     let clock = scope.clock();
     let mut proof = if let Some(p) = &current_promotion {
         quotes::prepare_promoted_order_in_transaction(
@@ -216,7 +264,7 @@ pub(super) async fn create(
         return Err(OrderStoreError::InvalidStoredData);
     }
     let at = scope.checked_at()?;
-    check_session(session.as_ref(), at)?;
+    check_session(session, at)?;
     proof.check_at(at)?;
     snapshot.quote.check_at(at)?;
     if let (Some(p), Some(policy)) = (&snapshot.promoted_quote, &current_promotion) {
@@ -228,9 +276,5 @@ pub(super) async fn create(
     HoldWindow::new(created_at, hold_expires_at)
         .and_then(|w| w.transition(HoldState::Active, HoldAction::Consume, at))
         .map_err(|_| OrderStoreError::Unavailable)?;
-    scope.commit().await?;
-    Ok(OrderReceipt {
-        snapshot,
-        replayed: false,
-    })
+    Ok(snapshot)
 }

@@ -212,6 +212,18 @@ export type TestFavouriteList = {
     revision: string;
 };
 
+export type TestFavouriteMutation = {
+    /**
+     * Current bucket revision as a canonical decimal integer.
+     */
+    expected_revision: string;
+    favourite: boolean;
+};
+
+export type TestFavouriteReceipt = {
+    revision: string;
+};
+
 export type TestLinkedOrder = {
     created_at: string;
     currency: string;
@@ -595,6 +607,42 @@ export type TestCustomerFavouritesResponses = {
 };
 
 export type TestCustomerFavouritesResponse = TestCustomerFavouritesResponses[keyof TestCustomerFavouritesResponses];
+
+export type TestCustomerFavouritesSetData = {
+    body: TestFavouriteMutation;
+    headers: {
+        Origin: string;
+        'x-csrf-token': string;
+    };
+    path: {
+        locale: string;
+        sku: string;
+    };
+    query?: never;
+    url: '/api/test/customer/favourites/{locale}/{sku}';
+};
+
+export type TestCustomerFavouritesSetErrors = {
+    400: ApiError;
+    401: ApiError;
+    403: ApiError;
+    409: ApiError;
+    413: ApiError;
+    415: ApiError;
+    503: ApiError;
+    504: ApiError;
+};
+
+export type TestCustomerFavouritesSetError = TestCustomerFavouritesSetErrors[keyof TestCustomerFavouritesSetErrors];
+
+export type TestCustomerFavouritesSetResponses = {
+    /**
+     * Resulting private bucket revision
+     */
+    200: TestFavouriteReceipt;
+};
+
+export type TestCustomerFavouritesSetResponse = TestCustomerFavouritesSetResponses[keyof TestCustomerFavouritesSetResponses];
 
 export type TestCustomerLinkedOrdersData = {
     body?: never;
