@@ -649,6 +649,17 @@ startup pass. Separate credentials, bounded resources, read-only application
 filesystems, image tags and runtime revision bind the preview to accepted source.
 No production data, staff authority or merchant/fixture records are installed.
 
+An opt-in `PREVIEW_DATABASE_PREAPPLIED=1` mode is limited to staging with no
+guest or callback transports. Every API pool connection fixes its search path to
+`pg_catalog, public, pg_temp`; startup compares the embedded SQLx forward
+manifest to `public._sqlx_migrations` in a repeatable-read, read-only snapshot
+before listening, and never applies migrations. Missing, dirty, pending, unknown
+or checksum-mismatched history fails startup. Migration ownership and database
+grants are separate operational concerns: this mode does not itself make the
+database identity read-only or protect against a role that can alter `public`.
+Schema changes must be coordinated with startup; the snapshot is not an ongoing
+schema lock. Local, test and ordinary staging retain their existing startup path.
+
 Staging can explicitly opt in to public storefront reads with
 `STAGING_PUBLIC_STOREFRONT=true`. An allowlist covers existing GET/HEAD storefront,
 customer catalogue/image and discovery routes; unknown paths and mutations keep
@@ -782,7 +793,9 @@ retained attempt and order association when restoring history.
 The trusted internal dispatch entry serializes contenders on the immutable attempt.
 A new start requires the same configuration and fresh commercial/held-stock claims.
 One immutable start and a reconciliation-required event commit before a noncloneable,
-nonserializable dispatch permit is returned. Permit consumption checks the final
+nonserializable dispatch permit is returned. New starts force local synchronous WAL
+flush and check both fsync and synchronous_commit immediately before commit;
+historical reconciliation does not require a new durable write. Permit consumption checks the final
 observed clock minimum, configuration, stock deadline and retained market/photo/
 seller time limits again, after database claims have ended. The permit retains
 only the pure eligibility proof and seller expiry, without a transaction or buyer/

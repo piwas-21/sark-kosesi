@@ -135,6 +135,11 @@ pub async fn start_dispatch(
     let started_at = now(&clock)?;
     proof.check_at(started_at)?;
     initial_plan(&frozen, started_at, configuration)?;
+    // A one-use POST capability must not outlive a start whose WAL was only
+    // acknowledged asynchronously. This setting remains local to this write.
+    sqlx::query("SET LOCAL synchronous_commit='on'")
+        .execute(&mut *tx)
+        .await?;
     let dispatch_id = new_id(identifiers)?;
     let event_id = new_id(identifiers)?;
     sqlx::query("INSERT INTO payment_dispatch_starts(attempt_id,id,started_at) VALUES($1,$2,$3)")
@@ -145,6 +150,14 @@ pub async fn start_dispatch(
         .await?;
     sqlx::query("INSERT INTO commerce_outbox(id,aggregate_id,kind,payload,created_at) VALUES($1,$2,'payment.reconciliation_required.v1',$3,$4)")
         .bind(event_id).bind(&order.identity.id).bind(serde_json::json!({"schema_version":1,"order_id":order.identity.id,"attempt_id":attempt_id,"dispatch_id":dispatch_id})).bind(started_at).execute(&mut *tx).await?;
+    let (fsync, synchronous_commit): (String, String) = sqlx::query_as(
+        "SELECT pg_catalog.current_setting('fsync'),pg_catalog.current_setting('synchronous_commit')",
+    )
+    .fetch_one(&mut *tx)
+    .await?;
+    if (fsync.as_str(), synchronous_commit.as_str()) != ("on", "on") {
+        return Err(PaymentStoreError::Unavailable);
+    }
     let at = now(&clock)?;
     proof.check_at(at)?;
     initial_plan(&frozen, at, configuration)?;

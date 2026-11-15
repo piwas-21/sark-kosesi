@@ -29,6 +29,14 @@ the actual image's output with independently collected SQLx records and retain
 image identity; a matching manifest does not replace isolated startup and rollback
 evidence.
 
+An explicit `PREVIEW_DATABASE_PREAPPLIED=1` staging-only startup validates the
+complete embedded forward SQLx history against a read-only snapshot of
+`public._sqlx_migrations` before opening the API listener. The API fixes its
+connection search path in this mode and rejects enabled guest or callback
+transports. Local, test and ordinary staging retain migration-on-start behavior.
+This does not provision a restricted database role or establish deployment
+readiness; role grants and the catalogue's locking reads still need proof.
+
 ## P2 work packages
 
 1. Verify expiry supervision before operational stock use. Provider recovery
@@ -305,7 +313,8 @@ supervision or live provider activation follows from deploying the empty preview
    retain the exact verified order account. Private preparation and history require
    the same current customer session and guest basket. The native attempt guard
    checks that association against the accepted quote. One serialized dispatch
-   start and reconciliation event commit before a single-use permit; later callers
+   start and reconciliation event commit with fsync and synchronous_commit on
+   before a single-use permit; later callers
    reconcile even after key/hold/source expiry. The private test-key HTTP client now
    verifies the authenticated expected profile, sends exact permit bytes once and
    separately fetches a bounded checked payment projection. It installs no runtime
