@@ -204,7 +204,7 @@ async fn initial_provenance_requires_server_fsync() {
     assert_eq!(counts(&pool).await, (1, 1, 0, 0, 0));
     pool.execute("CREATE SEQUENCE fixture_fsync_receipt_witness; CREATE FUNCTION fixture_witness_fsync_receipt() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN PERFORM nextval('fixture_fsync_receipt_witness'); RETURN NEW; END $$; CREATE TRIGGER zz_witness_fsync_receipt AFTER INSERT ON payment_initial_dispatch_provenance FOR EACH ROW EXECUTE FUNCTION fixture_witness_fsync_receipt()")
         .await.expect("nontransactional receipt witness");
-    pool.execute("CREATE FUNCTION public.current_setting(text) RETURNS text LANGUAGE sql IMMUTABLE AS $$ SELECT 'on'::text $$")
+    pool.execute("CREATE FUNCTION public.current_setting(text) RETURNS text LANGUAGE sql STABLE AS $$ SELECT CASE WHEN $1 IN ('fsync','synchronous_commit') THEN 'on' ELSE pg_catalog.current_setting($1) END $$")
         .await.expect("synthetic hostile search path");
     let writer = PgPoolOptions::new()
         .max_connections(1)
@@ -228,6 +228,12 @@ async fn initial_provenance_requires_server_fsync() {
         settings,
         ("on".into(), expected.clone(), "on".into(), "off".into())
     );
+    let isolation: String =
+        sqlx::query_scalar("SELECT current_setting('transaction_isolation'::text)")
+            .fetch_one(&writer)
+            .await
+            .expect("unrelated setting delegated");
+    assert_eq!(isolation, "read committed");
 
     let server = Server::start(vec![
         profile(),
