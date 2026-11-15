@@ -224,6 +224,75 @@ async fn suppressed_binding_rolls_back_session_issuance(pool: PgPool) {
 }
 
 #[sqlx::test(migrator = "MIGRATOR")]
+async fn altered_binding_is_read_back_and_rolls_back_session_issuance(pool: PgPool) {
+    let _case = CASE.lock().await;
+    let time = time();
+    account(&pool, "altered@example.test", &time).await;
+    // The test-only BEFORE trigger runs after the native guard and returns one
+    // same-length row; the AFTER trigger records the insert even if it rolls back.
+    sqlx::query("CREATE SEQUENCE csrf_insert_seen START 1")
+        .execute(&pool)
+        .await
+        .expect("probe sequence");
+    sqlx::query("CREATE FUNCTION alter_csrf_binding() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN NEW.csrf_digest=set_byte(NEW.csrf_digest,0,get_byte(NEW.csrf_digest,0) # 1); RETURN NEW; END $$")
+        .execute(&pool).await.expect("alteration function");
+    sqlx::query("CREATE TRIGGER z_alter_csrf BEFORE INSERT ON customer_session_csrf FOR EACH ROW EXECUTE FUNCTION alter_csrf_binding()")
+        .execute(&pool).await.expect("alteration trigger");
+    sqlx::query("CREATE FUNCTION observe_csrf_insert() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN PERFORM nextval('csrf_insert_seen'); RETURN NEW; END $$")
+        .execute(&pool).await.expect("probe function");
+    sqlx::query("CREATE TRIGGER z_observe_csrf AFTER INSERT ON customer_session_csrf FOR EACH ROW EXECUTE FUNCTION observe_csrf_insert()")
+        .execute(&pool).await.expect("probe trigger");
+    let key = AdmissionKey::new(1, [7; 32]).expect("key");
+    let limits = AdmissionLimits::new(1000, 100).expect("limits");
+    assert!(matches!(
+        customer_sessions::login_with_csrf(
+            &pool,
+            "altered@example.test",
+            "long fixture password",
+            &time,
+            &key,
+            limits
+        )
+        .await,
+        Err(SessionError::Unavailable)
+    ));
+    let seen: (i64, bool) = sqlx::query_as("SELECT last_value,is_called FROM csrf_insert_seen")
+        .fetch_one(&pool)
+        .await
+        .expect("insert reached AFTER trigger");
+    assert_eq!(seen, (1, true));
+    let counts: (i64,i64,i32) = sqlx::query_as("SELECT (SELECT count(*) FROM customer_sessions),(SELECT count(*) FROM customer_session_csrf),(SELECT admitted FROM customer_credential_admission_scopes WHERE purpose=1)")
+        .fetch_one(&pool).await.expect("rolled-back session and committed admission");
+    assert_eq!(counts, (0, 0, 1));
+    sqlx::query("DROP TRIGGER z_alter_csrf ON customer_session_csrf")
+        .execute(&pool)
+        .await
+        .expect("remove alteration");
+    let healthy = customer_sessions::login_with_csrf(
+        &pool,
+        "altered@example.test",
+        "long fixture password",
+        &time,
+        &key,
+        limits,
+    )
+    .await
+    .expect("healthy issuance");
+    let digest: Vec<u8> = Sha256::new()
+        .chain_update(b"piwas:customer-session:csrf:v1\0")
+        .chain_update(healthy.csrf.expose_bytes())
+        .finalize()
+        .to_vec();
+    let session_verifier = verifier(&healthy.session.token);
+    let exact: bool=sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM customer_session_csrf c JOIN customer_sessions s ON s.verifier=c.session_verifier WHERE c.session_verifier=$1 AND c.csrf_digest=$2 AND c.created_xid=s.created_xid)")
+        .bind(&session_verifier).bind(&digest).fetch_one(&pool).await.expect("exact healthy binding");
+    assert!(exact);
+    let counts: (i64,i64,i32) = sqlx::query_as("SELECT (SELECT count(*) FROM customer_sessions),(SELECT count(*) FROM customer_session_csrf),(SELECT admitted FROM customer_credential_admission_scopes WHERE purpose=1)")
+        .fetch_one(&pool).await.expect("healthy result");
+    assert_eq!(counts, (1, 1, 2));
+}
+
+#[sqlx::test(migrator = "MIGRATOR")]
 async fn expiry_during_account_lock_wait_preserves_session(pool: PgPool) {
     let _case = CASE.lock().await;
     let time = std::sync::Arc::new(time());
@@ -298,4 +367,101 @@ async fn rotation_and_protected_logout_serialize_on_the_same_session(pool: PgPoo
         customer_sessions::authenticate(&pool, &issued.session.token, &time).await,
         Err(SessionError::Denied)
     ));
+}
+
+#[sqlx::test(migrator = "MIGRATOR")]
+async fn csrf_lookup_timeout_rechecks_expiry_before_logout_error(pool: PgPool) {
+    let _case = CASE.lock().await;
+    let time = std::sync::Arc::new(time());
+    account(&pool, "csrf-wait@example.test", &time).await;
+    let issued = std::sync::Arc::new(issue(&pool, "csrf-wait@example.test", &time).await);
+    let id = verifier(&issued.session.token);
+    let before: String = sqlx::query_scalar(
+        "SELECT row_to_json(s)::text FROM customer_sessions s WHERE verifier=$1",
+    )
+    .bind(&id)
+    .fetch_one(&pool)
+    .await
+    .expect("original session");
+    let events: i64 = sqlx::query_scalar("SELECT count(*) FROM commerce_outbox")
+        .fetch_one(&pool)
+        .await
+        .expect("original outbox count");
+    for expires_during_wait in [false, true] {
+        let mut lock = pool.begin().await.expect("csrf lock transaction");
+        sqlx::query("LOCK TABLE customer_session_csrf IN ACCESS EXCLUSIVE MODE")
+            .execute(&mut *lock)
+            .await
+            .expect("hold csrf table");
+        let worker_pool = pool.clone();
+        let worker_time = time.clone();
+        let worker_issued = issued.clone();
+        let worker = tokio::spawn(async move {
+            customer_sessions::logout_with_csrf(
+                &worker_pool,
+                &worker_issued.session.token,
+                &worker_issued.csrf,
+                worker_time.as_ref(),
+            )
+            .await
+        });
+        tokio::time::timeout(std::time::Duration::from_secs(5), async {
+            loop {
+                let waiting: bool = sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM pg_stat_activity WHERE datname=current_database() AND pid<>pg_backend_pid() AND wait_event_type='Lock' AND cardinality(pg_blocking_pids(pid))>0 AND query LIKE '%SELECT csrf_digest FROM customer_session_csrf%')")
+                    .fetch_one(&pool).await.expect("csrf waiter state");
+                if waiting { break; }
+                tokio::time::sleep(std::time::Duration::from_millis(5)).await;
+            }
+        }).await.expect("real synchronizer-table lock wait");
+        if expires_during_wait {
+            time.0.store(44_200, Ordering::SeqCst);
+        }
+        let result = worker.await.expect("worker");
+        if expires_during_wait {
+            assert!(matches!(result, Err(SessionError::Denied)));
+        } else {
+            assert!(matches!(result, Err(SessionError::Unavailable)));
+        }
+        lock.commit().await.expect("release csrf table");
+        let after: String = sqlx::query_scalar(
+            "SELECT row_to_json(s)::text FROM customer_sessions s WHERE verifier=$1",
+        )
+        .bind(&id)
+        .fetch_one(&pool)
+        .await
+        .expect("session after failure");
+        assert_eq!(after, before);
+        let after_events: i64 = sqlx::query_scalar("SELECT count(*) FROM commerce_outbox")
+            .fetch_one(&pool)
+            .await
+            .expect("outbox after failure");
+        assert_eq!(after_events, events);
+        time.0.store(1000, Ordering::SeqCst);
+    }
+    customer_sessions::logout_with_csrf(&pool, &issued.session.token, &issued.csrf, time.as_ref())
+        .await
+        .expect("healthy logout remains possible");
+    assert!(matches!(
+        customer_sessions::logout_with_csrf(
+            &pool,
+            &issued.session.token,
+            &issued.csrf,
+            time.as_ref()
+        )
+        .await,
+        Err(SessionError::Denied)
+    ));
+    let revoked: (Option<i64>, Option<String>) = sqlx::query_as(
+        "SELECT revoked_at,revocation_kind FROM customer_sessions WHERE verifier=$1",
+    )
+    .bind(&id)
+    .fetch_one(&pool)
+    .await
+    .expect("committed logout");
+    assert_eq!(revoked, (Some(1000), Some("logout".into())));
+    let final_events: i64 = sqlx::query_scalar("SELECT count(*) FROM commerce_outbox")
+        .fetch_one(&pool)
+        .await
+        .expect("outbox after logout");
+    assert_eq!(final_events, events);
 }

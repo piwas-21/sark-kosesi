@@ -156,8 +156,49 @@ jobs:
           include-hidden-files: true
           if-no-files-found: error
           retention-days: 30
-  application_coverage:
-    name: Application coverage
+  coverage_stable:
+    name: Coverage stable
+    runs-on: ubuntu-24.04
+    timeout-minutes: 80
+    permissions:
+      contents: read
+    env:
+      ANALYSIS_REVISION: ${{ github.event.pull_request.head.sha || github.sha }}
+      PLAYWRIGHT_SKIP_BROWSER_GC: 1
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+      - run: npm ci --ignore-scripts
+      - run: python3 scripts/install_app_tools.py
+      - run: npm run check:rust
+      - id: coverage
+        run: npm run test:coverage:stable
+      - name: Preserve stable coverage on failure
+        if: failure() && steps.coverage.outcome == 'failure'
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+        with:
+          name: rust-stable-coverage-diagnostics-${{ env.ANALYSIS_REVISION }}
+          path: |
+            coverage/rust-stable.json
+            coverage/clippy.json
+          if-no-files-found: ignore
+          retention-days: 7
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+        with:
+          name: coverage-stable-${{ env.ANALYSIS_REVISION }}
+          path: |
+            coverage/rust-stable.json
+            coverage/clippy.json
+          if-no-files-found: error
+          retention-days: 30
+  coverage_nightly:
+    name: Coverage nightly and TypeScript
     runs-on: ubuntu-24.04
     timeout-minutes: 80
     permissions:
@@ -179,9 +220,10 @@ jobs:
       - run: |
           rustup show
           rustup toolchain install nightly-2026-10-25 --profile minimal --component llvm-tools-preview
-      - run: npm run check:rust
       - id: coverage
-        run: npm run test:coverage
+        run: |
+          npm run test:coverage:nightly
+          npm run test:coverage:typescript
       - name: Preserve raw Rust coverage on coverage failure
         if: failure() && steps.coverage.outcome == 'failure'
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
@@ -190,8 +232,49 @@ jobs:
           path: |
             coverage/rust.json
             coverage/rust.lcov
+            coverage/typescript/lcov.info
           if-no-files-found: ignore
           retention-days: 7
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+        with:
+          name: coverage-nightly-${{ env.ANALYSIS_REVISION }}
+          path: |
+            coverage/rust.json
+            coverage/rust.lcov
+            coverage/typescript/lcov.info
+          if-no-files-found: error
+          retention-days: 30
+  application_coverage:
+    name: Application coverage
+    needs: [coverage_stable, coverage_nightly]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    env:
+      ANALYSIS_REVISION: ${{ github.event.pull_request.head.sha || github.sha }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333
+        with:
+          name: coverage-stable-${{ env.ANALYSIS_REVISION }}
+          path: .local/coverage-stable-artifact
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333
+        with:
+          name: coverage-nightly-${{ env.ANALYSIS_REVISION }}
+          path: .local/coverage-nightly-artifact
+      - name: Validate complete coverage
+        run: |
+          mkdir -p coverage/typescript
+          cp .local/coverage-stable-artifact/rust-stable.json coverage/rust-stable.json
+          cp .local/coverage-stable-artifact/clippy.json coverage/clippy.json
+          cp .local/coverage-nightly-artifact/rust.json coverage/rust.json
+          cp .local/coverage-nightly-artifact/rust.lcov coverage/rust.lcov
+          cp .local/coverage-nightly-artifact/typescript/lcov.info coverage/typescript/lcov.info
+          python3 scripts/check_coverage_reports.py
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
         with:
           name: application-coverage-${{ env.ANALYSIS_REVISION }}
