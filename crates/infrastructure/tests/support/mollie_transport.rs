@@ -1037,3 +1037,6 @@ mod paid_parent_fault_cases;
 
 #[path = "restore_rehearsal.rs"]
 mod restore_rehearsal;
+
+#[path = "payment_custody_preflight.rs"]
+mod payment_custody_preflight;
