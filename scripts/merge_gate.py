@@ -65,6 +65,87 @@ def require_codeql(repo, number, head, merge_sha):
         )
 
 
+def observe_json(endpoint):
+    """One bounded, read-only observation; never retry a merge operation."""
+    response = subprocess.run(
+        ["gh", "api", endpoint],
+        check=True,
+        cwd=ROOT,
+        text=True,
+        capture_output=True,
+        timeout=5,
+    )
+    return json.loads(response.stdout)
+
+
+def observed_exact_merge(repo, number, head, base, base_ref, head_ref, protected_head):
+    """Confirm only a recorded merge descended from the exact reviewed base."""
+    pr = observe_json(f"repos/{repo}/pulls/{number}")
+    if (
+        pr.get("number") != number
+        or pr.get("state") != "closed"
+        or pr.get("merged") is not True
+        or not isinstance(pr.get("merged_at"), str)
+        or not pr["merged_at"]
+        or pr.get("head", {}).get("sha") != head
+        or pr.get("head", {}).get("ref") != head_ref
+        or pr.get("base", {}).get("ref") != base_ref
+    ):
+        return False
+    merged = pr.get("merge_commit_sha")
+    if not isinstance(merged, str) or not re.fullmatch("[0-9a-f]{40}", merged):
+        return False
+    commit = observe_json(f"repos/{repo}/commits/{merged}")
+    parents = commit.get("parents")
+    expected = [base, head] if protected_head else [base]
+    if (
+        commit.get("sha") != merged
+        or not isinstance(parents, list)
+        or any(not isinstance(parent, dict) for parent in parents)
+        or [parent.get("sha") for parent in parents] != expected
+    ):
+        return False
+    ref = observe_json(f"repos/{repo}/git/ref/heads/{base_ref}")
+    target = ref.get("object", {}).get("sha")
+    if (
+        ref.get("ref") != f"refs/heads/{base_ref}"
+        or ref.get("object", {}).get("type") != "commit"
+        or not isinstance(target, str)
+        or not re.fullmatch("[0-9a-f]{40}", target)
+    ):
+        return False
+    if target == merged:
+        return True
+    comparison = observe_json(f"repos/{repo}/compare/{merged}...{target}")
+    return (
+        comparison.get("status") == "ahead"
+        and comparison.get("base_commit", {}).get("sha") == merged
+        and comparison.get("merge_base_commit", {}).get("sha") == merged
+    )
+
+
+def merge_once(command, repo, number, head, base, base_ref, head_ref, protected_head):
+    try:
+        subprocess.run(command, check=True, cwd=ROOT)
+    except (subprocess.CalledProcessError, OSError) as error:
+        try:
+            confirmed = observed_exact_merge(
+                repo, number, head, base, base_ref, head_ref, protected_head
+            )
+        except (
+            ValueError,
+            OSError,
+            KeyError,
+            TypeError,
+            AttributeError,
+            subprocess.SubprocessError,
+        ):
+            confirmed = False
+        if not confirmed:
+            raise ValueError("Merge outcome unresolved; no retry was attempted") from error
+        print("Exact merge observed on the target branch; branch deletion was not checked")
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("pr", type=int)
@@ -123,7 +204,9 @@ def main():
         command = ["gh", "pr", "merge", str(args.pr), "--repo", repo, "--match-head-commit", head]
         protected_head = pr["headRefName"] in ("main", "develop")
         command += ["--merge"] if protected_head else ["--squash", "--delete-branch"]
-        subprocess.run(command, check=True, cwd=ROOT)
+        merge_once(
+            command, repo, args.pr, head, base, pr["baseRefName"], pr["headRefName"], protected_head
+        )
 
 
 if __name__ == "__main__":
