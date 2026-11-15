@@ -224,3 +224,92 @@ async fn canceled_during_get_retains_recovery_and_never_reposts(pool: PgPool) {
     );
     assert_eq!(server.count(), 3);
 }
+
+#[sqlx::test(migrator = "MIGRATOR")]
+async fn invalid_or_absent_start_never_posts_or_creates_recovery_event(pool: PgPool) {
+    use crate::payment_attempts::PaymentStoreError;
+    let (time, frozen) = prepared(&pool).await;
+    let pay = payment(frozen.snapshot());
+    let server = Server::start(vec![
+        profile(),
+        Reply::Json(201, pay.clone()),
+        Reply::Json(200, pay),
+    ]);
+    let client = local(&server).verify_profile().await.expect("verified");
+    let ids = crate::payment_test_fixture::Ids(AtomicU64::new(10000));
+    for (id, error) in [
+        ("invalid", PaymentStoreError::InvalidRequest),
+        (&"f".repeat(32), PaymentStoreError::NotFound),
+    ] {
+        assert_eq!(
+            dispatch_and_observe_test_payment(&pool, time.as_ref(), &ids, &client, id).await,
+            Err(InitialDispatchError::Start(error))
+        );
+        assert_eq!(counts(&pool).await, (0, 0, 0, 0));
+        assert_eq!(server.count(), 1, "profile preflight only");
+    }
+    assert_eq!(
+        dispatch_and_observe_test_payment(
+            &pool,
+            time.as_ref(),
+            &ids,
+            &client,
+            &frozen.snapshot().binding.id
+        )
+        .await,
+        Ok(InitialDispatchOutcome::Observed)
+    );
+    assert_eq!(counts(&pool).await, (1, 1, 1, 1));
+    assert_eq!(server.count(), 3);
+}
+
+// Both dispatch identifiers are allocated immediately before the final in-TX
+// clock read. Fail the next read, which is permit consumption after commit.
+struct PostCommitFault {
+    ids: AtomicU64,
+    final_reads: AtomicU64,
+}
+impl commerce_application::request_context::Identifiers for PostCommitFault {
+    fn next(&self) -> Result<[u8; 16], commerce_application::request_context::ContextError> {
+        let id = self.ids.fetch_add(1, Ordering::SeqCst) + 1;
+        Ok(u128::from(10000 + id).to_be_bytes())
+    }
+}
+impl commerce_application::request_context::Clock for PostCommitFault {
+    fn unix_seconds(&self) -> Result<u64, commerce_application::request_context::ContextError> {
+        if self.ids.load(Ordering::SeqCst) >= 2
+            && self.final_reads.fetch_add(1, Ordering::SeqCst) >= 1
+        {
+            Err(commerce_application::request_context::ContextError::ClockUnavailable)
+        } else {
+            Ok(1500)
+        }
+    }
+}
+#[sqlx::test(migrator = "MIGRATOR")]
+async fn clock_failure_after_committed_start_is_uncertain_without_a_post(pool: PgPool) {
+    let (time, frozen) = prepared(&pool).await;
+    let id = &frozen.snapshot().binding.id;
+    let server = Server::start(vec![profile()]);
+    let client = local(&server).verify_profile().await.expect("verified");
+    let fault = PostCommitFault {
+        ids: AtomicU64::new(0),
+        final_reads: AtomicU64::new(0),
+    };
+    assert_eq!(
+        dispatch_and_observe_test_payment(&pool, &fault, &fault, &client, id).await,
+        Err(InitialDispatchError::Uncertain)
+    );
+    assert_eq!(
+        counts(&pool).await,
+        (1, 1, 0, 0),
+        "start and recovery committed before fault"
+    );
+    assert_eq!(server.count(), 1, "no POST was sent");
+    let ids = crate::payment_test_fixture::Ids(AtomicU64::new(20000));
+    assert_eq!(
+        dispatch_and_observe_test_payment(&pool, time.as_ref(), &ids, &client, id).await,
+        Ok(InitialDispatchOutcome::Reconcile)
+    );
+    assert_eq!(server.count(), 1);
+}

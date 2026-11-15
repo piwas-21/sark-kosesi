@@ -517,8 +517,10 @@ order, stock, payment or fulfilment state. A wire response is not actual provide
 sandbox or customer/payment acceptance. The private orchestration additionally
 exercises competing callers, POST reply loss, mismatched GET, failed observation
 write and cancellation during GET with real isolated PostgreSQL and loopback.
-Each retains one start and reconciliation event without another POST; the success
-control retains a matching observation and event. These are not provider evidence.
+Invalid or absent starts send no POST or recovery event; a clock failure after
+committed start retains recovery and sends no POST. Started cases never POST again;
+the success control retains a matching observation and event. These are not
+provider evidence.
 
 Compiled provider controls bypass authenticated-profile verification, fetched
 payment matching, the early streamed-byte limit, duplicate-field preservation and
