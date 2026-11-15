@@ -511,8 +511,10 @@ as killed defects. Source hashes and per-control logs bind the restored evidence
 The private original-attempt custody preflight uses a read-only snapshot and a
 single exact synthetic attempt in isolated PostgreSQL. Tests cover start without a
 job, missing or damaged custody, paid and ambiguous retained observations, stale
-resolution, a checkpoint-linked page, redacted CLI output and unchanged database
-counts. Local fixture setup uses loopback only; inspection itself sends no provider
+resolution, checkpoint page/index/phase consistency, redacted CLI output and unchanged
+database counts. Linked search requires a consumed page with a bounded continuation and
+poll requires a consumed terminal page; partial candidate and review stops remain
+readable. Local fixture setup uses loopback only; inspection itself sends no provider
 requests. It does not inspect a retained pilot database or prove provider state.
 
 The private Mollie transport uses a bounded loopback Hyper instrument and isolated

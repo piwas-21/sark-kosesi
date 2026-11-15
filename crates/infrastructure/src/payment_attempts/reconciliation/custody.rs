@@ -16,6 +16,28 @@ pub struct Custody {
     pub resolution_current: Option<bool>,
 }
 
+// These states follow the supervisor's page, candidate and poll transitions.
+fn checkpoint_position(
+    phase: Phase,
+    index: usize,
+    page: Option<(usize, bool, i64)>,
+) -> Result<(), RecoveryError> {
+    match page {
+        None if index == 0 => Ok(()),
+        None => Err(RecoveryError::InvalidStoredData),
+        Some((count, has_next, page_number)) => {
+            if index > count
+                || (phase == Phase::Search && (index != count || !has_next || page_number >= 100))
+                || (phase == Phase::Poll && (index != count || has_next))
+            {
+                Err(RecoveryError::InvalidStoredData)
+            } else {
+                Ok(())
+            }
+        }
+    }
+}
+
 /// Inspect the original frozen attempt, dispatch and exact recovery event in one
 /// read-only snapshot. Validate all retained observations, the latest resolution,
 /// and the checkpoint-linked search chain, if any. No unlinked page is evaluated.
@@ -46,21 +68,34 @@ pub async fn inspect_custody(pool: &PgPool, id: &str) -> Result<Custody, Recover
         return Err(RecoveryError::InvalidStoredData);
     }
     let job = jobs::load(&mut tx, id).await?;
-    let checkpoint_page = if let Some((page_id, candidate_index)) = job
-        .as_ref()
-        .and_then(|j| j.page_id.as_deref().map(|id| (id, j.candidate_index)))
-    {
-        let page =
-            super::super::searches::rows::load(&mut tx, &frozen, started_at, None, Some(page_id))
-                .await
-                .map_err(|_| RecoveryError::InvalidStoredData)?
-                .ok_or(RecoveryError::InvalidStoredData)?;
+    let checkpoint_page = if let Some(job) = &job {
         let index =
-            usize::try_from(candidate_index).map_err(|_| RecoveryError::InvalidStoredData)?;
-        if index > page.intent.candidates.len() {
-            return Err(RecoveryError::InvalidStoredData);
+            usize::try_from(job.candidate_index).map_err(|_| RecoveryError::InvalidStoredData)?;
+        if let Some(page_id) = job.page_id.as_deref() {
+            let page = super::super::searches::rows::load(
+                &mut tx,
+                &frozen,
+                started_at,
+                None,
+                Some(page_id),
+            )
+            .await
+            .map_err(|_| RecoveryError::InvalidStoredData)?
+            .ok_or(RecoveryError::InvalidStoredData)?;
+            checkpoint_position(
+                job.phase,
+                index,
+                Some((
+                    page.intent.candidates.len(),
+                    page.intent.next.is_some(),
+                    page.page_number,
+                )),
+            )?;
+            true
+        } else {
+            checkpoint_position(job.phase, index, None)?;
+            false
         }
-        true
     } else {
         false
     };
@@ -85,3 +120,7 @@ pub async fn inspect_custody(pool: &PgPool, id: &str) -> Result<Custody, Recover
     tx.rollback().await?;
     Ok(result)
 }
+
+#[cfg(test)]
+#[path = "../../../tests/support/payment_custody_position.rs"]
+mod tests;

@@ -181,6 +181,23 @@ async fn checkpoint_page_chain_is_checked_without_provider_io_or_database_writes
     assert!(view.checkpoint_page);
     assert_eq!(total(&pool).await, before);
     assert_eq!(server.count(), 2, "inspection performed no GET");
+    alter_checkpoint(
+        &pool,
+        "UPDATE payment_reconciliation_jobs SET phase='search'",
+    )
+    .await;
+    assert!(
+        matches!(
+            inspect_custody(&pool, id).await,
+            Err(RecoveryError::InvalidStoredData)
+        ),
+        "search cannot continue from a terminal page"
+    );
+    alter_checkpoint(
+        &pool,
+        "UPDATE payment_reconciliation_jobs SET phase='candidates'",
+    )
+    .await;
     pool.execute("ALTER TABLE payment_reconciliation_jobs DISABLE TRIGGER guard_payment_reconciliation_job; UPDATE payment_reconciliation_jobs SET candidate_index=1; ALTER TABLE payment_reconciliation_jobs ENABLE TRIGGER guard_payment_reconciliation_job").await.expect("damage checkpoint index");
     assert!(matches!(
         inspect_custody(&pool, id).await,
@@ -199,4 +216,209 @@ async fn checkpoint_page_chain_is_checked_without_provider_io_or_database_writes
         Err(RecoveryError::InvalidStoredData)
     ));
     assert_eq!(server.count(), 2);
+}
+
+async fn alter_checkpoint(pool: &PgPool, changes: &'static str) {
+    pool.execute(
+        "ALTER TABLE payment_reconciliation_jobs DISABLE TRIGGER guard_payment_reconciliation_job",
+    )
+    .await
+    .expect("disable fixture guard");
+    pool.execute(changes)
+        .await
+        .expect("alter fixture checkpoint");
+    pool.execute(
+        "ALTER TABLE payment_reconciliation_jobs ENABLE TRIGGER guard_payment_reconciliation_job",
+    )
+    .await
+    .expect("restore fixture guard");
+}
+
+#[sqlx::test(migrator = "MIGRATOR")]
+async fn unlinked_search_requires_zero_index_and_review_can_remain_unlinked(pool: PgPool) {
+    let (time, frozen) = prepared(&pool, true).await;
+    let id = &frozen.snapshot().binding.id;
+    crate::payment_attempts::reconciliation::jobs::enqueue(
+        &pool,
+        time.as_ref(),
+        &frozen.snapshot().binding.profile.id,
+    )
+    .await
+    .expect("initial recovery job");
+    assert_eq!(
+        inspect_custody(&pool, id)
+            .await
+            .expect("initial")
+            .checkpoint_phase,
+        Some(Phase::Search)
+    );
+    alter_checkpoint(
+        &pool,
+        "UPDATE payment_reconciliation_jobs SET candidate_index=1",
+    )
+    .await;
+    assert!(matches!(
+        inspect_custody(&pool, id).await,
+        Err(RecoveryError::InvalidStoredData)
+    ));
+    alter_checkpoint(&pool,"UPDATE payment_reconciliation_jobs SET candidate_index=0,phase='needs_review',review_reason='custody_invalid'").await;
+    assert_eq!(
+        inspect_custody(&pool, id)
+            .await
+            .expect("unlinked review")
+            .checkpoint_review,
+        Some(ReviewReason::CustodyInvalid)
+    );
+}
+
+#[sqlx::test(migrator = "MIGRATOR")]
+async fn linked_search_requires_consumed_candidates_and_continuation(pool: PgPool) {
+    let (time, frozen) = prepared(&pool, true).await;
+    let id = &frozen.snapshot().binding.id;
+    let mut pending = payment(frozen.snapshot());
+    pending["status"] = "pending".into();
+    let server = Server::start(vec![
+        profile(),
+        Reply::Json(
+            200,
+            json!({"count":1,"_embedded":{"payments":[pending.clone()]},"_links":{"next":{"href":"https://api.mollie.com/v2/payments?from=tr_NEXT&limit=10"}}}),
+        ),
+        Reply::Json(200, pending),
+    ]);
+    let client = local(&server)
+        .verify_profile()
+        .await
+        .expect("profile")
+        .into_reconciliation();
+    let i = ids();
+    assert_eq!(
+        run_batch(&pool, time.as_ref(), &i, &client, 3)
+            .await
+            .expect("search progression")
+            .processed,
+        3
+    );
+    assert_eq!(
+        inspect_custody(&pool, id)
+            .await
+            .expect("valid search")
+            .checkpoint_phase,
+        Some(Phase::Search)
+    );
+    alter_checkpoint(
+        &pool,
+        "UPDATE payment_reconciliation_jobs SET candidate_index=0",
+    )
+    .await;
+    assert!(matches!(
+        inspect_custody(&pool, id).await,
+        Err(RecoveryError::InvalidStoredData)
+    ));
+    alter_checkpoint(
+        &pool,
+        "UPDATE payment_reconciliation_jobs SET candidate_index=1,phase='poll'",
+    )
+    .await;
+    assert!(
+        matches!(
+            inspect_custody(&pool, id).await,
+            Err(RecoveryError::InvalidStoredData)
+        ),
+        "poll cannot use a continuation page"
+    );
+    assert_eq!(server.count(), 3, "preflight never contacted provider");
+}
+
+#[sqlx::test(migrator = "MIGRATOR")]
+async fn terminal_poll_and_partial_review_remain_inspectable(pool: PgPool) {
+    let (time, frozen) = prepared(&pool, true).await;
+    let id = &frozen.snapshot().binding.id;
+    let mut pending = payment(frozen.snapshot());
+    pending["status"] = "pending".into();
+    let server = Server::start(vec![
+        profile(),
+        Reply::Json(
+            200,
+            json!({"count":1,"_embedded":{"payments":[pending.clone()]},"_links":{"next":null}}),
+        ),
+        Reply::Json(200, pending),
+    ]);
+    let client = local(&server)
+        .verify_profile()
+        .await
+        .expect("profile")
+        .into_reconciliation();
+    let i = ids();
+    assert_eq!(
+        run_batch(&pool, time.as_ref(), &i, &client, 3)
+            .await
+            .expect("poll progression")
+            .processed,
+        3
+    );
+    assert_eq!(
+        inspect_custody(&pool, id)
+            .await
+            .expect("terminal poll")
+            .checkpoint_phase,
+        Some(Phase::Poll)
+    );
+    alter_checkpoint(
+        &pool,
+        "UPDATE payment_reconciliation_jobs SET candidate_index=0",
+    )
+    .await;
+    assert!(matches!(
+        inspect_custody(&pool, id).await,
+        Err(RecoveryError::InvalidStoredData)
+    ));
+    alter_checkpoint(&pool,"UPDATE payment_reconciliation_jobs SET phase='needs_review',review_reason='custody_invalid'").await;
+    assert_eq!(
+        inspect_custody(&pool, id)
+            .await
+            .expect("partial review")
+            .checkpoint_review,
+        Some(ReviewReason::CustodyInvalid)
+    );
+    assert_eq!(server.count(), 3);
+}
+
+#[sqlx::test(migrator = "MIGRATOR")]
+async fn supervisor_review_after_failed_candidate_keeps_partial_position(pool: PgPool) {
+    let (time, frozen) = prepared(&pool, true).await;
+    let id = &frozen.snapshot().binding.id;
+    let candidate = payment(frozen.snapshot());
+    let mut wrong = candidate.clone();
+    wrong["amount"]["value"] = "1.00".into();
+    let server = Server::start(vec![
+        profile(),
+        Reply::Json(
+            200,
+            json!({"count":1,"_embedded":{"payments":[candidate]},"_links":{"next":null}}),
+        ),
+        Reply::Json(200, wrong),
+    ]);
+    let client = local(&server)
+        .verify_profile()
+        .await
+        .expect("profile")
+        .into_reconciliation();
+    assert_eq!(
+        run_batch(&pool, time.as_ref(), &ids(), &client, 2)
+            .await
+            .expect("failed candidate")
+            .needs_review,
+        1
+    );
+    let checkpoint = read_job(&pool, id)
+        .await
+        .expect("checkpoint")
+        .expect("present");
+    assert_eq!(checkpoint.candidate_index, 0);
+    assert_eq!(checkpoint.review_reason, Some(ReviewReason::CustodyInvalid));
+    let view = inspect_custody(&pool, id)
+        .await
+        .expect("partial review is readable");
+    assert_eq!(view.checkpoint_review, Some(ReviewReason::CustodyInvalid));
+    assert_eq!(server.count(), 3);
 }
