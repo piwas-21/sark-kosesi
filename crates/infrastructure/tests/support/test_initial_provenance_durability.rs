@@ -343,8 +343,8 @@ async fn initial_provenance_requires_server_fsync() {
         .execute(&mut *tx).await.expect("reciprocal recovery event");
     tx.commit().await.expect("historical fixture committed");
     assert_eq!(counts(&pool).await, (1, 1, 0, 0, 0));
-    pool.execute("CREATE SEQUENCE fixture_fsync_receipt_witness; CREATE FUNCTION fixture_witness_fsync_receipt() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN PERFORM nextval('fixture_fsync_receipt_witness'); RETURN NEW; END $$; CREATE TRIGGER zz_witness_fsync_receipt AFTER INSERT ON payment_initial_dispatch_provenance FOR EACH ROW EXECUTE FUNCTION fixture_witness_fsync_receipt()")
-        .await.expect("nontransactional receipt witness");
+    pool.execute("CREATE SEQUENCE fixture_fsync_receipt_witness; CREATE SEQUENCE fixture_fsync_path_witness; CREATE FUNCTION fixture_witness_fsync_receipt() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN PERFORM pg_catalog.nextval('public.fixture_fsync_receipt_witness'); PERFORM pg_catalog.set_config('search_path','public,pg_catalog',true); IF pg_catalog.current_setting('search_path') OPERATOR(pg_catalog.=) 'public,pg_catalog' THEN PERFORM pg_catalog.nextval('public.fixture_fsync_path_witness'); ELSE RAISE EXCEPTION 'synthetic path not installed'; END IF; RETURN NEW; END $$; CREATE TRIGGER zz_witness_fsync_receipt AFTER INSERT ON payment_initial_dispatch_provenance FOR EACH ROW EXECUTE FUNCTION fixture_witness_fsync_receipt()")
+        .await.expect("nontransactional receipt and path witnesses");
     pool.execute("CREATE FUNCTION public.current_setting(text) RETURNS text LANGUAGE sql STABLE AS $$ SELECT CASE WHEN $1='transaction_isolation' THEN 'read committed' WHEN $1 IN ('fsync','synchronous_commit') THEN 'on' ELSE pg_catalog.current_setting($1) END $$")
         .await.expect("synthetic hostile search path");
     pool.execute("CREATE FUNCTION public.fixture_lax_text_equal(text,text) RETURNS boolean LANGUAGE sql IMMUTABLE AS $$ SELECT CASE WHEN $1 OPERATOR(pg_catalog.=) 'off' AND $2 OPERATOR(pg_catalog.=) 'on' THEN true ELSE $1 OPERATOR(pg_catalog.=) $2 END $$; CREATE OPERATOR public.= (LEFTARG=pg_catalog.text,RIGHTARG=pg_catalog.text,FUNCTION=public.fixture_lax_text_equal)")
@@ -407,6 +407,7 @@ async fn initial_provenance_requires_server_fsync() {
         .await
         .expect("discard hostile transaction");
     assert_eq!(counts(&pool).await, (1, 1, 0, 0, 0));
+    writer.close().await;
 
     let server = Server::start(vec![
         profile(),
@@ -430,7 +431,7 @@ async fn initial_provenance_requires_server_fsync() {
     .expect("exact synthetic pair");
     let ids = crate::payment_test_fixture::Ids(AtomicU64::new(10000));
     let result =
-        observations::fixture_record_initial(&writer, time.as_ref(), &ids, &binding.id, initial)
+        observations::fixture_record_initial(&pool, time.as_ref(), &ids, &binding.id, initial)
             .await;
     let witness: (i64, bool) =
         sqlx::query_as("SELECT last_value,is_called FROM fixture_fsync_receipt_witness")
@@ -438,6 +439,12 @@ async fn initial_provenance_requires_server_fsync() {
             .await
             .expect("receipt insertion reached");
     assert_eq!(witness, (1, true));
+    let path_witness: (i64, bool) =
+        sqlx::query_as("SELECT last_value,is_called FROM fixture_fsync_path_witness")
+            .fetch_one(&pool)
+            .await
+            .expect("hostile transaction path installed");
+    assert_eq!(path_witness, (1, true));
     if expected == "off" {
         assert!(matches!(result, Err(PaymentStoreError::Unavailable)));
         assert_eq!(counts(&pool).await, (1, 1, 0, 0, 0));
@@ -461,7 +468,6 @@ async fn initial_provenance_requires_server_fsync() {
             ]
         );
     });
-    writer.close().await;
     pool.close().await;
     let drop_db = format!("DROP DATABASE {name}");
     sqlx::query(sqlx::AssertSqlSafe(drop_db))
