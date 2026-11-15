@@ -843,28 +843,93 @@ async fn schema29_upgrade_preserves_callback_receipts_without_installing_intake_
         .run_to(29, &pool)
         .await
         .expect("accepted callback custody schema");
-    let (clock, f) = prepared(&pool, true).await;
-    let i = ids();
-    let operation = operation(&pool, clock.as_ref(), &i, "tr_PRIOR_CALLBACK").await;
+    use commerce_domain::payment_attempts::callbacks::{LookupOperationSnapshot, LookupSnapshot};
+
+    let (_clock, f) = prepared(&pool, true).await;
+    let operation = LookupOperationSnapshot {
+        schema_version: 1,
+        id: "a".repeat(32),
+        profile_id: PROFILE.into(),
+        provider_id: "tr_PRIOR_CALLBACK".into(),
+        created_at: 1500,
+    };
+    operation.validate().expect("historical operation shape");
+    sqlx::query("INSERT INTO callback_lookup_operations(id,profile_id,provider_id,created_at) VALUES($1,$2,$3,$4)")
+        .bind(&operation.id).bind(&operation.profile_id).bind(&operation.provider_id).bind(operation.created_at)
+        .execute(&pool).await.expect("schema 29 operation");
+    sqlx::query(
+        "INSERT INTO callback_lookup_fetch_starts(operation_id,started_at) VALUES($1,1500)",
+    )
+    .bind(&operation.id)
+    .execute(&pool)
+    .await
+    .expect("schema 29 start");
     let server = Server::start(vec![
         profile(),
         Reply::Json(200, response(f.snapshot(), "tr_PRIOR_CALLBACK", "open")),
     ]);
     let c = client(&server).await;
-    let source = fetch_lookup(&pool, clock.as_ref(), &i, &operation.snapshot().id, &c)
+    let fetched = c
+        .fetch_callback(&operation.provider_id)
         .await
-        .expect("accepted prior receipt");
+        .expect("authenticated synthetic historical GET")
+        .bind(f.snapshot())
+        .expect("exact original attempt");
+    let source = LookupSnapshot {
+        schema_version: 1,
+        id: "b".repeat(32),
+        operation: operation.clone(),
+        started_at: 1500,
+        recorded_at: 1500,
+        payment: fetched.payment().clone(),
+        credential_fingerprint: fetched.credential_fingerprint().into(),
+    };
+    source.validate().expect("historical receipt projection");
+    let mut tx = pool.begin().await.expect("schema 29 custody transaction");
+    sqlx::query("INSERT INTO callback_lookup_receipts(id,operation_id,recorded_at,snapshot) VALUES($1,$2,$3,$4)")
+        .bind(&source.id).bind(&operation.id).bind(source.recorded_at).bind(serde_json::to_value(&source).expect("closed receipt"))
+        .execute(&mut *tx).await.expect("schema 29 native receipt guard");
+    sqlx::query("INSERT INTO callback_processing_events(id,operation_id,receipt_id,created_at,kind,payload) SELECT $1,r.operation_id,r.id,r.recorded_at,'payment.callback_lookup_recorded.v1',jsonb_build_object('schema_version',1,'operation_id',r.operation_id,'receipt_id',r.id,'snapshot_sha256',encode(sha256(convert_to(r.snapshot::text,'UTF8')),'hex')) FROM callback_lookup_receipts r WHERE r.id=$2")
+        .bind("c".repeat(32)).bind(&source.id).execute(&mut *tx).await.expect("schema 29 native event guard");
+    tx.commit().await.expect("schema 29 deferred receipt guard");
+    let source_sql = "SELECT jsonb_build_object('operation',(SELECT to_jsonb(o) FROM callback_lookup_operations o),'start',(SELECT to_jsonb(s) FROM callback_lookup_fetch_starts s),'receipt',(SELECT to_jsonb(r) FROM callback_lookup_receipts r),'event',(SELECT to_jsonb(e) FROM callback_processing_events e))";
+    let original: Value = sqlx::query_scalar(source_sql)
+        .fetch_one(&pool)
+        .await
+        .expect("complete prior callback rows");
     let prior = counts(&pool).await;
+    assert_eq!(prior, (1, 1, 1, 1, 0));
     MIGRATOR.run(&pool).await.expect("forward upgrade");
     MIGRATOR.run(&pool).await.expect("idempotent upgrade");
     assert_eq!(intake_counts(&pool).await, (0, 0, 0));
     assert_eq!(counts(&pool).await, prior);
+    let upgraded_sql = "SELECT jsonb_build_object('operation',(SELECT to_jsonb(o)-'source_transaction_id'-'continuation_attempt_id' FROM callback_lookup_operations o),'start',(SELECT to_jsonb(s) FROM callback_lookup_fetch_starts s),'receipt',(SELECT to_jsonb(r) FROM callback_lookup_receipts r),'event',(SELECT to_jsonb(e) FROM callback_processing_events e))";
+    let retained: Value = sqlx::query_scalar(upgraded_sql)
+        .fetch_one(&pool)
+        .await
+        .expect("complete retained callback rows");
+    assert_eq!(retained, original);
+    let markers: (Option<String>, Option<String>) = sqlx::query_as("SELECT source_transaction_id::text,continuation_attempt_id FROM callback_lookup_operations WHERE id=$1")
+        .bind(&operation.id).fetch_one(&pool).await.expect("legacy operation markers");
+    assert_eq!(markers, (None, None));
+    let legacy_start: Option<String> = sqlx::query_scalar(
+        "SELECT source_transaction_id::text FROM payment_dispatch_starts WHERE attempt_id=$1",
+    )
+    .bind(&f.snapshot().binding.id)
+    .fetch_one(&pool)
+    .await
+    .expect("legacy dispatch marker");
+    assert!(legacy_start.is_none());
+    let no_origin: (i64, i64) = sqlx::query_as("SELECT (SELECT count(*) FROM payment_initial_dispatch_provenance),(SELECT count(*) FROM payment_test_continuations)")
+        .fetch_one(&pool).await.expect("no inferred origin or continuation");
+    assert_eq!(no_origin, (0, 0));
     assert!(
-        read_lookup(&pool, &operation.snapshot().id)
+        read_lookup(&pool, &operation.id)
             .await
             .expect("prior receipt preserved")
             .expect("source")
             .snapshot
-            == source.snapshot
+            == source
     );
+    get_only(&server);
 }

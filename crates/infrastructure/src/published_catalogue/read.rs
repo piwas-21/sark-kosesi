@@ -56,12 +56,18 @@ pub(crate) async fn load_eligible(
     locale: Locale,
     skus: &[String],
 ) -> Result<Vec<EligibleProduct>, PublishedError> {
+    // Both grants opt the current role into the restricted lock helpers. A legacy
+    // role retains its original direct claims; missing permissions still fail closed.
+    let helpers: bool = sqlx::query_scalar("SELECT COALESCE(pg_catalog.has_function_privilege(current_user,pg_catalog.to_regprocedure('public.claim_published_variants(text[])'),'EXECUTE'),false) AND COALESCE(pg_catalog.has_function_privilege(current_user,pg_catalog.to_regprocedure('public.claim_published_assets(text[])'),'EXECUTE'),false)")
+        .fetch_one(&mut **tx).await?;
+    let variants = if helpers {
+        "SELECT * FROM public.claim_published_variants($1)"
+    } else {
+        "SELECT sku FROM catalogue_variants WHERE sku=ANY($1) ORDER BY sku FOR SHARE"
+    };
     // Claim every variant before any shared asset, avoiding a cross-SKU/asset cycle
     // with a publisher which owns one variant and is waiting on a shared photograph.
-    sqlx::query("SELECT sku FROM catalogue_variants WHERE sku=ANY($1) ORDER BY sku FOR SHARE")
-        .bind(skus)
-        .execute(&mut **tx)
-        .await?;
+    sqlx::query(variants).bind(skus).execute(&mut **tx).await?;
     let mut selections = Vec::new();
     for sku in skus {
         if let Some(record) = publication::latest_record(tx, sku, locale).await?
@@ -74,7 +80,15 @@ pub(crate) async fn load_eligible(
         .iter()
         .map(|(_, _, s)| s.image.asset_id.as_str())
         .collect();
-    let claims:Vec<String>=sqlx::query_scalar("SELECT asset_id FROM catalogue_media_serialization WHERE asset_id=ANY($1) ORDER BY asset_id FOR SHARE").bind(&assets).fetch_all(&mut **tx).await?;
+    let asset_claim = if helpers {
+        "SELECT * FROM public.claim_published_assets($1)"
+    } else {
+        "SELECT asset_id FROM catalogue_media_serialization WHERE asset_id=ANY($1) ORDER BY asset_id FOR SHARE"
+    };
+    let claims: Vec<String> = sqlx::query_scalar(asset_claim)
+        .bind(&assets)
+        .fetch_all(&mut **tx)
+        .await?;
     if assets
         .iter()
         .any(|asset| !claims.iter().any(|claim| claim == asset))

@@ -238,6 +238,18 @@ material fidelity and reviewer qualification remain human acceptance evidence.
 Future publication must check latest decisions, source freshness and rights again;
 no public image serving or production activation follows from an attestation.
 
+### Restricted preview original integrity
+
+An explicitly granted single-asset `image-v1` integrity helper lets the synthetic
+restricted observer verify an original's current bytes against its stored SHA-256
+without SELECT on the original byte column. Its fixed SQL and search path return
+only a boolean; neither the helper nor its caller gains a rights or publication
+decision. The shared image loader retains the direct legacy path when it has byte
+access or the helper is unavailable; a metadata-only role without EXECUTE fails
+closed. Variant and asset claims, complete rendition validation, latest decisions
+and fresh rights checks remain unchanged. Migration creates no roles or caller
+grants. Real role provisioning and bounded hash workload need separate evidence.
+
 ## Explicit publication and current eligibility
 
 `catalogue_publication_revisions` records confirmed catalogue-manager decisions
@@ -670,6 +682,24 @@ database identity read-only or protect against a role that can alter `public`.
 Schema changes must be coordinated with startup; the snapshot is not an ongoing
 schema lock. Local, test and ordinary staging retain their existing startup path.
 
+Published reads claim the ordered variant set before the ordered asset set in the
+same transaction. Schema-qualified security-definer functions expose only these
+bounded `FOR SHARE` claims and return existing identifiers; the caller retains the
+asset completeness check. Each accepts at most 25 bounded identifiers, matching
+page, favourites and restock capacities (quotes allow 20). The migration removes
+PUBLIC and inherited named EXECUTE grants from these two functions only. A caller
+with both function grants uses the helpers; other roles retain the original direct
+claims and their existing database privilege requirements. Partial or absent grants
+cannot give a restricted role a lock it could not otherwise take. The migration
+creates no roles or runtime grants. Its owner can use the functions;
+a separate installer must transfer ownership to a NOLOGIN identity with only the
+needed identifier SELECT/UPDATE privileges, grant execution only to an explicitly
+restricted runtime, and protect the function schema from untrusted CREATE. PostgreSQL
+READ ONLY transactions cannot take these locks: the catalogue needs a normal
+transaction under a no-write role. These functions can lock rows, not authorize
+publication, change stock or establish deployment readiness. The per-call bound
+does not limit how many claims an authorized session can hold over time.
+
 Staging can explicitly opt in to public storefront reads with
 `STAGING_PUBLIC_STOREFRONT=true`. An allowlist covers existing GET/HEAD storefront,
 customer catalogue/image and discovery routes; unknown paths and mutations keep
@@ -902,6 +932,40 @@ The supported initial-observation writer sets synchronous commit locally and
 checks it and PostgreSQL fsync immediately before commit. Its errors after
 dispatch remain uncertain; this does not attest storage hardware or constrain
 arbitrary SQL writers.
+
+An explicit offline test continuation can acquire one immutable callback lookup
+operation from that exact validated source. It derives the profile and provider
+identity from the frozen attempt and authenticated observation, never a caller's
+identity hint. The operation and its source binding commit reciprocally in one
+transaction; an existing binding is recovered rather than replaced. Neither this
+acquisition nor its read performs a GET, POST, payment transition or processing.
+A separate sealed marked-start path serializes with original-attempt supervisor
+insertion on the dispatch-start row. Either a marked start or supervisor job can
+commit first; the other remains excluded after commit. Generic lookup start,
+receipt and processing paths reject marked operations. An explicit private caller
+may use a separately verified same-profile Test client to consume the sealed start
+in one GET, using only the source-derived provider ID and complete frozen attempt.
+A fresh claim revalidates source, start, full provider match and supervisor fence
+before retaining one immutable receipt and reciprocal event. The actual fetched-key
+fingerprint is preserved, including separately verified same-profile rotation.
+The trusted Rust start and receipt commits force local synchronous WAL flush and
+recheck that fsync and synchronous_commit are on immediately before commit;
+the structural SQL guard does not guarantee durability for arbitrary raw SQL.
+The new native continuation functions bind their objects and PostgreSQL
+builtins under a fixed function-local search path. Supported continuation
+transactions set a trusted local path for their shared custody readers; the WAL
+checks compare the actual setting strings in Rust even after a trigger changes
+the path. This assumes trusted ownership of the public schema and database
+objects, and does not protect against a privileged database rewrite.
+An offline inspection restores valid history without a key or clock. A start
+without a receipt remains unknown and never authorizes another GET. This installs
+no route, worker or scheduler and creates no observation or financial effect.
+The supervisor skips exactly validated fences while continuing eligible work;
+damaged retained custody reaches the native guard and fails closed. Generic and
+native start paths also inspect the reciprocal operation mapping, so a cleared
+marker alone cannot turn a retained continuation into a generic lookup.
+Native arbitration requires READ COMMITTED. This does not restrict independent
+trusted raw GET APIs or constitute provider or financial acceptance.
 
 Private unknown-ID discovery performs one authenticated list request per explicit
 call, with a fixed ten-payment limit, descending order and the existing byte/time

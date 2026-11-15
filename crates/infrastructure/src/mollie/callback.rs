@@ -110,6 +110,27 @@ impl VerifiedReconciliationClient {
         })
     }
 }
+impl VerifiedReconciliationClient {
+    /// The marked capability is source-bound and cannot enter the generic path.
+    pub(crate) async fn fetch_continuation(
+        &self,
+        permit: crate::payment_attempts::callbacks::lookup::continuation::ContinuationStart,
+    ) -> Result<CallbackLookupPayment, MollieError> {
+        let (operation, original, started_at) = permit.into_parts();
+        if operation.profile_id != self.profile_id()
+            || original.binding.profile.id != self.profile_id()
+        {
+            return Err(MollieError::ProfileMismatch);
+        }
+        let fetched = self.fetch_callback(&operation.provider_id).await?;
+        fetched.bind(&original)?;
+        Ok(CallbackLookupPayment {
+            operation,
+            fetched,
+            started_at,
+        })
+    }
+}
 impl CallbackPayment {
     /// Called only by the durable custody decoder after exact operation/header/event
     /// checks. A caller's JSON or domain projection cannot access this constructor.

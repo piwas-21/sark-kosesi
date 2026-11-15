@@ -55,6 +55,26 @@ Preapplied preview migration validation is critical Rust code. Exercise bounded
 history, malformed checksums and real lock timeouts against isolated PostgreSQL,
 including recovery after the lock is released.
 
+Catalogue lock-helper tests use isolated PostgreSQL with synthetic approved
+publication and separate LOGIN/NOLOGIN roles. Check owner and restricted
+projections, the legacy direct-claim path, missing and partial EXECUTE, direct row
+lock/write and unrelated customer-table denials, inherited default grants, argument
+bounds and READ ONLY rejection. Hold the two claims in one
+transaction, observe competing variant and asset writers blocked, then release
+them. The restricted observer also reads the migration version/success/checksum
+columns in a read-only transaction, runs readiness and legacy catalogue queries,
+and retrieves a synthetic current derivative through SQLx. Expired rights and a
+later synthetic withdrawal hide the product and image. Verify stock and outbox
+are unchanged by observer reads and deny customer/payment reads, persistent
+writes, direct row claims, original-byte SELECT and schema CREATE. The restricted
+integrity helper checks current original bytes without returning them; test missing
+EXECUTE, malformed IDs, corrupted and exactly repaired originals, and legacy
+pre-helper migrations. A separate loopback API smoke test starts with the
+restricted login and preapplied migration history. It checks authenticated
+readiness, catalogue, product and derived image delivery, then repeats the image
+read after a synthetic corruption and exact repair. Operational preview roles
+and real product publication still require deployment evidence.
+
 Rust line/region coverage runs on the pinned stable release. Rust branch instrumentation currently requires nightly in cargo-llvm-cov: P1 must pin a separate tested nightly toolchain for the branch-coverage job and run `cargo +<pinned-nightly> llvm-cov --branch`. Production builds remain on stable. Missing branch data fails the coverage gate; do not report it as 100% or silently substitute line coverage. See the [upstream coverage requirements](https://github.com/taiki-e/cargo-llvm-cov#readme).
 
 The API migration-manifest CLI test runs without configuration or a database,
@@ -597,6 +617,12 @@ actual receipt writer still rejects an unsafe server.
 These controls assume the actual public tables and functions remain owned by
 the trusted migration authority; privileged database rewrites remain outside
 the evidence boundary.
+
+For offline continuation custody, use isolated PostgreSQL and synthetic source
+facts to check same-transaction operation reciprocity, one-attempt concurrency,
+missing and damaged source, orphan operation refusal, exact repair, and clock or
+insertion failure. Check replay preserves the original operation without clock or
+entropy and changes no fetch start, receipt, financial or stock state.
 
 Compiled provider controls bypass authenticated-profile verification, fetched
 payment matching, the early streamed-byte limit, duplicate-field preservation and
@@ -1245,3 +1271,33 @@ event or POST. In both cases the fixture shows that a shadow text-equality
 operator can report fsync as enabled; the writer compares the typed setting
 values in Rust. The fault runner requires one exact passing test. These tests
 do not establish provider or production acceptance.
+
+Private continuation arbitration tests use isolated PostgreSQL and explicit
+blocked transactions to exercise both winner orders, persistent exclusion,
+marked generic-path rejection and unchanged legacy lookup and supervisor entry.
+Shadow PostgreSQL setting and transaction-ID functions and text operators in
+isolated schemas: reject wrong native source and repeatable-read fences despite
+the spoof, retain the valid same-transaction operation, and reject altered
+receipt structure. Inject a hostile path and async setting after the receipt
+event write, prove the late trigger was reached, and require rollback and no
+second GET. These controls do not authorize untrusted schema owners or SQL roles.
+A blocked enqueue includes another eligible attempt and must retain its job after
+the first candidate becomes fenced. Direct native starts reject missing or damaged
+source custody and succeed after exact restoration. Damaged durable fences fail
+actual enqueue until exact repair; a cleared operation marker with its mapping
+retained cannot enter generic or native start. These controls do not establish
+provider operation or payment acceptance.
+
+Private Test continuation receipt controls use isolated PostgreSQL and synthetic
+loopback only: rotated same-profile credentials, a single GET, concurrent and
+unknown replay, coherent historical corruption, native original-field guards,
+wrong-profile and storage-failure controls. An inherited asynchronous session and
+post-insert setting sabotage test durable marked-start and receipt commits. These
+controls do not establish provider, financial or physical acceptance. The exclusive fsync-off control runs through `scripts/test_continuation_fsync.py`
+on an owned native PostgreSQL 18.1 cluster, or a Linux host-networked instance
+of the pinned PostgreSQL image with the same owned directory mounted at the same
+path. Its marker, actual data-directory and single-client checks remain mandatory.
+The stable and nightly coverage producers run the exact instrumented test binary
+on this separate cluster after the ordinary suite, require its named passing test
+and a fresh profile, then export their normal reports. Ordinary tests do not change
+PostgreSQL configuration; these controls do not establish provider acceptance.

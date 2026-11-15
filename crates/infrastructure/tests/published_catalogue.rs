@@ -578,7 +578,7 @@ async fn waiting_public_reader_sees_committed_withdrawal_and_cancellation_releas
     withdrawal.execute("INSERT INTO catalogue_publication_revisions(sku,locale,revision,effect_key,choice,evidence_ref,actor,reason,evaluated_at) VALUES('SET-FILLED','nl',2,'pending-withdraw','{\"action\":\"withdraw\"}','synthetic','author','synthetic',1100)").await.expect("pending withdrawal");
     let owned = pool.clone();
     let reader = tokio::spawn(async move { public_after_close(&owned).await });
-    waiting_on(&pool, "SELECT sku FROM catalogue_variants%").await;
+    waiting_on(&pool, "SELECT * FROM public.claim_published_variants%").await;
     withdrawal.commit().await.expect("withdraw");
     assert!(reader.await.expect("reader").expect("projection").is_none());
     let mut blocker = pool.begin().await.expect("blocker");
@@ -588,7 +588,7 @@ async fn waiting_public_reader_sees_committed_withdrawal_and_cancellation_releas
         .expect("claim");
     let owned = pool.clone();
     let reader = tokio::spawn(async move { public_after_close(&owned).await });
-    waiting_on(&pool, "SELECT sku FROM catalogue_variants%").await;
+    waiting_on(&pool, "SELECT * FROM public.claim_published_variants%").await;
     reader.abort();
     assert!(reader.await.expect_err("cancel").is_cancelled());
     blocker.rollback().await.expect("resume");
@@ -743,3 +743,6 @@ async fn cursor_comparison_and_order_match_ascii_under_conflicting_database_coll
         vec!["Z1"]
     );
 }
+
+#[path = "support/published_lock_claims.rs"]
+mod published_lock_claims;

@@ -369,8 +369,16 @@ async fn post_write_authority_expiry_rolls_back_both_decision_and_resume(pool: P
 #[sqlx::test(migrations = false)]
 async fn upgrade_retains_original_review_stop_and_installs_no_finance_authority(pool: PgPool) {
     MIGRATOR.run_to(27, &pool).await.expect("prior schema");
-    let (time, f) = prepared(&pool, true).await;
-    stop(&pool, time.as_ref(), &f).await;
+    let (_time, f) = prepared(&pool, true).await;
+    // Reproduce schema 27's enqueue from its original committed start/event.
+    // The current enqueue also references a later continuation fence.
+    let inserted = sqlx::query("INSERT INTO payment_reconciliation_jobs(attempt_id,source_event_id,created_at,updated_at,due_at) SELECT s.attempt_id,e.id,s.started_at,s.started_at,s.started_at FROM payment_dispatch_starts s JOIN payment_attempts a ON a.id=s.attempt_id JOIN commerce_outbox e ON e.aggregate_id=a.order_id AND e.kind='payment.reconciliation_required.v1' AND e.created_at=s.started_at WHERE s.attempt_id=$1")
+        .bind(&f.snapshot().binding.id).execute(&pool).await.expect("schema 27 native enqueue");
+    assert_eq!(inserted.rows_affected(), 1);
+    pool.execute("UPDATE payment_reconciliation_jobs SET phase='needs_review',review_reason='retry_exhausted',failures=5,generation=generation+1,operation=operation+1")
+        .await.expect("schema 27 review stop");
+    let original_source: Value = sqlx::query_scalar("SELECT jsonb_build_object('start',to_jsonb(s),'event',to_jsonb(e)) FROM payment_reconciliation_jobs j JOIN payment_dispatch_starts s ON s.attempt_id=j.attempt_id JOIN commerce_outbox e ON e.id=j.source_event_id")
+        .fetch_one(&pool).await.expect("prior exact start and event");
     let mut old: Value =
         sqlx::query_scalar("SELECT to_jsonb(j) FROM payment_reconciliation_jobs j")
             .fetch_one(&pool)
@@ -383,6 +391,23 @@ async fn upgrade_retains_original_review_stop_and_installs_no_finance_authority(
         .expect("current reader")
         .expect("job");
     assert_eq!(old, serde_json::to_value(new).expect("after"));
+    let retained_source: Value = sqlx::query_scalar("SELECT jsonb_build_object('start',to_jsonb(s)-'source_transaction_id','event',to_jsonb(e)) FROM payment_reconciliation_jobs j JOIN payment_dispatch_starts s ON s.attempt_id=j.attempt_id JOIN commerce_outbox e ON e.id=j.source_event_id")
+        .fetch_one(&pool).await.expect("retained exact start and event");
+    assert_eq!(retained_source, original_source);
+    let legacy_marker: Option<String> = sqlx::query_scalar(
+        "SELECT source_transaction_id::text FROM payment_dispatch_starts WHERE attempt_id=$1",
+    )
+    .bind(&f.snapshot().binding.id)
+    .fetch_one(&pool)
+    .await
+    .expect("legacy start marker");
+    assert!(legacy_marker.is_none());
+    let provenance: i64 =
+        sqlx::query_scalar("SELECT count(*) FROM payment_initial_dispatch_provenance")
+            .fetch_one(&pool)
+            .await
+            .expect("no inferred provenance");
+    assert_eq!(provenance, 0);
     assert_eq!(receipts(&pool).await, 0);
     let grants: i64 = sqlx::query_scalar(
         "SELECT count(*) FROM staff_capabilities WHERE capability='payment.reconcile'",

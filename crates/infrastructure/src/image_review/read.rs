@@ -40,8 +40,27 @@ pub(crate) async fn load(
     sku: &str,
     target: &ImageTarget,
 ) -> Result<Option<ImageReviewBundle>, ImageReviewError> {
-    let row=sqlx::query_as::<_,Sources>("SELECT i.creation_effect_key AS identity_key,b.creation_effect_key AS bom_key,s.actor AS specification_actor,m.actor AS registration_actor,o.actor AS ingestion_actor,r.actor AS rights_actor,r.change::text,o.sha256,(o.sha256=sha256(o.bytes) AND NOT EXISTS(SELECT 1 FROM catalogue_image_renditions d WHERE d.asset_id=o.asset_id AND d.recipe=o.recipe AND d.sha256<>sha256(d.bytes))) AS intact FROM catalogue_items i JOIN catalogue_boms b ON b.sku=i.sku AND b.revision=$2 AND b.sealed JOIN catalogue_specification_revisions s ON s.sku=i.sku AND s.revision=$3 AND s.bom_revision=b.revision CROSS JOIN catalogue_media_assets m JOIN catalogue_image_originals o ON o.asset_id=m.asset_id AND o.recipe='image-v1' JOIN catalogue_media_rights r ON r.asset_id=m.asset_id AND r.revision=$5 WHERE i.sku=$1 AND NOT i.fixture AND m.asset_id=$4")
-        .bind(sku).bind(target.bom_revision).bind(target.specification_revision).bind(&target.asset_id).bind(target.rights_revision).fetch_optional(&mut **tx).await?;
+    // A role with original-byte access keeps the legacy query. A restricted
+    // observer opts into the fixed helper; an absent helper still fails closed
+    // if the role cannot use the legacy query. Both expressions are fixed SQL.
+    let restricted: bool = sqlx::query_scalar("SELECT NOT pg_catalog.has_column_privilege(current_user,'public.catalogue_image_originals','bytes','SELECT') AND COALESCE(pg_catalog.has_function_privilege(current_user,pg_catalog.to_regprocedure('public.preview_original_intact(text)'),'EXECUTE'),false)")
+        .fetch_one(&mut **tx).await?;
+    let original = if restricted {
+        "public.preview_original_intact(o.asset_id)"
+    } else {
+        "o.sha256 OPERATOR(pg_catalog.=) pg_catalog.sha256(o.bytes)"
+    };
+    let query = format!(
+        "SELECT i.creation_effect_key AS identity_key,b.creation_effect_key AS bom_key,s.actor AS specification_actor,m.actor AS registration_actor,o.actor AS ingestion_actor,r.actor AS rights_actor,r.change::text,o.sha256,({original} AND NOT EXISTS(SELECT 1 FROM catalogue_image_renditions d WHERE d.asset_id=o.asset_id AND d.recipe=o.recipe AND d.sha256 OPERATOR(pg_catalog.<>) pg_catalog.sha256(d.bytes))) AS intact FROM catalogue_items i JOIN catalogue_boms b ON b.sku=i.sku AND b.revision=$2 AND b.sealed JOIN catalogue_specification_revisions s ON s.sku=i.sku AND s.revision=$3 AND s.bom_revision=b.revision CROSS JOIN catalogue_media_assets m JOIN catalogue_image_originals o ON o.asset_id=m.asset_id AND o.recipe='image-v1' JOIN catalogue_media_rights r ON r.asset_id=m.asset_id AND r.revision=$5 WHERE i.sku=$1 AND NOT i.fixture AND m.asset_id=$4"
+    );
+    let row = sqlx::query_as::<_, Sources>(sqlx::AssertSqlSafe(query))
+        .bind(sku)
+        .bind(target.bom_revision)
+        .bind(target.specification_revision)
+        .bind(&target.asset_id)
+        .bind(target.rights_revision)
+        .fetch_optional(&mut **tx)
+        .await?;
     let Some(row) = row else {
         return Ok(None);
     };

@@ -183,6 +183,62 @@ wiring; no real merchant facts, tax/carrier readiness, staff authority, order fl
 or provider acceptance is established by its deployment. Record accepted source,
 image identity, TLS/auth/noindex/RTL smoke and rollback separately from CI.
 
+### Restricted preview database rehearsal
+
+The catalogue lock-helper fixture describes an offline observer, not operational
+provisioning. Before preparing any target grants, identify the exact reviewed
+source and image digest, embedded migration-manifest digest, intended database
+and snapshot, migration owner, runtime LOGIN and separate helper NOLOGIN role.
+Keep credentials and connection URLs outside the grant review and evidence. A
+qualified database operator must verify effective grants, PUBLIC permissions,
+role memberships, function ownership and schema ownership on the selected copy;
+a role name or a clean source checkout does not prove those properties.
+
+For the synthetic observer, the fixture grants SELECT on `product_families`,
+`physical_components`, `catalogue_items`, `catalogue_variants`, `catalogue_boms`,
+`catalogue_bom_lines`, `catalogue_definition_events`, `catalogue_factual_reviews`,
+`catalogue_family_routes`, `catalogue_image_renditions`,
+`catalogue_image_reviews`, `catalogue_media_assets`, `catalogue_media_rights`,
+`catalogue_media_serialization`, `catalogue_price_revisions`,
+`catalogue_publication_revisions`, `catalogue_specification_revisions`,
+`catalogue_translation_reviews`, `catalogue_translation_revisions`, and
+`stock_balances`. On `catalogue_image_originals` it grants only `asset_id`,
+`recipe`, `sha256`, `actor`, `display_width_px` and `display_height_px`; it does
+not grant `bytes` or table SELECT. It adds column SELECT on `_sqlx_migrations` for `version`,
+`success` and `checksum`, and on `catalogue_translations` for `sku`, `locale`,
+`title`, `description` and `care`. These are the fixture's exercised grants,
+not a proof that each table-level SELECT is individually minimal. Invoker
+functions used by the published read also need their effective EXECUTE and
+underlying read privileges checked.
+
+The helper owner has schema USAGE and only identifier SELECT/UPDATE on
+`catalogue_variants.sku` and `catalogue_media_serialization.asset_id` in the
+fixture. The observer has EXECUTE on both `claim_published_variants(text[])`
+and `claim_published_assets(text[])`, no helper-role membership, no schema
+CREATE and no direct row-update authority. The migration owner applies schema
+separately; preapplied startup only observes migration history. PostgreSQL
+requires a normal transaction for the helper's row locks even with this
+restricted observer. Ownership transfer and grants require independently
+verified operator authority; this fixture does not create any target roles.
+
+A separate non-login integrity-helper owner needs only `asset_id`, `recipe`,
+`sha256` and `bytes` SELECT on originals; the observer needs only EXECUTE on
+`preview_original_intact(text)` and must not inherit that owner. The helper hashes
+one bounded original and returns a boolean, not its bytes or a rights decision.
+Migration 0078 creates no roles and grants no caller access; a role with direct
+original-byte access keeps the legacy path, while a restricted observer needs
+the explicit helper grant. Check effective PUBLIC and inherited privileges, the
+function owner, locked search path and schema before any real provisioning.
+The isolated integrity controls exercise ordinary-schema SHA and byte-comparison
+operator shadows under a hostile search path, including damaged and repaired
+originals and renditions.
+The helper exposes an integrity/existence result to its grantee. Hashing can read
+20 MiB per asset, up to 25 candidates per page, and image delivery rechecks the
+publication after decode. Benchmark real resource limits and repeated requests;
+the statement timeout alone is not a total workload bound. This rehearsal uses
+synthetic data and demonstrates no actual startup, HTTP delivery, approved
+photographs or staging deployment.
+
 ## Supervised test-payment reconciliation
 
 `cargo run --locked -p commerce-worker -- --reconcile-payments` is an explicit
