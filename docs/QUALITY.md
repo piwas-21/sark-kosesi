@@ -1225,10 +1225,20 @@ browser bridge with a guarded synthetic database. Node explicitly trusts the
 generated certificate, and Chromium pins its ephemeral public key. Both clients
 must reject a separately generated certificate before sending an HTTP request.
 Chromium checks the guest cookie, Origin and CSRF through quote, order acceptance,
-cancellation and exact replay. The bridge keeps its independently generated API
-credential on the server and forwards only the fixture's private checkout routes.
-Database checks verify one order, one cancellation, two component reservation
-movements and zero payment attempts. The storefront checkout UI, provider and
+cancellation and exact replay. Synthetic verified accounts and a real owner-issued
+guest proof exercise bound customer login, missing-session, wrong-account and
+wrong-CSRF refusal, one redemption, replay denial and owner-only linked history.
+Direct loopback probes also require the server-held preview credential even when
+valid owner custody is supplied. A database check confirms failed attempts leave
+the proof unconsumed; a final check binds the one
+consumption and link to the same account and transaction. The proof travels only
+in the synthetic request body, never a URL or log. The bridge keeps its generated
+API credential on the server and forwards only its allowlisted test routes. Since
+same-origin Chromium GET may omit Origin, the private bridge supplies its configured
+Origin for linked history only after checking the exact host and same-origin fetch
+metadata. This is not direct-browser Origin or public-ingress acceptance. Database
+checks also verify one order, one cancellation, two component reservation movements
+and zero payment attempts. The storefront UI, mailbox delivery, provider and
 production accessibility still need their own acceptance evidence.
 
 Private Test dispatch controls use isolated PostgreSQL and synthetic loopback.
