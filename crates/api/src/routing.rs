@@ -133,6 +133,14 @@ fn build(
                 get(crate::test_restock::list).layer(Extension(config.clone())),
             );
         }
+        if config.favourites_mutation_transport {
+            app = app.route(
+                "/api/test/customer/favourites/{locale}/{sku}",
+                axum::routing::put(crate::test_favourites_mutation::set)
+                    .layer::<_, std::convert::Infallible>(DefaultBodyLimit::max(256))
+                    .layer(Extension(config.clone())),
+            );
+        }
         if config.favourites_transport {
             app = app.route(
                 "/api/test/customer/favourites/{locale}",

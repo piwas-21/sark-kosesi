@@ -212,6 +212,9 @@ export/deletion and production abuse controls remain P4 work.
 A separately opted-in test-only GET exposes that same owned projection to a
 preview-authenticated caller with the configured Origin and customer cookie.
 It can initialize the account's empty favourites bucket; it is not public ingress.
+An independently enabled test-only mutation binds the exact session synchronizer
+to the owned membership change and returns only the new revision. This is not
+public browser access or privacy acceptance.
 A separate private restock opt-in primitive retains a bounded active subscription
 per account and merchant variant; cancellation does not depend on publication.
 An independently enabled test-only GET exposes current published subscriptions

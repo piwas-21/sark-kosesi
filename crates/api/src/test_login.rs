@@ -27,6 +27,7 @@ pub struct LoginConfig {
     pub(crate) limits: AdmissionLimits,
     pub(crate) csrf_transport: bool,
     pub(crate) favourites_transport: bool,
+    pub(crate) favourites_mutation_transport: bool,
     pub(crate) linked_orders_transport: bool,
     pub(crate) restock_transport: bool,
     pub(crate) restock_mutation_transport: bool,
@@ -46,6 +47,14 @@ impl LoginConfig {
             None => false,
             Some("1") if environment == Some("test") => true,
             _ => return Err("Invalid test favourites transport"),
+        };
+        let favourites_mutation_transport = match values
+            .get("TEST_FAVOURITES_MUTATION_TRANSPORT")
+            .map(String::as_str)
+        {
+            None => false,
+            Some("1") if environment == Some("test") => true,
+            _ => return Err("Invalid test favourites mutation transport"),
         };
         let linked_orders_transport = match values
             .get("TEST_LINKED_ORDERS_TRANSPORT")
@@ -71,6 +80,7 @@ impl LoginConfig {
         let transport_requested = [
             csrf_transport,
             favourites_transport,
+            favourites_mutation_transport,
             linked_orders_transport,
             restock_transport,
             restock_mutation_transport,
@@ -93,6 +103,7 @@ impl LoginConfig {
                     limits,
                     csrf_transport,
                     favourites_transport,
+                    favourites_mutation_transport,
                     linked_orders_transport,
                     restock_transport,
                     restock_mutation_transport,
