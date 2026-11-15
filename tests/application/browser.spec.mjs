@@ -74,11 +74,36 @@ test("@journey explicit locale and first-paint theme survive denied storage", as
       },
     });
   });
-  await page.goto("/fr");
+  await page.emulateMedia({ colorScheme: "light" });
+  let releaseScripts;
+  const scriptsReleased = new Promise((resolve) => {
+    releaseScripts = resolve;
+  });
+  let blockedScripts = 0;
+  await page.route("**/_next/static/**/*.js", async (route) => {
+    blockedScripts += 1;
+    await scriptsReleased;
+    await route.continue();
+  });
+  try {
+    await page.goto("/fr", { waitUntil: "commit" });
+    await expect.poll(() => blockedScripts).toBeGreaterThan(0);
+    await expect(page.getByLabel("Theme")).toBeDisabled();
+    await expect(page.getByLabel("Language")).toBeDisabled();
+    await expect(page.locator("html")).toHaveAttribute("data-theme", "light");
+  } finally {
+    releaseScripts();
+  }
+  await expect(page.getByLabel("Theme")).toBeEnabled();
+  await expect(page.getByLabel("Language")).toBeEnabled();
   await page.getByLabel("Theme").selectOption("dark");
   await expect(page.locator("html")).toHaveAttribute("data-theme", "dark");
   await page.getByLabel("Language").selectOption("ku");
+  await expect(page).toHaveURL(/\/ku$/);
   await expect(page.locator("html")).toHaveAttribute("lang", "ku-Latn");
+  await expect(
+    page.getByRole("heading", { name: "Hinekî din bimîne." }),
+  ).toBeVisible();
 });
 test("@journey visual readiness rejects stale descendant colours", async ({
   page,
