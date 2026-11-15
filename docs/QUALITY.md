@@ -274,7 +274,11 @@ P2 collection acceptance adds exact variant and locale navigation, served HTML/X
 image agreement, genuine unavailable-SKU 404s and actual read-through stock,
 draft-price, explicit publication and withdrawal effects. The test-only effect
 example requires the per-run guard of the disposable browser database; its
-credentials never enter evidence. TypeScript boundaries reject private/unknown
+credentials never enter evidence. Discovery fixture effects run as bounded
+asynchronous children, and their HTTP checks close each connection and discard
+unused error bodies. Tooling controls exercise socket closure, event-loop progress,
+child failure and timeout without retrying or weakening discovery assertions.
+TypeScript boundaries reject private/unknown
 fields, malformed cursor/product identities and unbounded image streams. Money
 formatting checks the maximum exact public integer without dividing a float.
 
@@ -910,6 +914,9 @@ Within the password integration test binary, serialize independent cases that
 use the shared production Argon2 capacity so unrelated fixtures cannot exhaust
 it. Preserve concurrent operations within a case and test actual capacity
 exhaustion separately; do not change the production limit or timeout.
+The Rust test profile optimizes the Argon2 dependency so instrumented login
+tests verify real credentials within the existing request deadline. The same
+algorithm, parameters, concurrency limit and request deadline apply.
 
 Use isolated PostgreSQL with two verified accounts and actual Argon2id
 verification. Exercise registration-token misuse, wrong account, wrong or
@@ -1078,6 +1085,14 @@ For the test-only history route, use actual isolated linked guest orders to
 check ownership, closed cursor parsing, same-time keyset ties, final empty page,
 invalid session and Origin, damaged reciprocal evidence and private output.
 Verify that reading creates no order, proof, link, stock or outbox changes.
+
+For synchronizer-bound redemption, verify the correct session proof commits one
+link, while missing, foreign and stale session proofs preserve the unspent order
+proof. Test disabled configuration, preview/Origin/cookie boundaries, closed
+bounded input, replay and expiry after lock waits with isolated PostgreSQL.
+Post-claim storage failures must still recheck the session clock: compare a live
+lock-timeout control with the same timeout after session expiry.
+No mailbox delivery or public acceptance follows.
 
 Test credential admission against isolated PostgreSQL from separate pools.
 Assert exact independent target and global caps, domain-case normalization,

@@ -53,3 +53,6 @@ incremental = false
 [profile.test]
 debug = 0
 incremental = false
+
+[profile.test.package.argon2]
+opt-level = 2
