@@ -1,4 +1,5 @@
 //! Opt-in internal guest API. Rust alone owns browser credentials and basket authority.
+pub(crate) mod cancellation;
 pub(crate) mod cookies;
 pub(crate) mod origin;
 pub(crate) mod quotes;

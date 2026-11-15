@@ -275,6 +275,12 @@ supervision or live provider activation follows from deploying the empty preview
    commit together. Cancellation and admission serialize on the owned basket;
    cancellation and dispatch serialize on the attempt and recheck durable state.
    Existing holds follow normal expiry and prior promotion usage stays consumed.
+   An independently enabled test-only guest cancellation route requires preview,
+   exact Origin, the held guest cookie and CSRF, an effect key and explicit
+   confirmation. A timeout may occur after a commit, so an authorized retry must
+   use the same effect key. It returns only replay state; account-bound orders still require
+   their separate private account authority. No customer route or provider
+   operation is activated by this test adapter.
    Finish post-dispatch disposition, redemption disposition, lifecycle/payment
    transitions and retention before public checkout. Seller and legal facts
    remain required trusted configuration.

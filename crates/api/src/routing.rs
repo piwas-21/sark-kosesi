@@ -45,18 +45,23 @@ pub fn router_with_test_login(
     verification: Option<VerificationConfig>,
     login: Option<LoginConfig>,
 ) -> Result<Router, GuestError> {
-    router_with_test_order(state, guest, callback, verification, login, None)
+    router_with_test_guest_operations(state, guest, callback, verification, login, None, None)
 }
-pub fn router_with_test_order(
+
+pub fn router_with_test_guest_operations(
     state: AppState,
     guest: Option<GuestOrigin>,
     callback: Option<CallbackProfile>,
     verification: Option<VerificationConfig>,
     login: Option<LoginConfig>,
     order: Option<guest::test_orders::TestOrderConfig>,
+    cancellation: Option<crate::config::TestGuestCancellation>,
 ) -> Result<Router, GuestError> {
+    if (order.is_some() || cancellation.is_some()) && guest.is_none() {
+        return Err(GuestError::InvalidRequest);
+    }
     let guest = guest
-        .map(|origin| guest_router(&state, origin, order))
+        .map(|origin| guest_router(&state, origin, order, cancellation.is_some()))
         .transpose()?;
     Ok(build(state, guest, callback, verification, login))
 }
@@ -64,6 +69,7 @@ fn guest_router(
     state: &AppState,
     origin: GuestOrigin,
     order: Option<guest::test_orders::TestOrderConfig>,
+    cancellation: bool,
 ) -> Result<Router<AppState>, GuestError> {
     let store = GuestSessionStore::new(
         state.pool.clone(),
@@ -85,6 +91,13 @@ fn guest_router(
             post(guest::test_orders::create)
                 .layer::<_, std::convert::Infallible>(DefaultBodyLimit::max(4096))
                 .layer(Extension(order)),
+        );
+    }
+    if cancellation {
+        guest = guest.route(
+            "/api/test/guest/orders/{id}/cancellation",
+            post(guest::cancellation::cancel)
+                .layer::<_, std::convert::Infallible>(DefaultBodyLimit::max(256)),
         );
     }
     let guest = guest

@@ -8,7 +8,9 @@ mod guest_support;
 #[path = "../../../tests/fixtures/checkout_order_snapshot.rs"]
 mod order_fixture;
 use axum::{Router, http::StatusCode};
-use commerce_api::{config::Config, guest::test_orders::TestOrderConfig, router_with_test_order};
+use commerce_api::{
+    config::Config, guest::test_orders::TestOrderConfig, router_with_test_guest_operations,
+};
 use commerce_infrastructure::MIGRATOR;
 use guest_support::*;
 use sqlx::{Executor, PgPool};
@@ -38,17 +40,18 @@ fn settings() -> HashMap<String, String> {
         ),
     ])
 }
-fn test_app(pool: &PgPool) -> (Router, Arc<Time>) {
+fn configured_app(pool: &PgPool, values: &HashMap<String, String>) -> (Router, Arc<Time>) {
     let (state, clock) = state(pool);
-    let config = Config::parse(&settings()).expect("test config");
+    let config = Config::parse(values).expect("test config");
     (
-        router_with_test_order(
+        router_with_test_guest_operations(
             state,
             config.guest_origin,
             None,
             None,
             None,
             config.test_guest_order,
+            config.test_guest_cancellation,
         )
         .expect("router"),
         clock,
@@ -75,8 +78,14 @@ async fn send(
         .expect("response")
 }
 async fn ready(pool: &PgPool) -> (Router, Arc<Time>, String, String, String) {
+    ready_with(pool, &settings()).await
+}
+async fn ready_with(
+    pool: &PgPool,
+    values: &HashMap<String, String>,
+) -> (Router, Arc<Time>, String, String, String) {
     fixture::seed(pool).await;
-    let (app, time) = test_app(pool);
+    let (app, time) = configured_app(pool, values);
     time.0.store(1100, Ordering::SeqCst);
     let (cookie, csrf) = issue(&app, None).await;
     let response = app
@@ -108,6 +117,77 @@ async fn ready(pool: &PgPool) -> (Router, Arc<Time>, String, String, String) {
         .expect("quote id")
         .to_owned();
     (app, time, cookie, csrf, quote)
+}
+#[sqlx::test(migrator = "MIGRATOR")]
+async fn test_routes_accept_then_cancel_one_order_under_the_same_guest_authority(pool: PgPool) {
+    let mut values = settings();
+    values.insert("TEST_GUEST_CANCELLATION_TRANSPORT".into(), "1".into());
+    let config = Config::parse(&values).expect("both operations explicitly enabled");
+    let (unconfigured, _) = state(&pool);
+    for (order, cancellation) in [
+        (config.test_guest_order, None),
+        (None, config.test_guest_cancellation),
+    ] {
+        assert!(
+            router_with_test_guest_operations(
+                unconfigured.clone(),
+                None,
+                None,
+                None,
+                None,
+                order,
+                cancellation,
+            )
+            .is_err(),
+            "each test operation requires the guest origin"
+        );
+    }
+    let (app, _, cookie, csrf, quote) = ready_with(&pool, &values).await;
+    let body = payload(&quote);
+    let alias = cookie.replacen("__Host-piwas-guest=", "__Host-piwas-%67uest=", 1);
+    assert_ne!(alias, cookie);
+    let ambiguous = format!("{cookie}; {alias}");
+    assert_eq!(
+        send(&app, Some(&ambiguous), Some(&csrf), &body)
+            .await
+            .status(),
+        StatusCode::UNAUTHORIZED
+    );
+    assert_eq!(counts(&pool).await, (0, 0, 0, 0, 0));
+
+    let accepted = send(&app, Some(&cookie), Some(&csrf), &body).await;
+    assert_eq!(accepted.status(), StatusCode::OK);
+    let accepted = json(accepted).await;
+    let order_id = accepted["id"].as_str().expect("test order ID");
+    let before = counts(&pool).await;
+    let cancel_url = format!("{URL}/{order_id}/cancellation");
+    for replayed in [false, true] {
+        let response = app
+            .clone()
+            .oneshot(request(
+                "POST",
+                &cancel_url,
+                Some(&cookie),
+                Some(&csrf),
+                r#"{"confirmed":true,"effect_key":"cancel"}"#,
+            ))
+            .await
+            .expect("cancellation response");
+        assert_eq!(response.status(), StatusCode::OK);
+        assert_eq!(
+            json(response).await,
+            serde_json::json!({"replayed":replayed})
+        );
+    }
+    let effects: i64 = sqlx::query_scalar(
+        "SELECT count(*) FROM commerce_outbox WHERE kind='checkout.order_canceled.v1' AND aggregate_id=$1",
+    )
+    .bind(order_id)
+    .fetch_one(&pool)
+    .await
+    .expect("one committed cancellation");
+    assert_eq!(effects, 1);
+    assert_eq!(counts(&pool).await, before);
 }
 async fn counts(pool: &PgPool) -> (i64, i64, i64, i64, i64) {
     sqlx::query_as("SELECT (SELECT count(*) FROM checkout_orders),(SELECT count(*) FROM basket_hold_groups),(SELECT count(*) FROM stock_holds),(SELECT count(*) FROM commerce_outbox WHERE kind='checkout.order_created.v1'),(SELECT count(*) FROM payment_attempts)").fetch_one(pool).await.expect("custody counts")
@@ -222,13 +302,14 @@ async fn owner_can_accept_and_retry_exact_order_without_payment(pool: PgPool) {
     seller["terms_version"] = "synthetic-terms-v2".into();
     changed_config.insert("TEST_GUEST_ORDER_SELLER".into(), seller.to_string());
     let cfg = Config::parse(&changed_config).expect("changed test policy");
-    let restarted = router_with_test_order(
+    let restarted = router_with_test_guest_operations(
         new_state,
         cfg.guest_origin,
         None,
         None,
         None,
         cfg.test_guest_order,
+        cfg.test_guest_cancellation,
     )
     .expect("restarted router");
     let prior = send(&restarted, Some(&cookie), Some(&csrf), &body).await;

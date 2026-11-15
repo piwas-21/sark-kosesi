@@ -278,8 +278,10 @@ promotion lock. Private payment preparation and attempt history use the same
 current customer account and guest basket. Private cancellation can close an
 owned order before payment dispatch starts, including after an admitted test
 attempt. Cancellation shares the basket claim with admission and the attempt
-claim with dispatch. Normal hold expiry still governs stock, and lifetime
-promotion usage stays recorded. Complete post-dispatch disposition and trusted-edge
+claim with dispatch. An independently enabled test-only guest route exposes that
+pre-dispatch command with exact Origin, cookie, CSRF and explicit confirmation;
+account-bound orders remain unavailable on this route. Normal hold expiry still
+governs stock, and lifetime promotion usage stays recorded. Complete post-dispatch disposition and trusted-edge
 abuse controls before exposing customer routes.
 An independently enabled test-only guest order POST uses the same session,
 Origin and CSRF checks, with an explicit server-only test seller policy. It

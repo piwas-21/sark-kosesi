@@ -415,6 +415,11 @@ waits also require expired guest and account authority to mask a dispatch confli
 with a fresh-authority conflict control; a blocked receipt read tests the same
 rule for a missing receipt. Verify that the original stock and redemption remain
 available to their respective readers.
+The independently enabled test-only guest cancellation transport exercises a
+real owned order and same-effect replay, foreign/expired credentials, explicit
+confirmation, malformed bounded requests, dispatch races, database rollback and
+slow-body timeout. Check the unchanged stock, promotion and provider effects.
+These fixtures do not prove browser, provider or public checkout acceptance.
 
 Whole-basket reservation logic retains 95% critical native line/branch thresholds.
 Independent PostgreSQL oracles cover a last shared component, complete loser
@@ -975,16 +980,18 @@ foam differences, and reject wrong revisions, missing or duplicate members,
 conflicting component kinds, changed quantities and invalid prior counts. Check the real maximum 20 by 64
 footprint. These pure controls do not establish package or warehouse custody.
 
-### Test-only guest order acceptance
+### Test-only guest checkout
 
 Use isolated PostgreSQL and the guest HTTP boundary for real cookie, Origin and
 CSRF ownership; verify no route by default or outside test configuration. Feed
 an explicit synthetic seller only through server configuration. Check full-intent
 replay, concurrent duplicate requests, stale or changed terms and quote, foreign
 basket, malformed nested/duplicate fields, bounded input, store failure rollback,
-minimal private receipt and unchanged payment attempts. Keep the guest transport
-inside the critical Rust coverage inventory. These checks provide no live seller,
-legal, provider, browser or operational acceptance.
+minimal private receipt and unchanged payment attempts. In the same router,
+issue a quote, accept one order and cancel it twice under the original cookie
+and CSRF proof. Verify one cancellation event and unchanged hold and payment
+counts. An encoded alias of the guest cookie must be rejected before acceptance.
+Keep both guest transports inside the critical Rust coverage inventory.
 
 ### Private customer favourites
 

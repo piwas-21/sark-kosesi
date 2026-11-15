@@ -32,6 +32,21 @@ export type CallbackForm = {
     id: string;
 };
 
+export type CancellationRequest = {
+    /**
+     * Must be true to confirm the pre-dispatch cancellation.
+     */
+    confirmed: boolean;
+    /**
+     * Stable identifier for exact retries of this cancellation.
+     */
+    effect_key: string;
+};
+
+export type CancellationResponse = {
+    replayed: boolean;
+};
+
 export type Catalogue = {
     items: Array<Product>;
     locale: string;
@@ -898,6 +913,39 @@ export type TestGuestOrderCreateResponses = {
 };
 
 export type TestGuestOrderCreateResponse = TestGuestOrderCreateResponses[keyof TestGuestOrderCreateResponses];
+
+export type TestGuestCancelOrderData = {
+    body: CancellationRequest;
+    headers: {
+        Origin: string;
+        'x-csrf-token': string;
+    };
+    path: {
+        id: string;
+    };
+    query?: never;
+    url: '/api/test/guest/orders/{id}/cancellation';
+};
+
+export type TestGuestCancelOrderErrors = {
+    400: ApiError;
+    401: ApiError;
+    403: ApiError;
+    404: ApiError;
+    409: ApiError;
+    413: ApiError;
+    415: ApiError;
+    503: ApiError;
+    504: ApiError;
+};
+
+export type TestGuestCancelOrderError = TestGuestCancelOrderErrors[keyof TestGuestCancelOrderErrors];
+
+export type TestGuestCancelOrderResponses = {
+    200: CancellationResponse;
+};
+
+export type TestGuestCancelOrderResponse = TestGuestCancelOrderResponses[keyof TestGuestCancelOrderResponses];
 
 export type RedeemTestVerificationData = {
     body: RedeemRequest;
