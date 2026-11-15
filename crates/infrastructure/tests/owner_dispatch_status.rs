@@ -55,13 +55,19 @@ async fn owner_reads_only_recorded_dispatch_and_rejects_damaged_event(pool: PgPo
         Err(PaymentStoreError::Unavailable)
     );
     let id = &prepared.frozen.snapshot().binding.id;
+    let original_key: String =
+        sqlx::query_scalar("SELECT idempotency_key FROM payment_attempts WHERE id=$1")
+            .bind(id)
+            .fetch_one(&pool)
+            .await
+            .expect("original attempt key");
     let id_checks: Vec<(String, String)> = sqlx::query_as("SELECT pg_catalog.quote_ident(c.conname),pg_catalog.pg_get_constraintdef(c.oid) FROM pg_catalog.pg_constraint c WHERE c.conrelid='public.payment_attempts'::pg_catalog.regclass AND c.contype='c' AND c.conkey=ARRAY[(SELECT attnum FROM pg_catalog.pg_attribute WHERE attrelid=c.conrelid AND attname='id')]::smallint[] AND pg_catalog.pg_get_constraintdef(c.oid) LIKE '%~%'")
         .fetch_all(&pool).await.expect("attempt ID check");
     assert_eq!(id_checks.len(), 1);
     let (check, definition) = &id_checks[0];
     sqlx::raw_sql(sqlx::AssertSqlSafe(format!("ALTER TABLE payment_attempts DISABLE TRIGGER guard_payment_attempt; ALTER TABLE payment_attempts DROP CONSTRAINT {check}")))
         .execute(&pool).await.expect("synthetic imported ID fault");
-    sqlx::query("UPDATE payment_attempts SET id='invalid-import' WHERE id=$1")
+    sqlx::query("UPDATE payment_attempts SET id='invalid-import',idempotency_key='piwas-test-payment-invalid-import' WHERE id=$1")
         .bind(id)
         .execute(&pool)
         .await
@@ -70,8 +76,9 @@ async fn owner_reads_only_recorded_dispatch_and_rejects_damaged_event(pool: PgPo
         owned_dispatch_status(&store, &key, oid).await,
         Err(PaymentStoreError::InvalidStoredData)
     );
-    sqlx::query("UPDATE payment_attempts SET id=$1 WHERE id='invalid-import'")
+    sqlx::query("UPDATE payment_attempts SET id=$1,idempotency_key=$2 WHERE id='invalid-import'")
         .bind(id)
+        .bind(&original_key)
         .execute(&pool)
         .await
         .expect("restore attempt identity");
