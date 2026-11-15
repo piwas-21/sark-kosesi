@@ -128,7 +128,7 @@ pub(crate) async fn create(
     if request.uri().query().is_some() {
         return error(StatusCode::BAD_REQUEST, "invalid_order_request");
     }
-    let Some(key) = cookies::exact_guest_cookie(request.headers(), &session) else {
+    let Some(key) = exact_guest_cookie(request.headers(), &session) else {
         return error(StatusCode::UNAUTHORIZED, "guest_session_required");
     };
     if single_header(request.headers(), "content-type").and_then(|v| v.split(';').next())

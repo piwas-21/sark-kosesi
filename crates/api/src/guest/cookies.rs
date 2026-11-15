@@ -1,15 +1,12 @@
 //! Normalize the maintained middleware's deletion cookies for the __Host- prefix.
-use super::{GuestCredential, Rejection};
+use super::Rejection;
 use axum::{
     extract::Request,
     http::{HeaderValue, StatusCode, header::SET_COOKIE},
     middleware::Next,
     response::Response,
 };
-use tower_sessions::{
-    Session,
-    cookie::{Cookie, SameSite},
-};
+use tower_sessions::cookie::{Cookie, SameSite};
 fn as_header(cookie: &Cookie<'_>) -> Result<HeaderValue, Rejection> {
     HeaderValue::from_str(&cookie.to_string())
         .map_err(|_| Rejection(StatusCode::SERVICE_UNAVAILABLE, "guest_unavailable"))
@@ -43,45 +40,6 @@ pub(crate) async fn secure(request: Request, next: Next) -> Result<Response, Rej
     }
     Ok(response)
 }
-
-/// Preserve unrelated cookie fields while rejecting ambiguous guest identities.
-pub(super) fn exact_guest_cookie(
-    headers: &axum::http::HeaderMap,
-    session: &Session,
-) -> Option<GuestCredential> {
-    let mut length = 0usize;
-    let mut found = None;
-    for header in headers.get_all("cookie") {
-        let raw = header.to_str().ok()?;
-        length = length.checked_add(raw.len())?;
-        if length > 4096 {
-            return None;
-        }
-        for part in raw.split(';') {
-            let part = part.trim();
-            let Ok(cookie) = Cookie::parse_encoded(part) else {
-                continue;
-            };
-            if cookie.name() == "__Host-piwas-guest" {
-                if found.is_some()
-                    || part.strip_prefix("__Host-piwas-guest=") != Some(cookie.value())
-                {
-                    return None;
-                }
-                found = Some(cookie.value().to_owned());
-            }
-        }
-    }
-    if found? != session.id()?.to_string() {
-        return None;
-    }
-    GuestCredential::from_session(session).ok()
-}
-
-#[cfg(test)]
-#[path = "../../tests/support/guest_cookie_identity.rs"]
-mod identity_tests;
-
 #[cfg(test)]
 mod tests {
     use super::*;

@@ -65,6 +65,44 @@ fn mutation(
         .filter(|value| value.len() == 64)
         .ok_or(Rejection(StatusCode::FORBIDDEN, "guest_csrf_required"))
 }
+/// Preserve unrelated cookie fields while rejecting ambiguous guest identities.
+fn exact_guest_cookie(
+    headers: &axum::http::HeaderMap,
+    session: &Session,
+) -> Option<GuestCredential> {
+    let mut length = 0usize;
+    let mut found = None;
+    for header in headers.get_all("cookie") {
+        let raw = header.to_str().ok()?;
+        length = length.checked_add(raw.len())?;
+        if length > 4096 {
+            return None;
+        }
+        for part in raw.split(';') {
+            let part = part.trim();
+            let Ok(cookie) = tower_sessions::cookie::Cookie::parse_encoded(part) else {
+                continue;
+            };
+            if cookie.name() == "__Host-piwas-guest" {
+                if found.is_some()
+                    || part.strip_prefix("__Host-piwas-guest=") != Some(cookie.value())
+                {
+                    return None;
+                }
+                found = Some(cookie.value().to_owned());
+            }
+        }
+    }
+    if found? != session.id()?.to_string() {
+        return None;
+    }
+    GuestCredential::from_session(session).ok()
+}
+
+#[cfg(test)]
+#[path = "../../tests/support/guest_cookie_identity.rs"]
+mod cookie_identity_tests;
+
 async fn body<T: DeserializeOwned>(request: Request) -> Result<T, Rejection> {
     if single_header(request.headers(), "content-type").and_then(|value| value.split(';').next())
         != Some("application/json")
