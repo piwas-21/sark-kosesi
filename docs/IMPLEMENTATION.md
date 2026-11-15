@@ -423,7 +423,10 @@ supervision or live provider activation follows from deploying the empty preview
    pages without candidates or a continuation. The private observation journal
    appends exact child facts after network I/O and
    serializes bounded custody with a reciprocal event. Same-effect retries
-   verify the original observation. The page journal keeps a bounded linear scan
+   verify the original observation. A separate private read claims the attempt
+   and validates the complete bounded local observation set, returning its count
+   and source-bound digest without inferring provider completeness or net balance.
+   The page journal keeps a bounded linear scan
    and exact reciprocal events. A validated open tip restores a continuation
    under the same key. A rotated key starts a new root. The private page
    supervisor enrolls from an exact paid observation, commits a single-use

@@ -19,7 +19,7 @@ struct Row {
     recorded_at: i64,
     event_id: String,
     transaction_present: bool,
-    event_present: bool,
+    event_digest: Option<String>,
 }
 fn phase_name(phase: ReversalPhase) -> &'static str {
     match phase {
@@ -103,6 +103,17 @@ pub(in crate::payment_attempts) async fn load(
     started: i64,
     effect: &str,
 ) -> Result<Option<ReversalReceipt>, PaymentStoreError> {
+    Ok(load_with_digest(tx, frozen, started, effect)
+        .await?
+        .map(|(receipt, _)| receipt))
+}
+
+pub(super) async fn load_with_digest(
+    tx: &mut Transaction<'_, Postgres>,
+    frozen: &FrozenAttempt,
+    started: i64,
+    effect: &str,
+) -> Result<Option<(ReversalReceipt, String)>, PaymentStoreError> {
     let row = sqlx::query_as::<_, Row>(
         r#"SELECT left(o.id,33) AS id,
         left(o.order_id,33) AS order_id,left(o.attempt_id,33) AS attempt_id,
@@ -112,10 +123,10 @@ pub(in crate::payment_attempts) async fn load(
         o.source_created_seconds,o.source_created_nanos,o.source_reversed_seconds,
         o.source_reversed_nanos,o.recorded_at,left(o.event_id,33) AS event_id,
         o.transaction_id IS NOT NULL AS transaction_present,
-        EXISTS(SELECT 1 FROM commerce_outbox e WHERE e.id=o.event_id
+        (SELECT e.payload->>'observation_sha256' FROM commerce_outbox e WHERE e.id=o.event_id
           AND e.aggregate_id=o.order_id AND e.kind='payment.reversal_observed.v1'
           AND e.created_at=o.recorded_at
-          AND e.payload=payment_reversal_observation_event(o)) AS event_present
+          AND e.payload=payment_reversal_observation_event(o)) AS event_digest
         FROM payment_reversal_observations o WHERE o.attempt_id=$1 AND o.effect_key=$2"#,
     )
     .bind(&frozen.snapshot().binding.id)
@@ -123,7 +134,8 @@ pub(in crate::payment_attempts) async fn load(
     .fetch_optional(&mut **tx)
     .await?;
     row.map(|r| {
-        if !r.event_present || !r.transaction_present {
+        let event_digest = r.event_digest.ok_or(PaymentStoreError::InvalidStoredData)?;
+        if !r.transaction_present {
             return Err(PaymentStoreError::InvalidStoredData);
         }
         let receipt = ReversalReceipt {
@@ -145,7 +157,7 @@ pub(in crate::payment_attempts) async fn load(
             replayed: true,
         };
         validate(&receipt, frozen, started)?;
-        Ok(receipt)
+        Ok((receipt, event_digest))
     })
     .transpose()
 }

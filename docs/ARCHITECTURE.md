@@ -527,6 +527,16 @@ provider identity for later reconciliation, including ambiguous payment matches
 and amounts above the original payment. Financial and inventory transitions are
 outside this evidence path.
 
+A private set inspection claims the same original attempt, revalidates each
+bounded stored reversal receipt and reciprocal event, and returns only a count
+and source-bound digest of the local journal. It also checks that every reversal
+event for the order has its exact journal receipt. A partial index on the
+outbox aggregate supports the order-scoped check. Repeated child observations
+and unknown statuses remain separate. The detached result becomes stale when the
+local set changes and neither proves provider completeness nor a net balance.
+It must not be combined with another detached inspection as if both held the
+same claim.
+
 The private page journal records a verified collection response after network I/O.
 It claims the dispatched attempt, preserves the provider's ordered candidates and
 binds every stored field to a reciprocal outbox digest. Each root starts a separate
