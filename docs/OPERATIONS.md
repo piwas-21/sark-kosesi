@@ -570,3 +570,25 @@ finding delta. Success establishes only the checks actually recorded. Review
 image and package provenance, other vulnerabilities, restore and rollback,
 operational configuration and exact-revision release gates separately. The
 workflow does not update staging, activate production or accept any risk.
+
+## PostgreSQL Alpine comparison lab
+
+The path-scoped `PostgreSQL Alpine comparison lab` workflow compares the pinned
+PostgreSQL 18.7 Debian AMD64 image with the independently pinned official 18.7
+Alpine 3.24 AMD64 image. It checks registry manifest and config bytes, then uses
+separate disposable containers with network disabled and temporary data volumes.
+A synthetic custom-format compressed dump from Debian is restored into a new
+Alpine database. It checks exact non-ASCII rows, an independently specified
+`C`-collated unique-index order, duplicate rejection, sequence state and an
+invalid-archive negative control. The two systems' PostgreSQL UID/GID, locale
+provider, encoding and collation metadata are recorded rather than presumed equal.
+
+The lab also captures complete unfiltered Trivy reports for both immutable images
+using the same fresh vulnerability database, with a positive finding control for
+CVE-2026-6653. Its comparison reports both presence and absence of that finding;
+it does not waive any finding, establish reachability, or declare either image
+safe. A synthetic logical restore and bytewise `C` ordering cannot establish
+compatibility of an existing physical volume, application extensions or default
+locale semantics across libc implementations. Actual restore, ownership, indexes,
+collations, extension compatibility, current security disposition and deployment
+remain separate gates. The lab never connects to or alters staging or production.
