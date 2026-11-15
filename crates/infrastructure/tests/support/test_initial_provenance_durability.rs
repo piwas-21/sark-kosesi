@@ -144,6 +144,70 @@ async fn initial_provenance_late_async_sabotage_is_uncertain_and_never_reposts(p
 }
 
 #[sqlx::test(migrator = "MIGRATOR")]
+async fn initial_provenance_rejects_a_different_frozen_attempt(pool: PgPool) {
+    use crate::{
+        mollie::CreatedPayment,
+        payment_attempts::{DispatchOutcome, PaymentStoreError, observations, start_dispatch},
+    };
+
+    let (time, frozen) = prepared(&pool).await;
+    let id = &frozen.snapshot().binding.id;
+    let ids = crate::payment_test_fixture::Ids(AtomicU64::new(10000));
+    assert!(matches!(
+        start_dispatch(&pool, time.as_ref(), &ids, id, &config(&credential())).await,
+        Ok(DispatchOutcome::Start(_))
+    ));
+    let server = Server::start(vec![
+        profile(),
+        Reply::Json(200, payment(frozen.snapshot())),
+        Reply::Json(200, payment(frozen.snapshot())),
+    ]);
+    let client = local(&server).verify_profile().await.expect("test profile");
+    let mut other = frozen.snapshot().clone();
+    other.request_sha256 = if other.request_sha256 == "a".repeat(64) {
+        "b".repeat(64)
+    } else {
+        "a".repeat(64)
+    };
+    other.validate().expect("valid different frozen attempt");
+    // The GET is authenticated and matches both projections, but the synthetic
+    // create evidence carries a different request hash from stored custody.
+    let fetched = client
+        .fetch(&other, "tr_SYNTHETIC_NotARealPayment")
+        .await
+        .expect("authenticated synthetic GET");
+    let initial = CreatedPayment {
+        provider_id: "tr_SYNTHETIC_NotARealPayment".into(),
+        attempt: other,
+    }
+    .bind(fetched)
+    .expect("synthetic create and GET agree");
+    assert!(matches!(
+        observations::fixture_record_initial(&pool, time.as_ref(), &ids, id, initial).await,
+        Err(PaymentStoreError::Conflict)
+    ));
+    assert_eq!(counts(&pool).await, (1, 1, 0, 0, 0));
+    let fetched = client
+        .fetch(frozen.snapshot(), "tr_SYNTHETIC_NotARealPayment")
+        .await
+        .expect("matching authenticated GET");
+    let matching = CreatedPayment {
+        provider_id: "tr_SYNTHETIC_NotARealPayment".into(),
+        attempt: frozen.snapshot().clone(),
+    }
+    .bind(fetched)
+    .expect("matching synthetic evidence");
+    observations::fixture_record_initial(&pool, time.as_ref(), &ids, id, matching)
+        .await
+        .expect("original frozen attempt accepted");
+    assert_eq!(counts(&pool).await, (1, 1, 1, 1, 1));
+    server.inspect(|requests| {
+        assert_eq!(requests.len(), 3);
+        assert!(requests.iter().all(|request| request.method == "GET"));
+    });
+}
+
+#[sqlx::test(migrator = "MIGRATOR")]
 async fn initial_provenance_rejects_shadowed_xid_and_digest(pool: PgPool) {
     use crate::payment_attempts::{DispatchOutcome, observations, start_dispatch};
 

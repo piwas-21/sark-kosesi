@@ -146,7 +146,7 @@ async fn record(
         )
         .fetch_one(&mut *tx)
         .await?;
-        if fsync != "on" || synchronous_commit != "on" {
+        if (fsync.as_str(), synchronous_commit.as_str()) != ("on", "on") {
             return Err(PaymentStoreError::Unavailable);
         }
     }

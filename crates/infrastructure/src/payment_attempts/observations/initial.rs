@@ -14,7 +14,7 @@ pub(crate) async fn read_source(
     let Some((observation_id, exact)) = row else {
         return Ok(None);
     };
-    if !exact || !identifier(&observation_id) {
+    if !exact {
         return Err(PaymentStoreError::InvalidStoredData);
     }
     let observation = rows::by_id(tx, frozen, started_at, &observation_id)

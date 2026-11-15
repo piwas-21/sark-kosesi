@@ -560,8 +560,12 @@ different fetched identity. A real callback occupying the initial effect key mus
 retain its normal exact replay while the initial path remains uncertain and cannot
 mint or later attach a provenance receipt. A receipt-write fault must roll back the
 observation and event while retaining the original start and reconciliation path.
-Legacy transaction fields remain nullable and existing observation reads continue
-to work. Verify the source digest against an independent fixed-byte oracle and
+A silently suppressed receipt insert must also leave an independent write witness
+and roll back, without a second POST. An authenticated loopback GET bound to a
+synthetic, different frozen request must be rejected; the stored original must
+still be accepted. Legacy transaction fields remain nullable, historical reads
+continue to work, and an absent origin receipt remains unproven. Verify the source
+digest against an independent fixed-byte oracle and
 under different timezone, DateStyle and bytea settings. A coherently changed
 provider ID and observation snapshot must fail the unchanged receipt's native and
 Rust source checks; exact repair must restore both. These controls do not detect

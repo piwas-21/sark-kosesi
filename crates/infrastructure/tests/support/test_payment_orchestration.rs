@@ -336,12 +336,15 @@ async fn clock_failure_after_committed_start_is_uncertain_without_a_post(pool: P
 #[path = "test_dispatch_durability.rs"]
 mod durability;
 
-#[sqlx::test(migrator = "MIGRATOR")]
-async fn initial_provenance_insert_failure_rolls_back_observation_and_event(pool: PgPool) {
+async fn failed_initial_provenance_insert(pool: PgPool, suppress: bool) {
     let (time, frozen) = prepared(&pool).await;
     let id = &frozen.snapshot().binding.id;
-    pool.execute("CREATE FUNCTION fixture_reject_initial_provenance() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN RAISE EXCEPTION 'synthetic'; END $$; CREATE TRIGGER fixture_reject_initial_provenance BEFORE INSERT ON payment_initial_dispatch_provenance FOR EACH ROW EXECUTE FUNCTION fixture_reject_initial_provenance()")
-        .await.expect("fault setup");
+    let fault = if suppress {
+        "CREATE SEQUENCE fixture_initial_suppression_witness; CREATE FUNCTION fixture_reject_initial_provenance() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN PERFORM nextval('fixture_initial_suppression_witness'); RETURN NULL; END $$; CREATE TRIGGER zz_fixture_reject_initial_provenance BEFORE INSERT ON payment_initial_dispatch_provenance FOR EACH ROW EXECUTE FUNCTION fixture_reject_initial_provenance()"
+    } else {
+        "CREATE FUNCTION fixture_reject_initial_provenance() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN RAISE EXCEPTION 'synthetic'; END $$; CREATE TRIGGER fixture_reject_initial_provenance BEFORE INSERT ON payment_initial_dispatch_provenance FOR EACH ROW EXECUTE FUNCTION fixture_reject_initial_provenance()"
+    };
+    pool.execute(fault).await.expect("fault setup");
     let pay = payment(frozen.snapshot());
     let server = Server::start(vec![
         profile(),
@@ -355,6 +358,14 @@ async fn initial_provenance_insert_failure_rolls_back_observation_and_event(pool
         Err(InitialDispatchError::Uncertain)
     );
     assert_eq!(counts(&pool).await, (1, 1, 0, 0));
+    if suppress {
+        let witness: (i64, bool) =
+            sqlx::query_as("SELECT last_value,is_called FROM fixture_initial_suppression_witness")
+                .fetch_one(&pool)
+                .await
+                .expect("suppressed receipt was attempted");
+        assert_eq!(witness, (1, true));
+    }
     let receipts: i64 =
         sqlx::query_scalar("SELECT count(*) FROM payment_initial_dispatch_provenance")
             .fetch_one(&pool)
@@ -366,6 +377,16 @@ async fn initial_provenance_insert_failure_rolls_back_observation_and_event(pool
         Ok(InitialDispatchOutcome::Reconcile)
     );
     assert_eq!(server.count(), 3);
+}
+
+#[sqlx::test(migrator = "MIGRATOR")]
+async fn initial_provenance_insert_failure_rolls_back_observation_and_event(pool: PgPool) {
+    failed_initial_provenance_insert(pool, false).await;
+}
+
+#[sqlx::test(migrator = "MIGRATOR")]
+async fn suppressed_initial_provenance_rolls_back_and_never_reposts(pool: PgPool) {
+    failed_initial_provenance_insert(pool, true).await;
 }
 
 #[sqlx::test(migrator = "MIGRATOR")]
@@ -464,6 +485,17 @@ async fn callback_effect_collision_never_upgrades_a_historical_observation(pool:
             .await
             .expect("no origin receipt");
     assert_eq!(receipts, 0);
+    let mut tx = pool.begin().await.expect("historical read");
+    let (current, started) = crate::payment_attempts::evidence::context(&mut tx, &id, false)
+        .await
+        .expect("historical context");
+    assert!(
+        crate::payment_attempts::observations::initial::read_source(&mut tx, &current, started)
+            .await
+            .expect("absent source is not evidence")
+            .is_none()
+    );
+    tx.rollback().await.expect("end historical read");
     // A later native transaction cannot attach the old observation/event to a new receipt.
     let upgrade = sqlx::query("INSERT INTO payment_initial_dispatch_provenance(attempt_id,start_id,observation_id,observation_event_id,observation_sha256) SELECT s.attempt_id,s.id,o.id,e.id,payment_initial_observation_digest(o) FROM payment_dispatch_starts s JOIN payment_observations o ON o.attempt_id=s.attempt_id JOIN commerce_outbox e ON e.kind='payment.observation_recorded.v1' AND e.payload->>'observation_id'=o.id WHERE s.attempt_id=$1")
         .bind(&id).execute(&pool).await;
