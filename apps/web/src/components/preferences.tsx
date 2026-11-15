@@ -43,6 +43,7 @@ export function Preferences({ locale }: { locale: Locale }) {
         Language{" "}
         <select
           aria-label="Language"
+          disabled={theme === undefined}
           value={locale}
           onChange={(event) => {
             const next = event.target.value;
@@ -75,6 +76,7 @@ export function Preferences({ locale }: { locale: Locale }) {
         Theme{" "}
         <select
           aria-label="Theme"
+          disabled={theme === undefined}
           value={theme ?? "system"}
           onChange={(event) => {
             const value = event.target.value;
