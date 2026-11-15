@@ -514,7 +514,11 @@ Independent transactions acquire attempt/stock UPDATE claims during that I/O,
 proving the transport holds no database transaction. GET accepts genuine late-paid
 state under a separately verified same-profile rotated test key; it changes no
 order, stock, payment or fulfilment state. A wire response is not actual provider
-sandbox or customer/payment acceptance.
+sandbox or customer/payment acceptance. The private orchestration additionally
+exercises competing callers, POST reply loss, mismatched GET, failed observation
+write and cancellation during GET with real isolated PostgreSQL and loopback.
+Each retains one start and reconciliation event without another POST; the success
+control retains a matching observation and event. These are not provider evidence.
 
 Compiled provider controls bypass authenticated-profile verification, fetched
 payment matching, the early streamed-byte limit, duplicate-field preservation and

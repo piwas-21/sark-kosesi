@@ -295,8 +295,11 @@ supervision or live provider activation follows from deploying the empty preview
    reconcile even after key/hold/source expiry. The private test-key HTTP client now
    verifies the authenticated expected profile, sends exact permit bytes once and
    separately fetches a bounded checked payment projection. It installs no runtime
-   key, worker or payment transition. Bounded private unknown-ID list pages now
-   return metadata-associated identity hints, preserving duplicate critical fields
+   key, worker or payment transition. A private explicit orchestration now connects
+   the one-use start to a matching authenticated GET and durable observation;
+   any post-start failure stays uncertain and existing starts reconcile without
+   another POST. It installs no route, scheduler, key or redirect. Bounded private
+   unknown-ID list pages now return metadata-associated identity hints, preserving duplicate critical fields
    and validated fixed-origin cursors. Every candidate needs a separate checked
    GET; no/partial results cannot authorize another POST. Private verified-fetch
    observations now persist minimal exact original-attempt projections, actual

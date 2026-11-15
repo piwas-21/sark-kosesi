@@ -1037,3 +1037,6 @@ mod paid_parent_fault_cases;
 
 #[path = "restore_rehearsal.rs"]
 mod restore_rehearsal;
+
+#[path = "test_payment_orchestration.rs"]
+mod test_payment_orchestration;
