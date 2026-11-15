@@ -546,6 +546,31 @@ and image identities, scope and custody; inspect the unfiltered report with the
 offline audit above. A successful capture does not establish deployment, image
 provenance, vulnerability disposition or release readiness.
 
+## Isolated PostgreSQL zlib candidate
+
+`ops/db-zlib-candidate/Dockerfile` and `scripts/test_db_zlib_candidate.sh`
+prepare a disposable AMD64-only candidate from the pinned PostgreSQL platform
+manifest. The candidate obtains one exact `zlib1g` security package from the
+Debian security archive using the pinned base's Debian archive keyring, checks
+APT's authenticated index and a pinned package SHA-256, and rejects any change
+to another installed package. A read-only build mount provides the hosted
+runner's CA bundle for HTTPS; APT signature verification remains mandatory.
+It preserves the signed APT index, exact package, trust-input hashes, bounded
+stage results and before/after inventories in the candidate evidence. Raw
+package-manager output is not retained or printed. Treat those records as
+review evidence, not independent attestation by themselves.
+
+The path-scoped PostgreSQL zlib candidate workflow runs the script on a
+throwaway Linux runner when its candidate files change in a PR. It uses only
+synthetic rows, no external network for either database container, an actual
+compressed custom-format dump/restore and a rejected invalid-archive control.
+It scans the pinned base and built candidate using the same fresh vulnerability
+database, retains both raw reports, and checks the target zlib package and
+finding delta. Success establishes only the checks actually recorded. Review
+image and package provenance, other vulnerabilities, restore and rollback,
+operational configuration and exact-revision release gates separately. The
+workflow does not update staging, activate production or accept any risk.
+
 ## Optional PostgreSQL Gosu rebuild experiment
 
 The `PostgreSQL Gosu candidate` workflow uses a disposable runner and synthetic

@@ -1,0 +1,35 @@
+name: PostgreSQL zlib candidate evidence
+on:
+  pull_request:
+    branches: [develop]
+    paths:
+      - .github/workflows/db-zlib-candidate.yml
+      - ops/db-zlib-candidate/**
+      - scripts/test_db_zlib_candidate.sh
+      - scripts/compare_db_zlib_scan.py
+      - tests/tooling/test_compare_db_zlib_scan.py
+permissions: {}
+jobs:
+  candidate:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 35
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          persist-credentials: false
+      - name: Build and test disposable candidate
+        env:
+          ZLIB_SOURCE_REVISION: ${{ github.event.pull_request.head.sha }}
+          ZLIB_EVIDENCE_DIR: ${{ runner.temp }}/db-zlib-evidence
+          ZLIB_SCRATCH_DIR: ${{ runner.temp }}/db-zlib-scratch
+        run: bash scripts/test_db_zlib_candidate.sh
+      - name: Retain synthetic evidence and failures
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+        with:
+          name: db-zlib-candidate-${{ github.event.pull_request.head.sha }}
+          path: ${{ runner.temp }}/db-zlib-evidence/
+          if-no-files-found: warn
