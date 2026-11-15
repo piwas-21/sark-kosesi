@@ -56,7 +56,27 @@ async fn issue(
     } else {
         (guest_baskets::mutation_scope(store, key, csrf).await?, None)
     };
-    let account = session.as_ref().map(|s| s.account_id());
+    let result = issue_in_scope(&mut scope, session.as_ref(), locale, request, promotion_id).await;
+    if result.is_err() {
+        check_authority(&mut scope, session.as_ref())?;
+    }
+    let receipt = result?;
+    if receipt.replayed {
+        scope.rollback().await?;
+    } else {
+        scope.commit().await?;
+    }
+    Ok(receipt)
+}
+
+async fn issue_in_scope(
+    scope: &mut BasketScope,
+    session: Option<&crate::customer_sessions::HeldSession>,
+    locale: Locale,
+    request: &GuestQuoteRequest,
+    promotion_id: &str,
+) -> Result<PromotedQuoteReceipt, QuoteStoreError> {
+    let account = session.map(|s| s.account_id());
     request.validate()?;
     if !merchant_code(promotion_id) {
         return Err(QuoteStoreError::InvalidRequest);
@@ -79,9 +99,8 @@ async fn issue(
             return Err(QuoteStoreError::Conflict);
         }
         let at = scope.checked_at()?;
-        check_session(session.as_ref(), at)?;
+        check_session(session, at)?;
         check_snapshot(&snapshot, &policy, account, at)?;
-        scope.rollback().await?;
         return Ok(PromotedQuoteReceipt {
             snapshot,
             replayed: true,
@@ -97,7 +116,7 @@ async fn issue(
     input
         .validate()
         .map_err(|_| QuoteStoreError::InvalidRequest)?;
-    issue::quota(&mut scope).await?;
+    issue::quota(scope).await?;
     // Hold both reviewed anchors in the global market -> promotion order.
     let market =
         market_policies::reviewed_policy_in_transaction(scope.transaction(), &input).await?;
@@ -165,10 +184,9 @@ async fn issue(
         _ => return Err(QuoteStoreError::InvalidStoredData),
     }
     let at = scope.checked_at()?;
-    check_session(session.as_ref(), at)?;
+    check_session(session, at)?;
     proof.check_at(at)?;
     check_snapshot(&snapshot, &promotion, account, at)?;
-    scope.commit().await?;
     Ok(PromotedQuoteReceipt {
         snapshot,
         replayed: false,
@@ -203,7 +221,21 @@ async fn owned(
     } else {
         (guest_baskets::read_scope(store, key).await?, None)
     };
-    let account = session.as_ref().map(|s| s.account_id());
+    let result = read_in_scope(&mut scope, session.as_ref(), id).await;
+    if result.is_err() {
+        check_authority(&mut scope, session.as_ref())?;
+    }
+    let snapshot = result?;
+    scope.rollback().await?;
+    Ok(snapshot)
+}
+
+async fn read_in_scope(
+    scope: &mut BasketScope,
+    session: Option<&crate::customer_sessions::HeldSession>,
+    id: &str,
+) -> Result<PromotedQuoteSnapshot, QuoteStoreError> {
+    let account = session.map(|s| s.account_id());
     if !identifier(id) {
         return Err(QuoteStoreError::InvalidRequest);
     }
@@ -214,12 +246,11 @@ async fn owned(
             stored::StoredQuote::Promoted(snapshot, policy) => (*snapshot, *policy),
         };
     let at = scope.checked_at()?;
-    check_session(session.as_ref(), at)?;
+    check_session(session, at)?;
     check_snapshot(&snapshot, &policy, account, at)?;
-    scope.rollback().await?;
     Ok(snapshot)
 }
-fn check_session(
+pub(super) fn check_session(
     session: Option<&crate::customer_sessions::HeldSession>,
     at: i64,
 ) -> Result<(), QuoteStoreError> {

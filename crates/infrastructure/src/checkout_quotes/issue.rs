@@ -40,6 +40,24 @@ pub async fn issue_quote(
     request: &GuestQuoteRequest,
 ) -> Result<QuoteReceipt, QuoteStoreError> {
     let mut scope = guest_baskets::mutation_scope(store, key, csrf).await?;
+    let result = issue_in_scope(&mut scope, locale, request).await;
+    if result.is_err() {
+        check_authority(&mut scope, None)?;
+    }
+    let receipt = result?;
+    if receipt.replayed {
+        scope.rollback().await?;
+    } else {
+        scope.commit().await?;
+    }
+    Ok(receipt)
+}
+
+async fn issue_in_scope(
+    scope: &mut BasketScope,
+    locale: Locale,
+    request: &GuestQuoteRequest,
+) -> Result<QuoteReceipt, QuoteStoreError> {
     request.validate()?;
     let owner = scope.basket_id().to_owned();
     if let Some((snapshot, _)) =
@@ -58,7 +76,6 @@ pub async fn issue_quote(
             return Err(QuoteStoreError::Conflict);
         }
         snapshot.check_at(scope.checked_at()?)?;
-        scope.rollback().await?;
         return Ok(QuoteReceipt {
             snapshot,
             replayed: true,
@@ -74,7 +91,7 @@ pub async fn issue_quote(
     input
         .validate()
         .map_err(|_| QuoteStoreError::InvalidRequest)?;
-    quota(&mut scope).await?;
+    quota(scope).await?;
     let policy: market_policies::ReviewedPolicy =
         market_policies::reviewed_policy_in_transaction(scope.transaction(), &input).await?;
     let clock = scope.clock();
@@ -110,7 +127,6 @@ pub async fn issue_quote(
     let at = scope.checked_at()?;
     proof.check_at(at)?;
     snapshot.check_at(at)?;
-    scope.commit().await?;
     Ok(QuoteReceipt {
         snapshot,
         replayed: false,
@@ -122,12 +138,24 @@ pub async fn owned_quote(
     id: &str,
 ) -> Result<QuoteSnapshot, QuoteStoreError> {
     let mut scope = guest_baskets::read_scope(store, key).await?;
+    let result = read_in_scope(&mut scope, id).await;
+    if result.is_err() {
+        check_authority(&mut scope, None)?;
+    }
+    let snapshot = result?;
+    scope.rollback().await?;
+    Ok(snapshot)
+}
+
+async fn read_in_scope(
+    scope: &mut BasketScope,
+    id: &str,
+) -> Result<QuoteSnapshot, QuoteStoreError> {
     if !identifier(id) {
         return Err(QuoteStoreError::InvalidRequest);
     }
     let owner = scope.basket_id().to_owned();
     let snapshot = stored::by_id(scope.transaction(), &owner, id).await?;
     snapshot.check_at(scope.checked_at()?)?;
-    scope.rollback().await?;
     Ok(snapshot)
 }

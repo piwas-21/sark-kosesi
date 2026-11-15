@@ -667,3 +667,242 @@ async fn photo_rights_are_checked_after_all_order_and_event_writes(pool: PgPool)
 async fn guest_identity_is_checked_after_all_order_and_event_writes(pool: PgPool) {
     final_source_wait(pool, "identity").await;
 }
+
+#[sqlx::test(migrator = "MIGRATOR")]
+async fn guest_expiry_hides_stock_failure_after_real_component_lock_wait(pool: PgPool) {
+    seed(&pool).await;
+    let (store, time) = store(&pool, 1100);
+    let (session, csrf) = guest(&store).await;
+    let key = GuestCredential::from_session(&session).expect("guest");
+    let quote = issue_quote(&store, &key, &csrf, Locale::Nl, &request("stock-freshness"))
+        .await
+        .expect("available quote")
+        .snapshot;
+    let intent = fixture::intent(&quote.binding.quote_id);
+    let before = counts(&pool).await;
+    for expired in [false, true] {
+        let mut held = pool.begin().await.expect("stock gate");
+        sqlx::query("UPDATE stock_balances SET on_hand=0 WHERE component_code='SEAT-FOAM'")
+            .execute(&mut *held)
+            .await
+            .expect("lock and exhaust foam");
+        let task = tokio::spawn({
+            let store = store.clone();
+            let key = GuestCredential::from_session(&session).expect("guest");
+            let csrf = csrf.clone();
+            let intent = intent.clone();
+            async move {
+                create_order(
+                    &store,
+                    &key,
+                    &csrf,
+                    "place-stock",
+                    &intent,
+                    &fixture::seller(),
+                )
+                .await
+            }
+        });
+        waiting(
+            &pool,
+            "SELECT component_code,on_hand,quarantine,reserved FROM stock_balances%",
+        )
+        .await;
+        if expired {
+            time.0.store(606000, Ordering::SeqCst);
+        }
+        held.commit().await.expect("release exhausted stock");
+        let result = task.await.expect("order task");
+        if expired {
+            assert!(matches!(result, Err(OrderStoreError::Denied)));
+        } else {
+            assert!(matches!(result, Err(OrderStoreError::Unavailable)));
+        }
+        assert_eq!(counts(&pool).await, before);
+        time.0.store(1100, Ordering::SeqCst);
+        pool.execute("UPDATE stock_balances SET on_hand=100 WHERE component_code='SEAT-FOAM'")
+            .await
+            .expect("restore fixture stock");
+    }
+    let result = create_order(
+        &store,
+        &key,
+        &csrf,
+        "place-stock",
+        &intent,
+        &fixture::seller(),
+    )
+    .await
+    .expect("fresh in-stock positive control");
+    assert!(!result.replayed);
+    assert_eq!(counts(&pool).await, (1, 1, 1, 1, 2));
+}
+
+#[sqlx::test(migrator = "MIGRATOR")]
+async fn expired_guest_cannot_learn_replay_mismatch_after_order_read_wait(pool: PgPool) {
+    seed(&pool).await;
+    let (store, time) = store(&pool, 1100);
+    let (session, csrf) = guest(&store).await;
+    let key = GuestCredential::from_session(&session).expect("guest");
+    let quote = issue_quote(&store, &key, &csrf, Locale::Nl, &request("replay-wait"))
+        .await
+        .expect("quote")
+        .snapshot;
+    let intent = fixture::intent(&quote.binding.quote_id);
+    create_order(
+        &store,
+        &key,
+        &csrf,
+        "replay-key",
+        &intent,
+        &fixture::seller(),
+    )
+    .await
+    .expect("record original");
+    let mut changed = intent.clone();
+    changed.buyer.name = "different synthetic buyer".into();
+    let before = counts(&pool).await;
+    for expired in [false, true] {
+        let mut held = pool.begin().await.expect("order read gate");
+        sqlx::query("LOCK TABLE checkout_orders IN ACCESS EXCLUSIVE MODE")
+            .execute(&mut *held)
+            .await
+            .expect("block source read");
+        let task = tokio::spawn({
+            let store = store.clone();
+            let key = GuestCredential::from_session(&session).expect("guest");
+            let csrf = csrf.clone();
+            let changed = changed.clone();
+            async move {
+                create_order(
+                    &store,
+                    &key,
+                    &csrf,
+                    "replay-key",
+                    &changed,
+                    &fixture::seller(),
+                )
+                .await
+            }
+        });
+        waiting(&pool, "SELECT left(o.id,33) AS id%").await;
+        if expired {
+            time.0.store(606000, Ordering::SeqCst);
+        }
+        held.commit().await.expect("release source read");
+        let result = task.await.expect("order task");
+        if expired {
+            assert!(matches!(result, Err(OrderStoreError::Denied)));
+        } else {
+            assert!(matches!(result, Err(OrderStoreError::Conflict)));
+        }
+        assert_eq!(counts(&pool).await, before);
+        time.0.store(1100, Ordering::SeqCst);
+    }
+    assert!(
+        create_order(
+            &store,
+            &key,
+            &csrf,
+            "replay-key",
+            &intent,
+            &fixture::seller()
+        )
+        .await
+        .expect("fresh exact replay")
+        .replayed
+    );
+}
+
+#[sqlx::test(migrator = "MIGRATOR")]
+async fn expired_guest_cannot_learn_damaged_replay_after_order_read_wait(pool: PgPool) {
+    seed(&pool).await;
+    let (store, time) = store(&pool, 1100);
+    let (session, csrf) = guest(&store).await;
+    let key = GuestCredential::from_session(&session).expect("guest");
+    let quote = issue_quote(&store, &key, &csrf, Locale::Nl, &request("damaged-replay"))
+        .await
+        .expect("quote")
+        .snapshot;
+    let intent = fixture::intent(&quote.binding.quote_id);
+    create_order(
+        &store,
+        &key,
+        &csrf,
+        "replay-damaged",
+        &intent,
+        &fixture::seller(),
+    )
+    .await
+    .expect("record original");
+    let original: serde_json::Value = sqlx::query_scalar("SELECT snapshot FROM checkout_orders")
+        .fetch_one(&pool)
+        .await
+        .expect("original snapshot");
+    pool.execute("ALTER TABLE checkout_orders DISABLE TRIGGER USER; UPDATE checkout_orders SET snapshot=jsonb_set(snapshot, '{seller,legal_name}', '\"\"'::jsonb); ALTER TABLE checkout_orders ENABLE TRIGGER USER")
+        .await.expect("isolated damaged source");
+    let before = counts(&pool).await;
+    for expired in [false, true] {
+        let mut held = pool.begin().await.expect("order read gate");
+        sqlx::query("LOCK TABLE checkout_orders IN ACCESS EXCLUSIVE MODE")
+            .execute(&mut *held)
+            .await
+            .expect("block source read");
+        let task = tokio::spawn({
+            let store = store.clone();
+            let key = GuestCredential::from_session(&session).expect("guest");
+            let csrf = csrf.clone();
+            let intent = intent.clone();
+            async move {
+                create_order(
+                    &store,
+                    &key,
+                    &csrf,
+                    "replay-damaged",
+                    &intent,
+                    &fixture::seller(),
+                )
+                .await
+            }
+        });
+        waiting(&pool, "SELECT left(o.id,33) AS id%").await;
+        if expired {
+            time.0.store(606000, Ordering::SeqCst);
+        }
+        held.commit().await.expect("release source read");
+        let result = task.await.expect("order task");
+        if expired {
+            assert!(matches!(result, Err(OrderStoreError::Denied)));
+        } else {
+            assert!(matches!(result, Err(OrderStoreError::InvalidStoredData)));
+        }
+        assert_eq!(counts(&pool).await, before);
+        time.0.store(1100, Ordering::SeqCst);
+    }
+    let mut tx = pool.begin().await.expect("restore");
+    tx.execute("ALTER TABLE checkout_orders DISABLE TRIGGER USER")
+        .await
+        .expect("test guard");
+    sqlx::query("UPDATE checkout_orders SET snapshot=$1")
+        .bind(original)
+        .execute(&mut *tx)
+        .await
+        .expect("restore snapshot");
+    tx.execute("ALTER TABLE checkout_orders ENABLE TRIGGER USER")
+        .await
+        .expect("test guard");
+    tx.commit().await.expect("restore exact source");
+    assert!(
+        create_order(
+            &store,
+            &key,
+            &csrf,
+            "replay-damaged",
+            &intent,
+            &fixture::seller()
+        )
+        .await
+        .expect("fresh exact replay")
+        .replayed
+    );
+}

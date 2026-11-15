@@ -325,8 +325,10 @@ Closed bounded JSON and static errors prevent internal source/destination exposu
 Snapshots and command inputs omit Debug; customer projections omit owner, policy
 and destination. Stored JSON is size-bounded and allocation/shape/header validated.
 Immutable rows cannot be edited/deleted or rebound to another basket/review/BOM.
-Final source/identity checks follow inserts; revocation waits for active claims,
-and rollback leaves no quote or successful-issuance charge. Historical receipts
+Final source/identity checks follow inserts; after source-dependent failures, the
+held guest and any customer session are also checked against a fresh clock before
+returning the error. Revocation waits for active claims, and rollback leaves no
+quote or successful-issuance charge. Historical receipts
 cannot refresh expiry or bypass current order readiness. Public bridge abuse
 controls, retention operations and complete order/payment authority remain required.
 
@@ -355,8 +357,10 @@ Native insertion binds the attempt to the quote account. The account association
 stays in the private relational record.
 Private cancellation uses the same guest and account authority as the order.
 Cancellation and admission share a basket claim; cancellation and dispatch share
-an attempt claim and reject a conflicting durable effect after waiting. The event
-carries only the order ID and schema version.
+an attempt claim and reject a conflicting durable effect after waiting. Both
+cancellation and receipt reads recheck held guest and account authority before
+returning source-dependent success or failure, including after a lock wait. The
+event carries only the order ID and schema version.
 Public coupon access still requires authenticated checkout and trusted-edge
 abuse controls.
 
@@ -371,7 +375,9 @@ Fresh guest ownership/CSRF and current reviewed sources protect an atomic order,
 complete component reservation and minimal PII-free outbox event. Buyer/address/
 seller snapshots intentionally lack Debug; the boundary maps database errors to
 static classes and never returns failed-row detail. Stored bounded closed objects
-and source/header bindings are revalidated on reads and retries. Address/email
+and source/header bindings are revalidated on reads and retries. Source-dependent
+errors, including a replay intent conflict, are withheld unless the held guest
+and any verified account session remain current after source waits. Address/email
 syntax is neither ownership nor delivery proof. Seller/legal snapshots require
 trusted configuration; installation supplies none. Public routes, abuse controls,
 retention/erasure operations, coupon accounting and payment authority remain gates.
