@@ -82,6 +82,7 @@ class RustCoverage(unittest.TestCase):
             ("crates/domain/src/payment_attempts/callbacks/inbox.rs", False),
             ("crates/infrastructure/src/payment_attempts/callbacks/inbox/jobs.rs", False),
             ("crates/infrastructure/src/payment_attempts/callbacks/inbox/rows.rs", False),
+            ("crates/infrastructure/src/payment_attempts/reversals/set.rs", False),
             ("crates/worker/src/callbacks.rs", False),
             ("crates/api/src/callbacks/mod.rs", False),
             ("crates/api/src/callbacks/form.rs", False),

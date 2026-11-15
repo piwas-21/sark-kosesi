@@ -130,7 +130,9 @@ only bounded reversal identity hints and scoped continuations after verifying th
 paid original. Every verified page retains the authenticated request scope,
 including empty and terminal pages. A private journal records exact authenticated child
 observations and their reciprocal events, with bounded history and effect-key
-replay. It preserves amounts above the original payment and unresolved reversal
+replay. A private read validates and digests the bounded local observation set
+under its attempt claim, without proving provider completeness or net balance.
+It preserves amounts above the original payment and unresolved reversal
 status. The private page journal keeps exact candidate order and cursor lineage
 with effect-key replay. A validated open tip can restore a same-key continuation.
 An explicit test-profile supervisor now admits bounded page operations from an
