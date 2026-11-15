@@ -397,6 +397,10 @@ async fn login_verified_before_password_reset_cannot_issue_after_reset(pool: PgP
         .finalize()
         .to_vec();
     let mut blocker = pool.begin().await.expect("account transaction");
+    let blocker_pid: i32 = sqlx::query_scalar("SELECT pg_backend_pid()")
+        .fetch_one(&mut *blocker)
+        .await
+        .expect("blocker backend");
     sqlx::query("SELECT id FROM verified_customer_accounts WHERE id=$1 FOR UPDATE")
         .bind(id)
         .fetch_one(&mut *blocker)
@@ -415,7 +419,8 @@ async fn login_verified_before_password_reset_cannot_issue_after_reset(pool: PgP
     });
     let mut waiting = false;
     for _ in 0..300 {
-        let n: i64 = sqlx::query_scalar("SELECT count(*) FROM pg_locks WHERE locktype='transactionid' AND NOT granted AND pid<>pg_backend_pid()").fetch_one(&pool).await.expect("lock waits");
+        let n: i64 = sqlx::query_scalar("SELECT count(*) FROM pg_stat_activity WHERE datname=current_database() AND wait_event_type='Lock' AND query LIKE 'SELECT verified_at FROM verified_customer_accounts WHERE id=%FOR UPDATE' AND $1=ANY(pg_blocking_pids(pid))")
+            .bind(blocker_pid).fetch_one(&pool).await.expect("exact login waiter blocked by our transaction");
         if n > 0 {
             waiting = true;
             break;

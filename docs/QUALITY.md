@@ -49,7 +49,7 @@ No fake commands or passing jobs before code exists. Pin the following free tool
 | `npm run test:discovery`                     | Served HTML, sitemap, canonical/hreflang, product/feed and negative controls in DISCOVERY                                                                                                                     |
 | `npm run test:performance`                   | Production-build Lighthouse CI and payload budgets; k6 isolated API/load fixture in performance config                                                                                                        |
 
-The required `Application gate` aggregates three independently checked-out jobs at the same candidate revision. `Application checks` runs the Rust audit, TypeScript, unit, integration, migration and contract commands and publishes its revision-bound evidence. `Application coverage` runs the Rust format and Clippy check followed by the complete coverage command, with isolated database fixtures, and publishes the validated coverage and Clippy reports as a revision-bound artifact. `Application browser` builds the production application and runs the full browser suite with its own isolated databases, fallback capture and evidence upload, including the private guest Chromium transport. All three jobs must succeed; failed, skipped, cancelled or missing results fail the aggregate. Sonar imports and validates the coverage artifact after that aggregate. Hosted timing has not yet been measured; parallel jobs do not establish release or provider acceptance.
+The required `Application gate` aggregates checks, browser and validated coverage at the same candidate revision. `Application checks` runs the Rust audit, TypeScript, unit, integration, migration and contract commands and publishes its revision-bound evidence. Two independently checked-out coverage producers run the stable Rust format/Clippy and line suite, and the nightly Rust branch/LCOV and TypeScript coverage suites, with separate isolated databases. `Application coverage` depends on both, downloads their same-run revision-bound artifacts, validates all five required reports and publishes the unchanged canonical artifact only on success. `Application browser` builds the production application and runs the full browser suite with its own isolated databases, fallback capture and evidence upload, including the private guest Chromium transport. Failed, skipped, cancelled, missing or invalid evidence fails the aggregate. Sonar imports and validates the canonical artifact after that aggregate. Measure timing on the current hosted revision; parallel jobs do not establish release or provider acceptance.
 
 Preapplied preview migration validation is critical Rust code. Exercise bounded
 history, malformed checksums and real lock timeouts against isolated PostgreSQL,
@@ -95,9 +95,9 @@ function branch details by location and require both to match every LCOV branch
 identity and hit count. These details must account for at least the native
 summary's total and covered directions. Native coverage thresholds use the
 original summaries.
-If the coverage step fails after exporting nightly reports, CI preserves the raw
-JSON and LCOV under a separate revision-bound diagnostics artifact. Sonar only
-consumes the coverage artifact published after successful validation.
+If a coverage producer fails after writing reports, CI preserves available raw
+reports under separate revision-bound diagnostics artifacts. Sonar only consumes
+the coverage artifact published after successful aggregate validation.
 The native validator requires every owned source and populated counters, with
 85% lines / 80% instrumented branches per package and 95% for money, inventory
 domain/stock/hold adapter modules and preview authorization. The match-only hold
@@ -966,8 +966,15 @@ redact provider identity and perform no provider request.
 
 For optional synchronizer custody, use real PostgreSQL to verify exact session
 and proof binding, immutable digest, wrong and other-session proofs, old-schema
-upgrade, expiration, rotation and competing revocations. Existing bearer-only
-operations must remain compatible. These tests do not establish HTTP CSRF policy.
+upgrade, expiration, rotation, competing revocations and legacy bearer-only
+operations. Observe an actual synchronizer-table lock timeout. A live session
+reports a storage failure, an expired session is denied, and both outcomes
+preserve the stored session and outbox. HTTP CSRF policy requires separate tests.
+
+An inserted binding with a changed digest must fail readback and roll back its
+session while preserving the admission debit. A subsequent healthy binding must
+match its returned synchronizer. The password-reset race must observe this login
+waiting on the specific held account transaction before committing the change.
 
 Use isolated PostgreSQL with real verified accounts and current password
 hashes. Check wrong or missing credentials, verifier domains, reset racing
