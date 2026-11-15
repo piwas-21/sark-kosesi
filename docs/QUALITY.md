@@ -910,6 +910,9 @@ Within the password integration test binary, serialize independent cases that
 use the shared production Argon2 capacity so unrelated fixtures cannot exhaust
 it. Preserve concurrent operations within a case and test actual capacity
 exhaustion separately; do not change the production limit or timeout.
+The Rust test profile optimizes the Argon2 dependency so instrumented login
+tests verify real credentials within the existing request deadline. The same
+algorithm, parameters, concurrency limit and request deadline apply.
 
 Use isolated PostgreSQL with two verified accounts and actual Argon2id
 verification. Exercise registration-token misuse, wrong account, wrong or
