@@ -149,25 +149,47 @@ def cluster_directory():
     return Path(tempfile.mkdtemp(prefix="sark-continuation-fsync-")).resolve()
 
 
+def native_binaries():
+    configured = os.environ.get("P1_POSTGRES_BIN")
+    if not configured:
+        if platform.system() != "Linux":
+            raise ValueError("Exclusive Docker control requires Linux host networking")
+        return None
+    binaries = Path(configured)
+    if not binaries.is_absolute() or not (binaries / "postgres").is_file():
+        raise ValueError("Native PostgreSQL 18.1 binaries are required")
+    version = subprocess.run(
+        [str(binaries / "postgres"), "--version"], check=True, capture_output=True, text=True
+    ).stdout.strip()
+    if version != "postgres (PostgreSQL) 18.1":
+        raise ValueError("Native PostgreSQL 18.1 is required")
+    return binaries
+
+
+def stop_cluster(directory, binaries, container, native_ready):
+    # Delete the data only after the owned process has been stopped.
+    if container:
+        run("docker", "rm", "--force", container)
+        remove_docker_data(directory)
+    elif binaries and (directory / "data/postmaster.pid").is_file():
+        # Startup may have failed after launching the owned server.
+        run(str(binaries / "pg_ctl"), "-D", str(directory / "data"), "stop", "-m", "fast")
+    elif binaries and native_ready:
+        raise ValueError("Native cluster stop could not be confirmed; data retained")
+    else:
+        # A failed launcher can still have a server starting without a visible PID or container.
+        print("Exclusive cluster directory retained after launch failure", file=sys.stderr)
+        return
+    shutil.rmtree(directory)
+
+
 def main():
     if len(sys.argv) != 2:
         raise ValueError("One compiled test executable is required")
     binary = Path(sys.argv[1])
     if not binary.is_absolute() or binary.is_symlink() or not binary.is_file():
         raise ValueError("The test executable must be an absolute regular file")
-    configured = os.environ.get("P1_POSTGRES_BIN")
-    binaries = Path(configured) if configured else None
-    if binaries:
-        if not binaries.is_absolute() or not (binaries / "postgres").is_file():
-            raise ValueError("Native PostgreSQL 18.1 binaries are required")
-        version = subprocess.run(
-            [str(binaries / "postgres"), "--version"], check=True, capture_output=True, text=True
-        ).stdout.strip()
-        if version != "postgres (PostgreSQL) 18.1":
-            raise ValueError("Native PostgreSQL 18.1 is required")
-    elif platform.system() != "Linux":
-        # Nothing has been launched or created, so there is no cluster to retain.
-        raise ValueError("Exclusive Docker control requires Linux host networking")
+    binaries = native_binaries()
     # Instrumented libtest also emits a profile for --list. Isolate and discard
     # it so only the executed control contributes to the producer's profile.
     with tempfile.TemporaryDirectory(prefix="sark-fsync-list-") as listing_dir:
@@ -209,31 +231,8 @@ def main():
         validate_result(result.returncode, result.stdout)
     finally:
         active_error = sys.exc_info()[0] is not None
-        native_stopped = False
         try:
-            if container:
-                # Never delete the data while the owned server may still exist.
-                run("docker", "rm", "--force", container)
-                remove_docker_data(directory)
-            elif binaries and (directory / "data/postmaster.pid").is_file():
-                # Startup may have failed after launching the owned server.
-                run(
-                    str(binaries / "pg_ctl"),
-                    "-D",
-                    str(directory / "data"),
-                    "stop",
-                    "-m",
-                    "fast",
-                )
-                native_stopped = True
-            elif binaries and native_ready:
-                raise ValueError("Native cluster stop could not be confirmed; data retained")
-            else:
-                # A failed launcher may still have a server starting, even if
-                # neither a container nor a postmaster PID is visible yet.
-                print("Exclusive cluster directory retained after launch failure", file=sys.stderr)
-            if container or native_stopped:
-                shutil.rmtree(directory)
+            stop_cluster(directory, binaries, container, native_ready)
         except Exception:
             if not active_error:
                 raise
