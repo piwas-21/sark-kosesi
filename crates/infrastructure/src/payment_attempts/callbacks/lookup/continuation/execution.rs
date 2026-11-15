@@ -8,7 +8,7 @@ pub enum ContinuationOutcome {
     Unknown,
 }
 enum Begin {
-    Started(ContinuationStart),
+    Started(Box<ContinuationStart>),
     Recorded,
     Unknown,
 }
@@ -156,11 +156,11 @@ async fn begin(
     if tx.commit().await.is_err() {
         return Ok(Begin::Unknown);
     }
-    Ok(Begin::Started(ContinuationStart {
+    Ok(Begin::Started(Box::new(ContinuationStart {
         operation,
         original: frozen.snapshot().clone(),
         started_at,
-    }))
+    })))
 }
 
 async fn record(
@@ -242,7 +242,7 @@ pub async fn execute(
         Begin::Recorded => Ok(ContinuationOutcome::Recorded { replayed: true }),
         Begin::Unknown => Ok(ContinuationOutcome::Unknown),
         Begin::Started(permit) => {
-            let Ok(fetched) = client.fetch_continuation(permit).await else {
+            let Ok(fetched) = client.fetch_continuation(*permit).await else {
                 return Ok(ContinuationOutcome::Unknown);
             };
             if record(pool, clock, ids, attempt_id, &fetched)

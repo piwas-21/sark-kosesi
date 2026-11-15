@@ -1,7 +1,7 @@
 //! One disposable populated upgrade; all catalogue, payments and people are synthetic.
 use super::*;
 use crate::{
-    MIGRATOR,
+    MIGRATOR, admitted_proofs,
     checkout_orders::create_order,
     checkout_quotes::issue_quote,
     guest_baskets::GuestCredential,
@@ -23,10 +23,6 @@ use std::sync::atomic::{AtomicU64, Ordering};
 
 #[path = "admitted_login.rs"]
 mod admitted_login;
-#[allow(dead_code)]
-#[path = "admitted_proofs.rs"]
-mod admitted_proofs;
-
 #[sqlx::test(migrations = false)]
 async fn populated_commerce_history_survives_0067_through_0078(pool: PgPool) {
     use order_stock_cases::fixture;
