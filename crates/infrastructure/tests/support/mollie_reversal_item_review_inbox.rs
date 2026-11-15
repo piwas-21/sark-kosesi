@@ -218,6 +218,200 @@ async fn inbox_pages_exact_equal_time_stops_without_effects_and_fails_closed(poo
     );
 }
 
+// Explicitly run with scripts/with_postgres.py and P1_REVIEW_WORKER_BIN set to
+// the absolute path of the matching owned Cargo output named commerce-worker.
+// This separate subprocess test complements the normal inbox custody tests.
+// P1_POSTGRES_BIN=/Library/PostgreSQL/18/bin P1_REVIEW_WORKER_BIN=<worker> \
+//   python3 scripts/with_postgres.py -- <infra-lib-test> --exact \
+//   mollie::tests::reversal_item_supervision_cases::review_inbox_cases::worker_process_reads_two_review_stops_and_empty_without_effects --ignored
+// Require the test runner to report exactly one passed test.
+#[tokio::test]
+#[ignore = "requires an explicitly supplied worker and wrapper-owned PostgreSQL"]
+async fn worker_process_reads_two_review_stops_and_empty_without_effects() {
+    use sqlx::{ConnectOptions, postgres::PgConnectOptions, postgres::PgPoolOptions};
+    use std::{
+        io::Write,
+        path::PathBuf,
+        process::{Command, Stdio},
+        time::{Duration, Instant, SystemTime, UNIX_EPOCH},
+    };
+
+    assert_eq!(std::env::var("APP_ENV").as_deref(), Ok("test"));
+    assert!(std::env::var_os("PGOPTIONS").is_none());
+    let worker = PathBuf::from(std::env::var_os("P1_REVIEW_WORKER_BIN").expect("worker path"));
+    assert!(worker.is_absolute());
+    assert_eq!(
+        worker.file_name().and_then(|s| s.to_str()),
+        Some("commerce-worker")
+    );
+    assert_eq!(worker.canonicalize().expect("worker exists"), worker);
+    assert!(worker.is_file());
+    let marker = std::env::var("P1_POSTGRES_DISPOSABLE_MARKER").expect("disposable marker");
+    assert!(
+        marker.len() == 64
+            && marker
+                .bytes()
+                .all(|b| b.is_ascii_digit() || (b'a'..=b'f').contains(&b))
+    );
+    let database = std::env::var("DATABASE_URL").expect("disposable database");
+    let parsed = url::Url::parse(&database).expect("valid database URL");
+    assert!(parsed.query().is_none() && parsed.fragment().is_none());
+    let options: PgConnectOptions = database.parse().expect("valid database options");
+    assert!(options.get_options().is_none());
+    assert_eq!(options.get_host(), "127.0.0.1");
+    assert_eq!(options.get_username(), "p1_test");
+    assert_eq!(options.get_database(), Some("postgres"));
+    let parent = PgPoolOptions::new()
+        .max_connections(1)
+        .connect_with(options.clone())
+        .await
+        .expect("disposable cluster");
+    let (actual_marker, database_name, username): (Option<String>, String, String) =
+        sqlx::query_as(
+            "SELECT current_setting('sark.disposable_marker',true),current_database(),current_user",
+        )
+        .fetch_one(&parent)
+        .await
+        .expect("cluster identity");
+    assert_eq!(actual_marker.as_deref(), Some(marker.as_str()));
+    assert_eq!(
+        (database_name.as_str(), username.as_str()),
+        ("postgres", "p1_test")
+    );
+    let name = format!("review_worker_{}", &marker[..20]);
+    sqlx::query(sqlx::AssertSqlSafe(format!("CREATE DATABASE {name}")))
+        .execute(&parent)
+        .await
+        .expect("fresh fixture database");
+    let fixture_options = options.database(&name);
+    let worker_database = fixture_options.to_url_lossy().to_string();
+    let pool = PgPoolOptions::new()
+        .max_connections(5)
+        .connect_with(fixture_options)
+        .await
+        .expect("fixture database");
+    crate::MIGRATOR
+        .run(&pool)
+        .await
+        .expect("fixture migrations");
+
+    let (time, frozen, ids, paid) = reversal_supervision_cases::fixture(&pool).await;
+    let (a, server_a) = add_review(
+        &pool,
+        &time,
+        &frozen,
+        &ids,
+        &paid,
+        (ReversalKind::Refund, "refund", PAYMENT),
+    )
+    .await;
+    let (b, server_b) = add_review(
+        &pool,
+        &time,
+        &frozen,
+        &ids,
+        &paid,
+        (ReversalKind::Chargeback, "chargeback", PAYMENT),
+    )
+    .await;
+    assert_eq!(a.updated_at, b.updated_at);
+    let mut jobs = [a.id.clone(), b.id.clone()];
+    jobs.sort();
+    let token = [41_u8; 32];
+    let now = i64::try_from(
+        SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .expect("clock")
+            .as_secs(),
+    )
+    .expect("time");
+    sqlx::query("INSERT INTO staff_accounts(id,enabled) VALUES('worker-reviewer',true)")
+        .execute(&pool)
+        .await
+        .expect("staff");
+    sqlx::query("INSERT INTO staff_capabilities(staff_id,capability) VALUES('worker-reviewer','reversal.review')").execute(&pool).await.expect("capability");
+    sqlx::query("INSERT INTO staff_sessions(token_hash,staff_id,created_at,expires_at,mfa_verified_at) VALUES($1,'worker-reviewer',$2,$3,$4)")
+        .bind(SessionToken::from_bytes(token).digest().as_slice()).bind(now - 5).bind(now + 600).bind(now - 1)
+        .execute(&pool).await.expect("fresh staff session");
+
+    let snapshot = || async {
+        sqlx::query_as::<_, (String, String, String)>("SELECT (SELECT COALESCE(jsonb_agg(to_jsonb(j) ORDER BY id),'[]'::jsonb)::text FROM reversal_item_jobs j),(SELECT COALESCE(jsonb_agg(to_jsonb(o) ORDER BY id),'[]'::jsonb)::text FROM reversal_item_operations o),(SELECT COALESCE(jsonb_agg(to_jsonb(e) ORDER BY id),'[]'::jsonb)::text FROM commerce_outbox e)")
+            .fetch_one(&pool).await.expect("custody snapshot")
+    };
+    let before = snapshot().await;
+    let network = (server_a.count(), server_b.count());
+    let run = |cursor: Option<(i64, &str)>| {
+        let mut command = Command::new(&worker);
+        command
+            .env_clear()
+            .env("APP_ENV", "test")
+            .env("DATABASE_URL", &worker_database)
+            .arg("--review-reversal-inbox")
+            .stdin(Stdio::piped())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped());
+        if let Some((updated_at, job)) = cursor {
+            command.arg(updated_at.to_string()).arg(job);
+        }
+        let mut child = command.spawn().expect("spawn owned worker");
+        child
+            .stdin
+            .take()
+            .expect("worker stdin")
+            .write_all(&token)
+            .expect("synthetic token");
+        let start = Instant::now();
+        while child.try_wait().expect("poll worker").is_none()
+            && start.elapsed() < Duration::from_secs(15)
+        {
+            std::thread::sleep(Duration::from_millis(20));
+        }
+        if child.try_wait().expect("poll worker").is_none() {
+            child.kill().expect("stop stuck worker");
+            let _ = child.wait();
+            panic!("worker exceeded deadline");
+        }
+        let output = child.wait_with_output().expect("worker output");
+        assert!(output.status.success());
+        assert!(output.stderr.is_empty());
+        assert!(
+            !output
+                .stdout
+                .windows(token.len())
+                .any(|bytes| bytes == token)
+        );
+        assert!(
+            !output
+                .stdout
+                .windows(worker_database.len())
+                .any(|bytes| bytes == worker_database.as_bytes())
+        );
+        let lines: Vec<_> = output
+            .stdout
+            .split(|b| *b == b'\n')
+            .filter(|line| !line.is_empty())
+            .collect();
+        assert_eq!(lines.len(), 1);
+        let event: Value = serde_json::from_slice(lines[0]).expect("structured worker output");
+        event.get("fields").cloned().expect("worker fields")
+    };
+    for (cursor, expected) in [
+        (None, &jobs[0]),
+        (Some((a.updated_at, jobs[0].as_str())), &jobs[1]),
+    ] {
+        assert_eq!(
+            run(cursor),
+            json!({"code":"reversal_item_review_inbox_entry", "updated_at":a.updated_at, "job_id":expected, "reason":"invalid", "generation":1, "late_receipt_present":false})
+        );
+    }
+    assert_eq!(
+        run(Some((a.updated_at, &jobs[1]))),
+        json!({"code":"reversal_item_review_inbox_empty"})
+    );
+    assert_eq!(snapshot().await, before);
+    assert_eq!((server_a.count(), server_b.count()), network);
+}
+
 #[sqlx::test(migrator = "MIGRATOR")]
 async fn inbox_withholds_summary_when_staff_expires_during_real_attempt_wait(pool: PgPool) {
     let (time, frozen, ids, paid) = reversal_supervision_cases::fixture(&pool).await;

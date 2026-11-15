@@ -7,6 +7,8 @@ use std::time::{SystemTime, UNIX_EPOCH};
 #[allow(dead_code)]
 #[path = "support/checkout_quote_fixture.rs"]
 mod fixture;
+#[path = "support/guest_browser_link.rs"]
+mod guest_browser_link;
 
 fn inputs() -> (String, String, String) {
     assert_eq!(std::env::var("APP_ENV").as_deref(), Ok("test"));
@@ -160,6 +162,7 @@ async fn seed_guest_browser_database() {
         .expect("clock")
         .as_secs();
     fixture::seed_for_load(&pool, now).await;
+    guest_browser_link::seed_accounts(&pool).await;
 }
 
 #[tokio::test]
@@ -182,4 +185,7 @@ async fn verify_guest_browser_effects() {
     let unexpected: i64 = sqlx::query_scalar("SELECT count(*) FROM stock_movements WHERE action <> 'reserve' OR on_hand_delta <> 0 OR reserved_delta <= 0")
         .fetch_one(&pool).await.expect("reservation-only movements");
     assert_eq!(unexpected, 0);
+    let custody: (i64, i64, i64) = sqlx::query_as("SELECT (SELECT count(*) FROM guest_order_link_proofs),(SELECT count(*) FROM customer_order_links),(SELECT count(*) FROM guest_order_link_proofs p JOIN customer_order_links l ON l.order_id=p.order_id AND l.proof_verifier=p.verifier AND l.account_id=p.consumed_account_id AND l.linked_at=p.consumed_at AND l.linked_xid=p.consumed_xid JOIN verified_customer_accounts a ON a.id=l.account_id WHERE a.email_identity='buyer@example.test')")
+        .fetch_one(&pool).await.expect("exact linked proof custody");
+    assert_eq!(custody, (1, 1, 1));
 }
