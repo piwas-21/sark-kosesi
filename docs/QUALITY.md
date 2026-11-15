@@ -513,6 +513,17 @@ permit and bypass retained source deadlines. Each must compile and fail its spec
 baseline and exact restored source must both pass. Compilation errors cannot count
 as killed defects. Source hashes and per-control logs bind the restored evidence.
 
+The private original-attempt custody preflight uses a read-only snapshot and a
+single exact synthetic attempt in isolated PostgreSQL. Tests cover start without a
+job, missing or damaged custody, paid and ambiguous retained observations, stale
+resolution, checkpoint page/index/phase consistency, redacted CLI output and unchanged
+database counts. Linked search requires a consumed page with a bounded continuation and
+poll requires a consumed terminal page; partial candidate and review stops remain
+readable. Corrupted candidate advancement without authenticated observation and
+polling without a compatible historical supervisor resolution fail closed. A real
+poll remains readable after later independently verified ambiguity and paid facts. Local fixture setup uses loopback only; inspection itself sends no provider
+requests. It does not inspect a retained pilot database or prove provider state.
+
 The private Mollie transport uses a bounded loopback Hyper instrument and isolated
 PostgreSQL, never actual provider resources. Literal decimal/fingerprint oracles,
 critical object/mode/currency/metadata/sequence mismatches, profile preflight,
@@ -979,6 +990,20 @@ against the accepted order, aggregate shared codes, preserve covers-only and
 foam differences, and reject wrong revisions, missing or duplicate members,
 conflicting component kinds, changed quantities and invalid prior counts. Check the real maximum 20 by 64
 footprint. These pure controls do not establish package or warehouse custody.
+The private warehouse projection is also a critical Rust source with 95% line
+and branch thresholds. Isolated PostgreSQL controls cover received recognition,
+original and late allocation, wrong authority, incomplete or damaged custody,
+review stops, stale evidence and session expiry during actual attempt-lock waits.
+They do not establish unshipped quantities, packages or dispatch authority.
+Private packing custody modules require the 95% critical line and branch gates.
+Isolated PostgreSQL tests cover serialized competing
+whole-unit claims, exact effect replay and conflicts, original and late allocation,
+shared component totals, release after stale payment evidence, authority expiry
+during effect-key, attempt and commit waits, reserved release capacity, original and
+late allocation chronology, exact release recognition, and altered-history negative
+and repaired controls.
+They establish source journal behavior, not physical package contents, carrier
+acceptance or dispatch eligibility.
 
 ### Test-only guest checkout
 

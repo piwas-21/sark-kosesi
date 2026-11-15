@@ -361,6 +361,10 @@ supervision or live provider activation follows from deploying the empty preview
    bounded forms to the private API. Its optional exact staging POST router requires
    separate no-bypass, upload-timeout, TLS and provider acceptance;
    no key or scheduler is installed.
+   A separate local/test read-only preflight validates one original attempt,
+   start, recovery event and retained evidence without enrolling a job or
+   contacting a provider. Use reviewed schema compatibility and independent
+   authorization before touching retained pilot custody.
    Uncertain outcomes
    reconcile under the original identity and never mint a replacement charge.
    Fetch and verify webhook identifiers against order/amount/currency/profile/mode.
@@ -454,9 +458,15 @@ A pure whole-variant shipment quantity check compares an accepted order's
 captured SKU quantities with complete caller-supplied prior counts and a bounded
 proposal. A pure component projection cross-checks each supplied original BOM
 and frozen allocation member against that order and returns the expected summed
-physical demand. It does not authenticate those inputs or prove packages. Before
-dispatch, persist authenticated fulfilment history and record physical package
-evidence for the components in each shipment.
+physical demand. The private warehouse read loads those inputs under a current
+staff claim and requires current received recognition and an exact completed
+allocation. Each estimate uses the original order as its upper bound. A private
+confirmed warehouse command records bounded package-content assertions against
+that source and a serialized, append-only history, with an audited release. The
+64-record lifetime bound reserves a release slot for every active record. No
+assertion establishes physical custody, remaining unshipped units, net payment
+or permission to dispatch. Before dispatch,
+complete shipment/handover lifecycle, reversal disposition and physical evidence.
 
 Trusted whole-basket reservation primitives now provide immutable manifests,
 exact fresh child bindings and aggregated component claims in one transaction.

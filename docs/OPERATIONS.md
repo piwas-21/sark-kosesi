@@ -163,14 +163,33 @@ Each pass reports all outstanding review stops and failure/backoff jobs for the
 verified profile, including unchanged earlier exceptions. Later idle passes remain
 nonzero while that condition persists; ordinary pending-status polls are separate.
 
-An operator must inspect the private `read_job` result and the linked immutable
-search/observation/resolution receipts when the command reports review or retries.
+An operator with access to the isolated database can run
+`commerce-worker --inspect-payment-recovery <attempt-id>` to inspect one stored
+checkpoint in local/test mode. The command uses no provider credential or
+network call to Mollie. It reports either an absent checkpoint or the current
+phase, review reason, generation, resume revision, deadline and retry counters.
+It omits the attempt, provider, outbox and page identifiers. An absent checkpoint
+means there is no job row for the supplied attempt. Review the linked immutable
+search, observation and resolution receipts before an operational decision.
+A separate `commerce-worker --inspect-payment-custody <attempt-id>` validates one
+original frozen attempt, dispatch and exact recovery event in a read-only snapshot,
+even before a job exists. It reports a checkpoint's closed state and linked-page
+presence, observation and distinct identity counts, whether paid was observed, and
+whether the latest stored resolution covers the retained prefix. Claimed consumed
+candidates require matching authenticated observations, and polling requires a
+compatible historical supervisor resolution; later observations remain visible.
+These checks do not establish the supervisor's exact execution. It checks only the
+checkpoint-linked search chain; unlinked pages and external reports are not included.
+Zero identities do not prove provider absence. It emits no identifiers or credentials,
+creates no job and never contacts Mollie. This inspection does not establish source,
+database or image provenance, schema compatibility, payment status or permission to
+run recovery. Check those independently; preserve the original custody and slot.
+
 Review stops retain unresolved, ambiguity, paid-observed, scan/poll/step-limit,
-custody-invalid or exhausted-retry reasons. Paid-observed is not permission to
-fulfil, consume/reallocate stock or refund; those transitions remain unimplemented.
-An empty search is not absence, and no recovery result permits another create.
-There is deliberately no automatic restart/requeue of a review stop. Add bounded,
-authorized and audited operator recovery before introducing that ability.
+custody-invalid or exhausted-retry reasons. Any stock or financial transition
+requires its own current evidence and authority. Preserve an uncertain provider
+outcome after an empty search. The private finance-authorized resume operation
+handles eligible transient stops with a bounded, audited decision.
 
 For a process crash, wait for the 60-second lease to expire and run a later bounded
 pass; existing page receipts resume without replaying a list operation. Repeated
