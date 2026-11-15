@@ -40,6 +40,80 @@ Verify a fresh cluster with a restored copy and preserve the current volume
 for rollback. If using incremental backups, start a new chain from a full
 backup on 18.7.
 
+## Optional private image decoder
+
+This source-only overlay is off unless explicitly included and selected. It gives
+one image job a fresh, resource-limited child in a separate non-root container;
+it does not create an upload route, publish images or establish production
+capacity. The API connects over a Unix socket to UID 65532, while the decoder
+accepts only UID 1000 peers. It has no credentials, database mount or ingress,
+and has a separate `network_mode: none` network namespace. The initial child
+ceilings are 768 MiB address space and 10 seconds CPU; the parent enforces a
+20-second execution deadline. The service has 1 GiB memory, 1 CPU and 32 PIDs,
+with memory-plus-swap also set to 1 GiB. Confirm that the actual host kernel and
+container runtime enforce these bounds; equal memory and memory-plus-swap is
+Docker's [no-swap configuration](https://docs.docker.com/engine/containers/resource_constraints/).
+
+The child and supervisor share a UID and the writable socket directory. Before
+reading image bytes the single-threaded child installs a default-deny Linux
+seccomp filter intended to deny filesystem operations, new sockets, process
+creation and signals, even against that shared directory and supervisor. If the
+filter cannot be installed the job fails. The filter and its compatibility with
+the target architecture, Docker policy and image must be verified on that exact
+host; source checks do not prove sandbox enforcement, image fidelity or measured
+capacity. Do not use this as evidence for production upload acceptance.
+
+Before opting in, allocate a **new**, empty, dedicated absolute directory on the
+Docker daemon host beneath a trusted parent. The directory must be owned by the
+decoder's host-mapped UID 65532, group 1000 and mode 0750, with no nested mounts;
+no other untrusted principal may replace it or write inside it. With ordinary
+non-remapped Docker these illustrative commands create a new path; choose your
+own path and verify it first. `mkdir` must fail if that path already exists:
+
+```sh
+sudo mkdir -m 0750 -- /ABSOLUTE/PRIVATE/DECODER-DIR
+sudo chown 65532:1000 -- /ABSOLUTE/PRIVATE/DECODER-DIR
+sudo chmod 0750 -- /ABSOLUTE/PRIVATE/DECODER-DIR
+sudo stat -c '%u:%g %a %F' -- /ABSOLUTE/PRIVATE/DECODER-DIR
+```
+
+Set `STAGING_IMAGE_DECODER_DIR` in the private environment file to that path.
+Check user-namespace mappings and SELinux policy where used; do not assume host
+numeric IDs equal container IDs. The API mount is read-only and the decoder's
+mount is writable. Both use Compose long-form binds with
+[`create_host_path: false`](https://docs.docker.com/reference/compose-file/services/),
+so a missing source is an error, not an auto-created root-owned directory.
+Inspect the actual mounts, ownership, socket mode 0660 and peer identities, and
+prove that a valid API request works and a different UID is refused. A readonly
+bind and its socket connection must also be tested on the actual host.
+
+After independent review and the required current-revision CI gates, build and
+scan the optional image from the same accepted tree using the isolated builder
+and archive procedure below. Substitute the dedicated configuration values:
+
+```sh
+docker --config PRIVATE_DOCKER_CONFIG --host unix:///var/run/docker.sock buildx build --builder OWNED_BUILDER --file deploy/staging/Dockerfile --target image-decoder --build-arg SOURCE_REVISION=REVISION --tag sark-kosesi-image-decoder:REVISION --output type=docker,dest=PRIVATE_DECODER_ARCHIVE .
+docker --config PRIVATE_DOCKER_CONFIG --host unix:///var/run/docker.sock buildx stop OWNED_BUILDER
+docker --config PRIVATE_DOCKER_CONFIG --host unix:///var/run/docker.sock load --input PRIVATE_DECODER_ARCHIVE
+docker --config PRIVATE_DOCKER_CONFIG --host unix:///var/run/docker.sock compose --project-name OWNED_PROJECT --env-file PRIVATE_ENV --file deploy/staging/compose.yml --file deploy/staging/image-decoder.compose.yml --profile image-decoder config --quiet
+```
+
+Start the optional service privately only after the directory and host checks;
+then apply the overlay to the API. Verify both exact image IDs, `none` networking,
+read-only API mount, actual UID/GID, cgroup memory/swap/CPU/PID limits and failure
+when the decoder is absent. Exercise valid and malformed images plus child timeout,
+termination and subsequent recovery using approved test data. Record results as
+staging evidence only. No supplier assets or customer data are required.
+
+A stopped or crashed daemon may leave its socket behind. Automatic restart is
+disabled and the daemon refuses to unlink any existing path, including a live or
+stale socket. Prefer a fresh dedicated directory. To reuse a directory, first
+prove the corresponding service is stopped and no process is listening, verify
+the directory and exact socket are the intended owned objects, then have a
+trusted operator remove only that socket. Never delete an unexpected object or
+rely on an unchecked startup cleanup. Restore the base configuration to disable
+the integration; do not remove the directory until its owner and use are known.
+
 ## Build and start
 
 The web build copies each locked workspace manifest before `npm ci` so that

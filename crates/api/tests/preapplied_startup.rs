@@ -13,6 +13,45 @@ use std::{
 const TOKEN: &str = "synthetic-preview-token-1234567890";
 
 #[test]
+fn preview_decoder_requires_a_canonical_unix_socket_path() {
+    let mut values = HashMap::from([
+        ("APP_ENV".into(), "staging".into()),
+        (
+            "DATABASE_URL".into(),
+            "postgresql://localhost/isolated".into(),
+        ),
+        ("PREVIEW_TOKEN".into(), TOKEN.into()),
+        ("API_BIND".into(), "127.0.0.1:4567".into()),
+    ]);
+    assert!(
+        Config::parse(&values)
+            .expect("default")
+            .image_decoder
+            .is_none()
+    );
+    values.insert(
+        "PREVIEW_IMAGE_DECODER_SOCKET".into(),
+        "/decoder-socket/decoder.sock".into(),
+    );
+    assert!(
+        Config::parse(&values)
+            .expect("configured")
+            .image_decoder
+            .is_some()
+    );
+    for path in [
+        "",
+        "relative.sock",
+        "/decoder-socket/../decoder.sock",
+        "/double//path",
+        "/invalid path",
+    ] {
+        values.insert("PREVIEW_IMAGE_DECODER_SOCKET".into(), path.into());
+        assert!(Config::parse(&values).is_err(), "{path}");
+    }
+}
+
+#[test]
 fn preapplied_configuration_is_explicit_staging_only_and_excludes_writers() {
     let mut values = HashMap::from([
         ("APP_ENV".into(), "staging".into()),

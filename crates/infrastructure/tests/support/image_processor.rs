@@ -1,5 +1,69 @@
 use super::*;
+use commerce_image_codec::{Kind, Operation, Rejection, Response};
+use image::{DynamicImage, ImageFormat};
+use std::io::Cursor;
 static CASES: tokio::sync::Mutex<()> = tokio::sync::Mutex::const_new(());
+
+#[cfg(unix)]
+#[tokio::test]
+async fn configured_processing_failure_does_not_decode_locally() {
+    let _case = CASES.lock().await;
+    let endpoint = transport::DecoderEndpoint::parse(&format!(
+        "/sark-absent-decoder-{}/decoder.sock",
+        std::process::id()
+    ))
+    .expect("closed configuration");
+    let operation = Operation::Prepare {
+        kind: Kind::Png,
+        width: 2,
+        height: 3,
+    };
+    let mut bytes = Vec::new();
+    DynamicImage::new_rgba8(2, 3)
+        .write_to(&mut Cursor::new(&mut bytes), ImageFormat::Png)
+        .expect("valid fixture for the local codec");
+    let permit = DECODERS.try_acquire().expect("available");
+    assert!(matches!(
+        run_codec(None, operation, bytes.clone(), permit).await,
+        Ok((Response::Prepared(_), _))
+    ));
+    let permit = DECODERS.try_acquire().expect("available");
+    assert!(matches!(
+        run_codec(Some(&endpoint), operation, bytes, permit).await,
+        Err(ImageError::ProcessingUnavailable)
+    ));
+}
+
+#[test]
+fn image_reply_must_match_the_original_and_support_only_safe_rendition_types() {
+    let metadata = MediaAssetDraft {
+        sha256: [0; 32],
+        image_type: ImageType::Png,
+        width_px: 2,
+        height_px: 3,
+        kind: commerce_domain::media::MediaKind::OriginalPhoto,
+        fixture: true,
+        source_ref: "synthetic image custody".into(),
+    };
+    for (width, height, kind) in [(99, 3, Kind::Png), (3, 2, Kind::Webp)] {
+        let reply = Prepared {
+            width,
+            height,
+            renditions: vec![commerce_image_codec::Rendition {
+                edge: 320,
+                width,
+                height,
+                kind,
+                bytes: vec![1, 2, 3],
+            }],
+        };
+        assert!(matches!(
+            assemble(metadata.clone(), vec![], [0; 32], reply),
+            Err(ImageError::InvalidStoredData)
+        ));
+    }
+}
+
 #[tokio::test]
 async fn saturated_decoder_capacity_rejects_without_queueing() {
     let _case = CASES.lock().await;
@@ -35,10 +99,6 @@ async fn decoder_dimension_and_stored_byte_boundaries_fail_closed() {
         fixture: true,
         source_ref: "isolated boundary".into(),
     };
-    assert!(matches!(
-        decode(&[], ImageFormat::Gif),
-        Err(ImageError::UnsupportedImage)
-    ));
     let mut oversized_header = Vec::new();
     DynamicImage::new_rgb8(2, 3)
         .write_to(&mut Cursor::new(&mut oversized_header), ImageFormat::Jpeg)
@@ -49,8 +109,15 @@ async fn decoder_dimension_and_stored_byte_boundaries_fail_closed() {
         .expect("baseline SOF");
     oversized_header[frame + 7..frame + 9].copy_from_slice(&20000_u16.to_be_bytes());
     assert!(matches!(
-        decode(&oversized_header, ImageFormat::Jpeg),
-        Err(ImageError::ResourceLimit)
+        commerce_image_codec::process(
+            Operation::Prepare {
+                kind: Kind::Jpeg,
+                width: 2,
+                height: 3
+            },
+            &oversized_header,
+        ),
+        Response::Rejected(Rejection::ResourceLimit)
     ));
     let mut bytes = Vec::new();
     DynamicImage::new_rgba8(2, 3)
@@ -63,7 +130,9 @@ async fn decoder_dimension_and_stored_byte_boundaries_fail_closed() {
         height_px: 3,
         ..metadata
     };
-    let prepared = prepare(&registered, bytes.clone()).expect("valid original");
+    let prepared = run(registered, bytes.clone())
+        .await
+        .expect("valid original");
     assert_eq!((prepared.width, prepared.height), (2, 3));
     assert_eq!(prepared.renditions.len(), 1);
     let verified = validate_output("png".into(), 2, 3, bytes.clone(), digest.to_vec())
@@ -159,7 +228,9 @@ async fn original_xmp_and_iptc_are_removed_from_every_large_image_derivative() {
         fixture: true,
         source_ref: "isolated private metadata".into(),
     };
-    let result = prepare(&metadata, original).expect("valid private original");
+    let result = run(metadata, original)
+        .await
+        .expect("valid private original");
     assert_eq!(
         result
             .renditions

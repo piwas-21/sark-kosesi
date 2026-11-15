@@ -122,6 +122,8 @@ def validate(document, root, branches=True):
             "crates/*/src/media.rs",
             "crates/*/src/media/*.rs",
             "crates/*/src/image_ingestion/*.rs",
+            "crates/image-codec/src/framing.rs",
+            "crates/image-codec/src/processing.rs",
         )
         for path in root.glob(pattern)
     ]

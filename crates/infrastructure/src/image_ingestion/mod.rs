@@ -6,16 +6,17 @@ use super::{
 use commerce_application::{request_context::Clock, staff_access::Capability};
 use commerce_domain::{media::valid_command_id, specifications::bounded_text};
 use sqlx::PgPool;
-mod framing;
 mod process;
 mod store;
+mod transport;
 pub(crate) use store::receipt as load_receipt;
+pub use transport::{DecoderEndpoint, configure_decoder};
 static INGESTIONS: tokio::sync::Semaphore = tokio::sync::Semaphore::const_new(2);
 fn ingestion_slot() -> Result<tokio::sync::SemaphorePermit<'static>, ImageError> {
     INGESTIONS.try_acquire().map_err(|_| ImageError::Busy)
 }
 pub const RECIPE: &str = "image-v1";
-pub const MAX_ORIGINAL_BYTES: usize = 20 * 1024 * 1024;
+pub use commerce_image_codec::MAX_ORIGINAL_BYTES;
 #[derive(Debug)]
 pub enum ImageError {
     Staff(StaffError),
@@ -45,11 +46,6 @@ impl From<media::MediaError> for ImageError {
 impl From<sqlx::Error> for ImageError {
     fn from(value: sqlx::Error) -> Self {
         Self::Database(value)
-    }
-}
-impl From<image::ImageError> for ImageError {
-    fn from(_: image::ImageError) -> Self {
-        Self::InvalidImage
     }
 }
 pub struct IngestImageRequest<'a> {

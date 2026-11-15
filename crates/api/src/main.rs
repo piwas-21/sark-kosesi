@@ -5,6 +5,7 @@ mod preapplied;
 use commerce_api::{
     AppState, PREVIEW_REQUEST_CAPACITY, config::Config, contract, router_with_test_guest_operations,
 };
+use commerce_infrastructure::image_ingestion::configure_decoder;
 use commerce_infrastructure::runtime::{SecureIdentifiers, SystemClock};
 use commerce_infrastructure::{MIGRATOR, connect};
 use std::sync::Arc;
@@ -34,6 +35,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 async fn run_server() -> Result<(), Box<dyn std::error::Error>> {
     tracing_subscriber::fmt().json().init();
     let config = Config::parse(&std::env::vars().collect()).map_err(std::io::Error::other)?;
+    if let Some(endpoint) = config.image_decoder {
+        configure_decoder(endpoint).map_err(std::io::Error::other)?;
+    }
     let pool = if config.preview_database_preapplied {
         let pool = preapplied::connect(&config.database_url)
             .await
