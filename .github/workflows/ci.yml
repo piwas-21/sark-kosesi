@@ -143,16 +143,43 @@ jobs:
           cache: npm
       - run: npm ci --ignore-scripts
       - run: python3 scripts/install_app_tools.py
-      - run: |
-          rustup show
-          rustup toolchain install nightly-2026-10-25 --profile minimal --component llvm-tools-preview
-      - run: npm run check:rust
       - run: npm run audit:rust
       - run: npm run typecheck
       - run: npm run test:unit
       - run: npm run test:integration
       - run: npm run test:migrations
       - run: npm run test:contracts
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+        with:
+          name: application-${{ env.ANALYSIS_REVISION }}
+          path: .local/evidence/
+          include-hidden-files: true
+          if-no-files-found: error
+          retention-days: 30
+  application_coverage:
+    name: Application coverage
+    runs-on: ubuntu-24.04
+    timeout-minutes: 80
+    permissions:
+      contents: read
+    env:
+      ANALYSIS_REVISION: ${{ github.event.pull_request.head.sha || github.sha }}
+      PLAYWRIGHT_SKIP_BROWSER_GC: 1
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+      - run: npm ci --ignore-scripts
+      - run: python3 scripts/install_app_tools.py
+      - run: |
+          rustup show
+          rustup toolchain install nightly-2026-10-25 --profile minimal --component llvm-tools-preview
+      - run: npm run check:rust
       - id: coverage
         run: npm run test:coverage
       - name: Preserve raw Rust coverage on coverage failure
@@ -167,15 +194,13 @@ jobs:
           retention-days: 7
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
         with:
-          name: application-${{ env.ANALYSIS_REVISION }}
+          name: application-coverage-${{ env.ANALYSIS_REVISION }}
           path: |
             coverage/rust-stable.json
             coverage/rust.json
             coverage/rust.lcov
             coverage/clippy.json
             coverage/typescript/lcov.info
-            .local/evidence/
-          include-hidden-files: true
           if-no-files-found: error
           retention-days: 30
   application_browser:
@@ -227,25 +252,25 @@ jobs:
   application:
     name: Application gate
     if: always()
-    needs: [application_checks, application_browser]
+    needs: [application_checks, application_browser, application_coverage]
     runs-on: ubuntu-24.04
     timeout-minutes: 2
     permissions: {}
     steps:
-      - name: Require both application legs
+      - name: Require all application legs
         env:
           RESULTS: ${{ toJSON(needs) }}
         run: |
           python3 - <<'PY_GATE'
           import json, os
           results = json.loads(os.environ['RESULTS'])
-          required = {'application_checks', 'application_browser'}
+          required = {'application_checks', 'application_browser', 'application_coverage'}
           if not isinstance(results, dict) or set(results) != required or any(
               not isinstance(results[name], dict) or results[name].get('result') != 'success'
               for name in required
           ):
               raise SystemExit('An application leg failed, was cancelled, skipped or missing.')
-          print('Both application legs succeeded.')
+          print('All application legs succeeded.')
           PY_GATE
   sonar:
     name: SonarQube
@@ -276,15 +301,15 @@ jobs:
           npm run test:tooling
       - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333
         with:
-          name: application-${{ env.ANALYSIS_REVISION }}
-          path: .local/application-artifact
+          name: application-coverage-${{ env.ANALYSIS_REVISION }}
+          path: .local/application-coverage-artifact
       - run: |
           mkdir -p coverage/typescript
-          cp .local/application-artifact/coverage/rust-stable.json coverage/rust-stable.json
-          cp .local/application-artifact/coverage/rust.json coverage/rust.json
-          cp .local/application-artifact/coverage/rust.lcov coverage/rust.lcov
-          cp .local/application-artifact/coverage/clippy.json coverage/clippy.json
-          cp .local/application-artifact/coverage/typescript/lcov.info coverage/typescript/lcov.info
+          cp .local/application-coverage-artifact/rust-stable.json coverage/rust-stable.json
+          cp .local/application-coverage-artifact/rust.json coverage/rust.json
+          cp .local/application-coverage-artifact/rust.lcov coverage/rust.lcov
+          cp .local/application-coverage-artifact/clippy.json coverage/clippy.json
+          cp .local/application-coverage-artifact/typescript/lcov.info coverage/typescript/lcov.info
           python3 scripts/check_coverage_reports.py
       - name: Start isolated Community Build
         run: |
