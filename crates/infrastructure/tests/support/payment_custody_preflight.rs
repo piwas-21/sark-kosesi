@@ -18,6 +18,14 @@ async fn total(pool: &PgPool) -> (i64, i64, i64, i64, i64) {
 async fn start_without_job_is_inspected_without_creating_a_job(pool: PgPool) {
     let (_, f) = prepared(&pool, true).await;
     let before = total(&pool).await;
+    let mut tx = pool.begin().await.expect("reader transaction");
+    assert!(
+        crate::payment_attempts::searches::rows::load_chain(&mut tx, &f, 1500, &"f".repeat(32))
+            .await
+            .expect("missing page read")
+            .is_none()
+    );
+    tx.rollback().await.expect("reader rollback");
     let view = inspect_custody(&pool, &f.snapshot().binding.id)
         .await
         .expect("validated start");
@@ -363,6 +371,32 @@ async fn terminal_poll_and_partial_review_remain_inspectable(pool: PgPool) {
             .checkpoint_phase,
         Some(Phase::Poll)
     );
+    // A later independently fetched paid identity and its resolution must not
+    // invalidate the older, genuinely reached polling checkpoint.
+    record_verified(
+        &pool,
+        time.as_ref(),
+        &i,
+        id,
+        "later-paid",
+        &fetched(frozen.snapshot(), "tr_OTHER", "paid", false).await,
+    )
+    .await
+    .expect("later fact");
+    identities::resolve(&pool, time.as_ref(), &i, id, "later-resolution")
+        .await
+        .expect("later resolution");
+    let later = inspect_custody(&pool, id)
+        .await
+        .expect("historical polling evidence");
+    assert_eq!(
+        (
+            later.checkpoint_phase,
+            later.identities,
+            later.paid_observed
+        ),
+        (Some(Phase::Poll), 2, true)
+    );
     alter_checkpoint(
         &pool,
         "UPDATE payment_reconciliation_jobs SET candidate_index=0",
@@ -421,4 +455,196 @@ async fn supervisor_review_after_failed_candidate_keeps_partial_position(pool: P
         .expect("partial review is readable");
     assert_eq!(view.checkpoint_review, Some(ReviewReason::CustodyInvalid));
     assert_eq!(server.count(), 3);
+}
+
+#[sqlx::test(migrator = "MIGRATOR")]
+async fn claimed_candidate_requires_authenticated_fact_and_poll_requires_resolution(pool: PgPool) {
+    let (time, frozen) = prepared(&pool, true).await;
+    let id = &frozen.snapshot().binding.id;
+    let candidate = payment(frozen.snapshot());
+    let server = Server::start(vec![
+        profile(),
+        Reply::Json(
+            200,
+            json!({"count":1,"_embedded":{"payments":[candidate]},"_links":{"next":null}}),
+        ),
+    ]);
+    let client = local(&server)
+        .verify_profile()
+        .await
+        .expect("profile")
+        .into_reconciliation();
+    let i = ids();
+    assert_eq!(
+        run_batch(&pool, time.as_ref(), &i, &client, 1)
+            .await
+            .expect("one page")
+            .processed,
+        1
+    );
+    assert_eq!(
+        inspect_custody(&pool, id)
+            .await
+            .expect("unconsumed")
+            .checkpoint_phase,
+        Some(Phase::Candidates)
+    );
+    alter_checkpoint(
+        &pool,
+        "UPDATE payment_reconciliation_jobs SET candidate_index=1",
+    )
+    .await;
+    assert!(
+        matches!(
+            inspect_custody(&pool, id).await,
+            Err(RecoveryError::InvalidStoredData)
+        ),
+        "claimed candidate has no authenticated observation"
+    );
+    // A legitimate independent fetch is necessary evidence, though not proof of
+    // the supervisor's own execution or any provider absence.
+    record_verified(
+        &pool,
+        time.as_ref(),
+        &i,
+        id,
+        "independent",
+        &fetched(
+            frozen.snapshot(),
+            "tr_SYNTHETIC_NotARealPayment",
+            "pending",
+            false,
+        )
+        .await,
+    )
+    .await
+    .expect("independent observation");
+    assert!(inspect_custody(&pool, id).await.is_ok());
+    alter_checkpoint(&pool, "UPDATE payment_reconciliation_jobs SET phase='poll'").await;
+    assert!(
+        matches!(
+            inspect_custody(&pool, id).await,
+            Err(RecoveryError::InvalidStoredData)
+        ),
+        "poll requires its historical resolution"
+    );
+    assert_eq!(
+        server.count(),
+        2,
+        "inspection performed no provider requests"
+    );
+}
+
+#[sqlx::test(migrator = "MIGRATOR")]
+async fn prior_page_candidates_also_require_retained_observation(pool: PgPool) {
+    let (time, frozen) = prepared(&pool, true).await;
+    let id = &frozen.snapshot().binding.id;
+    let mut candidate = payment(frozen.snapshot());
+    candidate["status"] = "pending".into();
+    let server = Server::start(vec![
+        profile(),
+        Reply::Json(
+            200,
+            json!({"count":1,"_embedded":{"payments":[candidate.clone()]},"_links":{"next":{"href":"https://api.mollie.com/v2/payments?from=tr_NEXT&limit=10"}}}),
+        ),
+        Reply::Json(200, candidate),
+        Reply::Json(
+            200,
+            json!({"count":0,"_embedded":{"payments":[]},"_links":{"next":null}}),
+        ),
+    ]);
+    let client = local(&server)
+        .verify_profile()
+        .await
+        .expect("profile")
+        .into_reconciliation();
+    assert_eq!(
+        run_batch(&pool, time.as_ref(), &ids(), &client, 4)
+            .await
+            .expect("next page")
+            .processed,
+        4
+    );
+    let view = inspect_custody(&pool, id).await.expect("complete ancestor");
+    assert_eq!(
+        (view.checkpoint_phase, view.observations),
+        (Some(Phase::Candidates), 1)
+    );
+    pool.execute("ALTER TABLE payment_observations DISABLE TRIGGER USER; DELETE FROM payment_observations; ALTER TABLE payment_observations ENABLE TRIGGER USER").await.expect("remove ancestor evidence in fixture");
+    assert!(matches!(
+        inspect_custody(&pool, id).await,
+        Err(RecoveryError::InvalidStoredData)
+    ));
+    assert_eq!(server.count(), 4);
+}
+
+#[sqlx::test(migrator = "MIGRATOR")]
+async fn poll_resolution_must_cover_the_consumed_candidate(pool: PgPool) {
+    let (time, frozen) = prepared(&pool, true).await;
+    let id = &frozen.snapshot().binding.id;
+    let candidate = payment(frozen.snapshot());
+    let server = Server::start(vec![
+        profile(),
+        Reply::Json(
+            200,
+            json!({"count":1,"_embedded":{"payments":[candidate]},"_links":{"next":null}}),
+        ),
+    ]);
+    let client = local(&server)
+        .verify_profile()
+        .await
+        .expect("profile")
+        .into_reconciliation();
+    let i = ids();
+    run_batch(&pool, time.as_ref(), &i, &client, 1)
+        .await
+        .expect("page");
+    record_verified(
+        &pool,
+        time.as_ref(),
+        &i,
+        id,
+        "different-fact",
+        &fetched(frozen.snapshot(), "tr_OTHER", "pending", false).await,
+    )
+    .await
+    .expect("other observation");
+    identities::resolve(
+        &pool,
+        time.as_ref(),
+        &i,
+        id,
+        &format!("recovery-{id}-1-resolve"),
+    )
+    .await
+    .expect("different identity resolution");
+    record_verified(
+        &pool,
+        time.as_ref(),
+        &i,
+        id,
+        "candidate-fact",
+        &fetched(
+            frozen.snapshot(),
+            "tr_SYNTHETIC_NotARealPayment",
+            "pending",
+            false,
+        )
+        .await,
+    )
+    .await
+    .expect("candidate observation");
+    alter_checkpoint(
+        &pool,
+        "UPDATE payment_reconciliation_jobs SET candidate_index=1,phase='poll'",
+    )
+    .await;
+    assert!(
+        matches!(
+            inspect_custody(&pool, id).await,
+            Err(RecoveryError::InvalidStoredData)
+        ),
+        "the earlier one-identity resolution does not cover the consumed candidate"
+    );
+    assert_eq!(server.count(), 2);
 }

@@ -514,7 +514,9 @@ job, missing or damaged custody, paid and ambiguous retained observations, stale
 resolution, checkpoint page/index/phase consistency, redacted CLI output and unchanged
 database counts. Linked search requires a consumed page with a bounded continuation and
 poll requires a consumed terminal page; partial candidate and review stops remain
-readable. Local fixture setup uses loopback only; inspection itself sends no provider
+readable. Corrupted candidate advancement without authenticated observation and
+polling without a compatible historical supervisor resolution fail closed. A real
+poll remains readable after later independently verified ambiguity and paid facts. Local fixture setup uses loopback only; inspection itself sends no provider
 requests. It does not inspect a retained pilot database or prove provider state.
 
 The private Mollie transport uses a bounded loopback Hyper instrument and isolated

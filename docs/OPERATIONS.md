@@ -175,7 +175,10 @@ A separate `commerce-worker --inspect-payment-custody <attempt-id>` validates on
 original frozen attempt, dispatch and exact recovery event in a read-only snapshot,
 even before a job exists. It reports a checkpoint's closed state and linked-page
 presence, observation and distinct identity counts, whether paid was observed, and
-whether the latest stored resolution covers the retained prefix. It checks only the
+whether the latest stored resolution covers the retained prefix. Claimed consumed
+candidates require matching authenticated observations, and polling requires a
+compatible historical supervisor resolution; later observations remain visible.
+These checks do not establish the supervisor's exact execution. It checks only the
 checkpoint-linked search chain; unlinked pages and external reports are not included.
 Zero identities do not prove provider absence. It emits no identifiers or credentials,
 creates no job and never contacts Mollie. This inspection does not establish source,
