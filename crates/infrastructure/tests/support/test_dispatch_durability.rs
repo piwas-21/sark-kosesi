@@ -138,7 +138,17 @@ async fn dispatch_requires_server_fsync_before_post(pool: PgPool) {
            (l OPERATOR(pg_catalog.=) 'off' AND r OPERATOR(pg_catalog.=) 'on')
              OR l OPERATOR(pg_catalog.=) r $$;
          CREATE OPERATOR public.= (FUNCTION=public.fixture_dispatch_text_eq,
-           LEFTARG=text, RIGHTARG=text)",
+           LEFTARG=text, RIGHTARG=text);
+         CREATE SEQUENCE fixture_dispatch_path_witness;
+         CREATE FUNCTION fixture_dispatch_use_shadow_path() RETURNS trigger
+         LANGUAGE plpgsql AS $$ BEGIN
+           PERFORM pg_catalog.nextval('public.fixture_dispatch_path_witness');
+           PERFORM pg_catalog.set_config('search_path','public,pg_catalog',true);
+           RETURN NEW;
+         END $$;
+         CREATE TRIGGER fixture_dispatch_use_shadow_path AFTER INSERT ON commerce_outbox
+         FOR EACH ROW WHEN (NEW.kind='payment.reconciliation_required.v1')
+         EXECUTE FUNCTION fixture_dispatch_use_shadow_path()",
     )
     .await
     .expect("owned fixture operator");
@@ -163,6 +173,7 @@ async fn dispatch_requires_server_fsync_before_post(pool: PgPool) {
     .expect("hostile operator result");
     assert_eq!(actual, expected);
     assert!(claims_on, "unqualified equality always claims fsync is on");
+    hostile_pool.close().await;
 
     let body = payment(frozen.snapshot());
     let server = Server::start(vec![
@@ -173,13 +184,19 @@ async fn dispatch_requires_server_fsync_before_post(pool: PgPool) {
     let client = local(&server).verify_profile().await.expect("test profile");
     let ids = crate::payment_test_fixture::Ids(AtomicU64::new(10000));
     let outcome = dispatch_and_observe_test_payment(
-        &hostile_pool,
+        &pool,
         clock.as_ref(),
         &ids,
         &client,
         &frozen.snapshot().binding.id,
     )
     .await;
+    let witness: (i64, bool) =
+        sqlx::query_as("SELECT last_value,is_called FROM fixture_dispatch_path_witness")
+            .fetch_one(&pool)
+            .await
+            .expect("which transaction reached the post-outbox check");
+    assert_eq!(witness, (1, true));
     match expected.as_str() {
         "off" => {
             assert_eq!(
@@ -199,5 +216,4 @@ async fn dispatch_requires_server_fsync_before_post(pool: PgPool) {
         }
         _ => panic!("invalid server fsync expectation"),
     }
-    hostile_pool.close().await;
 }
