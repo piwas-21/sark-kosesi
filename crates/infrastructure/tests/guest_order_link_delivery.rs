@@ -64,6 +64,82 @@ async fn counts(pool: &PgPool) -> (i64, i64, i64) {
         .fetch_one(pool).await.expect("custody counts")
 }
 
+#[sqlx::test(migrations = false)]
+async fn guest_order_link_delivery_populated_66_through_68_preserves_legacy_proof(pool: PgPool) {
+    use admitted_proofs::{
+        customer_passwords, email_verification, verified_customer_accounts::establish,
+    };
+    use sha2::{Digest, Sha256};
+
+    MIGRATOR.run_to(66, &pool).await.expect("legacy schema");
+    quote::seed(&pool).await;
+    let (store, clock) = quote::store(&pool, 1100);
+    let (session, csrf) = quote::guest(&store).await;
+    let guest = GuestCredential::from_session(&session).expect("guest");
+    let id = order(&store, &guest, &csrf, "upgrade").await;
+    let legacy = guest_order_links::issue(&store, &guest, &csrf, &id)
+        .await
+        .expect("legacy proof");
+    let verifier = Sha256::new()
+        .chain_update(b"piwas:guest-order-link:verifier:v1\0")
+        .chain_update(legacy.expose_bytes())
+        .finalize()
+        .to_vec();
+    let read_proof = || async {
+        sqlx::query_as::<_, (String, String, i64, i64, Option<i64>)>(
+            "SELECT order_id,basket_id,created_at,expires_at,consumed_at FROM guest_order_link_proofs WHERE verifier=$1",
+        )
+        .bind(&verifier)
+        .fetch_one(&pool)
+        .await
+        .expect("legacy proof retained")
+    };
+    let before = read_proof().await;
+    MIGRATOR.run_to(67, &pool).await.expect("packing upgrade");
+    assert_eq!(read_proof().await, before);
+    MIGRATOR.run_to(68, &pool).await.expect("delivery upgrade");
+    assert_eq!(read_proof().await, before);
+    let legacy_mode: bool = sqlx::query_scalar("SELECT delivery_mode='direct' AND delivery_transaction_id IS NULL FROM guest_order_link_proofs WHERE verifier=$1")
+        .bind(&verifier).fetch_one(&pool).await.expect("legacy mode");
+    assert!(legacy_mode);
+
+    let delivery_key = key();
+    delivery::register_key(&pool, clock.as_ref(), &delivery_key)
+        .await
+        .expect("register key");
+    delivery::issue_for_delivery(&store, &guest, &csrf, &id, &delivery_key)
+        .await
+        .expect("new encrypted proof");
+    assert_eq!(counts(&pool).await, (1, 2, 1));
+
+    let email = "buyer@example.test";
+    let proof = email_verification::issue(&pool, email, clock.as_ref())
+        .await
+        .expect("email proof");
+    establish(&pool, email, &proof, clock.as_ref())
+        .await
+        .expect("verified account");
+    let proof = customer_passwords::issue(&pool, email, clock.as_ref())
+        .await
+        .expect("password proof");
+    customer_passwords::replace(
+        &pool,
+        email,
+        &proof,
+        "correct horse battery staple",
+        clock.as_ref(),
+    )
+    .await
+    .expect("password");
+    let customer =
+        admitted_login::login(&pool, email, "correct horse battery staple", clock.as_ref())
+            .await
+            .expect("customer session");
+    guest_order_links::link(&pool, &customer.token, &id, &legacy, clock.as_ref())
+        .await
+        .expect("legacy proof remains redeemable");
+}
+
 #[sqlx::test(migrator = "MIGRATOR")]
 async fn guest_order_link_delivery_authorized_issuance_retains_exact_ciphertext_without_recipient_or_bearer(
     pool: PgPool,
