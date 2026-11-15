@@ -204,7 +204,7 @@ async fn initial_provenance_requires_server_fsync() {
     assert_eq!(counts(&pool).await, (1, 1, 0, 0, 0));
     pool.execute("CREATE SEQUENCE fixture_fsync_receipt_witness; CREATE FUNCTION fixture_witness_fsync_receipt() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN PERFORM nextval('fixture_fsync_receipt_witness'); RETURN NEW; END $$; CREATE TRIGGER zz_witness_fsync_receipt AFTER INSERT ON payment_initial_dispatch_provenance FOR EACH ROW EXECUTE FUNCTION fixture_witness_fsync_receipt()")
         .await.expect("nontransactional receipt witness");
-    pool.execute("CREATE FUNCTION public.current_setting(text) RETURNS text LANGUAGE sql STABLE AS $$ SELECT CASE WHEN $1 IN ('fsync','synchronous_commit') THEN 'on' ELSE pg_catalog.current_setting($1) END $$")
+    pool.execute("CREATE FUNCTION public.current_setting(text) RETURNS text LANGUAGE sql STABLE AS $$ SELECT CASE WHEN $1='transaction_isolation' THEN 'read committed' WHEN $1 IN ('fsync','synchronous_commit') THEN 'on' ELSE pg_catalog.current_setting($1) END $$")
         .await.expect("synthetic hostile search path");
     let writer = PgPoolOptions::new()
         .max_connections(1)
@@ -232,8 +232,35 @@ async fn initial_provenance_requires_server_fsync() {
         sqlx::query_scalar("SELECT current_setting('transaction_isolation'::text)")
             .fetch_one(&writer)
             .await
-            .expect("unrelated setting delegated");
+            .expect("ordinary isolation setting");
     assert_eq!(isolation, "read committed");
+    let mut repeatable = writer.begin().await.expect("hostile raw transaction");
+    sqlx::query("SET TRANSACTION ISOLATION LEVEL REPEATABLE READ")
+        .execute(&mut *repeatable)
+        .await
+        .expect("repeatable read");
+    let isolation: (String, String) = sqlx::query_as("SELECT current_setting('transaction_isolation'::text),pg_catalog.current_setting('transaction_isolation')")
+        .fetch_one(&mut *repeatable).await.expect("spoofed and real isolation");
+    assert_eq!(
+        isolation,
+        ("read committed".into(), "repeatable read".into())
+    );
+    let error = sqlx::query("INSERT INTO payment_initial_dispatch_provenance(attempt_id,start_id,observation_id,observation_event_id,observation_sha256,transaction_id) VALUES($1,$2,$3,$4,decode(repeat('0',64),'hex'),NULL)")
+        .bind(&binding.id).bind(&dispatch_id).bind("e".repeat(32)).bind("f".repeat(32))
+        .execute(&mut *repeatable).await.expect_err("native isolation guard");
+    let error = error
+        .as_database_error()
+        .expect("native database rejection");
+    assert_eq!(error.code().as_deref(), Some("23514"));
+    assert_eq!(
+        error.message(),
+        "Initial provenance requires a database-assigned transaction"
+    );
+    repeatable
+        .rollback()
+        .await
+        .expect("discard hostile transaction");
+    assert_eq!(counts(&pool).await, (1, 1, 0, 0, 0));
 
     let server = Server::start(vec![
         profile(),

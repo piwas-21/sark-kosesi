@@ -576,7 +576,8 @@ with `--fsync-off` and once without it, each followed by
 The fixture checks the wrapper's disposable marker before creating its own
 database. It seeds a synthetic historical start and constructs synthetic create
 evidence bound to an authenticated loopback GET; it sends no create POST and
-does not prove real provider origin.
+does not prove real provider origin. A raw repeatable-read insert must fail the
+native isolation guard even when the inherited search path spoofs its setting.
 
 Compiled provider controls bypass authenticated-profile verification, fetched
 payment matching, the early streamed-byte limit, duplicate-field preservation and

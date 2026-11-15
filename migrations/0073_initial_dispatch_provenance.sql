@@ -66,7 +66,7 @@ BEGIN
  IF TG_OP<>'INSERT' THEN
   RAISE EXCEPTION 'Initial dispatch provenance is immutable' USING ERRCODE='23514';
  END IF;
- IF current_setting('transaction_isolation')<>'read committed' OR NEW.transaction_id IS NOT NULL THEN
+ IF pg_catalog.current_setting('transaction_isolation')<>'read committed' OR NEW.transaction_id IS NOT NULL THEN
   RAISE EXCEPTION 'Initial provenance requires a database-assigned transaction' USING ERRCODE='23514';
  END IF;
  PERFORM 1 FROM payment_attempts WHERE id=NEW.attempt_id FOR UPDATE;
