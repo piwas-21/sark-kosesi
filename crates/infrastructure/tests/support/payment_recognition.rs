@@ -430,7 +430,7 @@ async fn recognition_schema30_upgrade_preserves_complete_original_paid_custody_a
         .expect("prior exact prefix and ownership")
         .resolution;
     let before = preserved(&pool).await;
-    let source_sql = "SELECT jsonb_build_object('observations',(SELECT jsonb_agg(to_jsonb(t) ORDER BY id) FROM payment_observations t),'resolutions',(SELECT jsonb_agg(to_jsonb(t) ORDER BY id) FROM payment_identity_resolutions t),'claims',(SELECT jsonb_agg(to_jsonb(t) ORDER BY profile_id,provider_id) FROM payment_provider_identity_claims t),'events',(SELECT jsonb_agg(to_jsonb(t) ORDER BY id) FROM commerce_outbox t),'authority',(SELECT jsonb_agg(to_jsonb(t) ORDER BY staff_id,capability) FROM staff_capabilities t))";
+    let source_sql = "SELECT jsonb_build_object('observations',(SELECT jsonb_agg(to_jsonb(t) ORDER BY id) FROM payment_observations t),'dispatches',(SELECT jsonb_agg(to_jsonb(t) ORDER BY id) FROM payment_dispatch_starts t),'resolutions',(SELECT jsonb_agg(to_jsonb(t) ORDER BY id) FROM payment_identity_resolutions t),'claims',(SELECT jsonb_agg(to_jsonb(t) ORDER BY profile_id,provider_id) FROM payment_provider_identity_claims t),'events',(SELECT jsonb_agg(to_jsonb(t) ORDER BY id) FROM commerce_outbox t),'authority',(SELECT jsonb_agg(to_jsonb(t) ORDER BY staff_id,capability) FROM staff_capabilities t))";
     let sources: Value = sqlx::query_scalar(source_sql)
         .fetch_one(&pool)
         .await
@@ -454,12 +454,24 @@ async fn recognition_schema30_upgrade_preserves_complete_original_paid_custody_a
         value
     }
     assert_eq!(legacy_projection(preserved(&pool).await), before);
+    let mut upgraded_sources: Value = sqlx::query_scalar(source_sql)
+        .fetch_one(&pool)
+        .await
+        .expect("upgraded source rows");
+    for table in ["observations", "dispatches"] {
+        let rows = upgraded_sources[table]
+            .as_array_mut()
+            .expect("legacy source rows");
+        assert_eq!(rows.len(), 1, "one retained legacy {table} row");
+        let xid = rows[0]
+            .as_object_mut()
+            .expect("legacy source object")
+            .remove("source_transaction_id");
+        assert_eq!(xid, Some(Value::Null), "no inferred legacy {table} XID");
+    }
     assert_eq!(
-        sqlx::query_scalar::<_, Value>(source_sql)
-            .fetch_one(&pool)
-            .await
-            .expect("unchanged source rows"),
-        sources
+        upgraded_sources, sources,
+        "all original source fields retained"
     );
     assert_eq!(recognition_counts(&pool).await, (0, 0, 0));
     assert!(

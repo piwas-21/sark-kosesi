@@ -43,6 +43,41 @@ impl CreationHint {
         &self.provider_id
     }
 }
+/// Only a consumed initial dispatch can produce this create response capability.
+/// Discovery hints intentionally use a different type and cannot mint custody.
+pub struct CreatedPayment {
+    provider_id: String,
+    attempt: AttemptSnapshot,
+}
+impl CreatedPayment {
+    pub fn provider_id(&self) -> &str {
+        &self.provider_id
+    }
+    pub(crate) fn bind(self, fetched: VerifiedPayment) -> Result<InitialFetch, MollieError> {
+        if fetched.payment.id != self.provider_id
+            || match_provider(&self.attempt, &fetched.payment).is_err()
+        {
+            return Err(MollieError::PaymentMismatch);
+        }
+        Ok(InitialFetch {
+            attempt: self.attempt,
+            fetched,
+        })
+    }
+}
+/// Sealed pair of the one-use create response and its matching authenticated GET.
+pub(crate) struct InitialFetch {
+    attempt: AttemptSnapshot,
+    fetched: VerifiedPayment,
+}
+impl InitialFetch {
+    pub(crate) fn attempt(&self) -> &AttemptSnapshot {
+        &self.attempt
+    }
+    pub(crate) fn fetched(&self) -> &VerifiedPayment {
+        &self.fetched
+    }
+}
 /// Minimal projection from an authenticated, exact-profile/amount/metadata GET.
 /// Retains late-paid evidence; grants no order, stock or fulfilment effect.
 pub struct VerifiedPayment {
