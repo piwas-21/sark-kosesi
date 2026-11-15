@@ -5,20 +5,29 @@ on:
     branches: [develop]
     paths:
       - .github/workflows/db-alpine-gosu-lab.yml
-      - ops/db-alpine-gosu-candidate/**
       - ops/db-gosu-candidate/**
+      - ops/db-zlib-candidate/pull_verified_base.sh
       - scripts/test_gosu_candidate.sh
       - scripts/test_db_alpine_gosu.sh
+      - scripts/rehearse_alpine_gosu_restore.py
+      - scripts/rehearse_restore.py
+      - scripts/with_postgres.py
+      - crates/**
+      - Cargo.toml
+      - Cargo.lock
+      - rust-toolchain.toml
+      - migrations/**
       - scripts/check_db_alpine_gosu.py
       - scripts/check_alpine_gosu_image.py
       - scripts/capture_db_image_scan.py
       - tests/tooling/test_db_alpine_gosu*.py
       - tests/tooling/test_alpine_gosu_image.py
+      - tests/tooling/test_alpine_gosu_restore.py
 permissions: {}
 jobs:
   lab:
     runs-on: ubuntu-24.04
-    timeout-minutes: 45
+    timeout-minutes: 90
     permissions:
       contents: read
     steps:
@@ -28,6 +37,7 @@ jobs:
           persist-credentials: false
       - name: Rebuild verified Gosu in isolated containers
         env:
+          GOSU_PROFILE: "1.20"
           GOSU_SOURCE_REVISION: ${{ github.event.pull_request.head.sha || github.sha }}
           GOSU_EVIDENCE_DIR: ${{ runner.temp }}/db-gosu-evidence
           GOSU_SCRATCH_DIR: ${{ runner.temp }}/db-gosu-scratch
