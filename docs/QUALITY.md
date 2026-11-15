@@ -975,6 +975,17 @@ foam differences, and reject wrong revisions, missing or duplicate members,
 conflicting component kinds, changed quantities and invalid prior counts. Check the real maximum 20 by 64
 footprint. These pure controls do not establish package or warehouse custody.
 
+### Test-only guest order acceptance
+
+Use isolated PostgreSQL and the guest HTTP boundary for real cookie, Origin and
+CSRF ownership; verify no route by default or outside test configuration. Feed
+an explicit synthetic seller only through server configuration. Check full-intent
+replay, concurrent duplicate requests, stale or changed terms and quote, foreign
+basket, malformed nested/duplicate fields, bounded input, store failure rollback,
+minimal private receipt and unchanged payment attempts. Keep the guest transport
+inside the critical Rust coverage inventory. These checks provide no live seller,
+legal, provider, browser or operational acceptance.
+
 ### Private customer favourites
 
 Use isolated PostgreSQL to check customer ownership, revision and capacity races,

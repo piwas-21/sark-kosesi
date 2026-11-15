@@ -381,6 +381,17 @@ and any verified account session remain current after source waits. Address/emai
 syntax is neither ownership nor delivery proof. Seller/legal snapshots require
 trusted configuration; installation supplies none. Public routes, abuse controls,
 retention/erasure operations, coupon accounting and payment authority remain gates.
+An independently opted-in test-only order POST requires preview authentication,
+the exact guest Origin, host-only guest cookie and its CSRF proof. It accepts
+bounded closed intent objects and an effect key, never seller policy, price or
+ownership authority. An explicit bounded server-only seller policy is required;
+no seller facts are seeded. Startup performs structural validation only. New
+acceptances require the policy's current locale, terms and validity while exact
+replays preserve the existing receipt. Test mode is mandatory; the route is
+absent by default and the configuration is rejected in local, staging and
+production modes. Responses expose only order ID and replay state; neither
+request data nor database detail belongs in logs. This is not public checkout,
+legal approval, provider acceptance or retention evidence.
 
 The private Mollie test client accepts no live key or caller-controlled provider
 origin. Raw authorization is sensitive and excluded from Debug/serialization and

@@ -7,6 +7,7 @@ pub struct Config {
     pub guest_origin: Option<crate::guest::GuestOrigin>,
     pub verification: Option<crate::verification::VerificationConfig>,
     pub test_login: Option<crate::test_login::LoginConfig>,
+    pub test_guest_order: Option<crate::guest::test_orders::TestOrderConfig>,
     pub callback_profile: Option<crate::callbacks::CallbackProfile>,
 }
 
@@ -50,6 +51,11 @@ impl Config {
             .get("GUEST_ORIGIN")
             .map(|value| crate::guest::GuestOrigin::parse(value))
             .transpose()?;
+        let test_guest_order =
+            crate::guest::test_orders::TestOrderConfig::from_env(environment, values)?;
+        if test_guest_order.is_some() && guest_origin.is_none() {
+            return Err("Test guest order requires guest origin");
+        }
         let callback_profile = values
             .get("CALLBACK_INTAKE_PROFILE_ID")
             .map(|value| crate::callbacks::CallbackProfile::parse(value))
@@ -71,6 +77,7 @@ impl Config {
             callback_profile,
             verification,
             test_login,
+            test_guest_order,
         })
     }
 }

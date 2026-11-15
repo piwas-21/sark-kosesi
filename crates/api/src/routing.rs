@@ -45,26 +45,49 @@ pub fn router_with_test_login(
     verification: Option<VerificationConfig>,
     login: Option<LoginConfig>,
 ) -> Result<Router, GuestError> {
+    router_with_test_order(state, guest, callback, verification, login, None)
+}
+pub fn router_with_test_order(
+    state: AppState,
+    guest: Option<GuestOrigin>,
+    callback: Option<CallbackProfile>,
+    verification: Option<VerificationConfig>,
+    login: Option<LoginConfig>,
+    order: Option<guest::test_orders::TestOrderConfig>,
+) -> Result<Router, GuestError> {
     let guest = guest
-        .map(|origin| guest_router(&state, origin))
+        .map(|origin| guest_router(&state, origin, order))
         .transpose()?;
     Ok(build(state, guest, callback, verification, login))
 }
-fn guest_router(state: &AppState, origin: GuestOrigin) -> Result<Router<AppState>, GuestError> {
+fn guest_router(
+    state: &AppState,
+    origin: GuestOrigin,
+    order: Option<guest::test_orders::TestOrderConfig>,
+) -> Result<Router<AppState>, GuestError> {
     let store = GuestSessionStore::new(
         state.pool.clone(),
         state.clock.clone(),
         state.identifiers.clone(),
         GuestLimits::default(),
     )?;
-    let guest = Router::new()
+    let mut guest = Router::new()
         .route(
             "/api/guest/session",
             post(guest::issue).delete(guest::revoke),
         )
         .route("/api/guest/basket", get(guest::read).put(guest::write))
         .route("/api/guest/{locale}/quotes", post(guest::quotes::issue))
-        .route("/api/guest/quotes/{id}", get(guest::quotes::read))
+        .route("/api/guest/quotes/{id}", get(guest::quotes::read));
+    if let Some(order) = order {
+        guest = guest.route(
+            "/api/test/guest/orders",
+            post(guest::test_orders::create)
+                .layer::<_, std::convert::Infallible>(DefaultBodyLimit::max(4096))
+                .layer(Extension(order)),
+        );
+    }
+    let guest = guest
         .layer(Extension(GuestState {
             store: store.clone(),
             origin,

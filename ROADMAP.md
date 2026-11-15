@@ -265,7 +265,7 @@ Before any private-repository switch, run the protection audit and follow [opera
 
 Guest-basket intent has an opt-in internal session/CSRF API with durable ownership,
 revocation, bounded counters and immutable version receipts. No public customer
-bridge, order creation or payment follows from it. Owned indicative quote snapshots
+bridge or payment follows from it. Owned indicative quote snapshots
 now retain exact source revisions, checked totals and short fixed expiry, with
 intent-bound retries and final source checks after writes. Historical prices grant
 no current order authority. A private promoted snapshot retains exact original
@@ -281,6 +281,10 @@ attempt. Cancellation shares the basket claim with admission and the attempt
 claim with dispatch. Normal hold expiry still governs stock, and lifetime
 promotion usage stays recorded. Complete post-dispatch disposition and trusted-edge
 abuse controls before exposing customer routes.
+An independently enabled test-only guest order POST uses the same session,
+Origin and CSRF checks, with an explicit server-only test seller policy. It
+returns only the order ID and replay flag; no provider operation follows. Public
+checkout and seller/legal acceptance remain separate gates.
 
 Private durable owned-order test attempts and one serialized dispatch-start fact
 now compose the frozen request policy, existing physically backed reservation and

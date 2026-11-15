@@ -278,6 +278,14 @@ supervision or live provider activation follows from deploying the empty preview
    Finish post-dispatch disposition, redemption disposition, lifecycle/payment
    transitions and retention before public checkout. Seller and legal facts
    remain required trusted configuration.
+   An independently enabled test-only POST composes the same guest cookie,
+   exact Origin and CSRF with this operation. It accepts only intent and an
+   effect key; the seller policy is an explicit bounded server-only test
+   configuration with no default. Startup validates its shape and syntax, not
+   legal approval or current eligibility. New orders recheck its terms, locale
+   and expiry; exact retries preserve the historical receipt. The response is
+   limited to the order ID and replay flag. No provider call, frontend bridge
+   or production/staging/local activation is provided.
    Expose the same-origin API/contracts and checkout UI only with those controls.
 4. The private test-payment domain now models immutable attempt identity, exact
    EUR/profile/credential/request binding, one durable dispatch-start plan and

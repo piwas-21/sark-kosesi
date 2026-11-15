@@ -1843,6 +1843,140 @@
         ]
       }
     },
+    "/api/test/guest/orders": {
+      "post": {
+        "tags": [
+          "crate::guest::test_orders"
+        ],
+        "operationId": "test_guest_order_create",
+        "parameters": [
+          {
+            "name": "Origin",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "x-csrf-token",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/TestOrderInput"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TestOrderReceipt"
+                }
+              }
+            }
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "410": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "413": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "415": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "429": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "guest": [],
+            "preview": []
+          }
+        ]
+      }
+    },
     "/api/test/verification/redeem": {
       "post": {
         "tags": [
@@ -1947,6 +2081,46 @@
   },
   "components": {
     "schemas": {
+      "AddressInput": {
+        "type": "object",
+        "required": [
+          "recipient",
+          "line1",
+          "city",
+          "country",
+          "postcode"
+        ],
+        "properties": {
+          "city": {
+            "type": "string"
+          },
+          "country": {
+            "type": "string"
+          },
+          "line1": {
+            "type": "string"
+          },
+          "line2": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "postcode": {
+            "type": "string"
+          },
+          "recipient": {
+            "type": "string"
+          },
+          "region": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "additionalProperties": false
+      },
       "ApiError": {
         "type": "object",
         "required": [
@@ -1964,6 +2138,22 @@
           "in_stock",
           "out_of_stock"
         ]
+      },
+      "BuyerInput": {
+        "type": "object",
+        "required": [
+          "name",
+          "email"
+        ],
+        "properties": {
+          "email": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": false
       },
       "CallbackForm": {
         "type": "object",
@@ -2776,6 +2966,47 @@
           }
         }
       },
+      "TestOrderInput": {
+        "type": "object",
+        "required": [
+          "effect_key",
+          "quote_id",
+          "expected_basket_revision",
+          "buyer",
+          "shipping_address",
+          "billing_address",
+          "accepted_terms_version",
+          "confirmed"
+        ],
+        "properties": {
+          "accepted_terms_version": {
+            "type": "string"
+          },
+          "billing_address": {
+            "$ref": "#/components/schemas/AddressInput"
+          },
+          "buyer": {
+            "$ref": "#/components/schemas/BuyerInput"
+          },
+          "confirmed": {
+            "type": "boolean"
+          },
+          "effect_key": {
+            "type": "string"
+          },
+          "expected_basket_revision": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "quote_id": {
+            "type": "string"
+          },
+          "shipping_address": {
+            "$ref": "#/components/schemas/AddressInput"
+          }
+        },
+        "additionalProperties": false
+      },
       "TestOrderLine": {
         "type": "object",
         "required": [
@@ -2798,6 +3029,21 @@
           },
           "title": {
             "type": "string"
+          }
+        }
+      },
+      "TestOrderReceipt": {
+        "type": "object",
+        "required": [
+          "id",
+          "replayed"
+        ],
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "replayed": {
+            "type": "boolean"
           }
         }
       },
