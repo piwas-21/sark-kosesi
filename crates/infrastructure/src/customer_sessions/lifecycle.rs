@@ -97,8 +97,12 @@ pub(crate) async fn claim_session_with_csrf(
 ) -> Result<HeldSession, SessionError> {
     let verifier = token.verifier();
     let row = claim(tx, &verifier, false, clock).await?;
-    check_csrf(tx, &verifier, &row.created_xid, csrf).await?;
-    Ok(HeldSession(row))
+    let result = check_csrf(tx, &verifier, &row.created_xid, csrf).await;
+    let held = HeldSession(row);
+    // The synchronizer lookup can wait or fail after the session was claimed.
+    held.check_at(now(clock)?)?;
+    result?;
+    Ok(held)
 }
 
 async fn check_csrf(

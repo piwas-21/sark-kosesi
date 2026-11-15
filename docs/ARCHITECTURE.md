@@ -1957,6 +1957,11 @@ It does not create public ingress, notification delivery or stock authority.
 
 ### Private guest-order linking
 
+A separately enabled test-only redemption requires preview authority, exact Origin,
+the current customer cookie and its session-bound synchronizer. It calls the same
+proof, verified-mailbox and order custody under one held transaction and returns an
+empty success response. Proof delivery and public browser ingress remain separate.
+
 Issue a 15-minute order-link proof only after checking the live guest basket
 session, its CSRF proof and the exact immutable order in that basket. The
 proof has an independent random bearer and verifier domain. Return it to

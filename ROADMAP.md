@@ -228,8 +228,12 @@ cancel a subscription; it is not public ingress or notification delivery.
 
 A private guest-link issuer now atomically stores a proof and purpose-separated
 encrypted bearer after a durable nonce reservation. It returns no recipient or
-bearer and installs no opening, sender or public route. Key operations, recovery,
+bearer. A trusted in-process opening and redacted synthetic outcome retain local
+custody without installing a sender or public route. Key operations, recovery,
 retention, anti-abuse and real mailbox delivery remain open.
+A default-off test-only guest-order redemption route binds the customer session
+synchronizer to proof consumption and linking in the same transaction. Proof
+delivery, public linking and browser acceptance remain open.
 
 The local room-planner preview combines the rectangle calculator with keyboard
 measurement and rotation controls, a drawn footprint, and text clearance and fit

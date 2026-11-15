@@ -7,7 +7,7 @@ use zeroize::Zeroizing;
 use super::{GuestCredential, GuestError, GuestSessionStore, access, valid_hex};
 use crate::{
     checkout_orders,
-    customer_sessions::{self, CustomerSessionToken, SessionError},
+    customer_sessions::{self, CustomerCsrfToken, CustomerSessionToken, SessionError},
 };
 
 pub mod delivery;
@@ -15,7 +15,7 @@ mod issue;
 mod link;
 mod read;
 pub use issue::issue;
-pub use link::link;
+pub use link::{link, link_with_csrf};
 pub use read::{
     LinkedOrderCursor, LinkedOrderLine, LinkedOrderPage, LinkedOrderView, list_linked_orders,
     read_linked_order,

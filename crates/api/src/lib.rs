@@ -14,6 +14,7 @@ pub mod published;
 pub mod published_types;
 mod test_favourites;
 mod test_favourites_mutation;
+mod test_guest_link_redeem;
 mod test_linked_orders;
 pub mod test_login;
 mod test_login_input;
