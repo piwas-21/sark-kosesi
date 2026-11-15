@@ -104,8 +104,9 @@ admin/unknown/mutation routes retain a separate test-admin browser gate. The API
 remains loopback-only and authenticated, with a separate database and disabled production. Deployment/provider acceptance is
 recorded independently from source/CI. Server quote source now reads approved publications and aggregated shared-component
 stock with explicit exact-destination policies and bounded integer tax/shipping
-allocations. No policies are seeded or accepted from clients. Quotes are indicative:
-no stock is reserved and no payment is authorized. Private market policy drafts and independent approvals now persist exact country/
+allocations. No policies are seeded or accepted from clients. Owned quote issue and
+reads recheck held guest and customer expiry before returning source failures after
+waits. Quotes are indicative: no stock is reserved and no payment is authorized. Private market policy drafts and independent approvals now persist exact country/
 postcode, publication, VAT, parcel limits and validity windows with immutable audit
 history. Separate market author/reviewer grants and recent MFA protect changes.
 The latest draft and its latest review govern indicative quotes under one database
@@ -269,7 +270,7 @@ Before any private-repository switch, run the protection audit and follow [opera
 
 Guest-basket intent has an opt-in internal session/CSRF API with durable ownership,
 revocation, bounded counters and immutable version receipts. No public customer
-bridge, order creation or payment follows from it. Owned indicative quote snapshots
+bridge or payment follows from it. Owned indicative quote snapshots
 now retain exact source revisions, checked totals and short fixed expiry, with
 intent-bound retries and final source checks after writes. Historical prices grant
 no current order authority. A private promoted snapshot retains exact original
@@ -282,9 +283,18 @@ promotion lock. Private payment preparation and attempt history use the same
 current customer account and guest basket. Private cancellation can close an
 owned order before payment dispatch starts, including after an admitted test
 attempt. Cancellation shares the basket claim with admission and the attempt
-claim with dispatch. Normal hold expiry still governs stock, and lifetime
-promotion usage stays recorded. Complete post-dispatch disposition and trusted-edge
+claim with dispatch. An independently enabled test-only guest route exposes that
+pre-dispatch command with exact Origin, cookie, CSRF and explicit confirmation;
+account-bound orders remain unavailable on this route. Normal hold expiry still
+governs stock, and lifetime promotion usage stays recorded. Complete post-dispatch disposition and trusted-edge
 abuse controls before exposing customer routes.
+An independently enabled test-only guest order POST uses the same session,
+Origin and CSRF checks, with an explicit server-only test seller policy. It
+returns only the order ID and replay flag; no provider operation follows. Public
+checkout and seller/legal acceptance remain separate gates.
+The application browser job covers quote, acceptance, cancellation and exact
+replay through a loopback HTTPS fixture and disposable PostgreSQL. The customer
+checkout interface and deployed ingress still need acceptance.
 
 Private durable owned-order test attempts and one serialized dispatch-start fact
 now compose the frozen request policy, existing physically backed reservation and
@@ -306,11 +316,13 @@ crash-resumable discovery without treating empty/end pages as absence. No creden
 sticky paid facts, with visible ambiguity, operation receipts and atomic events.
 Profile-scoped supervised GET-only recovery now persists leases, search/fetch/poll
 checkpoints, bounded retries and explicit review reasons through a local/test
-worker command. No runtime key or scheduler is installed. Private finance-authorized transient
+worker command. A separate read-only command inspects one checkpoint with a
+redacted summary and no provider credential. No runtime key or scheduler is installed. Private finance-authorized transient
 recovery now retains immutable full-checkpoint decisions and permits at most three
 lifetime resumes without resetting claim, poll or scan budgets. Fresh session/MFA,
 exact generation and confirmation protect every call, including receipt replay.
-Paid, ambiguous, capped and invalid-custody stops remain unresolved. Private
+A private original-attempt preflight validates bounded retained evidence without
+provider access or job enrollment. Paid, ambiguous, capped and invalid-custody stops remain unresolved. Private
 callback-ID GETs now obtain exact-profile minimal evidence and use authenticated
 metadata only to locate and fully match the original frozen order/attempt/dispatch
 before atomic observation/outbox custody. No callback body or return status grants
@@ -351,7 +363,11 @@ consumption cases stay stopped. Complete actual proxy/resource-limit/no-bypass
 and TLS/provider acceptance before public activation, remaining operator
 dispositions and separate order/fulfilment/refund/invoice transitions. A pure
 whole-variant quantity check now bounds a shipment proposal against an accepted
-order and caller-supplied prior counts. A pure projection checks supplied original
-BOMs against frozen members and the order, then sums expected component demand.
-Shipment history, authenticated inputs, package contents and dispatch authority
-still need evidence. Dispatch and payment require separate authorization.
+order and caller-supplied prior counts. A private warehouse projection uses
+current received payment recognition, validated original or late stock allocation
+and sealed order-bound BOMs to compute the expected components for a proposed
+batch. Private packing custody now records confirmed staff assertions of bounded
+whole units and package components, with serialized occupancy, replay and an
+audited release. These assertions do not establish unshipped units, physical
+contents or dispatch authority. Complete shipment handover and delivery custody,
+reversal/refund disposition and physical fulfilment evidence separately.

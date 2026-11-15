@@ -697,6 +697,28 @@ order. These inputs still require
 trusted sealed source and allocation custody; the calculation neither defines
 packages nor establishes warehouse, shipment or dispatch evidence.
 
+A private read-only warehouse projection now loads the current received gross
+recognition, validated original or late allocation and sealed order-bound BOMs
+under the payment-attempt claim and fresh staff authority. It assumes zero prior
+units only to bound one proposed batch against the original order. It cannot
+establish remaining unshipped units, physical packages or dispatch eligibility;
+refund and chargeback disposition remains independent.
+
+Private packing custody records a recent-MFA warehouse staff assertion for complete
+variant units and one or more package component lists, with explicit confirmation.
+Under the order's attempt claim it revalidates the exact allocation, sealed BOM and
+current received gross recognition, reconstructs all active recorded batches, and
+rejects overclaim or mismatched component totals. Every record must be dated at
+or after its original settlement or late allocation, including historical reads. The immutable bounded journal and
+digest-bound outbox event commit together; exact effect replay retains its original
+result. Authority is rechecked before exposing any post-claim outcome, and after a
+failed commit. An authenticated release retains its pack’s exact recognition and
+only relinquishes the assertion, even if payment
+recognition has since changed; it does not report unpacking or restocking. At most
+64 journal entries per order are admitted, including releases; every active
+record reserves its own release slot. Neither a record nor its release proves physical possession, net payment, dispatch, delivery, stock
+availability or permission to ship. No carrier, payment or stock operation follows.
+
 Write domain changes and outbox events in one transaction. Workers claim leases using PostgreSQL, retry with backoff and stable effect identifiers, and recover abandoned leases. Emails, stock alerts and fulfilment requests are idempotent. Record provider acceptance separately from customer delivery. Failed jobs are visible and replayable only through bounded, audited admin actions.
 
 ### Initial test-attempt model
@@ -1318,6 +1340,20 @@ counts include unchanged earlier jobs, so later passes keep returning failure
 until those conditions are resolved through authorized recovery.
 No service scheduler, runtime key, callback route, current payment/fulfilment/refund
 transition or production supervision is installed by this implementation.
+
+A private local/test custody preflight reads one supplied original attempt in a
+read-only repeatable-read transaction. It validates the frozen source, committed
+start and exact recovery event even when no checkpoint exists. It validates the
+checkpoint-linked page chain and phase/index consistency, the bounded complete
+observation prefix and latest resolution, and reports only counts, closed checkpoint state and whether that
+resolution covers the prefix. Each claimed consumed page candidate must have a
+matching authenticated observation. Poll requires an exact historical supervisor
+resolution covering the consumed chain with one identity and no paid observation
+at that watermark; later evidence may change the latest result. These are necessary custody checks, not proof that the
+supervisor performed every operation. Unlinked search pages are not reviewed. The result
+neither authenticates a past external report nor proves provider absence and does
+not enqueue, contact Mollie or authorize a decision. Confirm database identity and
+schema compatibility separately before any supervised use.
 
 ### Authorized transient recovery
 
