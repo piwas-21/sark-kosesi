@@ -49,7 +49,7 @@ No fake commands or passing jobs before code exists. Pin the following free tool
 | `npm run test:discovery`                     | Served HTML, sitemap, canonical/hreflang, product/feed and negative controls in DISCOVERY                                                                                                                     |
 | `npm run test:performance`                   | Production-build Lighthouse CI and payload budgets; k6 isolated API/load fixture in performance config                                                                                                        |
 
-The required `Application gate` aggregates two independently checked-out jobs at the same candidate revision. `Application checks` retains the Rust, TypeScript, integration, migration, contract and coverage commands and publishes the revision-bound application artifact for Sonar. `Application browser` builds the production application and runs the full browser suite with its own isolated database, fallback capture and evidence upload. Both jobs must succeed; failed, skipped, cancelled or missing results fail the aggregate. Sonar validates the coverage and Clippy artifacts after that aggregate. Parallel jobs do not establish release or provider acceptance.
+The required `Application gate` aggregates three independently checked-out jobs at the same candidate revision. `Application checks` runs the Rust audit, TypeScript, unit, integration, migration and contract commands and publishes its revision-bound evidence. `Application coverage` runs the Rust format and Clippy check followed by the complete coverage command, with isolated database fixtures, and publishes the validated coverage and Clippy reports as a revision-bound artifact. `Application browser` builds the production application and runs the full browser suite with its own isolated databases, fallback capture and evidence upload, including the private guest Chromium transport. All three jobs must succeed; failed, skipped, cancelled or missing results fail the aggregate. Sonar imports and validates the coverage artifact after that aggregate. Hosted timing has not yet been measured; parallel jobs do not establish release or provider acceptance.
 
 Rust line/region coverage runs on the pinned stable release. Rust branch instrumentation currently requires nightly in cargo-llvm-cov: P1 must pin a separate tested nightly toolchain for the branch-coverage job and run `cargo +<pinned-nightly> llvm-cov --branch`. Production builds remain on stable. Missing branch data fails the coverage gate; do not report it as 100% or silently substitute line coverage. See the [upstream coverage requirements](https://github.com/taiki-e/cargo-llvm-cov#readme).
 
@@ -93,7 +93,7 @@ summary's total and covered directions. Native coverage thresholds use the
 original summaries.
 If the coverage step fails after exporting nightly reports, CI preserves the raw
 JSON and LCOV under a separate revision-bound diagnostics artifact. Sonar only
-consumes the application artifact published after successful validation and build.
+consumes the coverage artifact published after successful validation.
 The native validator requires every owned source and populated counters, with
 85% lines / 80% instrumented branches per package and 95% for money, inventory
 domain/stock/hold adapter modules and preview authorization. The match-only hold
