@@ -65,6 +65,11 @@ async fn record(
     };
     let mut tx = pool.begin().await?;
     limits(&mut tx).await?;
+    if initial.is_some() {
+        sqlx::query("SET LOCAL synchronous_commit='on'")
+            .execute(&mut *tx)
+            .await?;
+    }
     let (frozen, started_at) = context(&mut tx, attempt_id, true).await?;
     if initial.is_some_and(|attempt| attempt != frozen.snapshot()) {
         return Err(PaymentStoreError::Conflict);
@@ -122,6 +127,16 @@ async fn record(
         initial::insert(&mut tx, &snapshot, &event_id, &frozen, started_at).await?;
     }
     now(&clock)?;
+    if initial.is_some() {
+        let durable: bool = sqlx::query_scalar(
+            "SELECT current_setting('fsync')='on' AND current_setting('synchronous_commit')='on'",
+        )
+        .fetch_one(&mut *tx)
+        .await?;
+        if !durable {
+            return Err(PaymentStoreError::Unavailable);
+        }
+    }
     tx.commit().await?;
     Ok(ObservationReceipt {
         snapshot,

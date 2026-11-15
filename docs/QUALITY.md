@@ -563,6 +563,10 @@ provider ID and observation snapshot must fail the unchanged receipt's native an
 Rust source checks; exact repair must restore both. These controls do not detect
 a privileged rewrite of both receipt and source, or establish that the trusted database writer performed
 provider I/O or that any provider accepted a live payment.
+Exercise an inherited asynchronous session and a post-receipt setting sabotage:
+observe the inserted-write witness, rollback of observation/event/receipt, an
+uncertain outcome and no second POST. PostgreSQL fsync must be enabled; these
+settings do not prove underlying storage flush behavior.
 
 Compiled provider controls bypass authenticated-profile verification, fetched
 payment matching, the early streamed-byte limit, duplicate-field preservation and

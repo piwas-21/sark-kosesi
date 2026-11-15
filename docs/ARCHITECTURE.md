@@ -858,6 +858,10 @@ observation both rewritten by a privileged actor cannot be detected by this
 commitment alone. Preexisting rows are not backfilled. The trusted database writer is responsible
 for HTTP origin: SQL alone cannot attest a provider request. Unknown or failed
 commits remain reconcilable and cannot authorize another create.
+The supported initial-observation writer sets synchronous commit locally and
+checks it and PostgreSQL fsync immediately before commit. Its errors after
+dispatch remain uncertain; this does not attest storage hardware or constrain
+arbitrary SQL writers.
 
 Private unknown-ID discovery performs one authenticated list request per explicit
 call, with a fixed ten-payment limit, descending order and the existing byte/time
