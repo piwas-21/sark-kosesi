@@ -317,8 +317,11 @@ supervision or live provider activation follows from deploying the empty preview
    reconcile even after key/hold/source expiry. The private test-key HTTP client now
    verifies the authenticated expected profile, sends exact permit bytes once and
    separately fetches a bounded checked payment projection. It installs no runtime
-   key, worker or payment transition. Bounded private unknown-ID list pages now
-   return metadata-associated identity hints, preserving duplicate critical fields
+   key, worker or payment transition. A private explicit orchestration now connects
+   the one-use start to a matching authenticated GET and durable observation;
+   any post-start failure stays uncertain and existing starts reconcile without
+   another POST. It installs no route, scheduler, key or redirect. Bounded private
+   unknown-ID list pages now return metadata-associated identity hints, preserving duplicate critical fields
    and validated fixed-origin cursors. Every candidate needs a separate checked
    GET; no/partial results cannot authorize another POST. Private verified-fetch
    observations now persist minimal exact original-attempt projections, actual
@@ -619,8 +622,9 @@ order. Return captured items and amounts through a minimal projection.
 An independently enabled test-only history route requires preview authority,
 the configured Origin and the customer cookie. It returns up to eight linked
 guest orders and uses the last order's linked time and ID as a live position
-when more remain. Decimal strings carry times and amounts. No linking or proof
-delivery route is installed. Public browser controls, safe proof delivery, rate
+when more remain. Decimal strings carry times and amounts. An independently enabled test-only redemption route binds the current customer
+session synchronizer in the same transaction as proof consumption and linking.
+No public linking or proof delivery route is installed. Public browser controls, safe proof delivery, rate
 limits and public order journeys remain separate work.
 
 ## P5 room-fit foundation
