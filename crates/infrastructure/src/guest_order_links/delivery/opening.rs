@@ -7,31 +7,8 @@ pub enum OpenOutcome {
     AlreadyStarted,
 }
 
-#[derive(sqlx::FromRow)]
-struct Proof {
-    order_id: String,
-    basket_id: String,
-    created_at: i64,
-    expires_at: i64,
-    consumed_at: Option<i64>,
-    consumed_account_id: Option<i64>,
-    unconsumed_xid: bool,
-}
-
-#[derive(sqlx::FromRow, PartialEq, Eq)]
-struct Envelope {
-    key_id: String,
-    nonce_counter: i64,
-    fingerprint: Vec<u8>,
-    ciphertext: Vec<u8>,
-    version: i16,
-    proof_xid: String,
-    envelope_xid: String,
-    nonce_xid: String,
-    nonce_verifier: Vec<u8>,
-    reserved_at: i64,
-    registered_at: i64,
-}
+mod validation;
+use validation::{Envelope, Proof};
 
 #[derive(PartialEq, Eq)]
 struct Source {
@@ -65,20 +42,7 @@ async fn source(
     let p: Option<Proof> = sqlx::query_as("SELECT left(order_id,33) AS order_id,left(basket_id,33) AS basket_id,created_at,expires_at,consumed_at,consumed_account_id,consumed_xid IS NULL AS unconsumed_xid FROM guest_order_link_proofs WHERE verifier=$1 FOR UPDATE")
         .bind(verifier.as_slice()).fetch_optional(&mut **tx).await.map_err(|_| LinkError::Unavailable)?;
     let p = p.ok_or(LinkError::Denied)?;
-    if !valid_hex(&p.order_id, 32)
-        || !valid_hex(&p.basket_id, 32)
-        || p.consumed_at.is_some()
-        || p.consumed_account_id.is_some()
-        || !p.unconsumed_xid
-    {
-        return Err(LinkError::Denied);
-    }
-    if p.created_at < 0
-        || p.created_at.checked_add(LIFETIME) != Some(p.expires_at)
-        || p.expires_at > MAX_QUOTE_UNIX_SECONDS
-    {
-        return Err(LinkError::Unavailable);
-    }
+    p.validate()?;
     require_unlinked_order(tx, &p.basket_id, &p.order_id).await?;
     let snapshot = checkout_orders::guest_snapshot_in_transaction(tx, &p.basket_id, &p.order_id)
         .await
@@ -87,20 +51,7 @@ async fn source(
     let e: Option<Envelope> = sqlx::query_as("SELECT left(e.key_id,65) AS key_id,e.nonce_counter,k.key_fingerprint AS fingerprint,e.ciphertext,e.envelope_version AS version,p.delivery_transaction_id::text AS proof_xid,e.transaction_id::text AS envelope_xid,n.transaction_id::text AS nonce_xid,n.verifier AS nonce_verifier,n.reserved_at,k.registered_at FROM guest_order_link_proofs p JOIN guest_link_delivery_envelopes e ON e.verifier=p.verifier JOIN guest_link_delivery_nonces n ON n.key_id=e.key_id AND n.nonce_counter=e.nonce_counter JOIN guest_link_delivery_keys k ON k.key_id=e.key_id WHERE p.verifier=$1 AND p.delivery_mode='envelope'")
         .bind(verifier.as_slice()).fetch_optional(&mut **tx).await.map_err(|_| LinkError::Unavailable)?;
     let e = e.ok_or(LinkError::Denied)?;
-    if e.key_id != key.id || e.fingerprint.as_slice() != key.fingerprint {
-        return Err(LinkError::Denied);
-    }
-    if !(1..=1_000_000).contains(&e.nonce_counter)
-        || e.version != crypto::VERSION
-        || e.ciphertext.len() != 48
-        || e.nonce_verifier.as_slice() != verifier
-        || e.proof_xid != e.envelope_xid
-        || e.nonce_xid == e.envelope_xid
-        || e.registered_at > e.reserved_at
-        || e.reserved_at > p.created_at
-    {
-        return Err(LinkError::Unavailable);
-    }
+    e.validate(key, verifier, p.created_at)?;
     let source = Source {
         basket: p.basket_id,
         order: p.order_id,
@@ -178,6 +129,27 @@ fn check_start(
     source.live(clock)
 }
 
+fn check_new_start(start: &Started, at: i64) -> Result<(), LinkError> {
+    if !start.current_transaction || start.started_at != at {
+        return Err(LinkError::Unavailable);
+    }
+    Ok(())
+}
+
+fn check_same_source(current: &Source, original: &Source) -> Result<(), LinkError> {
+    if current != original {
+        return Err(LinkError::Unavailable);
+    }
+    Ok(())
+}
+
+fn check_same_start(saved: &Started, original: &Started) -> Result<(), LinkError> {
+    if saved.transaction_id != original.transaction_id || saved.started_at != original.started_at {
+        return Err(LinkError::Unavailable);
+    }
+    Ok(())
+}
+
 /// Commit a single local start, then authenticate its live envelope and call the
 /// trusted synchronous consumer once. Neither start nor callback proves delivery.
 /// State can change after the final liveness check; no DB lock spans the callback.
@@ -243,9 +215,7 @@ async fn open<T>(
         .await?
         .ok_or(LinkError::Unavailable)?;
     check_start(&start, &original, key, observed)?;
-    if !start.current_transaction || start.started_at != at {
-        return Err(LinkError::Unavailable);
-    }
+    check_new_start(&start, at)?;
     durable(&mut tx).await?;
     original.live(observed)?;
     tx.commit().await.map_err(|_| LinkError::Unavailable)?;
@@ -254,16 +224,12 @@ async fn open<T>(
         .await
         .map_err(LinkError::from)?;
     let current = source(&mut tx, verifier, key, observed).await?;
-    if current != original {
-        return Err(LinkError::Unavailable);
-    }
+    check_same_source(&current, &original)?;
     let saved = read_start(&mut tx, verifier)
         .await?
         .ok_or(LinkError::Unavailable)?;
     check_start(&saved, &current, key, observed)?;
-    if saved.transaction_id != start.transaction_id || saved.started_at != start.started_at {
-        return Err(LinkError::Unavailable);
-    }
+    check_same_start(&saved, &start)?;
     let context = crypto::Context {
         basket: &current.basket,
         order: &current.order,
