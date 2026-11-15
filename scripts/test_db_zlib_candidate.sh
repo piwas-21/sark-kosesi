@@ -34,6 +34,9 @@ cleanup() {
 trap cleanup EXIT
 
 printf 'source_revision=%s\nbase=%s\nscanner=%s\n' "$ZLIB_SOURCE_REVISION" "$base" "$scanner" > "$evidence/identity.txt"
+base_id=$(sh ops/db-zlib-candidate/pull_verified_base.sh "$scratch/base-pull.log") || fail 'base pull or identity verification failed'
+[[ "$base_id" == sha256:3cccc725163a95947178f4da5e9bf16add75cb286170ac5a2cd2f6513534955d ]] || fail 'unexpected base image identity'
+printf '%s\n' 'stage=base_pull category=success exit=0' > "$evidence/base-pull-status.txt"
 mkdir "$scratch/build-context"
 cp ops/db-zlib-candidate/Dockerfile "$scratch/build-context/Dockerfile"
 cp ops/db-zlib-candidate/sanitize_apt_failure.sh "$scratch/build-context/sanitize_apt_failure.sh"
@@ -42,9 +45,7 @@ test -s "$scratch/build-context/ca-certificates.crt" || fail 'runner CA bundle i
 sha256sum "$scratch/build-context/ca-certificates.crt" | awk '{print $1}' > "$evidence/build-ca-sha256.txt"
 docker build --pull --platform linux/amd64 --tag "$image" \
   --file "$scratch/build-context/Dockerfile" "$scratch/build-context" > "$evidence/build.log" 2>&1
-base_id=$(docker image inspect "$base" --format '{{.Id}}')
 candidate_id=$(docker image inspect "$image" --format '{{.Id}}')
-[[ "$base_id" == sha256:3cccc725163a95947178f4da5e9bf16add75cb286170ac5a2cd2f6513534955d ]] || fail 'unexpected base image identity'
 [[ "$candidate_id" =~ ^sha256:[0-9a-f]{64}$ && "$candidate_id" != "$base_id" ]] || fail 'invalid candidate image identity'
 printf 'baseline_image_id=%s\ncandidate_image_id=%s\n' "$base_id" "$candidate_id" >> "$evidence/identity.txt"
 docker image inspect "$image" > "$evidence/candidate-image-inspect.json"

@@ -16,6 +16,64 @@ SPEC.loader.exec_module(compare)
 
 
 class CompareZlibScanTests(unittest.TestCase):
+    def test_base_is_pulled_before_verified_inspection(self):
+        script = Path(__file__).resolve().parents[2] / "ops/db-zlib-candidate/pull_verified_base.sh"
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            docker = root / "docker"
+            docker.write_text(
+                "#!/bin/sh\n"
+                'printf "%s\\n" "$1" >> "$FAKE_CALLS"\n'
+                'if [ "$1" = pull ]; then\n'
+                '  if [ "${FAKE_PULL_FAIL:-}" = yes ]; then\n'
+                "    echo 'Authorization: Bearer do-not-emit-this' >&2; exit 7\n"
+                "  fi\n"
+                '  : > "$FAKE_PULLED"; exit 0\n'
+                "fi\n"
+                'if [ "$1" = image ] && [ -f "$FAKE_PULLED" ]; then\n'
+                '  printf "%s\\n" "$FAKE_IMAGE_ID"; exit 0\n'
+                "fi\n"
+                "exit 9\n"
+            )
+            docker.chmod(0o755)
+            calls = root / "calls"
+            env = {
+                "PATH": f"{directory}:/usr/bin:/bin",
+                "FAKE_CALLS": str(calls),
+                "FAKE_PULLED": str(root / "pulled"),
+                "FAKE_IMAGE_ID": compare.BASE_CONFIG,
+            }
+            result = subprocess.run(
+                ["sh", str(script), str(root / "pull.log")],
+                env=env,
+                capture_output=True,
+                text=True,
+                check=False,
+            )
+            self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertEqual(result.stdout.strip(), compare.BASE_CONFIG)
+            self.assertEqual(calls.read_text().splitlines(), ["pull", "image"])
+            env["FAKE_IMAGE_ID"] = "sha256:" + "a" * 64
+            result = subprocess.run(
+                ["sh", str(script), str(root / "pull.log")],
+                env=env,
+                capture_output=True,
+                text=True,
+                check=False,
+            )
+            self.assertNotEqual(result.returncode, 0)
+            self.assertIn("identity_mismatch", result.stderr)
+            env["FAKE_PULL_FAIL"] = "yes"
+            result = subprocess.run(
+                ["sh", str(script), str(root / "pull.log")],
+                env=env,
+                capture_output=True,
+                text=True,
+                check=False,
+            )
+            self.assertEqual(result.returncode, 7)
+            self.assertNotIn("do-not-emit-this", result.stdout + result.stderr)
+
     def test_apt_failures_emit_only_fixed_diagnostics(self):
         script = (
             Path(__file__).resolve().parents[2] / "ops/db-zlib-candidate/sanitize_apt_failure.sh"
