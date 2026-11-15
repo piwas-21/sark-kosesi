@@ -45,26 +45,26 @@ fn declared_ranges_and_padding_fit_the_actual_container_without_allocating_paylo
         b"FAIL\x04\0\0\0WEBP".to_vec(),
         b"RIFF\x04\0\0\0FAIL".to_vec(),
     ] {
-        assert!(matches!(webp(&invalid), Err(ImageError::InvalidImage)));
+        assert!(matches!(webp(&invalid), Err(Rejection::InvalidImage)));
     }
     let mut wrong_size = container(&[chunk(b"VP8L", LOSSLESS)]);
     wrong_size[4..8].copy_from_slice(&u32::MAX.to_le_bytes());
-    assert!(matches!(webp(&wrong_size), Err(ImageError::ResourceLimit)));
+    assert!(matches!(webp(&wrong_size), Err(Rejection::ResourceLimit)));
     for size in [65536, 135266304, u32::MAX] {
         let mut exif = chunk(b"EXIF", &[0; 16]);
         exif[4..8].copy_from_slice(&size.to_le_bytes());
         // Outer RIFF length is honest; only the nested metadata range is false.
         let bytes = container(&[chunk(b"VP8X", EXTENDED), chunk(b"VP8L", LOSSLESS), exif]);
         assert!(bytes.len() < 100);
-        assert!(matches!(webp(&bytes), Err(ImageError::ResourceLimit)));
+        assert!(matches!(webp(&bytes), Err(Rejection::ResourceLimit)));
     }
     let truncated = container(&[chunk(b"VP8L", LOSSLESS), b"EXIF\x01".to_vec()]);
-    assert!(matches!(webp(&truncated), Err(ImageError::InvalidImage)));
+    assert!(matches!(webp(&truncated), Err(Rejection::InvalidImage)));
     let mut missing_pad = chunk(b"TEST", b"odd");
     missing_pad.pop();
     assert!(matches!(
         webp(&container(&[chunk(b"VP8L", LOSSLESS), missing_pad])),
-        Err(ImageError::ResourceLimit)
+        Err(Rejection::ResourceLimit)
     ));
 }
 
@@ -94,14 +94,14 @@ fn static_canvas_and_native_bitstream_agree_before_any_decoder_allocation() {
     ] {
         assert!(matches!(
             webp(&container(&chunks)),
-            Err(ImageError::InvalidImage)
+            Err(Rejection::InvalidImage)
         ));
     }
     let mut animated = EXTENDED.to_vec();
     animated[0] = 2;
     assert!(matches!(
         webp(&container(&[chunk(b"VP8X", &animated)])),
-        Err(ImageError::UnsupportedImage)
+        Err(Rejection::UnsupportedImage)
     ));
     let mut nested = vec![0; 16];
     nested.extend(b"EXIF");
@@ -114,7 +114,7 @@ fn static_canvas_and_native_bitstream_agree_before_any_decoder_allocation() {
                 chunk(b"VP8L", LOSSLESS),
                 animation_chunk
             ])),
-            Err(ImageError::UnsupportedImage)
+            Err(Rejection::UnsupportedImage)
         ));
     }
 }

@@ -125,16 +125,19 @@ container/chunk ranges and canvas/native dimensions before decoder construction.
 It rejects animation,
 malformed/oversized data and over-budget derivatives, normalizes orientation and
 re-encodes bounded 320/640/960-edge variants without upscaling or copying private
-metadata. There are at most two CPU jobs and two admitted ingestion workflows, including
-storage waits, with no pending CPU queue. Decoding happens
+metadata. There are at most two admitted ingestion workflows, including
+storage waits. The Linux socket supervisor admits one CPU job at a time, and
+the default local execution admits at most two. Decoding happens
 outside database transactions; fresh authority is required before atomic storage
 and private byte return. Originals remain private in a bounded PostgreSQL bytea
 adapter; hashes, metadata bindings, complete sets and recipe version are protected
 by constraints/immutable history. A byte receipt proves processing, not authentic
 merchandising/permission or SKU suitability. Actual asset/colour/quality review,
 translation and publication gates plus public serving/cache policy remain open.
-Decoder allocation limits are best-effort in the library; owned byte/dimension/
-output-buffer checks supplement them, and P7 still needs process resource caps.
+Decoder allocation limits are best-effort in the library. The optional Linux
+staging overlay applies bounded IPC, a disposable child, hard Linux limits and
+a separate cgroup. Measure the limits and recovery on the intended staging
+runtime before accepting the P7 isolation gate.
 
 Copy drafts now require explicit title, description, materials, care, safety and
 assembly text in each locale. They reference an immutable specification and an

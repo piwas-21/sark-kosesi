@@ -18,6 +18,9 @@ NODE_COPIES = {
 }
 EXPECTED_COPIES = {
     "api": {"COPY --from=rust-build /source/target/release/commerce-api /app/commerce-api"},
+    "image-decoder": {
+        "COPY --from=decoder-build /source/target/release/commerce-image-decoder /app/commerce-image-decoder"
+    },
     "callback-edge": NODE_COPIES
     | {
         "COPY --from=rust-build /source/target/release/commerce-callback-edge /app/commerce-callback-edge"
@@ -31,6 +34,7 @@ EXPECTED_COPIES = {
 }
 EXPECTED_ENTRYPOINTS = {
     "api": 'ENTRYPOINT ["/app/commerce-api"]',
+    "image-decoder": 'ENTRYPOINT ["/app/commerce-image-decoder"]',
     "callback-edge": 'ENTRYPOINT ["/app/commerce-callback-edge"]',
     "web": 'ENTRYPOINT ["node", "apps/web/server.js"]',
 }
@@ -49,6 +53,11 @@ def valid_runtime(source):
             if not stages:
                 return False
             stages[next(reversed(stages))][1].append(line)
+    if stages.get("decoder-build") != [
+        "rust-source",
+        ["RUN cargo build --release --locked -p commerce-image-decoder"],
+    ]:
+        return False
     if stages.get("node-runtime") != [NODE, []]:
         return False
     if stages.get("runtime") != [DEBIAN, RUNTIME_INPUTS]:
@@ -66,7 +75,7 @@ def valid_runtime(source):
             or len(copies) != len(expected)
             or set(copies) != expected
             or any(line.split(maxsplit=1)[0].upper() not in allowed for line in lines)
-            or users != ["USER node"]
+            or users != ["USER 65532:1000" if name == "image-decoder" else "USER node"]
             or entrypoints != [EXPECTED_ENTRYPOINTS[name]]
         ):
             return False
@@ -93,6 +102,11 @@ class StagingRuntime(unittest.TestCase):
                 "FROM runtime AS callback-edge\n",
                 "FROM runtime AS callback-edge\nRUN npm install\n",
             ),
+            source.replace("USER 65532:1000", "USER 1000:1000"),
+            source.replace(
+                "FROM rust-source AS decoder-build", "FROM node-runtime AS decoder-build"
+            ),
+            source.replace("FROM runtime AS image-decoder", "FROM node-runtime AS image-decoder"),
             source.replace(
                 "FROM runtime AS callback-edge\n",
                 "FROM runtime AS callback-edge\ncopy --from=node-runtime /usr/local/lib /usr/local/lib\n",
