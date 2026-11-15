@@ -284,7 +284,7 @@ def main():
             raise AssertionError("decoder container was not created")
         path = socket_dir / "decoder.sock"
         deadline = time.monotonic() + 20
-        while not path.exists():
+        while run(["sudo", "-n", "test", "-S", str(path)], check=False).returncode:
             if time.monotonic() >= deadline:
                 raise AssertionError("decoder socket did not appear")
             time.sleep(0.1)
@@ -310,7 +310,8 @@ def main():
         print("Unauthorized UID was denied and the isolated container recovered")
         run(compose + ["stop", "-t", "10", "image-decoder"], env=env)
         stopped = json.loads(run(["docker", "inspect", container], capture=True).stdout)[0]["State"]
-        if stopped["Running"] or stopped["ExitCode"] != 0 or path.exists():
+        removed = run(["sudo", "-n", "test", "!", "-e", str(path)], check=False).returncode == 0
+        if stopped["Running"] or stopped["ExitCode"] != 0 or not removed:
             raise AssertionError("decoder failed to exit cleanly and remove its socket")
         print("Graceful stop removed the owned socket and exited successfully")
     finally:
