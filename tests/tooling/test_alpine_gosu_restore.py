@@ -17,6 +17,26 @@ import restore_loopback as loopback
 
 
 class RestoreAdapterTests(unittest.TestCase):
+    def test_diagnostics_are_fixed_codes_without_exception_details(self):
+        with tempfile.TemporaryDirectory() as directory:
+            progress = lab.Progress()
+            progress.directory = Path(directory)
+            progress.enter("isolation_inspection")
+            progress.cleanup = "success"
+            progress.write(loopback.IsolationFailure("container_ports_shape"))
+            report = json.loads((Path(directory) / "app-restore-status.json").read_text())
+            self.assertEqual(report["stage"], "isolation_inspection")
+            self.assertEqual(report["code"], "container_ports_shape")
+            self.assertEqual(report["outcome"], "failed")
+            self.assertEqual(report["cleanup"], "success")
+            secret = "synthetic-private-password"
+            progress.write(RuntimeError(secret))
+            text = (Path(directory) / "app-restore-status.json").read_text()
+            self.assertNotIn(secret, text)
+            self.assertEqual(json.loads(text)["code"], "operation_failed")
+            progress.write(loopback.IsolationFailure(secret))
+            self.assertNotIn(secret, (Path(directory) / "app-restore-status.json").read_text())
+
     def test_corrupt_archive_control_requires_pg_restore_diagnostic(self):
         expected = (
             b"pg_restore: error: input file does not appear to be a valid archive (too short?)\n"
@@ -131,6 +151,8 @@ class RestoreAdapterTests(unittest.TestCase):
         self.assertNotIn("-p", args)
         self.assertIn("isolated", args)
         self.assertIn("POSTGRES_PASSWORD", args)
+        self.assertIn("POSTGRES_INITDB_ARGS=--auth-host=scram-sha-256", args)
+        self.assertIn("POSTGRES_HOST_AUTH_METHOD=scram-sha-256", args)
         self.assertNotIn("secret", " ".join(args))
         self.assertEqual(run.call_args.kwargs["env"]["POSTGRES_PASSWORD"], "secret")
 
@@ -180,6 +202,7 @@ class RestoreAdapterTests(unittest.TestCase):
             "image",
             "binding",
             "port",
+            "ports_shape",
             "address",
             "subnet",
             "network_id",
@@ -202,6 +225,8 @@ class RestoreAdapterTests(unittest.TestCase):
                     }
                 elif change == "port":
                     records[0]["NetworkSettings"]["Ports"]["5432/tcp"] = [{"HostIp": "0.0.0.0"}]
+                elif change == "ports_shape":
+                    records[0]["NetworkSettings"]["Ports"] = None
                 elif change == "address":
                     records[0]["NetworkSettings"]["Networks"]["owned"]["IPAddress"] = "172.31.0.8"
                 elif change == "subnet":
@@ -212,8 +237,10 @@ class RestoreAdapterTests(unittest.TestCase):
                     records[0]["State"]["Running"] = False
                 else:
                     records[0]["NetworkSettings"]["Networks"]["extra"] = {}
-                with self.assertRaises(ValueError):
+                with self.assertRaises(ValueError) as failure:
                     inspect(net, records)
+                if change == "ports_shape":
+                    self.assertEqual(str(failure.exception), "container_ports_shape")
 
     def test_loopback_relay_forwards_bidirectionally_and_closes(self):
         class Echo(socketserver.BaseRequestHandler):

@@ -651,7 +651,9 @@ new disposable containers use a private internal network without published
 ports, random credentials and ownership markers. Small runner-owned loopback
 relays forward fixture connections only to the inspected owned container IPv4
 addresses; network identity, membership, image identity and absent port
-bindings are checked first. The existing synthetic
+bindings are checked first. Both disposable databases explicitly initialize
+TCP authentication with SCRAM; correct credentials and an incorrect-password
+rejection are checked before seeding. The existing synthetic
 migration, order, stock and encrypted-envelope fixture and snapshot/table and
 sequence comparison are reused. A preserved, quiescent source is checked again
 as a limited rollback control; the candidate is separately changed to prove
@@ -662,7 +664,9 @@ data, volume, keys or credentials are involved.
 
 Separate scan and restore status files distinguish a completed scan from a later
 restore failure. Retained checksums cover available evidence even on failure;
-the overall workflow succeeds only when both checks succeed.
+the overall workflow succeeds only when both checks succeed. The restore status
+artifact reports fixed stage/invariant codes, elapsed time and cleanup outcome;
+it does not include database credentials, exception text or process output.
 
 This does not prove physical-volume portability, default-locale equivalence,
 all schema definitions, roles and grants, application image startup, a router

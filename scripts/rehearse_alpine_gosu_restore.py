@@ -23,10 +23,80 @@ from rehearse_restore import (
     sequence_inventory,
     source_state,
 )
-from restore_loopback import RelayServer, verified_addresses
+from restore_loopback import IsolationFailure, RelayServer, verified_addresses
 from with_postgres import ROOT, run
 
 BASE_ID = "sha256:3cccc725163a95947178f4da5e9bf16add75cb286170ac5a2cd2f6513534955d"
+ISOLATION_CODES = frozenset(
+    {
+        "network_inspect_shape",
+        "network_identity_or_membership",
+        "network_subnet_shape",
+        "network_subnet_policy",
+        "container_inspect_shape",
+        "container_identity_or_state",
+        "container_host_bindings",
+        "container_ports_shape",
+        "container_published_ports",
+        "container_network_identity",
+        "container_ipv4_identity",
+        "duplicate_container_ipv4",
+    }
+)
+
+
+class Progress:
+    """Only fixed stage and failure codes may leave the private lab."""
+
+    def __init__(self):
+        self.started = time.monotonic()
+        self.stage_started = self.started
+        self.stage = "arguments"
+        self.directory = None
+        self.cleanup = "not_started"
+        self.stage_finished = None
+
+    def enter(self, stage):
+        self.stage = stage
+        self.stage_started = time.monotonic()
+        self.stage_finished = None
+
+    def finish_stage(self):
+        self.stage_finished = time.monotonic()
+
+    def result(self, error=None):
+        if error is None:
+            code = "ok"
+        elif isinstance(error, IsolationFailure) and str(error) in ISOLATION_CODES:
+            code = str(error)
+        elif isinstance(error, subprocess.TimeoutExpired):
+            code = "timeout"
+        elif isinstance(error, KeyError):
+            code = "metadata_missing"
+        elif isinstance(error, TypeError):
+            code = "metadata_type"
+        elif isinstance(error, OSError):
+            code = "os_error"
+        elif isinstance(error, ValueError):
+            code = "invariant_failed"
+        else:
+            code = "operation_failed"
+        return {
+            "outcome": "success" if error is None else "failed",
+            "stage": self.stage,
+            "code": code,
+            "stage_elapsed_seconds": round(
+                (self.stage_finished or time.monotonic()) - self.stage_started, 3
+            ),
+            "total_elapsed_seconds": round(time.monotonic() - self.started, 3),
+            "cleanup": self.cleanup,
+        }
+
+    def write(self, error=None):
+        if self.directory is not None:
+            (self.directory / "app-restore-status.json").write_text(
+                json.dumps(self.result(error), sort_keys=True) + "\n"
+            )
 
 
 def client():
@@ -86,6 +156,10 @@ def start_container(image, network, name, marker, password):
         "POSTGRES_PASSWORD",
         "--env",
         "POSTGRES_DB=postgres",
+        "--env",
+        "POSTGRES_INITDB_ARGS=--auth-host=scram-sha-256",
+        "--env",
+        "POSTGRES_HOST_AUTH_METHOD=scram-sha-256",
         image,
         "-c",
         f"sark.disposable_marker={marker}",
@@ -176,8 +250,19 @@ def cleanup_resources(container_names, network, marker):
     return not failed
 
 
-def main(candidate, revision, scratch, evidence):
+def main(candidate, revision, scratch, evidence, progress=None):
+    progress = progress or Progress()
+    progress.enter("context")
+    if (
+        os.environ.get("GITHUB_ACTIONS") == "true"
+        and os.environ.get("RUNNER_ENVIRONMENT") == "github-hosted"
+        and "RUNNER_TEMP" in os.environ
+        and evidence == Path(os.environ["RUNNER_TEMP"]).resolve() / "db-alpine-gosu-evidence"
+        and evidence.is_dir()
+    ):
+        progress.directory = evidence
     validate_context(candidate, revision, scratch, evidence)
+    progress.enter("image_inspection")
     if (
         run("docker", "image", "inspect", candidate, "--format", "{{.Id}}").stdout.strip()
         != candidate
@@ -193,6 +278,7 @@ def main(candidate, revision, scratch, evidence):
     container_names = []
     relays = []
     try:
+        progress.enter("network_create")
         run(
             "docker",
             "network",
@@ -203,10 +289,13 @@ def main(candidate, revision, scratch, evidence):
             network,
         )
         for image, suffix in ((BASE_ID, "source"), (candidate, "target")):
+            progress.enter(f"{suffix}_container_create")
             name = f"{network}-{suffix}"
             container_names.append(name)
             containers.append(start_container(image, network, name, marker, password))
+        progress.enter("isolation_inspection")
         addresses = verified_addresses(network, marker, containers, (BASE_ID, candidate))
+        progress.enter("relay_start")
         for address in addresses:
             relays.append(RelayServer(address))
         ports = [str(relay.server_address[1]) for relay in relays]
@@ -233,8 +322,9 @@ def main(candidate, revision, scratch, evidence):
             }
             for url, port in zip(urls, ports, strict=True)
         ]
-        for env in envs:
+        for env, role in zip(envs, ("source", "target"), strict=True):
             admin = {**env, "PGDATABASE": "postgres"}
+            progress.enter(f"{role}_ready_marker")
             for attempt in range(120):
                 try:
                     identity = psql(
@@ -247,8 +337,11 @@ def main(candidate, revision, scratch, evidence):
                     time.sleep(0.5)
             if identity.strip() != marker:
                 raise ValueError("Database ownership marker mismatch")
+            progress.enter(f"{role}_password_control")
             require_password_rejection(wrapper, admin, password)
+            progress.enter(f"{role}_database_create")
             psql(wrapper, admin, f'CREATE DATABASE "{database}"')
+        progress.enter("synthetic_seed")
         run_fixture(
             {
                 **client_env,
@@ -258,6 +351,7 @@ def main(candidate, revision, scratch, evidence):
             "seed_synthetic",
         )
         archive = scratch / "app-schema.dump"
+        progress.enter("source_inventory")
         with Snapshot(wrapper, envs[0]) as source:
             exercise_quiescence_control(source)
             before = inventory(source)
@@ -277,6 +371,7 @@ def main(candidate, revision, scratch, evidence):
                 != "0"
             ):
                 raise ValueError("Incomplete migration history")
+            progress.enter("source_dump")
             dump = checked_command(
                 [
                     "docker",
@@ -326,11 +421,14 @@ def main(candidate, revision, scratch, evidence):
                 "--no-owner",
                 "--no-acl",
             ]
+            progress.enter("candidate_restore")
             checked_command(restore + ["--dbname", database], envs[1], input_bytes=dump)
+            progress.enter("candidate_inventory")
             with Snapshot(wrapper, envs[1]) as target:
                 after = inventory(target)
                 if after != before or sequence_inventory(target) != sequences:
                     raise ValueError("Restored data mismatch")
+            progress.enter("candidate_metadata")
             locale_sql = "SELECT json_build_array(pg_encoding_to_char(encoding),datlocprovider,datlocale,datcollate,datctype,datcollversion)::text FROM pg_database WHERE datname=current_database()"
             locales = [json.loads(psql(wrapper, env, locale_sql)) for env in envs]
             if any(locale[0] != "UTF8" for locale in locales):
@@ -366,6 +464,7 @@ def main(candidate, revision, scratch, evidence):
                 != "t"
             ):
                 raise ValueError("Restored primary key index missing or invalid")
+            progress.enter("candidate_negative_controls")
             psql(
                 wrapper,
                 envs[1],
@@ -373,6 +472,7 @@ def main(candidate, revision, scratch, evidence):
             )
             checked_command(restore + ["--list"], envs[1], input_bytes=dump)
             require_invalid_archive_rejection(restore, envs[1])
+            progress.enter("restored_key_fixture")
             run_fixture(
                 {
                     **client_env,
@@ -381,6 +481,7 @@ def main(candidate, revision, scratch, evidence):
                 },
                 "verify_restored_keys",
             )
+            progress.enter("changed_content_control")
             psql(
                 wrapper,
                 envs[1],
@@ -393,6 +494,7 @@ def main(candidate, revision, scratch, evidence):
                     or changed_hash == before["catalogue_items"][1]
                 ):
                     raise ValueError("Changed content not detected")
+            progress.enter("changed_sequence_control")
             control = '"public"."stock_movements_sequence_seq"'
             if (
                 control not in sequences
@@ -410,6 +512,7 @@ def main(candidate, revision, scratch, evidence):
                 expected_damage[control] = [sequences[control][0] + 1, True]
                 if sequence_inventory(changed) != expected_damage:
                     raise ValueError("Changed sequence not detected")
+            progress.enter("preserved_source_check")
             require_quiescent_source(source)
             # A fresh snapshot is essential: the original held snapshot cannot
             # observe writes committed after the dump.
@@ -446,8 +549,12 @@ def main(candidate, revision, scratch, evidence):
                 "changed_content_detected": True,
                 "changed_sequence_detected": True,
             }
+        progress.enter("write_evidence")
         (evidence / "app-restore.json").write_text(json.dumps(report, indent=2) + "\n")
     finally:
+        handling_failure = sys.exc_info()[0] is not None
+        if handling_failure:
+            progress.finish_stage()
         relay_failed = False
         for relay in relays:
             try:
@@ -455,11 +562,16 @@ def main(candidate, revision, scratch, evidence):
             except (OSError, RuntimeError):
                 relay_failed = True
         cleaned = cleanup_resources(container_names, network, marker)
+        progress.cleanup = "failed" if relay_failed or not cleaned else "success"
         if relay_failed or not cleaned:
-            raise RuntimeError("Could not remove owned disposable resources")
+            if not handling_failure:
+                progress.enter("cleanup")
+                raise RuntimeError("Could not remove owned disposable resources")
+    progress.enter("complete")
 
 
 if __name__ == "__main__":
+    progress = Progress()
     try:
         if len(sys.argv) != 5:
             raise ValueError("Expected image, revision, scratch and evidence")
@@ -468,6 +580,22 @@ if __name__ == "__main__":
             sys.argv[2],
             Path(sys.argv[3]).resolve(strict=True),
             Path(sys.argv[4]).resolve(strict=True),
+            progress,
         )
-    except (KeyError, OSError, RuntimeError, ValueError, subprocess.SubprocessError):
-        raise SystemExit("Synthetic Alpine Gosu restore failed; details withheld") from None
+        progress.write()
+    except (
+        KeyError,
+        TypeError,
+        OSError,
+        RuntimeError,
+        ValueError,
+        subprocess.SubprocessError,
+    ) as error:
+        result = progress.result(error)
+        try:
+            progress.write(error)
+        except OSError:
+            pass
+        raise SystemExit(
+            f"Synthetic Alpine Gosu restore failed: stage={result['stage']} code={result['code']}"
+        ) from None

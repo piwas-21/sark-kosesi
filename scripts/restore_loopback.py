@@ -11,6 +11,10 @@ import threading
 from with_postgres import run
 
 
+class IsolationFailure(ValueError):
+    """A fixed, non-sensitive Docker isolation invariant failed."""
+
+
 class RelayHandler(socketserver.BaseRequestHandler):
     def handle(self):
         try:
@@ -78,7 +82,7 @@ def verified_addresses(network_name, marker, containers, images):
     """Return endpoints only for the exact labelled internal network and images."""
     networks = json.loads(run("docker", "network", "inspect", network_name).stdout)
     if not isinstance(networks, list) or len(networks) != 1:
-        raise ValueError("Unexpected network inspection")
+        raise IsolationFailure("network_inspect_shape")
     network = networks[0]
     net_id = network["Id"]
     members = network["Containers"]
@@ -94,21 +98,21 @@ def verified_addresses(network_name, marker, containers, images):
         or set(members) != set(containers)
         or len(containers) != 2
     ):
-        raise ValueError("Unexpected owned internal network")
+        raise IsolationFailure("network_identity_or_membership")
     configs = network["IPAM"]["Config"]
     if not isinstance(configs, list) or len(configs) != 1:
-        raise ValueError("Unexpected internal subnet")
+        raise IsolationFailure("network_subnet_shape")
     subnet = ipaddress.ip_network(configs[0]["Subnet"], strict=True)
     private_ranges = ("10.0.0.0/8", "172.16.0.0/12", "192.168.0.0/16")
     if subnet.version != 4 or not any(
         subnet.subnet_of(ipaddress.ip_network(block)) for block in private_ranges
     ):
-        raise ValueError("Unexpected internal IPv4 subnet")
+        raise IsolationFailure("network_subnet_policy")
     addresses = []
     for container, image in zip(containers, images, strict=True):
         records = json.loads(run("docker", "inspect", container).stdout)
         if not isinstance(records, list) or len(records) != 1:
-            raise ValueError("Unexpected container inspection")
+            raise IsolationFailure("container_inspect_shape")
         info = records[0]
         settings = info["NetworkSettings"]
         connections = settings["Networks"]
@@ -119,13 +123,16 @@ def verified_addresses(network_name, marker, containers, images):
             or info["State"].get("Running") is not True
             or not isinstance(labels, dict)
             or labels.get("sark.restore.owner") != marker
-            or info["HostConfig"].get("PortBindings") not in ({}, None)
-            or not isinstance(settings["Ports"], dict)
-            or any(settings["Ports"].values())
-            or set(connections) != {network_name}
-            or connections[network_name]["NetworkID"] != net_id
         ):
-            raise ValueError("Unexpected container identity or network")
+            raise IsolationFailure("container_identity_or_state")
+        if info["HostConfig"].get("PortBindings") not in ({}, None):
+            raise IsolationFailure("container_host_bindings")
+        if not isinstance(settings["Ports"], dict):
+            raise IsolationFailure("container_ports_shape")
+        if any(settings["Ports"].values()):
+            raise IsolationFailure("container_published_ports")
+        if set(connections) != {network_name} or connections[network_name]["NetworkID"] != net_id:
+            raise IsolationFailure("container_network_identity")
         address = ipaddress.ip_address(connections[network_name]["IPAddress"])
         member_address = ipaddress.ip_interface(members[container]["IPv4Address"])
         if (
@@ -135,8 +142,8 @@ def verified_addresses(network_name, marker, containers, images):
             or member_address.ip != address
             or member_address.network != subnet
         ):
-            raise ValueError("Unexpected container IPv4 address")
+            raise IsolationFailure("container_ipv4_identity")
         addresses.append(str(address))
     if len(set(addresses)) != 2:
-        raise ValueError("Duplicate container IPv4 address")
+        raise IsolationFailure("duplicate_container_ipv4")
     return addresses
