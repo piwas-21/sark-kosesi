@@ -1073,6 +1073,10 @@ waits, immutable starts and the absence of retry after a committed failure. Two
 isolated controls observe the order lock wait before and after a committed start,
 then verify a different proof linked the order and no opening callback ran. A
 populated schema upgrade preserves prior direct proofs and encrypted envelopes.
+For synthetic outcomes, check all closed classifications, one callback only,
+loss before outcome commit, exact earlier-start and transaction binding, and
+historical reads after consumption and expiry. Missing or corrupt custody must
+not grant a new opening or establish external delivery.
 The native durability guard assumes the supported Rust writer leaves the commit
 check in its specified sequence; arbitrary SQL can force a deferred check early.
 These controls do not establish transport or mailbox delivery.

@@ -179,8 +179,8 @@ buyer mailbox. Private detail and bounded history reads return the linked
 order's captured items and amounts under live customer authority. An independently
 enabled test-only history route exposes bounded linked guest orders to the current
 session; linking and safe proof delivery remain separate. The encrypted guest-link
-custody now supports one durable local start and trusted in-process opening, without
-a transport or delivery receipt. Sender custody, real mailbox acceptance and
+custody now supports one durable local start, trusted in-process opening and a
+redacted synthetic outcome without a transport. Sender custody, real mailbox acceptance and
 retention remain open. Private credential admission provides shared purpose and mailbox quotas. A private
 session variant binds a synchronizer digest to issuance and protects revocation
 under the same session claim. The separately enabled test transport is described

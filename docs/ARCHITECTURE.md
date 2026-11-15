@@ -1815,6 +1815,14 @@ ciphertext and matches the recovered verifier. It releases the transaction befor
 passing short-lived borrowed values to its caller. A prior start cannot be used to
 reconstruct the in-process authority.
 
+The guest-link fresh opener can optionally retain one synthetic callback
+classification: accepted, explicit rejection or uncertain. A separate durable
+transaction binds the result to that exact committed start and a database-assigned
+transaction identity. Inspection validates its original proof, envelope and
+nonce history without requiring the proof to remain unconsumed or unexpired.
+An absent result remains unknown and never authorizes another opening. The
+classification is local caller evidence, not provider or mailbox acceptance.
+
 A separate immutable outcome can retain only a closed accepted, explicit rejection
 or uncertain classification, observation time and exact prior start transaction.
 Only the fresh-opening in-process path can record it. The callback runs without a

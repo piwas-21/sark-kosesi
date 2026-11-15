@@ -123,6 +123,31 @@ struct Started {
     current_transaction: bool,
     valid_source: bool,
 }
+
+/// Constructed only after this call's fresh start was durably committed.
+pub(super) struct Permit {
+    pub(super) verifier: [u8; 32],
+    key_id: String,
+    counter: i64,
+    fingerprint: Vec<u8>,
+    started_at: i64,
+    transaction_id: String,
+}
+impl Permit {
+    pub(super) async fn matches_start(
+        &self,
+        tx: &mut Transaction<'_, Postgres>,
+    ) -> Result<bool, LinkError> {
+        let exact: Option<bool> = sqlx::query_scalar("SELECT transaction_id::text=$2 AND started_at=$3 AND key_id=$4 AND nonce_counter=$5 AND key_fingerprint=$6 FROM guest_link_delivery_starts WHERE verifier=$1 FOR SHARE")
+            .bind(self.verifier.as_slice()).bind(&self.transaction_id).bind(self.started_at)
+            .bind(&self.key_id).bind(self.counter).bind(&self.fingerprint)
+            .fetch_optional(&mut **tx).await.map_err(|_| LinkError::Unavailable)?;
+        Ok(exact == Some(true))
+    }
+    pub(super) fn transaction_id(&self) -> &str {
+        &self.transaction_id
+    }
+}
 async fn read_start(
     tx: &mut Transaction<'_, Postgres>,
     verifier: &[u8; 32],
@@ -160,17 +185,49 @@ pub async fn claim_and_open(
     accept: impl FnOnce(&str, &GuestOrderLinkToken),
 ) -> Result<OpenOutcome, LinkError> {
     let observed = ObservedClock::new(clock, 0);
-    now(&observed)?;
-    let mut tx = begin_durable(pool).await?;
-    let original = source(&mut tx, verifier, key, &observed).await?;
-    if let Some(start) = read_start(&mut tx, verifier).await? {
-        check_start(&start, &original, key, &observed)?;
-        durable(&mut tx).await?;
-        original.live(&observed)?;
-        tx.commit().await.map_err(|_| LinkError::Unavailable)?;
-        return Ok(OpenOutcome::AlreadyStarted);
+    match open(pool, verifier, &observed, key, accept).await? {
+        Some(((), _)) => Ok(OpenOutcome::Opened),
+        None => Ok(OpenOutcome::AlreadyStarted),
     }
-    let at = now(&observed)?;
+}
+
+/// Record only this fresh opening's closed synthetic callback classification.
+/// A result never establishes provider or mailbox acceptance.
+pub async fn claim_open_and_record(
+    pool: &PgPool,
+    verifier: &[u8; 32],
+    clock: &dyn Clock,
+    key: &DeliveryKey,
+    accept: impl FnOnce(&str, &GuestOrderLinkToken) -> super::outcome::TransportOutcome,
+) -> Result<OpenOutcome, LinkError> {
+    let observed = ObservedClock::new(clock, 0);
+    match open(pool, verifier, &observed, key, accept).await? {
+        Some((result, permit)) => {
+            super::outcome::record(pool, &permit, &observed, result).await?;
+            Ok(OpenOutcome::Opened)
+        }
+        None => Ok(OpenOutcome::AlreadyStarted),
+    }
+}
+
+async fn open<T>(
+    pool: &PgPool,
+    verifier: &[u8; 32],
+    observed: &dyn Clock,
+    key: &DeliveryKey,
+    accept: impl FnOnce(&str, &GuestOrderLinkToken) -> T,
+) -> Result<Option<(T, Permit)>, LinkError> {
+    now(observed)?;
+    let mut tx = begin_durable(pool).await?;
+    let original = source(&mut tx, verifier, key, observed).await?;
+    if let Some(start) = read_start(&mut tx, verifier).await? {
+        check_start(&start, &original, key, observed)?;
+        durable(&mut tx).await?;
+        original.live(observed)?;
+        tx.commit().await.map_err(|_| LinkError::Unavailable)?;
+        return Ok(None);
+    }
+    let at = now(observed)?;
     sqlx::query("INSERT INTO guest_link_delivery_starts(verifier,key_id,nonce_counter,key_fingerprint,started_at) VALUES($1,$2,$3,$4,$5)")
         .bind(verifier.as_slice()).bind(&key.id).bind(original.envelope.nonce_counter)
         .bind(key.fingerprint.as_slice()).bind(at).execute(&mut *tx).await.map_err(|_| LinkError::Unavailable)?;
@@ -181,25 +238,34 @@ pub async fn claim_and_open(
     let start = read_start(&mut tx, verifier)
         .await?
         .ok_or(LinkError::Unavailable)?;
-    check_start(&start, &original, key, &observed)?;
+    check_start(&start, &original, key, observed)?;
     if !start.current_transaction || start.started_at != at {
         return Err(LinkError::Unavailable);
     }
     durable(&mut tx).await?;
-    original.live(&observed)?;
+    original.live(observed)?;
     tx.commit().await.map_err(|_| LinkError::Unavailable)?;
+
+    let permit = Permit {
+        verifier: *verifier,
+        key_id: start.key_id.clone(),
+        counter: start.nonce_counter,
+        fingerprint: start.fingerprint.clone(),
+        started_at: start.started_at,
+        transaction_id: start.transaction_id.clone(),
+    };
 
     let mut tx = super::super::super::begin(pool)
         .await
         .map_err(LinkError::from)?;
-    let current = source(&mut tx, verifier, key, &observed).await?;
+    let current = source(&mut tx, verifier, key, observed).await?;
     if current != original {
         return Err(LinkError::Unavailable);
     }
     let saved = read_start(&mut tx, verifier)
         .await?
         .ok_or(LinkError::Unavailable)?;
-    check_start(&saved, &current, key, &observed)?;
+    check_start(&saved, &current, key, observed)?;
     if saved.transaction_id != start.transaction_id || saved.started_at != start.started_at {
         return Err(LinkError::Unavailable);
     }
@@ -215,11 +281,11 @@ pub async fn claim_and_open(
         counter: current.envelope.nonce_counter,
     };
     let token = crypto::open(key, &context, &current.envelope.ciphertext)?;
-    current.live(&observed)?;
+    current.live(observed)?;
     tx.commit().await.map_err(|_| LinkError::Unavailable)?;
-    current.live(&observed)?;
-    accept(&current.identity, &token);
-    Ok(OpenOutcome::Opened)
+    current.live(observed)?;
+    let result = accept(&current.identity, &token);
+    Ok(Some((result, permit)))
 }
 
 #[cfg(test)]

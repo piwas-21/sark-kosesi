@@ -4,7 +4,8 @@ use commerce_domain::{checkout_quotes::MAX_QUOTE_UNIX_SECONDS, email_identity::n
 use sha2::{Digest, Sha256};
 mod crypto;
 mod opening;
-pub use opening::{OpenOutcome, claim_and_open};
+pub mod outcome;
+pub use opening::{OpenOutcome, claim_and_open, claim_open_and_record};
 
 /// Privately supplied root key, purpose-derived before encryption.
 pub struct DeliveryKey {

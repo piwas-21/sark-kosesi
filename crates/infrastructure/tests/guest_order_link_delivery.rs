@@ -114,6 +114,9 @@ async fn guest_order_link_delivery_populated_66_through_68_preserves_legacy_proo
     MIGRATOR.run_to(69, &pool).await.expect("start upgrade");
     assert_eq!(read_proof().await, before);
     assert_eq!(counts(&pool).await, (1, 2, 1));
+    MIGRATOR.run_to(70, &pool).await.expect("outcome upgrade");
+    assert_eq!(read_proof().await, before);
+    assert_eq!(counts(&pool).await, (1, 2, 1));
 
     let email = "buyer@example.test";
     let proof = email_verification::issue(&pool, email, clock.as_ref())
