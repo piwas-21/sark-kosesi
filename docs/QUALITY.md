@@ -407,8 +407,11 @@ legacy guest attempt replay across the migration.
 For pre-attempt cancellation, race cancellation and first payment preparation
 in isolated PostgreSQL and verify one effect survives. Check both guest and
 account ownership, exact replay, prepared and started attempt refusal, native
-event binding and rollback after expiry during a write wait. Verify that the
-original stock and redemption remain available to their respective readers.
+event binding and rollback after expiry during a write wait. Real attempt-lock
+waits also require expired guest and account authority to mask a dispatch conflict,
+with a fresh-authority conflict control; a blocked receipt read tests the same
+rule for a missing receipt. Verify that the original stock and redemption remain
+available to their respective readers.
 
 Whole-basket reservation logic retains 95% critical native line/branch thresholds.
 Independent PostgreSQL oracles cover a last shared component, complete loser

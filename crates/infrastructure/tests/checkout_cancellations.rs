@@ -937,3 +937,140 @@ async fn contradictory_attempt_and_cancellation_import_fails_closed(pool: PgPool
         .replayed
     );
 }
+
+#[sqlx::test(migrator = "MIGRATOR")]
+async fn expired_account_cannot_learn_dispatch_conflict_after_attempt_lock_wait(pool: PgPool) {
+    quote::seed(&pool).await;
+    pool.execute("INSERT INTO staff_capabilities VALUES('author','promotion.manage'),('reviewer','promotion.review')").await.expect("promotion authority");
+    let mut policy = promotion::policy();
+    policy.limits.per_customer_redemptions = Some(1);
+    promotion::draft(&pool, &policy, "draft")
+        .await
+        .expect("draft");
+    promotion::decide(&pool, "review", 1, 0, true)
+        .await
+        .expect("approval");
+    let (store, time) = quote::store(&pool, 1100);
+    let customer = account(&pool, "freshness@example.test", &time).await;
+    let (session, csrf) = quote::guest(&store).await;
+    let key = GuestCredential::from_session(&session).expect("guest");
+    let quote = issue_verified_promoted_quote(
+        &store,
+        &key,
+        &csrf,
+        &customer,
+        Locale::Nl,
+        &quote::request("quote"),
+        "COURTYARD",
+    )
+    .await
+    .expect("account quote")
+    .snapshot;
+    let order = create_verified_promoted_order(
+        &store,
+        &key,
+        &csrf,
+        &customer,
+        "place",
+        &order::intent(&quote.original.binding.quote_id),
+        &order::seller(),
+    )
+    .await
+    .expect("owned order")
+    .snapshot;
+    let prepared = prepare_verified_attempt(
+        &store,
+        &key,
+        &csrf,
+        &customer,
+        "pay",
+        &payment::intent(&order),
+        &payment::config(),
+    )
+    .await
+    .expect("prepared attempt");
+    let attempt = &prepared.frozen.snapshot().binding.id;
+    assert!(
+        matches!(
+            start_dispatch(
+                &pool,
+                time.as_ref(),
+                &payment::Ids(AtomicU64::new(10000)),
+                attempt,
+                &payment::config()
+            )
+            .await,
+            Ok(DispatchOutcome::Start(_))
+        ),
+        "dispatch start recorded without provider I/O"
+    );
+    let before = inventory_and_redemptions(&pool).await;
+    let mut blocker = pool.begin().await.expect("attempt blocker");
+    sqlx::query("SELECT id FROM payment_attempts WHERE id=$1 FOR UPDATE")
+        .bind(attempt)
+        .execute(&mut *blocker)
+        .await
+        .expect("hold attempt");
+    let work = cancel_verified_order(&store, &key, &csrf, &customer, "cancel", &order.identity.id);
+    let release = async {
+        waiting(&pool, 1).await;
+        time.0.store(44300, Ordering::SeqCst);
+        blocker.commit().await.expect("release lock");
+    };
+    let (result, ()) = tokio::join!(work, release);
+    assert!(
+        matches!(result, Err(OrderStoreError::Denied)),
+        "account session expired while waiting"
+    );
+    time.0.store(1100, Ordering::SeqCst);
+    assert!(
+        matches!(
+            cancel_verified_order(&store, &key, &csrf, &customer, "cancel", &order.identity.id)
+                .await,
+            Err(OrderStoreError::Conflict)
+        ),
+        "live account sees dispatch conflict"
+    );
+    assert_eq!(counts(&pool).await, (0, 0, 1, 1));
+    assert_eq!(inventory_and_redemptions(&pool).await, before);
+}
+
+#[sqlx::test(migrator = "MIGRATOR")]
+async fn expired_guest_cannot_learn_missing_receipt_after_read_wait(pool: PgPool) {
+    let (store, time, session, _, order) = payment::accepted(&pool).await;
+    let key = GuestCredential::from_session(&session).expect("owner");
+    let expiry: i64 =
+        sqlx::query_scalar("SELECT expires_at FROM guest_sessions WHERE basket_id=$1")
+            .bind(&order.identity.basket_id)
+            .fetch_one(&pool)
+            .await
+            .expect("guest expiry");
+    let mut blocker = pool.begin().await.expect("receipt blocker");
+    blocker
+        .execute("LOCK TABLE checkout_order_cancellations IN ACCESS EXCLUSIVE MODE")
+        .await
+        .expect("hold receipt table");
+    let work = owned_cancellation(&store, &key, &order.identity.id);
+    let release = async {
+        waiting(&pool, 1).await;
+        time.0.store(
+            u64::try_from(expiry).expect("bounded expiry"),
+            Ordering::SeqCst,
+        );
+        blocker.commit().await.expect("release receipt read");
+    };
+    let (result, ()) = tokio::join!(work, release);
+    assert!(
+        matches!(result, Err(OrderStoreError::Denied)),
+        "expired guest cannot learn a receipt is missing"
+    );
+    time.0.store(1500, Ordering::SeqCst);
+    assert!(
+        matches!(
+            owned_cancellation(&store, &key, &order.identity.id).await,
+            Err(OrderStoreError::NotFound)
+        ),
+        "live owner sees the missing receipt"
+    );
+    assert_eq!(counts(&pool).await, (0, 0, 0, 0));
+}

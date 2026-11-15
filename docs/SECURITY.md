@@ -351,8 +351,10 @@ Native insertion binds the attempt to the quote account. The account association
 stays in the private relational record.
 Private cancellation uses the same guest and account authority as the order.
 Cancellation and admission share a basket claim; cancellation and dispatch share
-an attempt claim and reject a conflicting durable effect after waiting. The event
-carries only the order ID and schema version.
+an attempt claim and reject a conflicting durable effect after waiting. Both
+cancellation and receipt reads recheck held guest and account authority before
+returning source-dependent success or failure, including after a lock wait. The
+event carries only the order ID and schema version.
 Public coupon access still requires authenticated checkout and trusted-edge
 abuse controls.
 
