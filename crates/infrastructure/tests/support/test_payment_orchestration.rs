@@ -462,7 +462,7 @@ async fn callback_effect_collision_never_upgrades_a_historical_observation(pool:
             .expect("no origin receipt");
     assert_eq!(receipts, 0);
     // A later native transaction cannot attach the old observation/event to a new receipt.
-    let upgrade = sqlx::query("INSERT INTO payment_initial_dispatch_provenance(attempt_id,start_id,observation_id,observation_event_id) SELECT s.attempt_id,s.id,o.id,e.id FROM payment_dispatch_starts s JOIN payment_observations o ON o.attempt_id=s.attempt_id JOIN commerce_outbox e ON e.kind='payment.observation_recorded.v1' AND e.payload->>'observation_id'=o.id WHERE s.attempt_id=$1")
+    let upgrade = sqlx::query("INSERT INTO payment_initial_dispatch_provenance(attempt_id,start_id,observation_id,observation_event_id,observation_sha256) SELECT s.attempt_id,s.id,o.id,e.id,payment_initial_observation_digest(o) FROM payment_dispatch_starts s JOIN payment_observations o ON o.attempt_id=s.attempt_id JOIN commerce_outbox e ON e.kind='payment.observation_recorded.v1' AND e.payload->>'observation_id'=o.id WHERE s.attempt_id=$1")
         .bind(&id).execute(&pool).await;
     assert!(upgrade.is_err());
     assert_eq!(
@@ -472,6 +472,174 @@ async fn callback_effect_collision_never_upgrades_a_historical_observation(pool:
     );
     server
         .inspect(|requests| assert_eq!(requests.iter().filter(|r| r.method == "POST").count(), 1));
+}
+
+#[sqlx::test(migrator = "MIGRATOR")]
+async fn initial_observation_digest_has_independent_fixed_oracle_and_session_stability(
+    pool: PgPool,
+) {
+    let mut values = Vec::new();
+    for settings in [
+        "SET LOCAL TIME ZONE 'UTC'; SET LOCAL DateStyle='ISO, MDY'; SET LOCAL bytea_output='hex'",
+        "SET LOCAL TIME ZONE 'Pacific/Apia'; SET LOCAL DateStyle='SQL, DMY'; SET LOCAL bytea_output='escape'",
+    ] {
+        let mut tx = pool.begin().await.expect("transaction");
+        tx.execute(settings).await.expect("session settings");
+        let digest: String=sqlx::query_scalar(r#"SELECT encode(payment_initial_observation_digest(ROW('a','b','key',1::bigint,1500::bigint,'tr_x','ffff','paid','{"key":"value"}'::jsonb,'42'::xid8)::payment_observations),'hex')"#)
+            .fetch_one(&mut *tx).await.expect("digest");
+        values.push(digest);
+        tx.rollback().await.expect("rollback");
+    }
+    // Independently SHA-256 hashed exact UTF-8 bytes of the fixed JSONB array.
+    assert_eq!(
+        values,
+        ["89e735fcd18275345e73a1fe6aabc8504b829daa53e8857b1566c7153b8707d4"; 2]
+    );
+}
+
+#[sqlx::test(migrator = "MIGRATOR")]
+async fn initial_provenance_rejects_coherently_changed_identity_until_exact_repair(pool: PgPool) {
+    use crate::payment_attempts::{evidence, observations};
+    let (time, frozen) = prepared(&pool).await;
+    let id = &frozen.snapshot().binding.id;
+    let pay = payment(frozen.snapshot());
+    let server = Server::start(vec![
+        profile(),
+        Reply::Json(201, pay.clone()),
+        Reply::Json(200, pay),
+    ]);
+    let client = local(&server)
+        .verify_profile()
+        .await
+        .expect("verified loopback");
+    let ids = crate::payment_test_fixture::Ids(AtomicU64::new(10000));
+    assert_eq!(
+        dispatch_and_observe_test_payment(&pool, time.as_ref(), &ids, &client, id).await,
+        Ok(InitialDispatchOutcome::Observed)
+    );
+    let original: (String, serde_json::Value) =
+        sqlx::query_as("SELECT provider_id,snapshot FROM payment_observations WHERE attempt_id=$1")
+            .bind(id)
+            .fetch_one(&pool)
+            .await
+            .expect("source");
+    let receipt: serde_json::Value = sqlx::query_scalar(
+        "SELECT to_jsonb(p) FROM payment_initial_dispatch_provenance p WHERE attempt_id=$1",
+    )
+    .bind(id)
+    .fetch_one(&pool)
+    .await
+    .expect("receipt");
+    pool.execute("ALTER TABLE payment_observations DISABLE TRIGGER USER")
+        .await
+        .expect("fault setup");
+    sqlx::query("UPDATE payment_observations SET provider_id='tr_SYNTHETIC_CHANGED',snapshot=jsonb_set(snapshot,'{intent,payment,id}',to_jsonb('tr_SYNTHETIC_CHANGED'::text)) WHERE attempt_id=$1").bind(id).execute(&pool).await.expect("coherent identity fault");
+    pool.execute("ALTER TABLE payment_observations ENABLE TRIGGER USER")
+        .await
+        .expect("restore guard");
+    let changed = read_recorded(&pool, id, &format!("initial-fetch-{id}"))
+        .await
+        .expect("ordinary decoder accepts structurally valid fault")
+        .expect("observation");
+    assert_eq!(changed.intent.payment.id, "tr_SYNTHETIC_CHANGED");
+    let exact: bool=sqlx::query_scalar("SELECT payment_initial_dispatch_provenance_exact(p) FROM payment_initial_dispatch_provenance p WHERE attempt_id=$1").bind(id).fetch_one(&pool).await.expect("native exact");
+    assert!(!exact);
+    let mut tx = pool.begin().await.expect("read");
+    let (current, started) = evidence::context(&mut tx, id, false)
+        .await
+        .expect("context");
+    assert!(matches!(
+        observations::initial::read_source(&mut tx, &current, started).await,
+        Err(crate::payment_attempts::PaymentStoreError::InvalidStoredData)
+    ));
+    tx.rollback().await.expect("rollback");
+    assert_eq!(
+        sqlx::query_scalar::<_, serde_json::Value>(
+            "SELECT to_jsonb(p) FROM payment_initial_dispatch_provenance p WHERE attempt_id=$1"
+        )
+        .bind(id)
+        .fetch_one(&pool)
+        .await
+        .expect("same receipt"),
+        receipt
+    );
+    pool.execute("ALTER TABLE payment_observations DISABLE TRIGGER USER")
+        .await
+        .expect("repair setup");
+    sqlx::query("UPDATE payment_observations SET provider_id=$2,snapshot=$3 WHERE attempt_id=$1")
+        .bind(id)
+        .bind(&original.0)
+        .bind(&original.1)
+        .execute(&pool)
+        .await
+        .expect("exact repair");
+    pool.execute("ALTER TABLE payment_observations ENABLE TRIGGER USER")
+        .await
+        .expect("restore guard");
+    let mut tx = pool.begin().await.expect("read");
+    let (current, started) = evidence::context(&mut tx, id, false)
+        .await
+        .expect("context");
+    let restored = observations::initial::read_source(&mut tx, &current, started)
+        .await
+        .expect("valid source")
+        .expect("receipt");
+    assert_eq!(restored.intent.payment.id, original.0);
+    tx.rollback().await.expect("rollback");
+    server.inspect(|requests| {
+        assert_eq!(
+            requests
+                .iter()
+                .filter(|request| request.method == "POST")
+                .count(),
+            1
+        )
+    });
+}
+
+#[sqlx::test(migrator = "MIGRATOR")]
+async fn initial_provenance_rolls_back_when_stored_identity_differs_from_fetched_source(
+    pool: PgPool,
+) {
+    let (time, frozen) = prepared(&pool).await;
+    let id = &frozen.snapshot().binding.id;
+    pool.execute("CREATE FUNCTION fixture_change_initial_identity() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN NEW.provider_id='tr_SYNTHETIC_CHANGED'; NEW.snapshot=jsonb_set(NEW.snapshot,'{intent,payment,id}',to_jsonb(NEW.provider_id)); RETURN NEW; END $$; CREATE TRIGGER zz_fixture_change_initial_identity BEFORE INSERT ON payment_observations FOR EACH ROW EXECUTE FUNCTION fixture_change_initial_identity()")
+        .await.expect("synthetic readback fault");
+    let pay = payment(frozen.snapshot());
+    let server = Server::start(vec![
+        profile(),
+        Reply::Json(201, pay.clone()),
+        Reply::Json(200, pay),
+    ]);
+    let client = local(&server)
+        .verify_profile()
+        .await
+        .expect("verified loopback");
+    let ids = crate::payment_test_fixture::Ids(AtomicU64::new(10000));
+    assert_eq!(
+        dispatch_and_observe_test_payment(&pool, time.as_ref(), &ids, &client, id).await,
+        Err(InitialDispatchError::Uncertain)
+    );
+    assert_eq!(counts(&pool).await, (1, 1, 0, 0));
+    let receipts: i64 =
+        sqlx::query_scalar("SELECT count(*) FROM payment_initial_dispatch_provenance")
+            .fetch_one(&pool)
+            .await
+            .expect("receipt count");
+    assert_eq!(receipts, 0);
+    assert_eq!(
+        dispatch_and_observe_test_payment(&pool, time.as_ref(), &ids, &client, id).await,
+        Ok(InitialDispatchOutcome::Reconcile)
+    );
+    server.inspect(|requests| {
+        assert_eq!(
+            requests
+                .iter()
+                .filter(|request| request.method == "POST")
+                .count(),
+            1
+        )
+    });
 }
 
 #[sqlx::test(migrator = "MIGRATOR")]

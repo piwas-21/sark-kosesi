@@ -551,7 +551,11 @@ retain its normal exact replay while the initial path remains uncertain and cann
 mint or later attach a provenance receipt. A receipt-write fault must roll back the
 observation and event while retaining the original start and reconciliation path.
 Legacy transaction fields remain nullable and existing observation reads continue
-to work. These controls do not establish that the trusted database writer performed
+to work. Verify the source digest against an independent fixed-byte oracle and
+under different timezone, DateStyle and bytea settings. A coherently changed
+provider ID and observation snapshot must fail the unchanged receipt's native and
+Rust source checks; exact repair must restore both. These controls do not detect
+a privileged rewrite of both receipt and source, or establish that the trusted database writer performed
 provider I/O or that any provider accepted a live payment.
 
 Compiled provider controls bypass authenticated-profile verification, fetched

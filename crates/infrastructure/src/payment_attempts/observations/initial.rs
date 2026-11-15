@@ -2,12 +2,38 @@
 use super::*;
 use sqlx::{Postgres, Transaction};
 
+/// Revalidate the exact provenance receipt and its authenticated stored source.
+/// Absence is unproven, not a provider absence or authority to dispatch.
+pub(crate) async fn read_source(
+    tx: &mut Transaction<'_, Postgres>,
+    frozen: &FrozenAttempt,
+    started_at: i64,
+) -> Result<Option<ObservationSnapshot>, PaymentStoreError> {
+    let row: Option<(String, bool)> = sqlx::query_as("SELECT left(p.observation_id,33),payment_initial_dispatch_provenance_exact(p) FROM payment_initial_dispatch_provenance p WHERE p.attempt_id=$1")
+        .bind(&frozen.snapshot().binding.id).fetch_optional(&mut **tx).await?;
+    let Some((observation_id, exact)) = row else {
+        return Ok(None);
+    };
+    if !exact || !identifier(&observation_id) {
+        return Err(PaymentStoreError::InvalidStoredData);
+    }
+    let observation = rows::by_id(tx, frozen, started_at, &observation_id)
+        .await
+        .map_err(|_| PaymentStoreError::InvalidStoredData)?;
+    Ok(Some(observation))
+}
+
 pub(super) async fn insert(
     tx: &mut Transaction<'_, Postgres>,
     observation: &ObservationSnapshot,
     event_id: &str,
+    frozen: &FrozenAttempt,
+    started_at: i64,
 ) -> Result<(), PaymentStoreError> {
-    let inserted = sqlx::query("INSERT INTO payment_initial_dispatch_provenance(attempt_id,start_id,observation_id,observation_event_id) SELECT $1,id,$2,$3 FROM payment_dispatch_starts WHERE attempt_id=$1")
+    if rows::by_id(tx, frozen, started_at, &observation.id).await? != *observation {
+        return Err(PaymentStoreError::InvalidStoredData);
+    }
+    let inserted = sqlx::query("INSERT INTO payment_initial_dispatch_provenance(attempt_id,start_id,observation_id,observation_event_id,observation_sha256) SELECT $1,s.id,$2,$3,payment_initial_observation_digest(o) FROM payment_dispatch_starts s JOIN payment_observations o ON o.id=$2 AND o.attempt_id=s.attempt_id WHERE s.attempt_id=$1")
         .bind(&observation.attempt_id).bind(&observation.id).bind(event_id)
         .execute(&mut **tx).await?;
     if inserted.rows_affected() != 1 {
@@ -19,7 +45,7 @@ pub(super) async fn insert(
     let exact: bool = sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM payment_initial_dispatch_provenance p WHERE p.attempt_id=$1 AND p.observation_id=$2 AND p.observation_event_id=$3 AND p.transaction_id=pg_current_xact_id() AND payment_initial_dispatch_provenance_exact(p))")
         .bind(&observation.attempt_id).bind(&observation.id).bind(event_id)
         .fetch_one(&mut **tx).await?;
-    if !exact {
+    if !exact || read_source(tx, frozen, started_at).await?.as_ref() != Some(observation) {
         return Err(PaymentStoreError::InvalidStoredData);
     }
     Ok(())

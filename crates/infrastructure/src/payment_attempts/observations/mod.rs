@@ -7,7 +7,7 @@ use commerce_domain::payment_attempts::observations::{
     MAX_OBSERVATION_REVISION, ObservationIntent, ObservationSnapshot,
 };
 use sqlx::PgPool;
-mod initial;
+pub(crate) mod initial;
 pub(crate) mod rows;
 /// A durable fetched fact, never payment/stock/fulfilment authority.
 pub struct ObservationReceipt {
@@ -119,7 +119,7 @@ async fn record(
     )
     .await?;
     if initial.is_some() {
-        initial::insert(&mut tx, &snapshot, &event_id).await?;
+        initial::insert(&mut tx, &snapshot, &event_id, &frozen, started_at).await?;
     }
     now(&clock)?;
     tx.commit().await?;

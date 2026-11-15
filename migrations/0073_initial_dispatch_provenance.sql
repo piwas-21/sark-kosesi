@@ -22,8 +22,22 @@ CREATE TABLE payment_initial_dispatch_provenance (
  start_id text NOT NULL UNIQUE REFERENCES payment_dispatch_starts(id),
  observation_id text NOT NULL UNIQUE REFERENCES payment_observations(id),
  observation_event_id text NOT NULL UNIQUE REFERENCES commerce_outbox(id),
+ observation_sha256 bytea NOT NULL CHECK(octet_length(observation_sha256)=32),
  transaction_id xid8 NOT NULL
 );
+-- Hash a closed, ordered JSONB array, with an explicit domain and every stored
+-- observation field. Bound the snapshot before building its canonical bytes.
+CREATE FUNCTION payment_initial_observation_digest(o payment_observations) RETURNS bytea
+ LANGUAGE sql IMMUTABLE AS $$
+ SELECT CASE WHEN octet_length(o.id)<=32 AND octet_length(o.attempt_id)<=32
+  AND octet_length(o.effect_key)<=128 AND octet_length(o.provider_id)<=256
+  AND octet_length(o.credential_fingerprint)<=64 AND octet_length(o.status)<=16
+  AND octet_length(o.snapshot::text)<=8192 THEN
+  sha256(convert_to(jsonb_build_array('piwas:payment-initial-observation:v1',o.id,o.attempt_id,
+   o.effect_key,o.revision,o.recorded_at,o.provider_id,o.credential_fingerprint,o.status,o.snapshot,
+   o.source_transaction_id::text)::text,'UTF8'))
+  ELSE NULL END;
+$$;
 CREATE FUNCTION payment_initial_dispatch_provenance_exact(p payment_initial_dispatch_provenance)
  RETURNS boolean LANGUAGE sql STABLE AS $$
  SELECT EXISTS(
@@ -35,6 +49,7 @@ CREATE FUNCTION payment_initial_dispatch_provenance_exact(p payment_initial_disp
    AND s.source_transaction_id IS NOT NULL AND s.source_transaction_id<>p.transaction_id
    AND o.source_transaction_id=p.transaction_id AND o.recorded_at>=s.started_at
    AND o.effect_key='initial-fetch-'||s.attempt_id
+   AND p.observation_sha256=payment_initial_observation_digest(o)
    AND e.aggregate_id=a.order_id AND e.kind='payment.observation_recorded.v1'
    AND e.created_at=o.recorded_at
    AND e.payload=jsonb_build_object('schema_version',1,'order_id',a.order_id,

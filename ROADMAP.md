@@ -297,7 +297,7 @@ minimal transactional recovery events. Fresh commercial and clock checks protect
 new work; original receipts remain historical. An explicit private test dispatch
 now composes the one-use start, create, authenticated GET and durable observation;
 failures remain uncertain. A fresh create/GET pair can retain a same-transaction
-origin receipt; legacy or callback observations cannot acquire that origin by
+origin receipt commits its exact source observation digest; legacy or callback observations cannot acquire that origin by
 replay. Runtime dispatch remains uninstalled. Started/unknown attempts must
 reconcile without automatic replacement.
 The private test-key HTTP client now verifies its authenticated profile and
