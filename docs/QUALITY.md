@@ -1080,12 +1080,12 @@ operational corpus or evidence of its review.
 
 ### Isolated guest browser transport
 
-`npm run test:guest-browser` starts its own disposable PostgreSQL cluster and a
-randomly named, marker-guarded synthetic database. It runs a loopback Rust API and ephemeral
-HTTPS-only browser bridge. A Chromium session checks the actual guest cookie,
-Origin and CSRF controls through quote, order acceptance, cancellation and
-exact replay. The bridge keeps its independently generated API credential on
-the server and rejects other routes; the test never uses a deployed target.
-Database checks retain one order and cancellation with only component
-reservations, and no payment attempt. The HTML fixture is not a storefront
-checkout UI, provider acceptance, or a production accessibility assessment.
+The Application browser job runs `npm run test:guest-browser` against a separate
+disposable PostgreSQL cluster. The command starts a loopback Rust API and an
+ephemeral HTTPS browser bridge with a guarded synthetic database. Chromium
+checks the guest cookie, Origin and CSRF controls through quote, order acceptance,
+cancellation and exact replay. The bridge keeps its independently generated API
+credential on the server and forwards only the fixture's private checkout routes.
+Database checks verify one order, one cancellation, two component reservation
+movements and zero payment attempts. The storefront checkout UI, provider and
+production accessibility still need their own acceptance evidence.

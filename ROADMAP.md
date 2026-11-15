@@ -287,6 +287,9 @@ An independently enabled test-only guest order POST uses the same session,
 Origin and CSRF checks, with an explicit server-only test seller policy. It
 returns only the order ID and replay flag; no provider operation follows. Public
 checkout and seller/legal acceptance remain separate gates.
+The application browser job covers quote, acceptance, cancellation and exact
+replay through a loopback HTTPS fixture and disposable PostgreSQL. The customer
+checkout interface and deployed ingress still need acceptance.
 
 Private durable owned-order test attempts and one serialized dispatch-start fact
 now compose the frozen request policy, existing physically backed reservation and
