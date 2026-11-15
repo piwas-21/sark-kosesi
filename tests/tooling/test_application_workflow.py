@@ -31,6 +31,9 @@ def check_application_graph(text):
         job(text, name)
         for name in ("application_checks", "application_browser", "application", "sonar", "quality")
     )
+    for guarded in (checks, browser, gate):
+        if re.search(r"(?m)^\s*(?:-\s+)?continue-on-error\s*:", guarded):
+            raise ValueError("application work cannot continue on error")
     for leg in (checks, browser):
         for required in (
             f"ANALYSIS_REVISION: {REVISION}",
@@ -154,6 +157,28 @@ class ApplicationWorkflow(unittest.TestCase):
             ("python3 scripts/check_coverage_reports.py", "echo skipped"),
         ):
             with self.subTest(old=old), self.assertRaises(ValueError):
+                check_application_graph(self.workflow.replace(old, new, 1))
+
+    def test_no_application_job_or_step_can_continue_on_error(self):
+        mutations = (
+            ("  application_checks:\n", "  application_checks:\n    continue-on-error: true\n"),
+            (
+                "  application_browser:\n",
+                "  application_browser:\n    continue-on-error: ${{ true }}\n",
+            ),
+            ("  application:\n", "  application:\n    continue-on-error: true\n"),
+            ("      - id: coverage\n", "      - id: coverage\n        continue-on-error: true\n"),
+            (
+                "      - id: browser\n",
+                "      - id: browser\n        continue-on-error: ${{ true }}\n",
+            ),
+            (
+                "      - name: Require both application legs\n",
+                "      - name: Require both application legs\n        continue-on-error: true\n",
+            ),
+        )
+        for old, new in mutations:
+            with self.subTest(old=old), self.assertRaisesRegex(ValueError, "continue on error"):
                 check_application_graph(self.workflow.replace(old, new, 1))
 
     def test_actual_aggregate_requires_both_successes(self):
