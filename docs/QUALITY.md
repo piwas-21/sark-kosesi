@@ -51,6 +51,10 @@ No fake commands or passing jobs before code exists. Pin the following free tool
 
 The required `Application gate` aggregates checks, browser and validated coverage at the same candidate revision. `Application checks` runs the Rust audit, TypeScript, unit, integration, migration and contract commands and publishes its revision-bound evidence. Two independently checked-out coverage producers run the stable Rust format/Clippy and line suite, and the nightly Rust branch/LCOV and TypeScript coverage suites, with separate isolated databases. `Application coverage` depends on both, downloads their same-run revision-bound artifacts, validates all five required reports and publishes the unchanged canonical artifact only on success. `Application browser` builds the production application and runs the full browser suite with its own isolated databases, fallback capture and evidence upload, including the private guest Chromium transport. Failed, skipped, cancelled, missing or invalid evidence fails the aggregate. Sonar imports and validates the canonical artifact after that aggregate. Measure timing on the current hosted revision; parallel jobs do not establish release or provider acceptance.
 
+Preapplied preview migration validation is critical Rust code. Exercise bounded
+history, malformed checksums and real lock timeouts against isolated PostgreSQL,
+including recovery after the lock is released.
+
 Rust line/region coverage runs on the pinned stable release. Rust branch instrumentation currently requires nightly in cargo-llvm-cov: P1 must pin a separate tested nightly toolchain for the branch-coverage job and run `cargo +<pinned-nightly> llvm-cov --branch`. Production builds remain on stable. Missing branch data fails the coverage gate; do not report it as 100% or silently substitute line coverage. See the [upstream coverage requirements](https://github.com/taiki-e/cargo-llvm-cov#readme).
 
 The API migration-manifest CLI test runs without configuration or a database,

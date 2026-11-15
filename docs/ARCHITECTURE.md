@@ -659,6 +659,17 @@ startup pass. Separate credentials, bounded resources, read-only application
 filesystems, image tags and runtime revision bind the preview to accepted source.
 No production data, staff authority or merchant/fixture records are installed.
 
+An opt-in `PREVIEW_DATABASE_PREAPPLIED=1` mode is limited to staging with no
+guest or callback transports. Every API pool connection fixes its search path to
+`pg_catalog, public, pg_temp`; startup compares the embedded SQLx forward
+manifest to `public._sqlx_migrations` in a repeatable-read, read-only snapshot
+before listening, and never applies migrations. Missing, dirty, pending, unknown
+or checksum-mismatched history fails startup. Migration ownership and database
+grants are separate operational concerns: this mode does not itself make the
+database identity read-only or protect against a role that can alter `public`.
+Schema changes must be coordinated with startup; the snapshot is not an ongoing
+schema lock. Local, test and ordinary staging retain their existing startup path.
+
 Staging can explicitly opt in to public storefront reads with
 `STAGING_PUBLIC_STOREFRONT=true`. An allowlist covers existing GET/HEAD storefront,
 customer catalogue/image and discovery routes; unknown paths and mutations keep
