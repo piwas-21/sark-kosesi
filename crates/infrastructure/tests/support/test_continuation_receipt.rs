@@ -728,7 +728,7 @@ async fn continuation_successful_get_with_storage_failure_never_refetches(pool: 
 }
 
 #[sqlx::test(migrator = "MIGRATOR")]
-async fn continuation_wrong_verified_profile_does_not_consume_start(pool: PgPool) {
+async fn continuation_wrong_verified_profile_cannot_fetch(pool: PgPool) {
     let (clock, frozen) = synthetic_source(&pool).await;
     let id = &frozen.snapshot().binding.id;
     let ids = observation_cases::ids();
@@ -763,6 +763,22 @@ async fn continuation_wrong_verified_profile_does_not_consume_start(pool: PgPool
     assert_eq!(server.count(), 1);
     get_only(&server);
     assert_eq!(counts(&pool).await, (1, 1, 0, 0, 1));
+
+    let permit = continuation::start(&pool, clock.as_ref(), id)
+        .await
+        .expect("separate committed start");
+    assert!(matches!(
+        client.fetch_continuation(permit).await,
+        Err(super::super::MollieError::ProfileMismatch)
+    ));
+    assert_eq!(server.count(), 1);
+    assert_eq!(
+        continuation::inspect(&pool, id)
+            .await
+            .expect("retained start"),
+        Some(ContinuationOutcome::Unknown)
+    );
+    assert_eq!(counts(&pool).await, (1, 1, 1, 0, 1));
 }
 
 #[sqlx::test(migrator = "MIGRATOR")]

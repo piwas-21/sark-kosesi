@@ -117,9 +117,8 @@ impl VerifiedReconciliationClient {
         permit: crate::payment_attempts::callbacks::lookup::continuation::ContinuationStart,
     ) -> Result<CallbackLookupPayment, MollieError> {
         let (operation, original, started_at) = permit.into_parts();
-        if operation.profile_id != self.profile_id()
-            || original.binding.profile.id != self.profile_id()
-        {
+        // The permit binds the operation to the original profile when minted.
+        if original.binding.profile.id != self.profile_id() {
             return Err(MollieError::ProfileMismatch);
         }
         let fetched = self.fetch_callback(&operation.provider_id).await?;

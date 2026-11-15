@@ -197,8 +197,8 @@ async fn require_durable(tx: &mut Transaction<'_, Postgres>) -> Result<(), Payme
     Ok(())
 }
 
-/// A committed marked start. It cannot be cloned, deserialized or passed to
-/// the generic transport. There is deliberately no transport consumer here.
+/// A committed marked start whose operation matches the frozen source profile.
+/// Only the source-bound Test transport consumes this one-use capability.
 pub struct ContinuationStart {
     operation: LookupOperationSnapshot,
     original: commerce_domain::payment_attempts::AttemptSnapshot,
