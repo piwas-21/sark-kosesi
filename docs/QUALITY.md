@@ -1191,7 +1191,8 @@ An inherited asynchronous session proves the start and recovery event commit wit
 synchronous WAL settings; a post-insert setting change rolls both back before any
 POST. The server-fsync control runs with ordinary settings in application CI. Run
 the same exact compiled `dispatch_requires_server_fsync_before_post` test with
-`P1_POSTGRES_BIN=/path/to/postgresql18/bin python3 scripts/with_postgres.py --fsync-off -- <test-binary> dispatch_requires_server_fsync_before_post`
+`P1_POSTGRES_BIN=/path/to/postgresql18/bin python3 scripts/with_postgres.py --fsync-off -- <test-binary> --exact mollie::tests::test_payment_orchestration::durability::dispatch_requires_server_fsync_before_post`
 to exercise an owned native server started with fsync disabled. It verifies the
 actual setting and disposable cluster marker, then checks rejection with no start,
-event or POST. These tests do not establish provider or production acceptance.
+event or POST. The fault runner requires one exact passing test. These tests do
+not establish provider or production acceptance.

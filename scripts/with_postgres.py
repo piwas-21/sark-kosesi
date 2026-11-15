@@ -136,6 +136,16 @@ def docker_cluster(name, marker=None):
     raise ValueError("Disposable PostgreSQL did not become ready")
 
 
+def exact_test_passed(stdout, name):
+    lines = stdout.splitlines()
+    summary = "test result: ok. 1 passed; 0 failed; 0 ignored;"
+    return (
+        lines.count("running 1 test") == 1
+        and lines.count(f"test {name} ... ok") == 1
+        and sum(line.startswith(summary) for line in lines) == 1
+    )
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
@@ -147,8 +157,18 @@ def main():
     if not command:
         parser.error("A real command is required")
     binaries = Path(os.environ["P1_POSTGRES_BIN"]) if os.environ.get("P1_POSTGRES_BIN") else None
-    if args.fsync_off and binaries is None:
-        parser.error("--fsync-off requires P1_POSTGRES_BIN for an owned native cluster")
+    if args.fsync_off:
+        if binaries is None:
+            parser.error("--fsync-off requires P1_POSTGRES_BIN for an owned native cluster")
+        if (
+            command[1:2] != ["--exact"]
+            or command[3:] not in ([], ["--ignored"])
+            or len(command) < 3
+            or re.fullmatch(r"[A-Za-z0-9_]+(?:::[A-Za-z0-9_]+)*", command[2]) is None
+        ):
+            parser.error(
+                "--fsync-off requires an exact Rust test: <binary> --exact <test> [--ignored]"
+            )
     (ROOT / ".local").mkdir(exist_ok=True)
     name = "sark-p1-" + secrets.token_hex(8)
     marker = disposable_marker()
@@ -167,6 +187,21 @@ def main():
                 "P1_POSTGRES_EXPECTED_FSYNC": "off" if args.fsync_off else "on",
                 "APP_ENV": "test",
             }
+            if args.fsync_off:
+                result = subprocess.run(
+                    command,
+                    cwd=ROOT,
+                    env=environment,
+                    check=False,
+                    stdout=subprocess.PIPE,
+                    text=True,
+                )
+                print(result.stdout, end="")
+                if result.returncode != 0:
+                    return result.returncode
+                if not exact_test_passed(result.stdout, command[2]):
+                    raise ValueError("The exact server fsync control did not pass one test")
+                return 0
             result = subprocess.run(command, cwd=ROOT, env=environment, check=False)
             return result.returncode
         finally:

@@ -78,6 +78,16 @@ class PostgresStartup(unittest.TestCase):
         start = command.call_args_list[1].args
         self.assertTrue(start[start.index("-o") + 1].endswith(" -c fsync=off"))
 
+    def test_exact_fsync_test_output_rejects_empty_or_wrong_test(self):
+        from with_postgres import exact_test_passed
+
+        name = "module::expected"
+        summary = "test result: ok. 1 passed; 0 failed; 0 ignored; 9 filtered out"
+        successful = f"running 1 test\ntest {name} ... ok\n{summary}"
+        self.assertTrue(exact_test_passed(successful, name))
+        self.assertFalse(exact_test_passed("running 0 tests", name))
+        self.assertFalse(exact_test_passed(successful.replace(name, "module::other"), name))
+
     def test_marker_validation_rejects_values_that_could_change_startup_options(self):
         from with_postgres import disposable_marker
 
