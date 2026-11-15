@@ -80,9 +80,11 @@ separate pinned-nightly branch run. The normal coverage command uses distinct
 owned target directories for these toolchains, including cleanup and nightly
 LCOV export. Sharing instrumented output can mix incompatible object mappings
 and produce false zero-hit regions; never repair those counters by hand.
-LLVM LCOV summary line totals include async
-and macro regions that do not map one-to-one to emitted DA records; do not rewrite
-those totals to manufacture consistency. LCOV remains the Sonar import format.
+LLVM aggregates line summaries by function instantiation group. Its LCOV `DA`
+records come from merged file segments, so mapped lines and covered counts can
+differ. Validate the summary totals against native summaries and independently
+project every `DA` line and hit count from the native segments. LCOV remains
+the Sonar import format. [LLVM coverage mapping](https://github.com/llvm/llvm-project/blob/llvmorg-23.1.4/llvm/lib/ProfileData/Coverage/CoverageMapping.cpp#L1448-L1501).
 LLVM reports branch summaries from function instantiations and merges LCOV
 branch details by source location. Those views can disagree when instantiations
 cover different directions or a direction is folded. Validate LCOV summary
@@ -1073,6 +1075,38 @@ For the separately enabled test mutation, exercise bound and foreign-session
 proofs, disabled configuration, canonical paths and revisions, bounded closed
 bodies, hidden cancellation, stale replay and concurrent duplicate opt-in with
 real isolated PostgreSQL. Check unchanged stock, outbox and notification data.
+
+### Private guest-link encrypted custody
+
+Use isolated PostgreSQL to verify guest/CSRF/order ownership, same-transaction
+proof/envelope reciprocity, a prior synchronously committed nonce and burn on
+failure. Race key allocations and an actual wait through guest expiry. Test the
+HKDF vector, purpose/context/ciphertext changes, key aliases, legacy direct proof
+upgrade and redemption. No ciphertext or receipt may copy the recipient or bearer.
+For the local start and opening, check concurrent one-winner custody, exact
+bearer authentication, bad keys, untrusted ciphertext, expiry after real lock
+waits, immutable starts and the absence of retry after a committed failure. Two
+isolated controls observe the order lock wait before and after a committed start,
+then verify a different proof linked the order and no opening callback ran. A
+populated schema upgrade preserves prior direct proofs and encrypted envelopes.
+Use an independently generated authenticated envelope to distinguish an invalid
+ciphertext from a valid envelope that contains the wrong bearer. Exercise each
+proof and envelope custody check. Restore altered stored identity, key
+fingerprint, nonce verifier and transaction evidence, then verify that opening
+succeeds exactly once.
+For synthetic outcomes, check all closed classifications, one callback only,
+loss before outcome commit, exact earlier-start and transaction binding, and
+historical reads after consumption and expiry. Missing or corrupt custody must
+not grant a new opening or establish external delivery. Corrupt one ciphertext
+byte without changing its length after recording and between callback and record;
+restore it and verify the respective recovery and unknown boundaries. Unknown
+without an authenticated outcome proves relational custody only.
+Exercise changed start custody, an intervening recorded outcome, and an
+inserted outcome that changes before exact readback. Use a write witness to
+distinguish a rolled-back insert from a write that was never attempted.
+The native durability guard assumes the supported Rust writer leaves the commit
+check in its specified sequence; arbitrary SQL can force a deferred check early.
+These controls do not establish transport or mailbox delivery.
 
 ### Private guest-order links
 
