@@ -578,6 +578,12 @@ database. It seeds a synthetic historical start and constructs synthetic create
 evidence bound to an authenticated loopback GET; it sends no create POST and
 does not prove real provider origin. A raw repeatable-read insert must fail the
 native isolation guard even when the inherited search path spoofs its setting.
+Also shadow transaction-ID and digest functions in an isolated schema: verify
+real start and observation XIDs, reject a later attempted generic-receipt
+upgrade, and check the fixed canonical digest against its independent oracle.
+These controls assume the actual public tables and functions remain owned by
+the trusted migration authority; privileged database rewrites remain outside
+the evidence boundary.
 
 Compiled provider controls bypass authenticated-profile verification, fetched
 payment matching, the early streamed-byte limit, duplicate-field preservation and

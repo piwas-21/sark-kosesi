@@ -34,6 +34,9 @@ async fn async_default(pool: &PgPool) -> PgPool {
         .after_connect(|connection, _| {
             Box::pin(async move {
                 sqlx::query("SET synchronous_commit='off'")
+                    .execute(&mut *connection)
+                    .await?;
+                sqlx::query("SET search_path=public,pg_catalog")
                     .execute(connection)
                     .await?;
                 Ok(())
@@ -62,7 +65,16 @@ async fn initial_provenance_forces_sync_on_async_session(pool: PgPool) {
     let id = &frozen.snapshot().binding.id;
     pool.execute("CREATE FUNCTION fixture_assert_initial_wal() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN IF current_setting('fsync')<>'on' OR current_setting('synchronous_commit')<>'on' THEN RAISE EXCEPTION 'not durable'; END IF; RETURN NEW; END $$; CREATE TRIGGER zz_assert_initial_observation BEFORE INSERT ON payment_observations FOR EACH ROW EXECUTE FUNCTION fixture_assert_initial_wal(); CREATE TRIGGER zz_assert_initial_event BEFORE INSERT ON commerce_outbox FOR EACH ROW WHEN (NEW.kind='payment.observation_recorded.v1') EXECUTE FUNCTION fixture_assert_initial_wal(); CREATE TRIGGER zz_assert_initial_receipt BEFORE INSERT ON payment_initial_dispatch_provenance FOR EACH ROW EXECUTE FUNCTION fixture_assert_initial_wal()")
         .await.expect("observe settings on each write");
+    pool.execute("CREATE FUNCTION public.pg_current_xact_id() RETURNS pg_catalog.xid8 LANGUAGE sql STABLE AS $$ SELECT '42'::pg_catalog.xid8 $$")
+        .await.expect("synthetic shadow XID");
     let async_pool = async_default(&pool).await;
+    let spoof: (String, String) =
+        sqlx::query_as("SELECT pg_current_xact_id()::text,pg_catalog.pg_current_xact_id()::text")
+            .fetch_one(&async_pool)
+            .await
+            .expect("shadow and real XID");
+    assert_eq!(spoof.0, "42");
+    assert_ne!(spoof.0, spoof.1);
     let body = payment(frozen.snapshot());
     let server = Server::start(vec![
         profile(),
@@ -79,6 +91,10 @@ async fn initial_provenance_forces_sync_on_async_session(pool: PgPool) {
     let exact: bool = sqlx::query_scalar("SELECT payment_initial_dispatch_provenance_exact(p) FROM payment_initial_dispatch_provenance p WHERE attempt_id=$1")
         .bind(id).fetch_one(&pool).await.expect("exact receipt");
     assert!(exact);
+    let custody: (String, String) = sqlx::query_as("SELECT p.transaction_id::text,o.source_transaction_id::text FROM public.payment_initial_dispatch_provenance p JOIN public.payment_observations o ON o.id=p.observation_id WHERE p.attempt_id=$1")
+        .bind(id).fetch_one(&pool).await.expect("receipt transaction custody");
+    assert_eq!(custody.0, custody.1);
+    assert_ne!(custody.0, "42");
     let restored: String = sqlx::query_scalar("SHOW synchronous_commit")
         .fetch_one(&async_pool)
         .await
@@ -125,6 +141,131 @@ async fn initial_provenance_late_async_sabotage_is_uncertain_and_never_reposts(p
         assert_eq!(requests.len(), 3);
         assert_eq!(requests.iter().filter(|r| r.method == "POST").count(), 1);
     });
+}
+
+#[sqlx::test(migrator = "MIGRATOR")]
+async fn initial_provenance_rejects_shadowed_xid_and_digest(pool: PgPool) {
+    use crate::payment_attempts::{DispatchOutcome, observations, start_dispatch};
+
+    let (time, frozen) = prepared(&pool).await;
+    let binding = &frozen.snapshot().binding;
+    pool.execute("CREATE TABLE public.fixture_xid_witness(kind text NOT NULL,actual xid8 NOT NULL,recorded xid8 NOT NULL); CREATE FUNCTION public.fixture_capture_source_xid() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN INSERT INTO public.fixture_xid_witness VALUES (TG_TABLE_NAME,pg_catalog.pg_current_xact_id(),NEW.source_transaction_id); RETURN NEW; END $$; CREATE TRIGGER zz_fixture_start_xid AFTER INSERT ON public.payment_dispatch_starts FOR EACH ROW EXECUTE FUNCTION public.fixture_capture_source_xid(); CREATE TRIGGER zz_fixture_observation_xid AFTER INSERT ON public.payment_observations FOR EACH ROW EXECUTE FUNCTION public.fixture_capture_source_xid(); CREATE FUNCTION public.pg_current_xact_id() RETURNS pg_catalog.xid8 LANGUAGE sql STABLE AS $$ SELECT pg_catalog.current_setting('fixture.fake_xid')::pg_catalog.xid8 $$")
+        .await.expect("isolated hostile XID fixture");
+    let writer = PgPoolOptions::new()
+        .max_connections(1)
+        .after_connect(|connection, _| {
+            Box::pin(async move {
+                sqlx::query("SET search_path=public,pg_catalog")
+                    .execute(&mut *connection)
+                    .await?;
+                sqlx::query("SET fixture.fake_xid='42'")
+                    .execute(connection)
+                    .await?;
+                Ok(())
+            })
+        })
+        .connect_with((*pool.connect_options()).clone())
+        .await
+        .expect("hostile XID writer");
+    let spoof: (String, String) =
+        sqlx::query_as("SELECT pg_current_xact_id()::text,pg_catalog.pg_current_xact_id()::text")
+            .fetch_one(&writer)
+            .await
+            .expect("spoof and real XID");
+    assert_eq!(spoof.0, "42");
+    assert_ne!(spoof.0, spoof.1);
+    let ids = crate::payment_test_fixture::Ids(AtomicU64::new(10000));
+    assert!(matches!(
+        start_dispatch(
+            &writer,
+            time.as_ref(),
+            &ids,
+            &binding.id,
+            &config(&credential())
+        )
+        .await,
+        Ok(DispatchOutcome::Start(_))
+    ));
+    let server = Server::start(vec![
+        profile(),
+        Reply::Json(200, payment(frozen.snapshot())),
+    ]);
+    let client = local(&server)
+        .verify_profile()
+        .await
+        .expect("verified profile");
+    let fetched = client
+        .fetch(frozen.snapshot(), "tr_SYNTHETIC_NotARealPayment")
+        .await
+        .expect("authenticated synthetic GET");
+    let effect = format!("initial-fetch-{}", binding.id);
+    observations::record_verified(&writer, time.as_ref(), &ids, &binding.id, &effect, &fetched)
+        .await
+        .expect("generic observation");
+    let witnesses: Vec<(String, String, String)> = sqlx::query_as(
+        "SELECT kind,actual::text,recorded::text FROM public.fixture_xid_witness ORDER BY kind",
+    )
+    .fetch_all(&pool)
+    .await
+    .expect("actual insert transactions");
+    assert_eq!(witnesses.len(), 2);
+    assert_eq!(witnesses[0].0, "payment_dispatch_starts");
+    assert_eq!(witnesses[1].0, "payment_observations");
+    for (_, actual, recorded) in &witnesses {
+        assert_eq!(actual, recorded);
+        assert_ne!(actual, "42");
+    }
+    assert_ne!(witnesses[0].1, witnesses[1].1);
+
+    // Spoof the exact historical observation XID in a genuinely later
+    // transaction. Native provenance must not upgrade the generic fact.
+    let mut later = writer.begin().await.expect("later transaction");
+    sqlx::query("SELECT pg_catalog.set_config('fixture.fake_xid',$1,true)")
+        .bind(&witnesses[1].1)
+        .execute(&mut *later)
+        .await
+        .expect("select prior XID");
+    let spoof: (String, String) =
+        sqlx::query_as("SELECT pg_current_xact_id()::text,pg_catalog.pg_current_xact_id()::text")
+            .fetch_one(&mut *later)
+            .await
+            .expect("distinct later XID");
+    assert_eq!(spoof.0, witnesses[1].1);
+    assert_ne!(spoof.0, spoof.1);
+    let error = sqlx::query("INSERT INTO public.payment_initial_dispatch_provenance(attempt_id,start_id,observation_id,observation_event_id,observation_sha256) SELECT s.attempt_id,s.id,o.id,e.id,public.payment_initial_observation_digest(o) FROM public.payment_dispatch_starts s JOIN public.payment_observations o ON o.attempt_id=s.attempt_id JOIN public.commerce_outbox e ON e.kind='payment.observation_recorded.v1' AND e.payload->>'observation_id'=o.id WHERE s.attempt_id=$1")
+        .bind(&binding.id).execute(&mut *later).await.expect_err("historical upgrade rejected");
+    let error = error.as_database_error().expect("native rejection");
+    assert_eq!(error.code().as_deref(), Some("23514"));
+    assert_eq!(
+        error.message(),
+        "Initial provenance requires its exact new observation and prior start"
+    );
+    later.rollback().await.expect("discard attempted upgrade");
+    assert_eq!(counts(&pool).await, (1, 1, 1, 1, 0));
+
+    pool.execute("CREATE FUNCTION public.sha256(bytea) RETURNS bytea LANGUAGE sql IMMUTABLE AS $$ SELECT pg_catalog.decode(pg_catalog.repeat('00',32),'hex') $$")
+        .await.expect("isolated hostile digest fixture");
+    let fake: String = sqlx::query_scalar("SELECT pg_catalog.encode(sha256('abc'::bytea),'hex')")
+        .fetch_one(&writer)
+        .await
+        .expect("unqualified digest spoof");
+    assert_eq!(fake, "00".repeat(32));
+    let digests: (String, String, String) = sqlx::query_as(r#"SELECT
+      pg_catalog.encode(public.payment_initial_observation_digest(ROW('a','b','key',1::bigint,1500::bigint,'tr_x','ffff','paid','{"key":"value"}'::jsonb,'42'::xid8)::public.payment_observations),'hex'),
+      pg_catalog.encode(pg_catalog.sha256(pg_catalog.convert_to(pg_catalog.jsonb_build_array('piwas:payment-initial-observation:v1','a','b','key',1::bigint,1500::bigint,'tr_x','ffff','paid','{"key":"value"}'::jsonb,'42')::text,'UTF8')),'hex'),
+      pg_catalog.encode(public.payment_initial_observation_digest(ROW('a','b','key',1::bigint,1500::bigint,'tr_y','ffff','paid','{"key":"value"}'::jsonb,'42'::xid8)::public.payment_observations),'hex')"#)
+        .fetch_one(&writer).await.expect("bound canonical digest");
+    assert_eq!(
+        digests.0,
+        "89e735fcd18275345e73a1fe6aabc8504b829daa53e8857b1566c7153b8707d4"
+    );
+    assert_eq!(digests.0, digests.1);
+    assert_ne!(digests.0, digests.2);
+    server.inspect(|requests| {
+        assert_eq!(requests.len(), 2);
+        assert!(requests.iter().all(|request| request.method == "GET"));
+    });
+    writer.close().await;
 }
 
 // Run only through the disposable-cluster wrapper. Unlike sqlx::test, this
