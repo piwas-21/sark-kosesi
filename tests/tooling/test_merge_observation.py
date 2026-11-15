@@ -1,6 +1,7 @@
 """Offline controls for observing an ambiguous merge response."""
 
 import json
+import os
 import subprocess
 import tempfile
 import unittest
@@ -55,6 +56,20 @@ def observe(values, protected=False, head_ref="codex/feature"):
         with patch("merge_gate.reviewed_tree", return_value=TREE):
             result = observed_exact_merge(REPO, NUMBER, HEAD, BASE, "develop", head_ref, protected)
     return result, reader.call_args_list
+
+
+def fixture_git(directory, *arguments, input=None):
+    environment = {key: value for key, value in os.environ.items() if not key.startswith("GIT_")}
+    return subprocess.run(
+        ["git", "-c", "user.name=Fixture", "-c", "user.email=fixture@example.test", *arguments],
+        input=input,
+        cwd=directory,
+        env=environment,
+        check=True,
+        capture_output=True,
+        text=True,
+        timeout=5,
+    ).stdout.strip()
 
 
 class MergeObservation(unittest.TestCase):
@@ -133,37 +148,35 @@ class MergeObservation(unittest.TestCase):
         )
         self.assertEqual(run.call_args.kwargs["timeout"], 5)
 
-    def test_reviewed_tree_ignores_git_replacement_refs(self):
+    def test_reviewed_tree_ignores_git_replacement_refs_and_inherited_repository(self):
         with tempfile.TemporaryDirectory() as directory:
-
-            def git(*arguments, input=None):
-                return subprocess.run(
-                    [
-                        "git",
-                        "-c",
-                        "user.name=Fixture",
-                        "-c",
-                        "user.email=fixture@example.test",
-                        *arguments,
-                    ],
-                    input=input,
-                    cwd=directory,
-                    check=True,
-                    capture_output=True,
-                    text=True,
-                    timeout=5,
-                ).stdout.strip()
-
-            git("init", "--quiet")
-            exact_tree = git("mktree", input="")
-            exact_head = git("commit-tree", exact_tree, "-m", "Exact reviewed commit")
-            blob = git("hash-object", "-w", "--stdin", input="replacement")
-            different_tree = git("mktree", input=f"100644 blob {blob}\treplacement.txt\n")
-            replacement = git("commit-tree", different_tree, "-m", "Replacement commit")
-            git("replace", exact_head, replacement)
-            self.assertEqual(git("rev-parse", f"{exact_head}^{{tree}}"), different_tree)
-            with patch("merge_gate.ROOT", Path(directory)):
-                self.assertEqual(reviewed_tree(exact_head), exact_tree)
+            decoy = Path(directory) / "decoy"
+            local = Path(directory) / "reviewed"
+            decoy.mkdir()
+            local.mkdir()
+            fixture_git(decoy, "init", "--quiet", "--template=")
+            with patch.dict(
+                os.environ, {"GIT_DIR": str(decoy / ".git"), "GIT_WORK_TREE": str(decoy)}
+            ):
+                fixture_git(local, "init", "--quiet", "--template=")
+                exact_tree = fixture_git(local, "mktree", input="")
+                exact_head = fixture_git(
+                    local, "commit-tree", exact_tree, "-m", "Exact reviewed commit"
+                )
+                blob = fixture_git(local, "hash-object", "-w", "--stdin", input="replacement")
+                different_tree = fixture_git(
+                    local, "mktree", input=f"100644 blob {blob}\treplacement.txt\n"
+                )
+                replacement = fixture_git(
+                    local, "commit-tree", different_tree, "-m", "Replacement commit"
+                )
+                fixture_git(local, "replace", exact_head, replacement)
+                self.assertEqual(
+                    fixture_git(local, "rev-parse", f"{exact_head}^{{tree}}"), different_tree
+                )
+                with patch("merge_gate.ROOT", local):
+                    self.assertEqual(reviewed_tree(exact_head), exact_tree)
+            self.assertEqual(fixture_git(decoy, "for-each-ref", "refs/replace"), "")
 
     def test_failed_merge_never_retries_and_only_exact_observation_succeeds(self):
         command = ["gh", "pr", "merge", str(NUMBER), "--match-head-commit", HEAD, "--squash"]

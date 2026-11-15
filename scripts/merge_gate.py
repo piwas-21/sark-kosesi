@@ -3,6 +3,7 @@
 
 import argparse
 import json
+import os
 import re
 import subprocess
 import sys
@@ -80,10 +81,12 @@ def observe_json(endpoint):
 
 def reviewed_tree(head):
     """Read the immutable tree of the exact locally verified head."""
+    environment = {key: value for key, value in os.environ.items() if not key.startswith("GIT_")}
     response = subprocess.run(
         ["git", "--no-replace-objects", "rev-parse", "--verify", f"{head}^{{tree}}"],
         check=True,
         cwd=ROOT,
+        env=environment,
         text=True,
         capture_output=True,
         timeout=5,
