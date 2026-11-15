@@ -651,7 +651,9 @@ new disposable containers use a private internal network without published
 ports, random credentials and ownership markers. Small runner-owned loopback
 relays forward fixture connections only to the inspected owned container IPv4
 addresses; network identity, membership, image identity and absent port
-bindings are checked first. Both disposable databases explicitly initialize
+bindings are checked first. The runner accepts only subnets within the three
+reviewed RFC 1918 networks in `ops/db-gosu-candidate/restore-private-ipv4.json`;
+the verifier pins and strictly parses that file before using it. Both disposable databases explicitly initialize
 TCP authentication with SCRAM; correct credentials and an incorrect-password
 rejection are checked before seeding. The existing synthetic
 migration, order, stock and encrypted-envelope fixture and snapshot/table and

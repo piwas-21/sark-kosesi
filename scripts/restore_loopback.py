@@ -1,5 +1,6 @@
 """Bounded loopback relays and identity checks for disposable Docker databases."""
 
+import hashlib
 import ipaddress
 import json
 import re
@@ -8,7 +9,12 @@ import socket
 import socketserver
 import threading
 
-from with_postgres import run
+from with_postgres import ROOT, run
+
+# This pins the reviewed, readable policy file; changing the allowed networks
+# requires reviewing both the policy and this digest.
+PRIVATE_NETWORK_POLICY = ROOT / "ops/db-gosu-candidate/restore-private-ipv4.json"
+PRIVATE_NETWORK_POLICY_SHA256 = "4110f6fc3132787b79735070335cab148817bd7b8fb6d5649f4b7064d59ad4c6"
 
 
 class IsolationFailure(ValueError):
@@ -30,6 +36,38 @@ def suitable_private_ipv4(value):
             )
         )
     )
+
+
+def private_network_policy():
+    """Load the exact reviewed private-network allowlist with strict parsing."""
+    with PRIVATE_NETWORK_POLICY.open("rb") as source:
+        raw = source.read(513)
+    if len(raw) > 512 or hashlib.sha256(raw).hexdigest() != PRIVATE_NETWORK_POLICY_SHA256:
+        raise IsolationFailure("network_subnet_policy")
+    try:
+        policy = json.loads(raw)
+        if (
+            not isinstance(policy, dict)
+            or set(policy) != {"schema_version", "networks"}
+            or type(policy["schema_version"]) is not int
+            or policy["schema_version"] != 1
+            or not isinstance(policy["networks"], list)
+            or len(policy["networks"]) != 3
+            or any(not isinstance(value, str) for value in policy["networks"])
+        ):
+            raise ValueError("invalid policy")
+        networks = [ipaddress.ip_network(value, strict=True) for value in policy["networks"]]
+        if len(set(networks)) != 3 or any(
+            not all(
+                suitable_private_ipv4(part)
+                for part in (network, network.network_address, network.broadcast_address)
+            )
+            for network in networks
+        ):
+            raise ValueError("invalid private networks")
+        return networks
+    except (ValueError, TypeError, KeyError):
+        raise IsolationFailure("network_subnet_policy") from None
 
 
 class RelayHandler(socketserver.BaseRequestHandler):
@@ -120,10 +158,11 @@ def verified_addresses(network_name, marker, containers, images):
     if not isinstance(configs, list) or len(configs) != 1:
         raise IsolationFailure("network_subnet_shape")
     subnet = ipaddress.ip_network(configs[0]["Subnet"], strict=True)
+    allowed = private_network_policy()
     if not all(
         suitable_private_ipv4(value)
         for value in (subnet, subnet.network_address, subnet.broadcast_address)
-    ):
+    ) or not any(subnet.subnet_of(network) for network in allowed):
         raise IsolationFailure("network_subnet_policy")
     addresses = []
     for container, image in zip(containers, images, strict=True):

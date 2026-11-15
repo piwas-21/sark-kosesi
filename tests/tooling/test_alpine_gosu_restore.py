@@ -1,5 +1,6 @@
 """Safety controls for the hosted synthetic application-schema restore adapter."""
 
+import hashlib
 import ipaddress
 import json
 import os
@@ -18,6 +19,33 @@ import restore_loopback as loopback
 
 
 class RestoreAdapterTests(unittest.TestCase):
+    def test_reviewed_private_network_policy_is_exact_and_tamper_evident(self):
+        self.assertEqual(
+            {str(network) for network in loopback.private_network_policy()},
+            {"10.0.0.0/8", "172.16.0.0/12", "192.168.0.0/16"},
+        )
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "policy.json"
+            for value in (
+                b"{}",
+                b'{"schema_version":1,"networks":["0.0.0.0/0","172.16.0.0/12","192.168.0.0/16"]}',
+                b'{"schema_version":1,"networks":["10.0.0.0/8","10.0.0.0/8","192.168.0.0/16"]}',
+                b'{"schema_version":1,"networks":["10.0.0.1/8","172.16.0.0/12","192.168.0.0/16"]}',
+            ):
+                with self.subTest(value=value):
+                    path.write_bytes(value)
+                    with patch.object(loopback, "PRIVATE_NETWORK_POLICY", path):
+                        with self.assertRaises(loopback.IsolationFailure):
+                            loopback.private_network_policy()
+                        # Also exercise structural checks independently of the digest pin.
+                        with patch.object(
+                            loopback,
+                            "PRIVATE_NETWORK_POLICY_SHA256",
+                            hashlib.sha256(value).hexdigest(),
+                        ):
+                            with self.assertRaises(loopback.IsolationFailure):
+                                loopback.private_network_policy()
+
     def test_private_ipv4_policy_rejects_public_and_special_ranges(self):
         for value in ("10.23.0.0/16", "172.31.0.0/16", "192.168.1.0/24"):
             with self.subTest(value=value):
@@ -225,6 +253,18 @@ class RestoreAdapterTests(unittest.TestCase):
                 return loopback.verified_addresses("owned", "marker", ids, images)
 
         self.assertEqual(inspect(network, containers), ["172.31.0.2", "172.31.0.3"])
+        for cidr, first, second in (
+            ("10.8.0.0/16", "10.8.0.2", "10.8.0.3"),
+            ("192.168.42.0/24", "192.168.42.2", "192.168.42.3"),
+        ):
+            with self.subTest(cidr=cidr):
+                net, records = copy.deepcopy(network), copy.deepcopy(containers)
+                net["IPAM"]["Config"][0]["Subnet"] = cidr
+                prefix = ipaddress.ip_network(cidr).prefixlen
+                for ident, record, address in zip(ids, records, (first, second), strict=True):
+                    net["Containers"][ident]["IPv4Address"] = f"{address}/{prefix}"
+                    record["NetworkSettings"]["Networks"]["owned"]["IPAddress"] = address
+                self.assertEqual(inspect(net, records), [first, second])
         for change in (
             "external",
             "label",
@@ -237,6 +277,9 @@ class RestoreAdapterTests(unittest.TestCase):
             "global_member",
             "subnet",
             "broad_subnet",
+            "documentation_subnet",
+            "benchmark_subnet",
+            "ietf_protocol_subnet",
             "network_id",
             "extra_network",
             "stopped",
@@ -268,6 +311,12 @@ class RestoreAdapterTests(unittest.TestCase):
                     net["IPAM"]["Config"][0]["Subnet"] = "8.8.8.0/24"
                 elif change == "broad_subnet":
                     net["IPAM"]["Config"][0]["Subnet"] = "0.0.0.0/0"
+                elif change == "documentation_subnet":
+                    net["IPAM"]["Config"][0]["Subnet"] = "192.0.2.0/24"
+                elif change == "benchmark_subnet":
+                    net["IPAM"]["Config"][0]["Subnet"] = "198.18.0.0/15"
+                elif change == "ietf_protocol_subnet":
+                    net["IPAM"]["Config"][0]["Subnet"] = "192.0.0.0/24"
                 elif change == "network_id":
                     records[0]["NetworkSettings"]["Networks"]["owned"]["NetworkID"] = "f" * 64
                 elif change == "stopped":
@@ -278,6 +327,13 @@ class RestoreAdapterTests(unittest.TestCase):
                     inspect(net, records)
                 if change == "ports_shape":
                     self.assertEqual(str(failure.exception), "container_ports_shape")
+                if change in (
+                    "broad_subnet",
+                    "documentation_subnet",
+                    "benchmark_subnet",
+                    "ietf_protocol_subnet",
+                ):
+                    self.assertEqual(str(failure.exception), "network_subnet_policy")
 
     def test_loopback_relay_forwards_bidirectionally_and_closes(self):
         class Echo(socketserver.BaseRequestHandler):
