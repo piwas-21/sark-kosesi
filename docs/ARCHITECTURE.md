@@ -708,9 +708,12 @@ Private packing custody records a recent-MFA warehouse staff assertion for compl
 variant units and one or more package component lists, with explicit confirmation.
 Under the order's attempt claim it revalidates the exact allocation, sealed BOM and
 current received gross recognition, reconstructs all active recorded batches, and
-rejects overclaim or mismatched component totals. The immutable bounded journal and
+rejects overclaim or mismatched component totals. Every record must be dated at
+or after its original settlement or late allocation, including historical reads. The immutable bounded journal and
 digest-bound outbox event commit together; exact effect replay retains its original
-result. An authenticated release only relinquishes the assertion, even if payment
+result. Authority is rechecked before exposing any post-claim outcome, and after a
+failed commit. An authenticated release retains its pack’s exact recognition and
+only relinquishes the assertion, even if payment
 recognition has since changed; it does not report unpacking or restocking. At most
 64 journal entries per order are admitted, including releases; every active
 record reserves its own release slot. Neither a record nor its release proves physical possession, net payment, dispatch, delivery, stock

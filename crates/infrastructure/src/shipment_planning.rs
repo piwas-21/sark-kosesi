@@ -99,6 +99,7 @@ pub(crate) struct Source {
     pub recognition_id: String,
     pub allocation_kind: &'static str,
     pub allocation_id: String,
+    pub allocation_at: i64,
 }
 pub(crate) async fn source(
     tx: &mut Transaction<'_, Postgres>,
@@ -131,8 +132,8 @@ pub(crate) async fn source(
         .map_err(late_error)?;
     // The allocation reader revalidates its exact receipt/attempt/order
     // binding; payment_attempts has a unique attempt for each order.
-    let (members, allocation_kind, allocation_id) = match outcome {
-        Some(Outcome::Original(s)) => (s.footprint.members, "original", s.id),
+    let (members, allocation_kind, allocation_id, allocation_at) = match outcome {
+        Some(Outcome::Original(s)) => (s.footprint.members, "original", s.id, s.settled_at),
         Some(Outcome::Late(s)) => (
             s.footprint
                 .original
@@ -141,6 +142,7 @@ pub(crate) async fn source(
                 .collect(),
             "late",
             s.id,
+            s.allocated_at,
         ),
         Some(Outcome::NeedsReview(_)) | None => return Err(PlanningError::Unavailable),
     };
@@ -164,6 +166,7 @@ pub(crate) async fn source(
         recognition_id: recognition.id,
         allocation_kind,
         allocation_id,
+        allocation_at,
     })
 }
 

@@ -45,6 +45,10 @@ BEGIN
   IF n>64 OR r.generation<>n OR r.recorded_at<last_at OR r.attempt_id IS DISTINCT FROM original_attempt
    OR r.transaction_id IS NULL OR NOT EXISTS(SELECT 1 FROM order_stock_allocations a WHERE a.order_id=r.order_id
        AND a.attempt_id=r.attempt_id AND a.kind=r.allocation_kind AND a.receipt_id=r.allocation_id)
+   OR NOT ((r.allocation_kind='original' AND EXISTS(SELECT 1 FROM order_stock_settlements s
+        WHERE s.id=r.allocation_id AND s.order_id=r.order_id AND s.attempt_id=r.attempt_id AND s.settled_at<=r.recorded_at))
+     OR (r.allocation_kind='late' AND EXISTS(SELECT 1 FROM late_stock_allocations a
+        WHERE a.id=r.allocation_id AND a.order_id=r.order_id AND a.attempt_id=r.attempt_id AND a.allocated_at<=r.recorded_at)))
    OR NOT late_stock_received(r.order_id,r.attempt_id,r.recognition_id,r.recorded_at,false)
    OR NOT EXISTS(SELECT 1 FROM commerce_outbox e WHERE e.id=r.event_id AND e.aggregate_id=r.order_id
        AND e.kind='order.packing_custody_recorded.v1' AND e.created_at=r.recorded_at AND e.payload=packing_custody_event(r)) THEN RETURN false; END IF;
@@ -77,7 +81,8 @@ BEGIN
    ) THEN RETURN false; END IF;
   ELSIF r.action='released' THEN
    SELECT * INTO previous FROM packing_custody WHERE id=r.target_id AND order_id=wanted AND action='packed';
-   IF previous.id IS NULL OR previous.generation>=r.generation OR r.units<>'[]'::jsonb OR r.packages<>'[]'::jsonb THEN RETURN false; END IF;
+   IF previous.id IS NULL OR previous.generation>=r.generation OR previous.recognition_id IS DISTINCT FROM r.recognition_id
+    OR r.units<>'[]'::jsonb OR r.packages<>'[]'::jsonb THEN RETURN false; END IF;
   ELSE RETURN false; END IF;
   -- At every point, active claimed units cannot exceed the accepted quantity.
   IF EXISTS(SELECT 1 FROM checkout_orders o, jsonb_array_elements(o.snapshot->'quote'->'lines') q

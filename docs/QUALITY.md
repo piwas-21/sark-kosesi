@@ -983,7 +983,8 @@ Private packing custody modules require the 95% critical line and branch gates.
 Isolated PostgreSQL tests cover serialized competing
 whole-unit claims, exact effect replay and conflicts, original and late allocation,
 shared component totals, release after stale payment evidence, authority expiry
-during an attempt-lock wait, reserved release capacity, and altered-event negative
+during effect-key, attempt and commit waits, reserved release capacity, original and
+late allocation chronology, exact release recognition, and altered-history negative
 and repaired controls.
 They establish source journal behavior, not physical package contents, carrier
 acceptance or dispatch eligibility.

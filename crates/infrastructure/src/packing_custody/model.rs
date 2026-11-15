@@ -93,6 +93,7 @@ pub fn validate(
             || record.order_id != source.order.identity.id
             || record.allocation_kind != source.allocation_kind
             || record.allocation_id != source.allocation_id
+            || record.recorded_at < source.allocation_at
             || record.recorded_at < previous_time
         {
             return Err(Error::InvalidStoredData);

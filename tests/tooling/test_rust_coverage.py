@@ -68,6 +68,7 @@ class RustCoverage(unittest.TestCase):
             ("crates/domain/src/order_shipment_components.rs", False),
             ("crates/infrastructure/src/shipment_planning.rs", False),
             ("crates/infrastructure/src/packing_custody/mod.rs", False),
+            ("crates/infrastructure/src/packing_custody/command.rs", False),
             ("crates/infrastructure/src/packing_custody/model.rs", False),
             ("crates/infrastructure/src/packing_custody/store.rs", False),
             ("crates/infrastructure/src/order_stock/mod.rs", False),
