@@ -550,6 +550,20 @@ committed start retains recovery and sends no POST. Started cases never POST aga
 the success control retains a matching observation and event. These are not
 provider evidence.
 
+Initial provenance controls bind the fresh create capability to the matched GET,
+earlier start, new observation and event. Exercise native immutability and reject a
+different fetched identity. A real callback occupying the initial effect key must
+retain its normal exact replay while the initial path remains uncertain and cannot
+mint or later attach a provenance receipt. A receipt-write fault must roll back the
+observation and event while retaining the original start and reconciliation path.
+Legacy transaction fields remain nullable and existing observation reads continue
+to work. Verify the source digest against an independent fixed-byte oracle and
+under different timezone, DateStyle and bytea settings. A coherently changed
+provider ID and observation snapshot must fail the unchanged receipt's native and
+Rust source checks; exact repair must restore both. These controls do not detect
+a privileged rewrite of both receipt and source, or establish that the trusted database writer performed
+provider I/O or that any provider accepted a live payment.
+
 Compiled provider controls bypass authenticated-profile verification, fetched
 payment matching, the early streamed-byte limit, duplicate-field preservation and
 sensitive authorization marking. Each must compile and fail its named assertion;

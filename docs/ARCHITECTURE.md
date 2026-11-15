@@ -842,6 +842,23 @@ scheduler, credential or payment/stock transition. Even a failed start call can
 have an unknown database commit outcome and must be retried only through the
 same serialized start entry, never by independently calling create.
 
+A fresh successful initial create and its matching checked GET can now append
+an immutable provenance receipt in the same transaction as the observation and
+its event. The receipt binds the exact earlier start, observation and event by
+identity; it does not duplicate the provider ID, response or checkout link.
+Only the consumed create capability can form the Rust evidence pair. Generic
+and callback writers retain their existing effect-key replay semantics but do
+not mint provenance, even when a legacy observation occupies the initial key.
+Database-assigned transaction identities protect the same-transaction binding;
+the receipt also commits a purpose-separated SHA-256 of the bounded canonical
+observation fields, including its provider identity and transaction ID. Rust
+checks the stored observation against the authenticated in-memory source before
+commit and revalidates the digest and source on historical reads. A receipt and
+observation both rewritten by a privileged actor cannot be detected by this
+commitment alone. Preexisting rows are not backfilled. The trusted database writer is responsible
+for HTTP origin: SQL alone cannot attest a provider request. Unknown or failed
+commits remain reconcilable and cannot authorize another create.
+
 Private unknown-ID discovery performs one authenticated list request per explicit
 call, with a fixed ten-payment limit, descending order and the existing byte/time
 bounds. It sends neither profileId nor testmode with the profile-bound test key.

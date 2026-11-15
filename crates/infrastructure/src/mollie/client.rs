@@ -95,7 +95,7 @@ impl VerifiedTestClient {
         &self,
         permit: DispatchPermit,
         clock: &dyn Clock,
-    ) -> Result<CreationHint, MollieError> {
+    ) -> Result<CreatedPayment, MollieError> {
         let frozen = permit
             .into_request(clock, &self.inner.configuration)
             .map_err(MollieError::Custody)?;
@@ -107,8 +107,9 @@ impl VerifiedTestClient {
             .map_err(|_| MollieError::CreateUncertain)?;
         let (payment, _) = wire::payment(&body, frozen.snapshot(), None)
             .map_err(|_| MollieError::CreateUncertain)?;
-        Ok(CreationHint {
+        Ok(CreatedPayment {
             provider_id: payment.id,
+            attempt: frozen.snapshot().clone(),
         })
     }
     /// GET can use a rotated TEST key independently verified against the SAME profile.
