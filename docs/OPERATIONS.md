@@ -599,6 +599,23 @@ privilege-drop and entrypoint compatibility, persistent-data restore/rollback,
 and current full-image scans and symbol-aware findings. The separate libxml2
 and other image vulnerabilities remain open; no risk acceptance follows.
 
+## Alpine plus rebuilt Gosu comparison
+
+The path-scoped Alpine Gosu workflow first runs the reviewed, isolated Gosu
+rebuild and checks its complete evidence and exact executable digest. It then
+creates a disposable derivative of the pinned PostgreSQL Alpine platform by
+replacing only `/usr/local/bin/gosu`. An offline archive check verifies the
+stock root filesystem prefix, unchanged runtime configuration and the single
+root-owned executable layer; the image is neither published nor deployed.
+
+On the disposable runner, the lab checks UID/GID 70, group-set equality with the
+stock image, non-root denial, executable identity and an isolated synthetic
+PostgreSQL startup/query. It retains full stock and derivative Trivy reports
+using one fresh vulnerability database and records all finding deltas, including
+remaining and new findings. Comparison results describe scanner reports only;
+they do not accept a vulnerability, prove reachability, or establish real data
+migration, operational compatibility, production readiness or deployment.
+
 ## PostgreSQL Alpine comparison lab
 
 The path-scoped `PostgreSQL Alpine comparison lab` workflow compares the pinned
