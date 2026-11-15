@@ -889,3 +889,87 @@ async fn altered_consistent_order_readback_rolls_back_all_effects(pool: PgPool) 
     assert_eq!(accepted.snapshot.buyer.name, intent.buyer.name);
     assert_eq!(effects(&pool).await, (1, 1, 1, 1, 2, 1, 12));
 }
+
+#[sqlx::test(migrator = "MIGRATOR")]
+async fn verified_session_expiry_hides_stock_failure_after_component_wait(pool: PgPool) {
+    seed(&pool, false).await;
+    let (store, time) = fixture::store(&pool, 1100);
+    let (_, customer) = account(&pool, "stock-wait@example.test", &time).await;
+    let (guest, csrf) = fixture::guest(&store).await;
+    let key = GuestCredential::from_session(&guest).expect("guest");
+    let quote = issue_verified_promoted_quote(
+        &store,
+        &key,
+        &csrf,
+        &customer,
+        Locale::Nl,
+        &fixture::request("stock-wait-quote"),
+        "COURTYARD",
+    )
+    .await
+    .expect("quote")
+    .snapshot;
+    let intent = order::intent(&quote.original.binding.quote_id);
+    let before = effects(&pool).await;
+    for expired in [false, true] {
+        let mut held = pool.begin().await.expect("stock gate");
+        sqlx::query("UPDATE stock_balances SET on_hand=0 WHERE component_code='SEAT-FOAM'")
+            .execute(&mut *held)
+            .await
+            .expect("lock and exhaust foam");
+        let task = tokio::spawn({
+            let store = store.clone();
+            let key = GuestCredential::from_session(&guest).expect("guest");
+            let csrf = csrf.clone();
+            let intent = intent.clone();
+            let customer = CustomerSessionToken::from_bytes(*customer.expose_bytes());
+            async move {
+                create_verified_promoted_order(
+                    &store,
+                    &key,
+                    &csrf,
+                    &customer,
+                    "place-stock",
+                    &intent,
+                    &order::seller(),
+                )
+                .await
+            }
+        });
+        tokio::time::timeout(std::time::Duration::from_secs(2), async {
+            loop {
+                let waiting: bool = sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM pg_stat_activity WHERE datname=current_database() AND wait_event_type='Lock' AND query LIKE 'SELECT component_code,on_hand,quarantine,reserved FROM stock_balances%')").fetch_one(&pool).await.expect("lock observer");
+                if waiting { break; }
+                tokio::time::sleep(std::time::Duration::from_millis(5)).await;
+            }
+        }).await.expect("real stock wait");
+        if expired {
+            time.0.store(44300, Ordering::SeqCst);
+        }
+        held.commit().await.expect("release exhausted stock");
+        let result = task.await.expect("order task");
+        if expired {
+            assert!(matches!(result, Err(OrderStoreError::Denied)));
+        } else {
+            assert!(matches!(result, Err(OrderStoreError::Unavailable)));
+        }
+        assert_eq!(effects(&pool).await, before);
+        time.0.store(1100, Ordering::SeqCst);
+        pool.execute("UPDATE stock_balances SET on_hand=100 WHERE component_code='SEAT-FOAM'")
+            .await
+            .expect("restore fixture stock");
+    }
+    let receipt = create_verified_promoted_order(
+        &store,
+        &key,
+        &csrf,
+        &customer,
+        "place-stock",
+        &intent,
+        &order::seller(),
+    )
+    .await
+    .expect("fresh in-stock positive control");
+    assert!(!receipt.replayed);
+    assert_eq!(effects(&pool).await, (1, 1, 1, 1, 2, 1, 12));
+}

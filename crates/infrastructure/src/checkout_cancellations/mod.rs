@@ -54,84 +54,94 @@ async fn cancel(
     if !valid_command_id(effect) || !identifier(order_id) {
         return Err(OrderStoreError::InvalidRequest);
     }
-    let owner = scope.basket_id().to_owned();
-    let account = session.as_ref().map(HeldSession::account_id);
-    let order = checkout_orders::snapshot_for_account_in_transaction(
-        scope.transaction(),
-        &owner,
-        order_id,
-        account,
-    )
-    .await?;
-    if let Some(prior_order) = rows::order_by_effect(scope.transaction(), &owner, effect).await? {
-        if prior_order != order_id {
+    let result: Result<CancellationReceipt, OrderStoreError> = async {
+        let owner = scope.basket_id().to_owned();
+        let account = session.as_ref().map(HeldSession::account_id);
+        let order = checkout_orders::snapshot_for_account_in_transaction(
+            scope.transaction(),
+            &owner,
+            order_id,
+            account,
+        )
+        .await?;
+        if let Some(prior_order) =
+            rows::order_by_effect(scope.transaction(), &owner, effect).await?
+        {
+            if prior_order != order_id {
+                return Err(OrderStoreError::Conflict);
+            }
+            let prior = rows::by_order(scope.transaction(), &order.identity, account)
+                .await?
+                .ok_or(OrderStoreError::InvalidStoredData)?;
+            return Ok(CancellationReceipt {
+                order_id: order_id.into(),
+                canceled_at: prior.canceled_at,
+                replayed: true,
+            });
+        }
+        if rows::by_order(scope.transaction(), &order.identity, account)
+            .await?
+            .is_some()
+        {
             return Err(OrderStoreError::Conflict);
         }
-        let prior = rows::by_order(scope.transaction(), &order.identity, account)
+        let attempt = rows::claim_undispatched_attempt(scope.transaction(), order_id).await?;
+        let canceled_at = scope.checked_at()?;
+        if canceled_at < order.identity.created_at {
+            return Err(OrderStoreError::ClockUnavailable);
+        }
+        if attempt
+            .as_ref()
+            .is_some_and(|(_, created_at)| canceled_at < *created_at)
+        {
+            return Err(OrderStoreError::ClockUnavailable);
+        }
+        let event = scope.new_id()?;
+        rows::insert(
+            scope.transaction(),
+            &order.identity,
+            effect,
+            account,
+            canceled_at,
+            &event,
+            attempt.as_ref().map(|(id, _)| id.as_str()),
+        )
+        .await?;
+        sqlx::query("SET CONSTRAINTS require_complete_checkout_cancellation IMMEDIATE")
+            .execute(&mut **scope.transaction())
+            .await?;
+        let saved = rows::by_order(scope.transaction(), &order.identity, account)
             .await?
             .ok_or(OrderStoreError::InvalidStoredData)?;
-        let at = scope.checked_at()?;
-        check_session(session.as_ref(), at)?;
-        scope.rollback().await?;
-        return Ok(CancellationReceipt {
+        if saved
+            != (rows::Stored {
+                effect: effect.into(),
+                canceled_at,
+                event_id: event,
+                attempt_id: attempt.map(|(id, _)| id),
+                current_transaction: true,
+            })
+        {
+            return Err(OrderStoreError::InvalidStoredData);
+        }
+        Ok(CancellationReceipt {
             order_id: order_id.into(),
-            canceled_at: prior.canceled_at,
-            replayed: true,
-        });
-    }
-    if rows::by_order(scope.transaction(), &order.identity, account)
-        .await?
-        .is_some()
-    {
-        return Err(OrderStoreError::Conflict);
-    }
-    let attempt = rows::claim_undispatched_attempt(scope.transaction(), order_id).await?;
-    let canceled_at = scope.checked_at()?;
-    if canceled_at < order.identity.created_at {
-        return Err(OrderStoreError::ClockUnavailable);
-    }
-    if attempt
-        .as_ref()
-        .is_some_and(|(_, created_at)| canceled_at < *created_at)
-    {
-        return Err(OrderStoreError::ClockUnavailable);
-    }
-    let event = scope.new_id()?;
-    rows::insert(
-        scope.transaction(),
-        &order.identity,
-        effect,
-        account,
-        canceled_at,
-        &event,
-        attempt.as_ref().map(|(id, _)| id.as_str()),
-    )
-    .await?;
-    sqlx::query("SET CONSTRAINTS require_complete_checkout_cancellation IMMEDIATE")
-        .execute(&mut **scope.transaction())
-        .await?;
-    let saved = rows::by_order(scope.transaction(), &order.identity, account)
-        .await?
-        .ok_or(OrderStoreError::InvalidStoredData)?;
-    if saved
-        != (rows::Stored {
-            effect: effect.into(),
             canceled_at,
-            event_id: event,
-            attempt_id: attempt.map(|(id, _)| id),
-            current_transaction: true,
+            replayed: false,
         })
-    {
-        return Err(OrderStoreError::InvalidStoredData);
     }
+    .await;
+    // Source outcomes can follow a lock wait; expired authority must not reveal
+    // whether an order, replay, or dispatch conflict exists.
     let at = scope.checked_at()?;
     check_session(session.as_ref(), at)?;
-    scope.commit().await?;
-    Ok(CancellationReceipt {
-        order_id: order_id.into(),
-        canceled_at,
-        replayed: false,
-    })
+    let receipt = result?;
+    if receipt.replayed {
+        scope.rollback().await?;
+    } else {
+        scope.commit().await?;
+    }
+    Ok(receipt)
 }
 
 pub async fn owned_cancellation(
@@ -166,26 +176,31 @@ async fn owned(
     if !identifier(order_id) {
         return Err(OrderStoreError::InvalidRequest);
     }
-    let owner = scope.basket_id().to_owned();
-    let account = session.as_ref().map(HeldSession::account_id);
-    let order = checkout_orders::snapshot_for_account_in_transaction(
-        scope.transaction(),
-        &owner,
-        order_id,
-        account,
-    )
-    .await?;
-    let saved = rows::by_order(scope.transaction(), &order.identity, account)
-        .await?
-        .ok_or(OrderStoreError::NotFound)?;
+    let result: Result<CancellationReceipt, OrderStoreError> = async {
+        let owner = scope.basket_id().to_owned();
+        let account = session.as_ref().map(HeldSession::account_id);
+        let order = checkout_orders::snapshot_for_account_in_transaction(
+            scope.transaction(),
+            &owner,
+            order_id,
+            account,
+        )
+        .await?;
+        let saved = rows::by_order(scope.transaction(), &order.identity, account)
+            .await?
+            .ok_or(OrderStoreError::NotFound)?;
+        Ok(CancellationReceipt {
+            order_id: order_id.into(),
+            canceled_at: saved.canceled_at,
+            replayed: true,
+        })
+    }
+    .await;
     let at = scope.checked_at()?;
     check_session(session.as_ref(), at)?;
+    let receipt = result?;
     scope.rollback().await?;
-    Ok(CancellationReceipt {
-        order_id: order_id.into(),
-        canceled_at: saved.canceled_at,
-        replayed: true,
-    })
+    Ok(receipt)
 }
 
 /// Called only after payment preparation has verified ownership of this order.
