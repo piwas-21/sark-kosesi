@@ -8,6 +8,7 @@ import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { chromium } from "@playwright/test";
 import { availablePort } from "../ports.mjs";
+import { allowsBrowserHistory } from "./link-policy.mjs";
 
 if (process.env.APP_ENV !== "test") throw new Error("Requires test mode");
 if (process.env.PGOPTIONS !== undefined)
@@ -50,6 +51,43 @@ const run = (command, args, env = process.env) =>
         : reject(new Error(`${command} failed (${code})`)),
     );
   });
+// Capture the synthetic proof only in this process; never print child output.
+const issueProof = (args, env) =>
+  new Promise((resolveProof, reject) => {
+    const child = spawn("cargo", args, {
+      env,
+      stdio: ["ignore", "pipe", "pipe"],
+    });
+    children.push(child);
+    let output = "";
+    let failed = false;
+    const timeout = setTimeout(() => {
+      failed = true;
+      child.kill("SIGTERM");
+    }, 120000);
+    const collect = (chunk) => {
+      output += chunk.toString();
+      if (output.length > 65536) {
+        failed = true;
+        child.kill("SIGTERM");
+      }
+    };
+    child.stdout.on("data", collect);
+    child.stderr.on("data", collect);
+    child.once("error", () => {
+      clearTimeout(timeout);
+      reject(new Error("Synthetic proof fixture failed"));
+    });
+    child.once("close", (code) => {
+      clearTimeout(timeout);
+      const matches = [
+        ...output.matchAll(/BROWSER_LINK_PROOF=([a-f0-9]{64})/g),
+      ];
+      if (failed || code !== 0 || matches.length !== 1)
+        reject(new Error("Synthetic proof fixture failed"));
+      else resolveProof(matches[0][1]);
+    });
+  });
 const address = {
   recipient: "Synthetic Recipient",
   line1: "Synthetic Street 22",
@@ -86,6 +124,9 @@ const routes = [
   ["POST", /^\/api\/guest\/nl\/quotes$/],
   ["POST", /^\/api\/test\/guest\/orders$/],
   ["POST", /^\/api\/test\/guest\/orders\/[0-9a-f]{32}\/cancellation$/],
+  ["POST", /^\/api\/test\/customer\/login-with-csrf$/],
+  ["POST", /^\/api\/test\/customer\/guest-order-link\/redeem$/],
+  ["GET", /^\/api\/test\/customer\/linked-orders$/],
 ];
 let origin = "";
 let server;
@@ -154,8 +195,19 @@ try {
         );
         return;
       }
+      // Browsers may omit Origin on same-origin GET. Only this private proxy
+      // supplies it after checking the browser's same-origin fetch metadata.
+      const historyGet = allowsBrowserHistory(
+        {
+          method: request.method,
+          url: request.url,
+          site: request.headers["sec-fetch-site"],
+          origin: request.headers.origin,
+        },
+        origin,
+      );
       if (
-        request.headers.origin !== origin ||
+        (!historyGet && request.headers.origin !== origin) ||
         !routes.some(
           ([method, pattern]) =>
             method === request.method && pattern.test(request.url ?? ""),
@@ -176,7 +228,7 @@ try {
         const upstream = await fetch(`${api}${request.url}`, {
           method: request.method,
           headers,
-          body: Buffer.concat(chunks),
+          ...(request.method === "GET" ? {} : { body: Buffer.concat(chunks) }),
           redirect: "error",
           signal: AbortSignal.timeout(5000),
         });
@@ -216,6 +268,11 @@ try {
     TEST_GUEST_ORDER_TRANSPORT: "1",
     TEST_GUEST_CANCELLATION_TRANSPORT: "1",
     TEST_GUEST_ORDER_SELLER: JSON.stringify(seller),
+    TEST_LOGIN_ORIGIN: origin,
+    TEST_LOGIN_ADMISSION_KEY: randomBytes(32).toString("hex"),
+    TEST_LOGIN_CSRF_TRANSPORT: "1",
+    TEST_GUEST_LINK_REDEEM_TRANSPORT: "1",
+    TEST_LINKED_ORDERS_TRANSPORT: "1",
   };
   delete env.CALLBACK_INTAKE_PROFILE_ID;
   for (const key of Object.keys(env))
@@ -225,6 +282,11 @@ try {
         "TEST_GUEST_ORDER_TRANSPORT",
         "TEST_GUEST_CANCELLATION_TRANSPORT",
         "TEST_GUEST_ORDER_SELLER",
+        "TEST_LOGIN_ORIGIN",
+        "TEST_LOGIN_ADMISSION_KEY",
+        "TEST_LOGIN_CSRF_TRANSPORT",
+        "TEST_GUEST_LINK_REDEEM_TRANSPORT",
+        "TEST_LINKED_ORDERS_TRANSPORT",
       ].includes(key)
     )
       delete env[key];
@@ -393,25 +455,28 @@ try {
   const fixture = await page.goto(origin);
   assert.equal(fixture.status(), 200);
   assert(!(await fixture.text()).includes(token));
-  const call = (path, method, data, csrf) =>
-    page.evaluate(
+  const callWith = (target, path, method, data, csrf) =>
+    target.evaluate(
       async ({ path, method, data, csrf }) => {
         const headers = { "content-type": "application/json" };
         if (csrf) headers["x-csrf-token"] = csrf;
         const response = await fetch(path, {
           method,
           headers,
-          body: JSON.stringify(data),
+          ...(method === "GET" ? {} : { body: JSON.stringify(data) }),
           credentials: "same-origin",
         });
+        const text = await response.text();
         return {
           status: response.status,
           cache: response.headers.get("cache-control"),
-          body: await response.json(),
+          body: text ? JSON.parse(text) : null,
         };
       },
       { path, method, data, csrf },
     );
+  const call = (path, method, data, csrf) =>
+    callWith(page, path, method, data, csrf);
   const guest = await call("/api/guest/session", "POST", {}, null);
   assert.equal(guest.status, 200);
   assert.equal(guest.body.revision, 0);
@@ -530,6 +595,161 @@ try {
   assert.equal(again.body.replayed, true);
   assert.equal(first.body.id, again.body.id);
   assert.match(first.body.id, /^[a-f0-9]{32}$/);
+  // The proof comes from the real private issuer for the cookie-owned order.
+  // Its bearer is captured only by this process and passed in the request body.
+  const proof = await issueProof(
+    [
+      ...testArgs,
+      "guest_browser_link::issue_browser_guest_link_proof",
+      "--nocapture",
+    ],
+    {
+      ...env,
+      GUEST_BROWSER_GUEST_COOKIE: cookies[0].value,
+      GUEST_BROWSER_GUEST_CSRF: csrf,
+      GUEST_BROWSER_ORDER_ID: first.body.id,
+    },
+  );
+  const loginPath = "/api/test/customer/login-with-csrf";
+  const redeemPath = "/api/test/customer/guest-order-link/redeem";
+  const historyPath = "/api/test/customer/linked-orders";
+  const linkBody = { order_id: first.body.id, proof };
+  assert.equal(
+    (await call(redeemPath, "POST", linkBody, "0".repeat(64))).status,
+    401,
+  );
+  assert.equal((await call(historyPath, "GET")).status, 401);
+  await run(
+    "cargo",
+    [...testArgs, "guest_browser_link::verify_browser_link_unconsumed"],
+    env,
+  );
+  const password = "synthetic horse battery staple";
+  const otherContext = await browser.newContext();
+  await otherContext.route("**/*", (route) => {
+    if (new URL(route.request().url()).origin === origin)
+      return route.continue();
+    blockedNetwork = true;
+    return route.abort();
+  });
+  const otherPage = await otherContext.newPage();
+  otherPage.on("request", (request) => outbound.push(request));
+  await otherPage.goto(origin);
+  const otherLogin = await callWith(otherPage, loginPath, "POST", {
+    email: "other@example.test",
+    password,
+  });
+  assert.equal(otherLogin.status, 200);
+  assert.match(otherLogin.body.csrf_token, /^[a-f0-9]{64}$/);
+  assert.equal(
+    (
+      await callWith(
+        otherPage,
+        redeemPath,
+        "POST",
+        linkBody,
+        otherLogin.body.csrf_token,
+      )
+    ).status,
+    401,
+  );
+  const emptyOther = await callWith(otherPage, historyPath, "GET");
+  assert.equal(emptyOther.status, 200);
+  assert.deepEqual(emptyOther.body.orders, []);
+  const ownerLogin = await call(loginPath, "POST", {
+    email: "buyer@example.test",
+    password,
+  });
+  assert.equal(ownerLogin.status, 200);
+  const ownerCsrf = ownerLogin.body.csrf_token;
+  assert.match(ownerCsrf, /^[a-f0-9]{64}$/);
+  const ownerCookies = await context.cookies(origin);
+  const customerCookie = ownerCookies.find(
+    (cookie) => cookie.name === "__Host-piwas-customer",
+  );
+  assert(customerCookie);
+  assert.equal(customerCookie.secure, true);
+  assert.equal(customerCookie.httpOnly, true);
+  assert.equal(customerCookie.sameSite, "Lax");
+  assert.equal(customerCookie.path, "/");
+  assert.equal(await page.evaluate(() => document.cookie), "");
+  // Probe the actual API with valid owner custody but no server preview bearer.
+  // Never log the cookie, synchronizer, proof, or response body.
+  const withoutPreview = await fetch(`${api}${redeemPath}`, {
+    method: "POST",
+    headers: {
+      origin,
+      cookie: `__Host-piwas-customer=${customerCookie.value}`,
+      "content-type": "application/json",
+      "x-csrf-token": ownerCsrf,
+    },
+    body: JSON.stringify(linkBody),
+    signal: AbortSignal.timeout(5000),
+  });
+  await withoutPreview.arrayBuffer();
+  assert.equal(withoutPreview.status, 401);
+  const historyWithoutPreview = await fetch(`${api}${historyPath}`, {
+    headers: {
+      origin,
+      cookie: `__Host-piwas-customer=${customerCookie.value}`,
+    },
+    signal: AbortSignal.timeout(5000),
+  });
+  await historyWithoutPreview.arrayBuffer();
+  assert.equal(historyWithoutPreview.status, 401);
+  assert.equal(
+    (await call(redeemPath, "POST", linkBody, "0".repeat(64))).status,
+    401,
+  );
+  const foreignPage = await context.newPage();
+  await foreignPage.goto(foreignOrigin);
+  const crossedLink = await foreignPage.evaluate(
+    async ({ origin, linkBody, ownerCsrf }) => {
+      try {
+        await fetch(`${origin}/api/test/customer/guest-order-link/redeem`, {
+          method: "POST",
+          credentials: "include",
+          headers: {
+            "content-type": "application/json",
+            "x-csrf-token": ownerCsrf,
+          },
+          body: JSON.stringify(linkBody),
+        });
+        return true;
+      } catch {
+        return false;
+      }
+    },
+    { origin, linkBody, ownerCsrf },
+  );
+  assert.equal(crossedLink, false);
+  await foreignPage.close();
+  await run(
+    "cargo",
+    [...testArgs, "guest_browser_link::verify_browser_link_unconsumed"],
+    env,
+  );
+  const linked = await call(redeemPath, "POST", linkBody, ownerCsrf);
+  assert.equal(linked.status, 204);
+  assert.equal(linked.body, null);
+  assert.equal(
+    (await call(redeemPath, "POST", linkBody, ownerCsrf)).status,
+    401,
+  );
+  const history = await call(historyPath, "GET");
+  assert.equal(history.status, 200);
+  assert.equal(history.cache, "private, no-store");
+  assert.equal(history.body.has_more, false);
+  assert.equal(history.body.orders.length, 1);
+  assert.equal(history.body.orders[0].order_id, first.body.id);
+  assert.equal(history.body.orders[0].total.gross_minor, "38245");
+  assert(!JSON.stringify(history.body).includes(proof));
+  assert(!JSON.stringify(history.body).includes("buyer@example.test"));
+  assert.deepEqual(
+    (await callWith(otherPage, historyPath, "GET")).body.orders,
+    [],
+  );
+  await otherContext.close();
   const cancellationPath = `/api/test/guest/orders/${first.body.id}/cancellation`;
   const cancellation = { effect_key: "browser-cancel", confirmed: true };
   assert.deepEqual(
@@ -552,6 +772,7 @@ try {
       "API authority reached the browser",
     );
     assert(!request.url().includes(token));
+    assert(!request.url().includes(proof));
   }
   await context.close();
   await run(
@@ -571,7 +792,7 @@ try {
     env,
   );
   console.log(
-    "Synthetic Chromium guest quote, acceptance and cancellation transport passed; no provider or public UI acceptance.",
+    "Synthetic Chromium guest checkout, linking and history transports passed; no provider, mail or public UI acceptance.",
   );
 } finally {
   if (browser) await browser.close();
