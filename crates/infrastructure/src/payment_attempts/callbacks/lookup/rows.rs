@@ -14,9 +14,9 @@ pub(super) async fn operation(
     claim: bool,
 ) -> Result<LookupOperationSnapshot, PaymentStoreError> {
     let query = if claim {
-        "SELECT left(id,33) AS id,left(profile_id,257) AS profile_id,left(provider_id,257) AS provider_id,created_at FROM callback_lookup_operations WHERE id=$1 FOR UPDATE"
+        "SELECT pg_catalog.left(id,33) AS id,pg_catalog.left(profile_id,257) AS profile_id,pg_catalog.left(provider_id,257) AS provider_id,created_at FROM public.callback_lookup_operations WHERE id OPERATOR(pg_catalog.=) $1 FOR UPDATE"
     } else {
-        "SELECT left(id,33) AS id,left(profile_id,257) AS profile_id,left(provider_id,257) AS provider_id,created_at FROM callback_lookup_operations WHERE id=$1"
+        "SELECT pg_catalog.left(id,33) AS id,pg_catalog.left(profile_id,257) AS profile_id,pg_catalog.left(provider_id,257) AS provider_id,created_at FROM public.callback_lookup_operations WHERE id OPERATOR(pg_catalog.=) $1"
     };
     let row = sqlx::query_as::<_, OperationRow>(query)
         .bind(id)
@@ -43,6 +43,23 @@ impl OperationRow {
         Ok(snapshot)
     }
 }
+// Marked operations require the source-bound continuation path, never generic
+// start, receipt recording or processing. The marker itself is immutable.
+pub(super) async fn require_generic(
+    tx: &mut Transaction<'_, Postgres>,
+    id: &str,
+) -> Result<(), PaymentStoreError> {
+    let marked: bool = sqlx::query_scalar(
+        "SELECT o.continuation_attempt_id IS NOT NULL OR EXISTS(SELECT 1 FROM public.payment_test_continuations c WHERE c.operation_id OPERATOR(pg_catalog.=) o.id) FROM public.callback_lookup_operations o WHERE o.id OPERATOR(pg_catalog.=) $1",
+    )
+    .bind(id)
+    .fetch_one(&mut **tx)
+    .await?;
+    if marked {
+        return Err(PaymentStoreError::Unavailable);
+    }
+    Ok(())
+}
 #[derive(sqlx::FromRow)]
 struct ReceiptRow {
     id: String,
@@ -55,13 +72,13 @@ pub(super) async fn receipt(
     tx: &mut Transaction<'_, Postgres>,
     operation: &LookupOperationSnapshot,
 ) -> Result<Option<LookupReceipt>, PaymentStoreError> {
-    let row = sqlx::query_as::<_, ReceiptRow>(r#"SELECT left(r.id,33) AS id,left(r.operation_id,33) AS operation_id,r.recorded_at,
-        CASE WHEN octet_length(r.snapshot::text)<=8192 THEN r.snapshot END AS snapshot,
-        CASE WHEN octet_length(r.snapshot::text)<=8192 THEN EXISTS(SELECT 1 FROM callback_processing_events e WHERE e.operation_id=r.operation_id
-            AND e.receipt_id=r.id AND e.created_at=r.recorded_at AND e.kind='payment.callback_lookup_recorded.v1'
-            AND e.payload=jsonb_build_object('schema_version',1,'operation_id',r.operation_id,'receipt_id',r.id,
-              'snapshot_sha256',encode(sha256(convert_to(r.snapshot::text,'UTF8')),'hex'))) ELSE false END AS event_present
-        FROM callback_lookup_receipts r WHERE r.operation_id=$1"#).bind(&operation.id).fetch_optional(&mut **tx).await?;
+    let row = sqlx::query_as::<_, ReceiptRow>(r#"SELECT pg_catalog.left(r.id,33) AS id,pg_catalog.left(r.operation_id,33) AS operation_id,r.recorded_at,
+        CASE WHEN pg_catalog.octet_length(r.snapshot::pg_catalog.text) OPERATOR(pg_catalog.<=) 8192 THEN r.snapshot END AS snapshot,
+        CASE WHEN pg_catalog.octet_length(r.snapshot::pg_catalog.text) OPERATOR(pg_catalog.<=) 8192 THEN EXISTS(SELECT 1 FROM public.callback_processing_events e WHERE e.operation_id OPERATOR(pg_catalog.=) r.operation_id
+            AND e.receipt_id OPERATOR(pg_catalog.=) r.id AND e.created_at OPERATOR(pg_catalog.=) r.recorded_at AND e.kind OPERATOR(pg_catalog.=) 'payment.callback_lookup_recorded.v1'
+            AND e.payload OPERATOR(pg_catalog.=) pg_catalog.jsonb_build_object('schema_version',1,'operation_id',r.operation_id,'receipt_id',r.id,
+              'snapshot_sha256',pg_catalog.encode(pg_catalog.sha256(pg_catalog.convert_to(r.snapshot::pg_catalog.text,'UTF8')),'hex'))) ELSE false END AS event_present
+        FROM public.callback_lookup_receipts r WHERE r.operation_id OPERATOR(pg_catalog.=) $1"#).bind(&operation.id).fetch_optional(&mut **tx).await?;
     let receipt = row.map(|row| row.decode(operation)).transpose()?;
     if let Some(receipt) = &receipt {
         validate_start(tx, &receipt.snapshot).await?;
@@ -108,11 +125,11 @@ pub(super) async fn insert(
     event_id: &str,
 ) -> Result<(), PaymentStoreError> {
     let snapshot = serde_json::to_value(s).map_err(|_| PaymentStoreError::InvalidStoredData)?;
-    sqlx::query("INSERT INTO callback_lookup_receipts(id,operation_id,recorded_at,snapshot) VALUES($1,$2,$3,$4)")
+    sqlx::query("INSERT INTO public.callback_lookup_receipts(id,operation_id,recorded_at,snapshot) VALUES($1,$2,$3,$4)")
         .bind(&s.id).bind(&s.operation.id).bind(s.recorded_at).bind(snapshot).execute(&mut **tx).await?;
     // Hash the exact persisted canonical JSONB text in PostgreSQL. The immutable
     // event independently binds every minimal fetched field before reconstruction.
-    sqlx::query("INSERT INTO callback_processing_events(id,operation_id,receipt_id,created_at,kind,payload) SELECT $1,r.operation_id,r.id,r.recorded_at,'payment.callback_lookup_recorded.v1',jsonb_build_object('schema_version',1,'operation_id',r.operation_id,'receipt_id',r.id,'snapshot_sha256',encode(sha256(convert_to(r.snapshot::text,'UTF8')),'hex')) FROM callback_lookup_receipts r WHERE r.id=$2 AND r.operation_id=$3")
+    sqlx::query("INSERT INTO public.callback_processing_events(id,operation_id,receipt_id,created_at,kind,payload) SELECT $1,r.operation_id,r.id,r.recorded_at,'payment.callback_lookup_recorded.v1',pg_catalog.jsonb_build_object('schema_version',1,'operation_id',r.operation_id,'receipt_id',r.id,'snapshot_sha256',pg_catalog.encode(pg_catalog.sha256(pg_catalog.convert_to(r.snapshot::pg_catalog.text,'UTF8')),'hex')) FROM public.callback_lookup_receipts r WHERE r.id OPERATOR(pg_catalog.=) $2 AND r.operation_id OPERATOR(pg_catalog.=) $3")
         .bind(event_id).bind(&s.id).bind(&s.operation.id).execute(&mut **tx).await?;
     Ok(())
 }
@@ -122,7 +139,7 @@ pub(super) async fn validate_start(
     snapshot: &LookupSnapshot,
 ) -> Result<(), PaymentStoreError> {
     let started_at: Option<i64> = sqlx::query_scalar(
-        "SELECT started_at FROM callback_lookup_fetch_starts WHERE operation_id=$1",
+        "SELECT started_at FROM public.callback_lookup_fetch_starts WHERE operation_id OPERATOR(pg_catalog.=) $1",
     )
     .bind(&snapshot.operation.id)
     .fetch_optional(&mut **tx)

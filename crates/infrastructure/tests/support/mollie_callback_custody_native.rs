@@ -286,7 +286,7 @@ async fn nondefault_repeatable_read_claim_waits_still_replay_both_receipt_writer
             record_lookup(&p, t.as_ref(), i.as_ref(), &id, v.as_ref()).await
         }));
     }
-    tokio::time::timeout(Duration::from_millis(800),async {loop {let waiting:i64=sqlx::query_scalar("SELECT count(*) FROM pg_stat_activity WHERE datname=current_database() AND wait_event_type='Lock' AND query LIKE 'SELECT left(id,33)%callback_lookup_operations%FOR UPDATE'").fetch_one(&pool).await.expect("both claim snapshots overlap");if waiting==2 {break;}tokio::time::sleep(Duration::from_millis(5)).await;}}).await.expect("both writers blocked on real claim");
+    tokio::time::timeout(Duration::from_millis(800),async {loop {let waiting:i64=sqlx::query_scalar("SELECT count(*) FROM pg_stat_activity WHERE datname=current_database() AND wait_event_type='Lock' AND query LIKE 'SELECT pg_catalog.left(id,33)%public.callback_lookup_operations%FOR UPDATE'").fetch_one(&pool).await.expect("both claim snapshots overlap");if waiting==2 {break;}tokio::time::sleep(Duration::from_millis(5)).await;}}).await.expect("both writers blocked on real claim");
     blocker.commit().await.expect("release contenders");
     let mut receipts = Vec::new();
     for task in tasks {

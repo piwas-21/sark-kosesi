@@ -4,7 +4,7 @@ use super::*;
 async fn waiting_callback(pool: &PgPool) {
     tokio::time::timeout(Duration::from_millis(800), async {
         loop {
-            let waiting: bool = sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM pg_stat_activity WHERE datname=current_database() AND wait_event_type='Lock' AND query LIKE 'INSERT INTO callback_processing_events%')")
+            let waiting: bool = sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM pg_stat_activity WHERE datname=current_database() AND wait_event_type='Lock' AND query LIKE 'INSERT INTO public.callback_processing_events%')")
                 .fetch_one(pool).await.expect("actual callback event wait");
             if waiting { break; }
             tokio::time::sleep(Duration::from_millis(5)).await;

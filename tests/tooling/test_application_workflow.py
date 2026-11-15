@@ -322,8 +322,8 @@ def coverage_script(text):
 
 def check_coverage_commands(scripts):
     expected = {
-        "test:coverage:stable": "mkdir -p coverage && CARGO_TARGET_DIR=.local/coverage-target-stable cargo llvm-cov clean --workspace && CARGO_TARGET_DIR=.local/coverage-target-stable python3 scripts/with_postgres.py -- cargo llvm-cov --workspace --all-features --locked --json --output-path coverage/rust-stable.json",
-        "test:coverage:nightly": "mkdir -p coverage && CARGO_TARGET_DIR=.local/coverage-target-nightly cargo +nightly-2026-10-25 llvm-cov clean --workspace && CARGO_TARGET_DIR=.local/coverage-target-nightly python3 scripts/with_postgres.py -- cargo +nightly-2026-10-25 llvm-cov --workspace --all-features --locked --branch --json --output-path coverage/rust.json && CARGO_TARGET_DIR=.local/coverage-target-nightly cargo +nightly-2026-10-25 llvm-cov report --lcov --output-path coverage/rust.lcov",
+        "test:coverage:stable": "mkdir -p coverage && python3 scripts/coverage_fsync.py stable",
+        "test:coverage:nightly": "mkdir -p coverage && python3 scripts/coverage_fsync.py nightly",
         "test:coverage:typescript": "mkdir -p coverage && vitest run --coverage",
         "test:coverage": "npm run test:coverage:stable && npm run test:coverage:nightly && npm run test:coverage:typescript && python3 scripts/check_coverage_reports.py",
     }
