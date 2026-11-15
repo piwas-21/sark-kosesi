@@ -313,7 +313,8 @@ supervision or live provider activation follows from deploying the empty preview
    retain the exact verified order account. Private preparation and history require
    the same current customer session and guest basket. The native attempt guard
    checks that association against the accepted quote. One serialized dispatch
-   start and reconciliation event commit before a single-use permit; later callers
+   start and reconciliation event commit with fsync and synchronous_commit on
+   before a single-use permit; later callers
    reconcile even after key/hold/source expiry. The private test-key HTTP client now
    verifies the authenticated expected profile, sends exact permit bytes once and
    separately fetches a bounded checked payment projection. It installs no runtime

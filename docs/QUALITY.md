@@ -1186,3 +1186,18 @@ credential on the server and forwards only the fixture's private checkout routes
 Database checks verify one order, one cancellation, two component reservation
 movements and zero payment attempts. The storefront checkout UI, provider and
 production accessibility still need their own acceptance evidence.
+
+Private Test dispatch controls use isolated PostgreSQL and synthetic loopback.
+An inherited asynchronous session proves the start and recovery event commit with
+synchronous WAL settings; a post-insert setting change rolls both back before any
+POST. The standalone integration test checks the same refusal through the
+exported start API, then verifies repaired custody and a reconcile-only replay.
+The server-fsync control runs with ordinary settings in application CI. Run
+the same exact compiled `dispatch_requires_server_fsync_before_post` test with
+`P1_POSTGRES_BIN=/path/to/postgresql18/bin python3 scripts/with_postgres.py --fsync-off -- <test-binary> --exact mollie::tests::test_payment_orchestration::durability::dispatch_requires_server_fsync_before_post`
+to exercise an owned native server started with fsync disabled. It verifies the
+actual setting and disposable cluster marker, then checks rejection with no start,
+event or POST. In both cases the fixture shows that a shadow text-equality
+operator can report fsync as enabled; the writer compares the typed setting
+values in Rust. The fault runner requires one exact passing test. These tests
+do not establish provider or production acceptance.

@@ -313,3 +313,6 @@ async fn clock_failure_after_committed_start_is_uncertain_without_a_post(pool: P
     );
     assert_eq!(server.count(), 1);
 }
+
+#[path = "test_dispatch_durability.rs"]
+mod durability;
