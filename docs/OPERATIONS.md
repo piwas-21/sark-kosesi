@@ -518,3 +518,24 @@ in for proxy identity. Then require exact-revision TLS and isolated provider
 delivery acceptance. The committed source and Compose checks prove none of these
 runtime states. Rollback disables both callback ingress and the separate web
 ingress flag before recreating only this project's services.
+
+### Hosted PostgreSQL scan capture
+
+The narrowly scoped `PostgreSQL image evidence` workflow can capture the pinned
+staging PostgreSQL image from Docker Hub on a disposable GitHub-hosted runner.
+It is triggered by relevant pull request paths or by manual dispatch. Its checkout
+is bound to the pull request head or dispatched commit; the capture verifies the
+committed staging index, its Linux AMD64 platform manifest and image config. The
+scanner is Trivy 0.70.0 at its pinned Linux AMD64 image digest and accesses the
+registry directly without the Docker socket or credentials. Empty configuration
+and ignore files and a fresh scanner cache are used for each run.
+
+The artifact contains the raw report, image and scanner identity documents, empty
+configuration, database metadata, command, scanner log, receipt, offline audit
+output and checksums; the database cache is not uploaded. The offline audit must
+accept the evidence's structure even when its result is blocked by findings.
+Scanner errors fail capture, while reported vulnerabilities do not fail capture
+or constitute an acceptance. Independently verify the workflow revision, scanner
+and image identities, scope and custody; inspect the unfiltered report with the
+offline audit above. A successful capture does not establish deployment, image
+provenance, vulnerability disposition or release readiness.

@@ -1,0 +1,50 @@
+name: PostgreSQL image evidence
+on:
+  pull_request:
+    branches: [develop, main]
+    paths:
+      - .github/workflows/db-image-evidence.yml
+      - scripts/capture_db_image_scan.py
+      - scripts/inspect_image_scan.py
+      - tests/tooling/test_capture_db_image_scan.py
+      - deploy/staging/compose.yml
+  workflow_dispatch:
+permissions: {}
+jobs:
+  capture:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+      - name: Capture remote image scan
+        env:
+          CAPTURE_REVISION: ${{ github.event.pull_request.head.sha || github.sha }}
+          CAPTURE_OUTPUT: ${{ runner.temp }}/db-image-evidence
+        run: python3 scripts/capture_db_image_scan.py
+      - name: Retain scan evidence or failure diagnostics
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+        with:
+          name: db-image-evidence-${{ github.event.pull_request.head.sha || github.sha }}
+          if-no-files-found: error
+          path: |
+            ${{ runner.temp }}/db-image-evidence/index.json
+            ${{ runner.temp }}/db-image-evidence/manifest.json
+            ${{ runner.temp }}/db-image-evidence/config.json
+            ${{ runner.temp }}/db-image-evidence/scanner-index.json
+            ${{ runner.temp }}/db-image-evidence/scanner-manifest.json
+            ${{ runner.temp }}/db-image-evidence/scanner-config.json
+            ${{ runner.temp }}/db-image-evidence/empty.yml
+            ${{ runner.temp }}/db-image-evidence/empty.ignore
+            ${{ runner.temp }}/db-image-evidence/report.json
+            ${{ runner.temp }}/db-image-evidence/db-metadata.json
+            ${{ runner.temp }}/db-image-evidence/receipt.json
+            ${{ runner.temp }}/db-image-evidence/command.json
+            ${{ runner.temp }}/db-image-evidence/scanner.log
+            ${{ runner.temp }}/db-image-evidence/audit.log
+            ${{ runner.temp }}/db-image-evidence/SHA256SUMS
