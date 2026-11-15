@@ -53,13 +53,25 @@ impl StaffTransaction {
         self.authorized_at(clock).map(|_| ())
     }
     pub fn authorized_at(&self, clock: &dyn Clock) -> Result<i64, StaffError> {
-        let seconds = clock
-            .unix_seconds()
-            .map_err(|_| StaffError::ClockUnavailable)?;
-        let now = i64::try_from(seconds).map_err(|_| StaffError::ClockUnavailable)?;
-        check_session(self.state, now).map_err(|_| StaffError::Denied)?;
-        Ok(now)
+        authorized_at(self.state, clock)
     }
+    /// A failed commit can itself wait; stale authority must mask that outcome.
+    pub(super) async fn commit(self, clock: &dyn Clock) -> Result<(), StaffError> {
+        let state = self.state;
+        let result = self.tx.commit().await;
+        if result.is_err() {
+            authorized_at(state, clock)?;
+        }
+        result.map_err(StaffError::Database)
+    }
+}
+fn authorized_at(state: SessionState, clock: &dyn Clock) -> Result<i64, StaffError> {
+    let seconds = clock
+        .unix_seconds()
+        .map_err(|_| StaffError::ClockUnavailable)?;
+    let now = i64::try_from(seconds).map_err(|_| StaffError::ClockUnavailable)?;
+    check_session(state, now).map_err(|_| StaffError::Denied)?;
+    Ok(now)
 }
 #[derive(sqlx::FromRow)]
 struct StaffRow {
