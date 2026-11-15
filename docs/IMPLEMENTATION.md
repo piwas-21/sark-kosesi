@@ -289,6 +289,11 @@ supervision or live provider activation follows from deploying the empty preview
    use the same effect key. It returns only replay state; account-bound orders still require
    their separate private account authority. No customer route or provider
    operation is activated by this test adapter.
+   A private owner-scoped read can validate one recorded test dispatch and its
+   exact reconciliation event after the attempt lock; its redacted point-in-time
+   result grants no payment, cancellation or recovery authority. Missing starts
+   remain unavailable and are not proof of provider absence. Both guest and any
+   linked customer authority are rechecked after waits and source failures.
    Finish post-dispatch disposition, redemption disposition, lifecycle/payment
    transitions and retention before public checkout. Seller and legal facts
    remain required trusted configuration.
