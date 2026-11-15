@@ -289,6 +289,11 @@ supervision or live provider activation follows from deploying the empty preview
    use the same effect key. It returns only replay state; account-bound orders still require
    their separate private account authority. No customer route or provider
    operation is activated by this test adapter.
+   A private owner-scoped read can validate one recorded test dispatch and its
+   exact reconciliation event after the attempt lock; its redacted point-in-time
+   result grants no payment, cancellation or recovery authority. Missing starts
+   remain unavailable and are not proof of provider absence. Both guest and any
+   linked customer authority are rechecked after waits and source failures.
    Finish post-dispatch disposition, redemption disposition, lifecycle/payment
    transitions and retention before public checkout. Seller and legal facts
    remain required trusted configuration.
@@ -322,6 +327,15 @@ supervision or live provider activation follows from deploying the empty preview
    the one-use start to a matching authenticated GET and durable observation;
    any post-start failure stays uncertain and existing starts reconcile without
    another POST. It installs no route, scheduler, key or redirect. Bounded private
+   initial-dispatch provenance binds the fresh consumed create response and matching
+   verified GET to the same-transaction observation/event and earlier committed
+   start. A bounded canonical observation digest binds the retained provider identity
+   and other stored source fields to that receipt; a validating read checks both.
+   Before acknowledging this receipt, the supported writer requires PostgreSQL
+   fsync and transaction-local synchronous commit.
+   Generic/callback receipts and preexisting observations are not upgraded.
+   Migration 0073 follows the independently queued 0068–0072 prerequisites.
+   This is local custody, not provider or checkout acceptance. Bounded private
    unknown-ID list pages now return metadata-associated identity hints, preserving duplicate critical fields
    and validated fixed-origin cursors. Every candidate needs a separate checked
    GET; no/partial results cannot authorize another POST. Private verified-fetch
@@ -432,7 +446,10 @@ supervision or live provider activation follows from deploying the empty preview
    pages without candidates or a continuation. The private observation journal
    appends exact child facts after network I/O and
    serializes bounded custody with a reciprocal event. Same-effect retries
-   verify the original observation. The page journal keeps a bounded linear scan
+   verify the original observation. A separate private read claims the attempt
+   and validates the complete bounded local observation set, returning its count
+   and source-bound digest without inferring provider completeness or net balance.
+   The page journal keeps a bounded linear scan
    and exact reciprocal events. A validated open tip restores a continuation
    under the same key. A rotated key starts a new root. The private page
    supervisor enrolls from an exact paid observation, commits a single-use
@@ -479,6 +496,9 @@ that source and a serialized, append-only history, with an audited release. The
 assertion establishes physical custody, remaining unshipped units, net payment
 or permission to dispatch. Before dispatch,
 complete shipment/handover lifecycle, reversal disposition and physical evidence.
+An authenticated private inspection reconstructs recorded active packing and
+unasserted units from complete custody history without changing that authority
+boundary. It does not establish remaining unshipped stock or payment eligibility.
 
 Trusted whole-basket reservation primitives now provide immutable manifests,
 exact fresh child bindings and aggregated component claims in one transaction.

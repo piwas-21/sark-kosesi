@@ -251,7 +251,7 @@ async fn receipt_and_late_readers_require_the_exact_operation_and_reciprocal_eve
         "CREATE TABLE item_validate_control.reversal_item_operations AS SELECT * FROM public.reversal_item_operations WITH NO DATA",
         "CREATE TABLE item_validate_control.payment_reversal_observations AS SELECT * FROM public.payment_reversal_observations WITH NO DATA",
         "CREATE TABLE item_validate_control.commerce_outbox AS SELECT * FROM public.commerce_outbox WITH NO DATA",
-        "CREATE FUNCTION item_validate_control.payment_reversal_observation_event(item_validate_control.payment_reversal_observations) RETURNS jsonb LANGUAGE sql IMMUTABLE AS 'SELECT ''{\"synthetic\":true}''::jsonb'",
+        "CREATE FUNCTION item_validate_control.payment_reversal_observation_event(item_validate_control.payment_reversal_observations) RETURNS jsonb LANGUAGE sql IMMUTABLE STRICT AS 'SELECT public.payment_reversal_observation_event(ROW(($1).*)::public.payment_reversal_observations)'",
         "SET LOCAL search_path = item_validate_control, public",
     ] {
         sqlx::query(sql)
@@ -322,8 +322,8 @@ async fn receipt_and_late_readers_require_the_exact_operation_and_reciprocal_eve
     sqlx::query("INSERT INTO payment_reversal_observations(id,order_id,attempt_id,effect_key,payment_id,child_id,phase,amount_minor,credential_fingerprint,source_created_seconds,source_created_nanos,recorded_at,event_id,transaction_id) VALUES($1,$2,$3,$4,'tr_example','re_example','refund_pending',1234,$5,1710927217,0,1561,$6,'1'::xid8)")
         .bind(&receipt_id).bind(&frozen.snapshot().binding.order_id).bind(&j.attempt_id).bind(&effect)
         .bind(&j.credential_fingerprint).bind(&event_id).execute(&mut *tx).await.expect("receipt");
-    sqlx::query("INSERT INTO commerce_outbox(id,aggregate_id,kind,payload,created_at) VALUES($1,$2,'payment.reversal_observed.v1','{\"synthetic\":true}'::jsonb,1561)")
-        .bind(&event_id).bind(&frozen.snapshot().binding.order_id).execute(&mut *tx).await.expect("event");
+    sqlx::query("INSERT INTO commerce_outbox(id,aggregate_id,kind,payload,created_at) SELECT $1,$2,'payment.reversal_observed.v1',item_validate_control.payment_reversal_observation_event(o),1561 FROM payment_reversal_observations o WHERE o.id=$3")
+        .bind(&event_id).bind(&frozen.snapshot().binding.order_id).bind(&receipt_id).execute(&mut *tx).await.expect("exact event");
     assert_eq!(
         late_receipt(&mut tx, &j, &frozen, 1500)
             .await
@@ -350,6 +350,31 @@ async fn receipt_and_late_readers_require_the_exact_operation_and_reciprocal_eve
             .expect("repaired")
             .is_some()
     );
+    // Keep the reciprocal event meaningful: missing or changed digest must fail,
+    // and restoring the exact native event must recover the historical reader.
+    for damage in [
+        "payload - 'observation_sha256'",
+        "jsonb_set(payload,'{observation_sha256}',to_jsonb(repeat('f',64)))",
+    ] {
+        sqlx::query(sqlx::AssertSqlSafe(format!(
+            "UPDATE commerce_outbox SET payload={damage}"
+        )))
+        .execute(&mut *tx)
+        .await
+        .expect("damage event digest");
+        assert!(matches!(
+            late_receipt(&mut tx, &j, &frozen, 1500).await,
+            Err(RecoveryError::InvalidStoredData)
+        ));
+        sqlx::query("UPDATE commerce_outbox e SET payload=item_validate_control.payment_reversal_observation_event(o) FROM payment_reversal_observations o WHERE e.id=o.event_id")
+            .execute(&mut *tx).await.expect("restore exact event");
+        assert!(
+            late_receipt(&mut tx, &j, &frozen, 1500)
+                .await
+                .expect("repaired digest")
+                .is_some()
+        );
+    }
     sqlx::query("UPDATE commerce_outbox SET kind='wrong'")
         .execute(&mut *tx)
         .await

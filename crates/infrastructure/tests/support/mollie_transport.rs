@@ -1043,3 +1043,6 @@ mod payment_custody_preflight;
 
 #[path = "test_payment_orchestration.rs"]
 mod test_payment_orchestration;
+
+#[path = "test_initial_provenance_durability.rs"]
+mod test_initial_provenance_durability;

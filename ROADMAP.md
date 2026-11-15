@@ -138,7 +138,9 @@ only bounded reversal identity hints and scoped continuations after verifying th
 paid original. Every verified page retains the authenticated request scope,
 including empty and terminal pages. A private journal records exact authenticated child
 observations and their reciprocal events, with bounded history and effect-key
-replay. It preserves amounts above the original payment and unresolved reversal
+replay. A private read validates and digests the bounded local observation set
+under its attempt claim, without proving provider completeness or net balance.
+It preserves amounts above the original payment and unresolved reversal
 status. The private page journal keeps exact candidate order and cursor lineage
 with effect-key replay. A validated open tip can restore a same-key continuation.
 An explicit test-profile supervisor now admits bounded page operations from an
@@ -299,8 +301,10 @@ owned order before payment dispatch starts, including after an admitted test
 attempt. Cancellation shares the basket claim with admission and the attempt
 claim with dispatch. An independently enabled test-only guest route exposes that
 pre-dispatch command with exact Origin, cookie, CSRF and explicit confirmation;
-account-bound orders remain unavailable on this route. Normal hold expiry still
-governs stock, and lifetime promotion usage stays recorded. Complete post-dispatch disposition and trusted-edge
+account-bound orders remain unavailable on this route. A private owner-scoped read
+can validate a recorded test dispatch and its reconciliation event under the
+attempt claim; this point-in-time fact grants no payment or cancellation decision.
+Normal hold expiry still governs stock, and lifetime promotion usage stays recorded. Complete post-dispatch disposition and trusted-edge
 abuse controls before exposing customer routes.
 An independently enabled test-only guest order POST uses the same session,
 Origin and CSRF checks, with an explicit server-only test seller policy. It
@@ -315,7 +319,10 @@ now compose the frozen request policy, existing physically backed reservation an
 minimal transactional recovery events. Fresh commercial and clock checks protect
 new work; original receipts remain historical. An explicit private test dispatch
 now composes the one-use start, create, authenticated GET and durable observation;
-failures remain uncertain. Runtime dispatch remains uninstalled. Started/unknown attempts must reconcile without automatic replacement.
+failures remain uncertain. A fresh create/GET pair can retain a same-transaction
+origin receipt that commits its exact source observation digest; legacy or callback
+observations cannot acquire that origin by replay. Runtime dispatch remains
+uninstalled. Started/unknown attempts must reconcile without automatic replacement.
 The private test-key HTTP client now verifies its authenticated profile and
 separately fetches checked minimal payment evidence, with bounded one-use permit
 transport. Bounded private payment-list pages now return exact metadata-associated
@@ -387,3 +394,5 @@ whole units and package components, with serialized occupancy, replay and an
 audited release. These assertions do not establish unshipped units, physical
 contents or dispatch authority. Complete shipment handover and delivery custody,
 reversal/refund disposition and physical fulfilment evidence separately.
+Authenticated warehouse inspection can read the bounded validated assertion
+history and per-SKU recorded occupancy without granting shipment authority.

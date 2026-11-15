@@ -620,3 +620,121 @@ async fn altered_prepared_effect_rolls_back_attempt_and_event(pool: PgPool) {
     assert!(!valid.replayed);
     assert_eq!(valid.frozen.snapshot().binding.amount_minor, 37745);
 }
+
+#[sqlx::test(migrator = "MIGRATOR")]
+async fn owned_dispatch_read_requires_both_live_account_and_guest_after_attempt_wait(pool: PgPool) {
+    use commerce_infrastructure::payment_attempts::{
+        RecordedDispatch, owned_dispatch_status, owned_verified_dispatch_status,
+    };
+    let (store, time, session, csrf, account_id, customer, placed) = setup(&pool).await;
+    let (_, other_customer) = account(&pool, "other@example.test", &time).await;
+    let (other_session, _) = quote::guest(&store).await;
+    let key = GuestCredential::from_session(&session).expect("owner");
+    let other_key = GuestCredential::from_session(&other_session).expect("other owner");
+    let config = payment::config();
+    let prepared = prepare_verified_attempt(
+        &store,
+        &key,
+        &csrf,
+        &customer,
+        "pay",
+        &payment::intent(&placed),
+        &config,
+    )
+    .await
+    .expect("prepared");
+    let attempt = &prepared.frozen.snapshot().binding.id;
+    assert!(matches!(
+        start_dispatch(
+            &pool,
+            time.as_ref(),
+            &payment::Ids(std::sync::atomic::AtomicU64::new(10000)),
+            attempt,
+            &config
+        )
+        .await,
+        Ok(DispatchOutcome::Start(_))
+    ));
+    let before = effects(&pool).await;
+    let order = &placed.identity.id;
+    assert_eq!(
+        owned_verified_dispatch_status(&store, &key, &customer, order).await,
+        Ok(RecordedDispatch)
+    );
+    assert!(owned_dispatch_status(&store, &key, order).await.is_err());
+    assert!(
+        owned_verified_dispatch_status(&store, &key, &other_customer, order)
+            .await
+            .is_err()
+    );
+    assert!(
+        owned_verified_dispatch_status(&store, &other_key, &customer, order)
+            .await
+            .is_err()
+    );
+    let expiry: i64 = sqlx::query_scalar(
+        "SELECT expires_at FROM customer_sessions WHERE account_id=$1 AND revoked_at IS NULL",
+    )
+    .bind(account_id)
+    .fetch_one(&pool)
+    .await
+    .expect("customer expiry");
+    let guest_expiry: i64 =
+        sqlx::query_scalar("SELECT expires_at FROM guest_sessions WHERE basket_id=$1")
+            .bind(&placed.identity.basket_id)
+            .fetch_one(&pool)
+            .await
+            .expect("guest expiry");
+    assert!(
+        guest_expiry > expiry,
+        "this control isolates account expiry"
+    );
+    let mut blocker = pool.begin().await.expect("attempt blocker");
+    let pid: i32 = sqlx::query_scalar("SELECT pg_backend_pid()")
+        .fetch_one(&mut *blocker)
+        .await
+        .expect("backend");
+    sqlx::query("SELECT id FROM payment_attempts WHERE id=$1 FOR UPDATE")
+        .bind(attempt)
+        .execute(&mut *blocker)
+        .await
+        .expect("hold attempt");
+    let work = owned_verified_dispatch_status(&store, &key, &customer, order);
+    let release = async {
+        tokio::time::timeout(std::time::Duration::from_millis(800), async {
+            loop {
+                let waiting: bool = sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM pg_catalog.pg_stat_activity WHERE datname=current_database() AND wait_event_type='Lock' AND $1=ANY(pg_catalog.pg_blocking_pids(pid)) AND query LIKE '%/* owned dispatch status */%')")
+                    .bind(pid).fetch_one(&pool).await.expect("actual owner read wait");
+                if waiting { break; }
+                tokio::time::sleep(std::time::Duration::from_millis(5)).await;
+            }
+        }).await.expect("read reached attempt lock");
+        time.0
+            .store(u64::try_from(expiry).expect("expiry"), Ordering::SeqCst);
+        blocker.commit().await.expect("release");
+    };
+    let (result, ()) = tokio::join!(work, release);
+    assert_eq!(
+        result,
+        Err(PaymentStoreError::Boundary(OrderStoreError::Denied))
+    );
+    time.0.store(1100, Ordering::SeqCst);
+    assert_eq!(
+        owned_verified_dispatch_status(&store, &key, &customer, order).await,
+        Ok(RecordedDispatch)
+    );
+    assert_eq!(effects(&pool).await, before);
+    let successor = customer_sessions::rotate(&pool, &customer, time.as_ref())
+        .await
+        .expect("rotation")
+        .token;
+    assert!(
+        owned_verified_dispatch_status(&store, &key, &customer, order)
+            .await
+            .is_err()
+    );
+    assert_eq!(
+        owned_verified_dispatch_status(&store, &key, &successor, order).await,
+        Ok(RecordedDispatch)
+    );
+}
