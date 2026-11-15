@@ -114,7 +114,7 @@ pub(crate) struct TestOrderReceipt {
     replayed: bool,
 }
 
-#[utoipa::path(post,operation_id="test_guest_order_create",path="/api/test/guest/orders",params(("Origin"=String,Header),("x-csrf-token"=String,Header)),request_body=TestOrderInput,responses((status=200,body=TestOrderReceipt),(status=400,body=ApiError),(status=401,body=ApiError),(status=403,body=ApiError),(status=409,body=ApiError),(status=410,body=ApiError),(status=413,body=ApiError),(status=415,body=ApiError),(status=429,body=ApiError),(status=503,body=ApiError)),security(("preview"=[],"guest"=[])))]
+#[utoipa::path(post,operation_id="test_guest_order_create",path="/api/test/guest/orders",params(("Origin"=String,Header),("x-csrf-token"=String,Header)),request_body=TestOrderInput,responses((status=200,body=TestOrderReceipt),(status=400,body=ApiError),(status=401,body=ApiError),(status=403,body=ApiError),(status=404,body=ApiError),(status=409,body=ApiError),(status=410,body=ApiError),(status=413,body=ApiError),(status=415,body=ApiError),(status=429,body=ApiError),(status=503,body=ApiError),(status=504,body=ApiError)),security(("preview"=[],"guest"=[])))]
 pub(crate) async fn create(
     Extension(state): Extension<GuestState>,
     Extension(config): Extension<TestOrderConfig>,

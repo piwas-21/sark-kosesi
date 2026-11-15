@@ -881,12 +881,14 @@ export type TestGuestOrderCreateErrors = {
     400: ApiError;
     401: ApiError;
     403: ApiError;
+    404: ApiError;
     409: ApiError;
     410: ApiError;
     413: ApiError;
     415: ApiError;
     429: ApiError;
     503: ApiError;
+    504: ApiError;
 };
 
 export type TestGuestOrderCreateError = TestGuestOrderCreateErrors[keyof TestGuestOrderCreateErrors];
