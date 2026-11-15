@@ -49,7 +49,7 @@ No fake commands or passing jobs before code exists. Pin the following free tool
 | `npm run test:discovery`                     | Served HTML, sitemap, canonical/hreflang, product/feed and negative controls in DISCOVERY                                                                                                                     |
 | `npm run test:performance`                   | Production-build Lighthouse CI and payload budgets; k6 isolated API/load fixture in performance config                                                                                                        |
 
-The required `Application gate` aggregates two independently checked-out jobs at the same candidate revision. `Application checks` retains the Rust, TypeScript, integration, migration, contract and coverage commands and publishes the revision-bound application artifact for Sonar. `Application browser` builds the production application and runs the full browser suite with its own isolated database, fallback capture and evidence upload. Both jobs must succeed; failed, skipped, cancelled or missing results fail the aggregate. Sonar validates the coverage and Clippy artifacts after that aggregate. Parallel jobs do not establish release or provider acceptance.
+The required `Application gate` aggregates three independently checked-out jobs at the same candidate revision. `Application checks` runs the Rust audit, TypeScript, unit, integration, migration and contract commands and publishes its revision-bound evidence. `Application coverage` runs the Rust format and Clippy check followed by the complete coverage command, with isolated database fixtures, and publishes the validated coverage and Clippy reports as a revision-bound artifact. `Application browser` builds the production application and runs the full browser suite with its own isolated databases, fallback capture and evidence upload, including the private guest Chromium transport. All three jobs must succeed; failed, skipped, cancelled or missing results fail the aggregate. Sonar imports and validates the coverage artifact after that aggregate. Hosted timing has not yet been measured; parallel jobs do not establish release or provider acceptance.
 
 Preapplied preview migration validation is critical Rust code. Exercise bounded
 history, malformed checksums and real lock timeouts against isolated PostgreSQL,
@@ -97,7 +97,7 @@ summary's total and covered directions. Native coverage thresholds use the
 original summaries.
 If the coverage step fails after exporting nightly reports, CI preserves the raw
 JSON and LCOV under a separate revision-bound diagnostics artifact. Sonar only
-consumes the application artifact published after successful validation and build.
+consumes the coverage artifact published after successful validation.
 The native validator requires every owned source and populated counters, with
 85% lines / 80% instrumented branches per package and 95% for money, inventory
 domain/stock/hold adapter modules and preview authorization. The match-only hold
@@ -419,6 +419,11 @@ waits also require expired guest and account authority to mask a dispatch confli
 with a fresh-authority conflict control; a blocked receipt read tests the same
 rule for a missing receipt. Verify that the original stock and redemption remain
 available to their respective readers.
+The independently enabled test-only guest cancellation transport exercises a
+real owned order and same-effect replay, foreign/expired credentials, explicit
+confirmation, malformed bounded requests, dispatch races, database rollback and
+slow-body timeout. Check the unchanged stock, promotion and provider effects.
+These fixtures do not prove browser, provider or public checkout acceptance.
 
 Whole-basket reservation logic retains 95% critical native line/branch thresholds.
 Independent PostgreSQL oracles cover a last shared component, complete loser
@@ -979,6 +984,19 @@ foam differences, and reject wrong revisions, missing or duplicate members,
 conflicting component kinds, changed quantities and invalid prior counts. Check the real maximum 20 by 64
 footprint. These pure controls do not establish package or warehouse custody.
 
+### Test-only guest checkout
+
+Use isolated PostgreSQL and the guest HTTP boundary for real cookie, Origin and
+CSRF ownership; verify no route by default or outside test configuration. Feed
+an explicit synthetic seller only through server configuration. Check full-intent
+replay, concurrent duplicate requests, stale or changed terms and quote, foreign
+basket, malformed nested/duplicate fields, bounded input, store failure rollback,
+minimal private receipt and unchanged payment attempts. In the same router,
+issue a quote, accept one order and cancel it twice under the original cookie
+and CSRF proof. Verify one cancellation event and unchanged hold and payment
+counts. An encoded alias of the guest cookie must be rejected before acceptance.
+Keep both guest transports inside the critical Rust coverage inventory.
+
 ### Private customer favourites
 
 Use isolated PostgreSQL to check customer ownership, revision and capacity races,
@@ -1063,3 +1081,20 @@ existing credential after rejection while the admission debit remains committed,
 then retry successfully. A real account-lock wait advances the clock through
 snapshot expiry and demonstrates rollback. Synthetic test digests are not an
 operational corpus or evidence of its review.
+
+### Isolated guest browser transport
+
+The Application browser job runs `npm run test:guest-browser` against a separate
+disposable PostgreSQL cluster. The fixture verifies a per-cluster startup marker
+before database creation. The negative control confirms the database remains
+absent after a wrong marker. The runner rejects inherited connection options and
+redacts malformed URLs. It starts a loopback Rust API and an ephemeral HTTPS
+browser bridge with a guarded synthetic database. Node explicitly trusts the
+generated certificate, and Chromium pins its ephemeral public key. Both clients
+must reject a separately generated certificate before sending an HTTP request.
+Chromium checks the guest cookie, Origin and CSRF through quote, order acceptance,
+cancellation and exact replay. The bridge keeps its independently generated API
+credential on the server and forwards only the fixture's private checkout routes.
+Database checks verify one order, one cancellation, two component reservation
+movements and zero payment attempts. The storefront checkout UI, provider and
+production accessibility still need their own acceptance evidence.
