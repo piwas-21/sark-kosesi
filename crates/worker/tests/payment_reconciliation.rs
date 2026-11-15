@@ -256,3 +256,77 @@ async fn missing_live_invalid_and_nonunicode_configuration_is_redacted(pool: PgP
         .expect("no effects");
     assert_eq!(count, 0);
 }
+
+#[sqlx::test(migrator = "MIGRATOR")]
+async fn custody_preflight_is_single_attempt_redacted_and_never_mutates(pool: PgPool) {
+    let (store, clock, session, csrf, order) = payment_fixture::accepted(&pool).await;
+    let guest = GuestCredential::from_session(&session).expect("owner");
+    let config = payment_fixture::config();
+    let receipt = prepare_attempt(
+        &store,
+        &guest,
+        &csrf,
+        "custody-test",
+        &payment_fixture::intent(&order),
+        &config,
+    )
+    .await
+    .expect("prepare");
+    let binding = &receipt.frozen.snapshot().binding;
+    let ids = payment_fixture::Ids(AtomicU64::new(20000));
+    assert!(matches!(
+        start_dispatch(&pool, clock.as_ref(), &ids, &binding.id, &config).await,
+        Ok(DispatchOutcome::Start(_))
+    ));
+    let before: (i64,i64,i64) = sqlx::query_as("SELECT (SELECT count(*) FROM commerce_outbox),(SELECT count(*) FROM payment_reconciliation_jobs),(SELECT count(*) FROM payment_observations)").fetch_one(&pool).await.expect("before");
+    let database = pool.connect_options().to_url_lossy().to_string();
+    let inspect = |id: &str| {
+        worker()
+            .args(["--inspect-payment-custody", id])
+            .env("DATABASE_URL", &database)
+            .output()
+            .expect("worker")
+    };
+    let output = inspect(&binding.id);
+    assert!(output.status.success());
+    let message = log(&output);
+    for value in [
+        r#""code":"payment_custody_inspection""#,
+        r#""observations":0"#,
+        r#""identities":0"#,
+        r#""paid_observed":false"#,
+    ] {
+        assert!(message.contains(value), "missing field {value}");
+    }
+    for private in [
+        database.as_str(),
+        binding.id.as_str(),
+        binding.profile.id.as_str(),
+    ] {
+        assert!(!message.contains(private));
+    }
+    assert!(!inspect(&"f".repeat(32)).status.success());
+    let after: (i64,i64,i64) = sqlx::query_as("SELECT (SELECT count(*) FROM commerce_outbox),(SELECT count(*) FROM payment_reconciliation_jobs),(SELECT count(*) FROM payment_observations)").fetch_one(&pool).await.expect("after");
+    assert_eq!(before, after);
+}
+#[test]
+fn custody_preflight_rejects_wrong_mode_and_invalid_identifier_before_database() {
+    let invalid = worker()
+        .args(["--inspect-payment-custody", "bad"])
+        .env_remove("DATABASE_URL")
+        .output()
+        .expect("worker");
+    assert!(!invalid.status.success());
+    assert!(log(&invalid).contains("unsupported worker command"));
+    let production = worker()
+        .args([
+            "--inspect-payment-custody",
+            "0123456789abcdef0123456789abcdef",
+        ])
+        .env("APP_ENV", "production")
+        .env_remove("DATABASE_URL")
+        .output()
+        .expect("worker");
+    assert!(!production.status.success());
+    assert!(log(&production).contains("production is disabled"));
+}

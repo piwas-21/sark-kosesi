@@ -82,6 +82,27 @@ pub(super) async fn inspect(pool: &PgPool, attempt: &str) -> Result<()> {
     Ok(())
 }
 
+/// One redacted local/test evidence snapshot; no credential or provider request.
+pub(super) async fn inspect_custody(pool: &PgPool, attempt: &str) -> Result<()> {
+    let custody =
+        commerce_infrastructure::payment_attempts::reconciliation::custody::inspect_custody(
+            pool, attempt,
+        )
+        .await
+        .map_err(|_| Error::other("payment custody inspection unavailable"))?;
+    tracing::info!(
+        code = "payment_custody_inspection",
+        checkpoint_phase = ?custody.checkpoint_phase,
+        checkpoint_review = ?custody.checkpoint_review,
+        checkpoint_page = custody.checkpoint_page,
+        observations = custody.observations,
+        identities = custody.identities,
+        paid_observed = custody.paid_observed,
+        resolution_current = ?custody.resolution_current,
+    );
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

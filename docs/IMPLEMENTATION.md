@@ -347,6 +347,10 @@ supervision or live provider activation follows from deploying the empty preview
    bounded forms to the private API. Its optional exact staging POST router requires
    separate no-bypass, upload-timeout, TLS and provider acceptance;
    no key or scheduler is installed.
+   A separate local/test read-only preflight validates one original attempt,
+   start, recovery event and retained evidence without enrolling a job or
+   contacting a provider. Use reviewed schema compatibility and independent
+   authorization before touching retained pilot custody.
    Uncertain outcomes
    reconcile under the original identity and never mint a replacement charge.
    Fetch and verify webhook identifiers against order/amount/currency/profile/mode.

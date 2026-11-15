@@ -508,6 +508,13 @@ permit and bypass retained source deadlines. Each must compile and fail its spec
 baseline and exact restored source must both pass. Compilation errors cannot count
 as killed defects. Source hashes and per-control logs bind the restored evidence.
 
+The private original-attempt custody preflight uses a read-only snapshot and a
+single exact synthetic attempt in isolated PostgreSQL. Tests cover start without a
+job, missing or damaged custody, paid and ambiguous retained observations, stale
+resolution, a checkpoint-linked page, redacted CLI output and unchanged database
+counts. Local fixture setup uses loopback only; inspection itself sends no provider
+requests. It does not inspect a retained pilot database or prove provider state.
+
 The private Mollie transport uses a bounded loopback Hyper instrument and isolated
 PostgreSQL, never actual provider resources. Literal decimal/fingerprint oracles,
 critical object/mode/currency/metadata/sequence mismatches, profile preflight,

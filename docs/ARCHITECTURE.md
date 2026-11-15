@@ -1319,6 +1319,16 @@ until those conditions are resolved through authorized recovery.
 No service scheduler, runtime key, callback route, current payment/fulfilment/refund
 transition or production supervision is installed by this implementation.
 
+A private local/test custody preflight reads one supplied original attempt in a
+read-only repeatable-read transaction. It validates the frozen source, committed
+start and exact recovery event even when no checkpoint exists. It validates the
+checkpoint-linked page chain, the bounded complete observation prefix and latest
+resolution, and reports only counts, closed checkpoint state and whether that
+resolution covers the prefix. Unlinked search pages are not reviewed. The result
+neither authenticates a past external report nor proves provider absence and does
+not enqueue, contact Mollie or authorize a decision. Confirm database identity and
+schema compatibility separately before any supervised use.
+
 ### Authorized transient recovery
 
 The private `resume_transient` entry requires the unseeded `payment.reconcile`

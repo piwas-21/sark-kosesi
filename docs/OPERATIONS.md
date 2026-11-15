@@ -171,6 +171,17 @@ phase, review reason, generation, resume revision, deadline and retry counters.
 It omits the attempt, provider, outbox and page identifiers. An absent checkpoint
 means there is no job row for the supplied attempt. Review the linked immutable
 search, observation and resolution receipts before an operational decision.
+A separate `commerce-worker --inspect-payment-custody <attempt-id>` validates one
+original frozen attempt, dispatch and exact recovery event in a read-only snapshot,
+even before a job exists. It reports a checkpoint's closed state and linked-page
+presence, observation and distinct identity counts, whether paid was observed, and
+whether the latest stored resolution covers the retained prefix. It checks only the
+checkpoint-linked search chain; unlinked pages and external reports are not included.
+Zero identities do not prove provider absence. It emits no identifiers or credentials,
+creates no job and never contacts Mollie. This inspection does not establish source,
+database or image provenance, schema compatibility, payment status or permission to
+run recovery. Check those independently; preserve the original custody and slot.
+
 Review stops retain unresolved, ambiguity, paid-observed, scan/poll/step-limit,
 custody-invalid or exhausted-retry reasons. Any stock or financial transition
 requires its own current evidence and authority. Preserve an uncertain provider
