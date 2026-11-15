@@ -964,6 +964,10 @@ For optional synchronizer custody, use real PostgreSQL to verify exact session
 and proof binding, immutable digest, wrong and other-session proofs, old-schema
 upgrade, expiration, rotation and competing revocations. Existing bearer-only
 operations must remain compatible. These tests do not establish HTTP CSRF policy.
+An inserted binding with a changed digest must fail readback and roll back its
+session while preserving the admission debit; a subsequent healthy binding must
+match its returned synchronizer. The password-reset race must observe this login
+waiting on the specific held account transaction before committing the change.
 
 Use isolated PostgreSQL with real verified accounts and current password
 hashes. Check wrong or missing credentials, verifier domains, reset racing

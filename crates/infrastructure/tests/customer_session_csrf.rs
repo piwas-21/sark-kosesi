@@ -224,6 +224,75 @@ async fn suppressed_binding_rolls_back_session_issuance(pool: PgPool) {
 }
 
 #[sqlx::test(migrator = "MIGRATOR")]
+async fn altered_binding_is_read_back_and_rolls_back_session_issuance(pool: PgPool) {
+    let _case = CASE.lock().await;
+    let time = time();
+    account(&pool, "altered@example.test", &time).await;
+    // The test-only BEFORE trigger runs after the native guard and returns one
+    // same-length row; the AFTER trigger records the insert even if it rolls back.
+    sqlx::query("CREATE SEQUENCE csrf_insert_seen START 1")
+        .execute(&pool)
+        .await
+        .expect("probe sequence");
+    sqlx::query("CREATE FUNCTION alter_csrf_binding() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN NEW.csrf_digest=set_byte(NEW.csrf_digest,0,get_byte(NEW.csrf_digest,0) # 1); RETURN NEW; END $$")
+        .execute(&pool).await.expect("alteration function");
+    sqlx::query("CREATE TRIGGER z_alter_csrf BEFORE INSERT ON customer_session_csrf FOR EACH ROW EXECUTE FUNCTION alter_csrf_binding()")
+        .execute(&pool).await.expect("alteration trigger");
+    sqlx::query("CREATE FUNCTION observe_csrf_insert() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN PERFORM nextval('csrf_insert_seen'); RETURN NEW; END $$")
+        .execute(&pool).await.expect("probe function");
+    sqlx::query("CREATE TRIGGER z_observe_csrf AFTER INSERT ON customer_session_csrf FOR EACH ROW EXECUTE FUNCTION observe_csrf_insert()")
+        .execute(&pool).await.expect("probe trigger");
+    let key = AdmissionKey::new(1, [7; 32]).expect("key");
+    let limits = AdmissionLimits::new(1000, 100).expect("limits");
+    assert!(matches!(
+        customer_sessions::login_with_csrf(
+            &pool,
+            "altered@example.test",
+            "long fixture password",
+            &time,
+            &key,
+            limits
+        )
+        .await,
+        Err(SessionError::Unavailable)
+    ));
+    let seen: (i64, bool) = sqlx::query_as("SELECT last_value,is_called FROM csrf_insert_seen")
+        .fetch_one(&pool)
+        .await
+        .expect("insert reached AFTER trigger");
+    assert_eq!(seen, (1, true));
+    let counts: (i64,i64,i32) = sqlx::query_as("SELECT (SELECT count(*) FROM customer_sessions),(SELECT count(*) FROM customer_session_csrf),(SELECT admitted FROM customer_credential_admission_scopes WHERE purpose=1)")
+        .fetch_one(&pool).await.expect("rolled-back session and committed admission");
+    assert_eq!(counts, (0, 0, 1));
+    sqlx::query("DROP TRIGGER z_alter_csrf ON customer_session_csrf")
+        .execute(&pool)
+        .await
+        .expect("remove alteration");
+    let healthy = customer_sessions::login_with_csrf(
+        &pool,
+        "altered@example.test",
+        "long fixture password",
+        &time,
+        &key,
+        limits,
+    )
+    .await
+    .expect("healthy issuance");
+    let digest: Vec<u8> = Sha256::new()
+        .chain_update(b"piwas:customer-session:csrf:v1\0")
+        .chain_update(healthy.csrf.expose_bytes())
+        .finalize()
+        .to_vec();
+    let session_verifier = verifier(&healthy.session.token);
+    let exact: bool=sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM customer_session_csrf c JOIN customer_sessions s ON s.verifier=c.session_verifier WHERE c.session_verifier=$1 AND c.csrf_digest=$2 AND c.created_xid=s.created_xid)")
+        .bind(&session_verifier).bind(&digest).fetch_one(&pool).await.expect("exact healthy binding");
+    assert!(exact);
+    let counts: (i64,i64,i32) = sqlx::query_as("SELECT (SELECT count(*) FROM customer_sessions),(SELECT count(*) FROM customer_session_csrf),(SELECT admitted FROM customer_credential_admission_scopes WHERE purpose=1)")
+        .fetch_one(&pool).await.expect("healthy result");
+    assert_eq!(counts, (1, 1, 2));
+}
+
+#[sqlx::test(migrator = "MIGRATOR")]
 async fn expiry_during_account_lock_wait_preserves_session(pool: PgPool) {
     let _case = CASE.lock().await;
     let time = std::sync::Arc::new(time());
