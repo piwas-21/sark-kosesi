@@ -182,7 +182,7 @@ async fn initial_provenance_requires_server_fsync() {
         .expect("fresh test database");
     let pool = PgPoolOptions::new()
         .max_connections(4)
-        .connect_with(options.database(&name))
+        .connect_with(options.clone().database(&name))
         .await
         .expect("fixture database");
     MIGRATOR.run(&pool).await.expect("fixture migrations");
@@ -204,6 +204,30 @@ async fn initial_provenance_requires_server_fsync() {
     assert_eq!(counts(&pool).await, (1, 1, 0, 0, 0));
     pool.execute("CREATE SEQUENCE fixture_fsync_receipt_witness; CREATE FUNCTION fixture_witness_fsync_receipt() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN PERFORM nextval('fixture_fsync_receipt_witness'); RETURN NEW; END $$; CREATE TRIGGER zz_witness_fsync_receipt AFTER INSERT ON payment_initial_dispatch_provenance FOR EACH ROW EXECUTE FUNCTION fixture_witness_fsync_receipt()")
         .await.expect("nontransactional receipt witness");
+    pool.execute("CREATE FUNCTION public.current_setting(text) RETURNS text LANGUAGE sql IMMUTABLE AS $$ SELECT 'on'::text $$")
+        .await.expect("synthetic hostile search path");
+    let writer = PgPoolOptions::new()
+        .max_connections(1)
+        .after_connect(|connection, _| {
+            Box::pin(async move {
+                sqlx::query("SET search_path=public,pg_catalog")
+                    .execute(&mut *connection)
+                    .await?;
+                sqlx::query("SET synchronous_commit='off'")
+                    .execute(connection)
+                    .await?;
+                Ok(())
+            })
+        })
+        .connect_with(options.database(&name))
+        .await
+        .expect("hostile-search-path writer");
+    let settings: (String, String, String, String) = sqlx::query_as("SELECT current_setting('fsync'::text),pg_catalog.current_setting('fsync'),current_setting('synchronous_commit'::text),pg_catalog.current_setting('synchronous_commit')")
+        .fetch_one(&writer).await.expect("spoofed and real server settings");
+    assert_eq!(
+        settings,
+        ("on".into(), expected.clone(), "on".into(), "off".into())
+    );
 
     let server = Server::start(vec![
         profile(),
@@ -227,7 +251,7 @@ async fn initial_provenance_requires_server_fsync() {
     .expect("exact synthetic pair");
     let ids = crate::payment_test_fixture::Ids(AtomicU64::new(10000));
     let result =
-        observations::fixture_record_initial(&pool, time.as_ref(), &ids, &binding.id, initial)
+        observations::fixture_record_initial(&writer, time.as_ref(), &ids, &binding.id, initial)
             .await;
     let witness: (i64, bool) =
         sqlx::query_as("SELECT last_value,is_called FROM fixture_fsync_receipt_witness")
@@ -258,6 +282,7 @@ async fn initial_provenance_requires_server_fsync() {
             ]
         );
     });
+    writer.close().await;
     pool.close().await;
     let drop_db = format!("DROP DATABASE {name}");
     sqlx::query(sqlx::AssertSqlSafe(drop_db))
