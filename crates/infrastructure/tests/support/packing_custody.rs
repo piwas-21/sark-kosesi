@@ -1788,6 +1788,150 @@ async fn released_record_keeps_target_pack_recognition_across_new_received_evide
 }
 
 #[sqlx::test(migrations = false)]
+async fn packing_order_index_preserves_history_and_finds_orphans_after_upgrade(pool: PgPool) {
+    use serde_json::Value;
+
+    fn uses_order_index(node: &Value) -> bool {
+        let scoped = node["Index Name"] == "commerce_outbox_packing_custody_order"
+            && node["Index Cond"]
+                .as_str()
+                .is_some_and(|condition| condition.contains("aggregate_id"));
+        scoped
+            || node["Plans"]
+                .as_array()
+                .is_some_and(|plans| plans.iter().any(uses_order_index))
+    }
+
+    // When composed, all reserved migrations through 0071 run before the index.
+    MIGRATOR.run_to(71, &pool).await.expect("prior schema");
+    let f = fixture::accepted(&pool, false, true).await;
+    setup(&pool).await;
+    let order = &f.order.identity.id;
+    settle(&pool, f.time.as_ref(), f.ids.as_ref(), order)
+        .await
+        .expect("settlement");
+    let items = [units("SET-FILLED")];
+    let packages = [vec![part("SEAT-COVER", 2), part("SEAT-FOAM", 2)]];
+    let pack = record(
+        &pool,
+        &token(71),
+        f.time.as_ref(),
+        f.ids.as_ref(),
+        packed(order, "index-pack", &items, &packages),
+    )
+    .await
+    .expect("original pack");
+    record(
+        &pool,
+        &token(71),
+        f.time.as_ref(),
+        f.ids.as_ref(),
+        released(order, "index-release", &pack.record.id),
+    )
+    .await
+    .expect("original release");
+    let original = inspect(&pool, &token(71), f.time.as_ref(), order)
+        .await
+        .expect("original inspection");
+    assert_eq!(original.history.len(), 2);
+    let packing_rows: Vec<Value> = sqlx::query_scalar(
+        "SELECT to_jsonb(p) FROM packing_custody p WHERE order_id=$1 ORDER BY generation",
+    )
+    .bind(order)
+    .fetch_all(&pool)
+    .await
+    .expect("packing rows");
+    let order_events = || {
+        sqlx::query_scalar::<_, Value>(
+            "SELECT to_jsonb(e) FROM commerce_outbox e WHERE aggregate_id=$1 ORDER BY id",
+        )
+        .bind(order)
+        .fetch_all(&pool)
+    };
+    let events = order_events().await.expect("original events");
+    let stock = fixture::footprint(&pool).await;
+    let source = fixture::unchanged(&pool).await;
+
+    // Planner-only volume. These unrelated events have no matching orders or
+    // custody records; disable triggers only inside this disposable fixture.
+    let mut generated = pool.begin().await.expect("synthetic planner transaction");
+    sqlx::raw_sql("ALTER TABLE commerce_outbox DISABLE TRIGGER ALL;
+        INSERT INTO commerce_outbox(id,aggregate_id,kind,payload,created_at)
+        SELECT md5('packing-planner-event:' || n),md5('packing-planner-order:' || (n / 64)),
+            'order.packing_custody_recorded.v1',jsonb_build_object('record_id',md5('packing-planner-record:' || n)),0
+        FROM generate_series(1,16384) AS source(n);
+        ALTER TABLE commerce_outbox ENABLE TRIGGER ALL;")
+        .execute(&mut *generated).await.expect("unrelated synthetic events");
+    generated.commit().await.expect("commit synthetic volume");
+    MIGRATOR
+        .run_to(72, &pool)
+        .await
+        .expect("forward order index");
+    assert_eq!(order_events().await.expect("preserved events"), events);
+    assert_eq!(
+        sqlx::query_scalar::<_, Value>(
+            "SELECT to_jsonb(p) FROM packing_custody p WHERE order_id=$1 ORDER BY generation"
+        )
+        .bind(order)
+        .fetch_all(&pool)
+        .await
+        .expect("preserved packing rows"),
+        packing_rows
+    );
+    assert_eq!(fixture::footprint(&pool).await, stock);
+    assert_eq!(fixture::unchanged(&pool).await, source);
+    assert_eq!(
+        inspect(&pool, &token(71), f.time.as_ref(), order)
+            .await
+            .expect("upgraded inspection"),
+        original
+    );
+    pool.execute("ANALYZE commerce_outbox")
+        .await
+        .expect("planner statistics");
+    for (id, expected) in [
+        (order.as_str(), 2.0),
+        ("ffffffffffffffffffffffffffffffff", 0.0),
+    ] {
+        let plan: Value = sqlx::query_scalar("EXPLAIN (ANALYZE, FORMAT JSON) SELECT count(*) FROM (SELECT 1 FROM commerce_outbox WHERE aggregate_id=$1 AND kind='order.packing_custody_recorded.v1' LIMIT 65) e")
+            .bind(id).fetch_one(&pool).await.expect("order-scoped plan");
+        let root = &plan[0]["Plan"];
+        assert_eq!(root["Plans"][0]["Actual Rows"].as_f64(), Some(expected));
+        assert!(
+            uses_order_index(root),
+            "expected packing order index: {plan}"
+        );
+    }
+    pool.execute("ALTER TABLE commerce_outbox DISABLE TRIGGER USER")
+        .await
+        .expect("isolated orphan fault");
+    sqlx::query("INSERT INTO commerce_outbox(id,aggregate_id,kind,payload,created_at) VALUES(md5('packing-planner-orphan'),$1,'order.packing_custody_recorded.v1','{}',0)")
+        .bind(order).execute(&pool).await.expect("malformed scoped orphan");
+    pool.execute("ALTER TABLE commerce_outbox ENABLE TRIGGER USER")
+        .await
+        .expect("restore guard");
+    assert!(
+        !sqlx::query_scalar::<_, bool>("SELECT packing_custody_history_exact($1)")
+            .bind(order)
+            .fetch_one(&pool)
+            .await
+            .expect("native rejection")
+    );
+    assert!(matches!(
+        inspect(&pool, &token(71), f.time.as_ref(), order).await,
+        Err(Error::InvalidStoredData)
+    ));
+    pool.execute("ALTER TABLE commerce_outbox DISABLE TRIGGER USER; DELETE FROM commerce_outbox WHERE id=md5('packing-planner-orphan'); ALTER TABLE commerce_outbox ENABLE TRIGGER USER").await.expect("exact synthetic repair");
+    assert_eq!(order_events().await.expect("restored events"), events);
+    assert_eq!(
+        inspect(&pool, &token(71), f.time.as_ref(), order)
+            .await
+            .expect("restored inspection"),
+        original
+    );
+}
+
+#[sqlx::test(migrations = false)]
 async fn populated_schema66_upgrade_preserves_settled_order_and_accepts_packing(pool: PgPool) {
     MIGRATOR.run_to(66, &pool).await.expect("schema 0066");
     let f = fixture::accepted(&pool, false, true).await;

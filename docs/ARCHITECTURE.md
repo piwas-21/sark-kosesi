@@ -718,6 +718,8 @@ recognition has since changed; it does not report unpacking or restocking. At mo
 64 journal entries per order are admitted, including releases; every active
 record reserves its own release slot. Neither a record nor its release proves physical possession, net payment, dispatch, delivery, stock
 availability or permission to ship. No carrier, payment or stock operation follows.
+An order-scoped partial outbox index supports the reverse event check, including
+malformed or orphan events, without trusting their payload to select the order.
 
 An authenticated warehouse inspection holds the same attempt claim while it
 validates the complete packing history and immutable allocation. It reports the

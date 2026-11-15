@@ -1001,7 +1001,8 @@ whole-unit claims, exact effect replay and conflicts, original and late allocati
 shared component totals, release after stale payment evidence, authority expiry
 during effect-key, attempt and commit waits, reserved release capacity, original and
 late allocation chronology, exact release recognition, and altered-history negative
-and repaired controls.
+and repaired controls. A populated upgrade exercises the order-scoped packing
+event index, default planner access and malformed orphan detection.
 They establish source journal behavior, not physical package contents, carrier
 acceptance or dispatch eligibility.
 
