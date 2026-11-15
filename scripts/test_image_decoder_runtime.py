@@ -15,12 +15,14 @@ import time
 import zlib
 from pathlib import Path
 
-ROOT = Path(__file__).resolve().parents[1]
+ROOT = Path(__file__).parent.parent
 MAX_RESPONSE = 20 + 3 * (20 + 250 * 1024)
 
 
-def run(args, *, env=None, capture=False, check=True, cwd=ROOT):
-    return subprocess.run(args, cwd=cwd, env=env, text=True, capture_output=capture, check=check)
+def run(args, *, env=None, capture=False, check=True, cwd=ROOT, input_text=None):
+    return subprocess.run(
+        args, cwd=cwd, env=env, input=input_text, text=True, capture_output=capture, check=check
+    )
 
 
 def chunk(kind, data):
@@ -204,11 +206,9 @@ def main():
     if not runner_temp.is_dir() or metadata.st_uid != os.geteuid() or metadata.st_mode & 0o022:
         raise ValueError("decoder smoke requires a protected runner directory")
     temp = Path(tempfile.mkdtemp(prefix="decoder-smoke-", dir=runner_temp))
-    temp.chmod(0o755)
+    temp.chmod(0o711)
     socket_dir = temp / "socket"
-    script = temp / "client.py"
-    shutil.copyfile(__file__, script)
-    script.chmod(0o644)
+    client_script = Path(__file__).read_text()
     project = "decoder-smoke-" + os.urandom(6).hex()
     tag = f"sark-kosesi-image-decoder:{revision}"
     env = {
@@ -309,12 +309,13 @@ def main():
                     "1000",
                     "--clear-groups",
                     "python3",
-                    script.name,
+                    "-",
                     "--client",
                     mode,
                     str(Path(socket_dir.name) / path.name),
                 ],
                 cwd=temp,
+                input_text=client_script,
             )
         print("Unauthorized UID was denied and the isolated container recovered")
         run(compose + ["stop", "-t", "10", "image-decoder"], env=env)
