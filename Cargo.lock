@@ -289,6 +289,25 @@ dependencies = [
 ]
 
 [[package]]
+name = "commerce-image-codec"
+version = "0.1.0"
+dependencies = [
+ "image",
+]
+
+[[package]]
+name = "commerce-image-decoder"
+version = "0.1.0"
+dependencies = [
+ "commerce-image-codec",
+ "image",
+ "libc",
+ "rustix",
+ "seccompiler",
+ "tokio",
+]
+
+[[package]]
 name = "commerce-infrastructure"
 version = "0.1.0"
 dependencies = [
@@ -297,6 +316,7 @@ dependencies = [
  "bytes",
  "commerce-application",
  "commerce-domain",
+ "commerce-image-codec",
  "getrandom 0.4.3",
  "http-body-util",
  "hyper",
@@ -1116,6 +1136,12 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "65cd87c9a6d60536580b316ad985726104730a5151c99845f2490428ef91240a"
 
 [[package]]
+name = "linux-raw-sys"
+version = "0.12.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "32a66949e030da00e8c7d4434b251670a91556f4144941d37452769c25d58a53"
+
+[[package]]
 name = "litemap"
 version = "0.8.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1519,6 +1545,19 @@ dependencies = [
 ]
 
 [[package]]
+name = "rustix"
+version = "1.1.5"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "891efababe418670775f199f0d233d84843c227a0949a883ce15b37c78d6629d"
+dependencies = [
+ "bitflags",
+ "errno",
+ "libc",
+ "linux-raw-sys",
+ "windows-sys 0.61.2",
+]
+
+[[package]]
 name = "rustls"
 version = "0.23.46"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1626,6 +1665,15 @@ name = "scopeguard"
 version = "1.2.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "94143f37725109f92c262ed2cf5e59bce7498c01bcc1502d7b9afe439a4e9f49"
+
+[[package]]
+name = "seccompiler"
+version = "0.5.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "a4ae55de56877481d112a559bbc12667635fdaf5e005712fd4e2b2fa50ffc884"
+dependencies = [
+ "libc",
+]
 
 [[package]]
 name = "security-framework"

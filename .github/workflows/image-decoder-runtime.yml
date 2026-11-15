@@ -1,0 +1,31 @@
+name: Image decoder container smoke
+on:
+  pull_request:
+    branches: [develop, main]
+    paths:
+      - .github/workflows/image-decoder-runtime.yml
+      - scripts/test_image_decoder_runtime.py
+      - Cargo.toml
+      - Cargo.lock
+      - rust-toolchain.toml
+      - crates/**
+      - migrations/**
+      - deploy/staging/Dockerfile
+      - deploy/staging/compose.yml
+      - deploy/staging/image-decoder.compose.yml
+permissions: {}
+jobs:
+  decoder-container:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 50
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          persist-credentials: false
+      - name: Build and exercise isolated decoder
+        env:
+          SMOKE_REVISION: ${{ github.event.pull_request.head.sha }}
+        run: python3 scripts/test_image_decoder_runtime.py
