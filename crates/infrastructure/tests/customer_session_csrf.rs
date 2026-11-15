@@ -368,3 +368,100 @@ async fn rotation_and_protected_logout_serialize_on_the_same_session(pool: PgPoo
         Err(SessionError::Denied)
     ));
 }
+
+#[sqlx::test(migrator = "MIGRATOR")]
+async fn csrf_lookup_timeout_rechecks_expiry_before_logout_error(pool: PgPool) {
+    let _case = CASE.lock().await;
+    let time = std::sync::Arc::new(time());
+    account(&pool, "csrf-wait@example.test", &time).await;
+    let issued = std::sync::Arc::new(issue(&pool, "csrf-wait@example.test", &time).await);
+    let id = verifier(&issued.session.token);
+    let before: String = sqlx::query_scalar(
+        "SELECT row_to_json(s)::text FROM customer_sessions s WHERE verifier=$1",
+    )
+    .bind(&id)
+    .fetch_one(&pool)
+    .await
+    .expect("original session");
+    let events: i64 = sqlx::query_scalar("SELECT count(*) FROM commerce_outbox")
+        .fetch_one(&pool)
+        .await
+        .expect("original outbox count");
+    for expires_during_wait in [false, true] {
+        let mut lock = pool.begin().await.expect("csrf lock transaction");
+        sqlx::query("LOCK TABLE customer_session_csrf IN ACCESS EXCLUSIVE MODE")
+            .execute(&mut *lock)
+            .await
+            .expect("hold csrf table");
+        let worker_pool = pool.clone();
+        let worker_time = time.clone();
+        let worker_issued = issued.clone();
+        let worker = tokio::spawn(async move {
+            customer_sessions::logout_with_csrf(
+                &worker_pool,
+                &worker_issued.session.token,
+                &worker_issued.csrf,
+                worker_time.as_ref(),
+            )
+            .await
+        });
+        tokio::time::timeout(std::time::Duration::from_secs(5), async {
+            loop {
+                let waiting: bool = sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM pg_stat_activity WHERE datname=current_database() AND pid<>pg_backend_pid() AND wait_event_type='Lock' AND cardinality(pg_blocking_pids(pid))>0 AND query LIKE '%SELECT csrf_digest FROM customer_session_csrf%')")
+                    .fetch_one(&pool).await.expect("csrf waiter state");
+                if waiting { break; }
+                tokio::time::sleep(std::time::Duration::from_millis(5)).await;
+            }
+        }).await.expect("real synchronizer-table lock wait");
+        if expires_during_wait {
+            time.0.store(44_200, Ordering::SeqCst);
+        }
+        let result = worker.await.expect("worker");
+        if expires_during_wait {
+            assert!(matches!(result, Err(SessionError::Denied)));
+        } else {
+            assert!(matches!(result, Err(SessionError::Unavailable)));
+        }
+        lock.commit().await.expect("release csrf table");
+        let after: String = sqlx::query_scalar(
+            "SELECT row_to_json(s)::text FROM customer_sessions s WHERE verifier=$1",
+        )
+        .bind(&id)
+        .fetch_one(&pool)
+        .await
+        .expect("session after failure");
+        assert_eq!(after, before);
+        let after_events: i64 = sqlx::query_scalar("SELECT count(*) FROM commerce_outbox")
+            .fetch_one(&pool)
+            .await
+            .expect("outbox after failure");
+        assert_eq!(after_events, events);
+        time.0.store(1000, Ordering::SeqCst);
+    }
+    customer_sessions::logout_with_csrf(&pool, &issued.session.token, &issued.csrf, time.as_ref())
+        .await
+        .expect("healthy logout remains possible");
+    assert!(matches!(
+        customer_sessions::logout_with_csrf(
+            &pool,
+            &issued.session.token,
+            &issued.csrf,
+            time.as_ref()
+        )
+        .await,
+        Err(SessionError::Denied)
+    ));
+    let revoked: (Option<i64>, Option<String>) = sqlx::query_as(
+        "SELECT revoked_at,revocation_kind FROM customer_sessions WHERE verifier=$1",
+    )
+    .bind(&id)
+    .fetch_one(&pool)
+    .await
+    .expect("committed logout");
+    assert_eq!(revoked, (Some(1000), Some("logout".into())));
+    let final_events: i64 = sqlx::query_scalar("SELECT count(*) FROM commerce_outbox")
+        .fetch_one(&pool)
+        .await
+        .expect("outbox after logout");
+    assert_eq!(final_events, events);
+}

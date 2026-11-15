@@ -962,10 +962,13 @@ redact provider identity and perform no provider request.
 
 For optional synchronizer custody, use real PostgreSQL to verify exact session
 and proof binding, immutable digest, wrong and other-session proofs, old-schema
-upgrade, expiration, rotation and competing revocations. Existing bearer-only
-operations must remain compatible. These tests do not establish HTTP CSRF policy.
+upgrade, expiration, rotation, competing revocations and legacy bearer-only
+operations. Observe an actual synchronizer-table lock timeout. A live session
+reports a storage failure, an expired session is denied, and both outcomes
+preserve the stored session and outbox. HTTP CSRF policy requires separate tests.
+
 An inserted binding with a changed digest must fail readback and roll back its
-session while preserving the admission debit; a subsequent healthy binding must
+session while preserving the admission debit. A subsequent healthy binding must
 match its returned synchronizer. The password-reset race must observe this login
 waiting on the specific held account transaction before committing the change.
 
