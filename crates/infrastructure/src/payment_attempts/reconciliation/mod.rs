@@ -8,7 +8,7 @@ use sqlx::PgPool;
 pub(crate) mod jobs;
 pub mod operator;
 pub(crate) mod steps;
-#[derive(Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum Phase {
     Search,
@@ -16,7 +16,7 @@ pub enum Phase {
     Poll,
     NeedsReview,
 }
-#[derive(Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum ReviewReason {
     Unresolved,
