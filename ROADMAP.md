@@ -223,6 +223,11 @@ retention and cancellation policy remain open.
 An independently enabled test-only mutation uses a bound session proof to add or
 cancel a subscription; it is not public ingress or notification delivery.
 
+A private guest-link issuer now atomically stores a proof and purpose-separated
+encrypted bearer after a durable nonce reservation. It returns no recipient or
+bearer and installs no opening, sender or public route. Key operations, recovery,
+retention, anti-abuse and real mailbox delivery remain open.
+
 The local room-planner preview combines the rectangle calculator with keyboard
 measurement and rotation controls, a drawn footprint, and text clearance and fit
 results. Caller measurements stay on the page unless the user downloads a

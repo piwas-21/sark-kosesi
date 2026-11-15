@@ -1904,6 +1904,18 @@ session, its CSRF proof and the exact immutable order in that basket. The
 proof has an independent random bearer and verifier domain. Return it to
 the trusted caller after the issuance transaction commits.
 
+The separate private delivery issuer captures the live guest and order, then
+commits a purpose-specific nonce reservation before reacquiring and revalidating
+the same authority. It commits one encrypted bearer envelope and proof together,
+under reciprocal native constraints. The trusted Rust writer leaves the nonce
+commit check deferred and checks durability immediately before both commits;
+arbitrary SQL can force a deferred GUC check early and later change the setting.
+Its receipt excludes the bearer, ciphertext and recipient; the normalized recipient remains in the immutable order only.
+The AES-256-GCM key is derived with HKDF-SHA256 using a fixed guest-link context;
+its nonce prefix is disjoint from verification delivery. Derived key fingerprints
+are unique within this purpose and each allocation domain. This installs no
+start, opening, delivery provider, or public route.
+
 Redemption holds the current customer account and session claims, then
 locks the exact proof and order. Compare the verified account mailbox to the
 normalized buyer mailbox in the immutable order. A matching mailbox is one

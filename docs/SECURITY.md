@@ -739,6 +739,19 @@ Keep bearer bytes and buyer information out of link records and diagnostics.
 PostgreSQL requires reciprocal consumption and a unique immutable link.
 Wrong scope, expiry or a competing link leaves the proof unspent. The
 private adapter provides no browser route or proof-delivery transport.
+Private delivery issuance uses a dedicated HKDF-SHA256 guest-link key context and
+an independent deterministic nonce prefix. It authenticates the original order,
+basket, normalized buyer, verifier, timing, key fingerprint and nonce. Every
+version-1 AAD field is bounded to 255 bytes; valid normalized mailboxes are at
+most 254 bytes. A durable reservation commits before encryption; a failed proof write burns it. The Rust
+path leaves the nonce durability check deferred and checks `fsync` and local
+`synchronous_commit` before commit. The envelope path explicitly flushes its
+reciprocal checks and checks durability again before commit. A trusted SQL writer
+can force a deferred GUC check early and change its setting before commit; native
+constraints alone do not prevent that. Reacquire and recheck the guest and exact
+order after reservation waits. A nonce is not a
+proof of message delivery; no opening or transport is installed. Key generation,
+separate custody, abuse controls and expiry/deletion policy remain release work.
 Read linked orders only under live account and session claims. Filter the
 link by the session account, validate its exact consumed proof and accepted
 order, and check session time again before returning. Keep buyer, delivery

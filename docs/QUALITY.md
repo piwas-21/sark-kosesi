@@ -1005,6 +1005,15 @@ proofs, disabled configuration, canonical paths and revisions, bounded closed
 bodies, hidden cancellation, stale replay and concurrent duplicate opt-in with
 real isolated PostgreSQL. Check unchanged stock, outbox and notification data.
 
+### Private guest-link encrypted custody
+
+Use isolated PostgreSQL to verify guest/CSRF/order ownership, same-transaction
+proof/envelope reciprocity, a prior synchronously committed nonce and burn on
+failure. Race key allocations and an actual wait through guest expiry. Test the
+HKDF vector, purpose/context/ciphertext changes, key aliases, legacy direct proof
+upgrade and redemption. No ciphertext or receipt may copy the recipient or bearer.
+This does not establish an opening path or mailbox delivery.
+
 ### Private guest-order links
 
 Use isolated PostgreSQL with actual accepted guest orders and verified

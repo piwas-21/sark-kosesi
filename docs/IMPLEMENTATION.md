@@ -578,6 +578,12 @@ and a duplicate request is denied. No session-read or public route is installed.
 Complete secure delivery, trusted ingress, timing and browser controls before
 exposing the flow beyond this test boundary.
 
+Private guest-link delivery issuance now reserves a durable nonce and atomically
+stores the exact owned proof with an AES-GCM envelope. The HKDF-derived key and
+nonce namespace are purpose-specific; the receipt discloses no bearer, ciphertext
+or recipient. Fresh guest/order authority is reacquired after nonce allocation.
+No opening, delivery start, sender, public route or mailbox acceptance is installed.
+
 Private guest-order linking requires a live guest basket credential and CSRF
 proof to issue a one-use challenge for that exact accepted order. A current
 customer session for the verified buyer mailbox consumes it and records the
