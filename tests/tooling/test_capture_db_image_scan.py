@@ -27,6 +27,7 @@ class CaptureTests(unittest.TestCase):
                     {"CAPTURE_REVISION": revision, "CAPTURE_OUTPUT": str(output)},
                 ),
                 mock.patch.object(capture.subprocess, "check_output", return_value=revision),
+                mock.patch.object(capture, "verify_staging_image"),
                 mock.patch.object(capture, "capture_identity"),
                 mock.patch.object(
                     capture.subprocess, "run", return_value=mock.Mock(returncode=2)
@@ -39,6 +40,22 @@ class CaptureTests(unittest.TestCase):
             self.assertEqual(command[command.index("--image-src") + 1], "remote")
             self.assertNotIn("/var/run/docker.sock", " ".join(command))
             self.assertIn("--show-suppressed", command)
+
+    def test_staging_image_must_belong_to_db_service(self):
+        image = f"postgres:18.7-trixie@{capture.INDEX}"
+        output = mock.Mock(stdout=json.dumps({"services": {"db": {"image": image}}}))
+        with mock.patch.object(capture.subprocess, "run", return_value=output) as run:
+            capture.verify_staging_image(Path("compose.yml"))
+        self.assertIn("--no-interpolate", run.call_args.args[0])
+        self.assertTrue(run.call_args.kwargs["check"])
+        output.stdout = json.dumps(
+            {"services": {"db": {"image": "postgres:wrong"}, "other": {"image": image}}}
+        )
+        with (
+            mock.patch.object(capture.subprocess, "run", return_value=output),
+            self.assertRaisesRegex(ValueError, "db image pin changed"),
+        ):
+            capture.verify_staging_image(Path("compose.yml"))
 
     def test_receipt_binds_actual_report_and_unfiltered_scope(self):
         report = b'{"Results":[{"Packages":[{"Name":"libc"}]}]}'

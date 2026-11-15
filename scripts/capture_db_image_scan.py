@@ -116,6 +116,31 @@ def make_receipt(revision, metadata, report, scanned_at):
     }
 
 
+def verify_staging_image(path):
+    result = subprocess.run(
+        [
+            "docker",
+            "compose",
+            "--env-file",
+            "/dev/null",
+            "-f",
+            str(path),
+            "config",
+            "--no-interpolate",
+            "--format",
+            "json",
+        ],
+        capture_output=True,
+        text=True,
+        check=True,
+    )
+    document = json.loads(result.stdout)
+    services = document.get("services") if isinstance(document, dict) else None
+    db = services.get("db") if isinstance(services, dict) else None
+    if not isinstance(db, dict) or db.get("image") != f"postgres:18.7-trixie@{INDEX}":
+        raise ValueError("staging db image pin changed; review capture pins")
+
+
 def main():
     revision = os.environ["CAPTURE_REVISION"]
     if not re.fullmatch(r"[0-9a-f]{40}", revision):
@@ -123,10 +148,7 @@ def main():
     actual = subprocess.check_output(["git", "rev-parse", "HEAD"], text=True).strip()
     if actual != revision:
         raise ValueError("checkout revision mismatch")
-    compose = Path("deploy/staging/compose.yml").read_text()
-    expected_image = rf"^\s+image:\s*postgres:18\.7-trixie@{INDEX}\s*$"
-    if len(re.findall(expected_image, compose, flags=re.MULTILINE)) != 1:
-        raise ValueError("staging image pin changed; review capture pins")
+    verify_staging_image(Path("deploy/staging/compose.yml"))
     output = Path(os.environ["CAPTURE_OUTPUT"]).resolve()
     output.mkdir(mode=0o755, parents=True, exist_ok=False)
     capture_identity(output)

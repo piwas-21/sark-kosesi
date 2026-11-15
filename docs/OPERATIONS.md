@@ -524,8 +524,9 @@ ingress flag before recreating only this project's services.
 The narrowly scoped `PostgreSQL image evidence` workflow can capture the pinned
 staging PostgreSQL image from Docker Hub on a disposable GitHub-hosted runner.
 It is triggered by relevant pull request paths or by manual dispatch. Its checkout
-is bound to the pull request head or dispatched commit; the capture verifies the
-committed staging index, its Linux AMD64 platform manifest and image config. The
+is bound to the pull request head or dispatched commit; Compose renders the checked
+in configuration without interpolation, and the capture verifies the `db` service's
+staging index, its Linux AMD64 platform manifest and image config. The
 scanner is Trivy 0.70.0 at its pinned Linux AMD64 image digest and accesses the
 registry directly without the Docker socket or credentials. Empty configuration
 and ignore files and a fresh scanner cache are used for each run.
