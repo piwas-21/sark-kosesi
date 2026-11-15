@@ -47,15 +47,40 @@ pub(crate) async fn load(
     }
     Ok(snapshot)
 }
+/// Restore a selected page and its complete bounded ancestry, newest first.
+pub(crate) async fn load_chain(
+    tx: &mut Transaction<'_, Postgres>,
+    frozen: &FrozenAttempt,
+    started_at: i64,
+    id: &str,
+) -> Result<Option<Vec<SearchSnapshot>>, PaymentStoreError> {
+    let Some(page) = one(tx, frozen, started_at, None, Some(id)).await? else {
+        return Ok(None);
+    };
+    collect_chain(tx, frozen, started_at, &page).await.map(Some)
+}
+
 pub(super) async fn validate_chain(
     tx: &mut Transaction<'_, Postgres>,
     frozen: &FrozenAttempt,
     started_at: i64,
-    s: &SearchSnapshot,
+    page: &SearchSnapshot,
 ) -> Result<(), PaymentStoreError> {
-    let mut current = s.clone();
+    collect_chain(tx, frozen, started_at, page)
+        .await
+        .map(|_| ())
+}
+
+async fn collect_chain(
+    tx: &mut Transaction<'_, Postgres>,
+    frozen: &FrozenAttempt,
+    started_at: i64,
+    page: &SearchSnapshot,
+) -> Result<Vec<SearchSnapshot>, PaymentStoreError> {
+    let mut current = page.clone();
+    let mut result = Vec::new();
     let mut cursors = std::collections::HashSet::new();
-    if let Some(next) = &s.intent.next {
+    if let Some(next) = &page.intent.next {
         cursors.insert(next.clone());
     }
     for _ in 0..commerce_domain::payment_attempts::searches::MAX_SEARCH_PAGES {
@@ -65,7 +90,8 @@ pub(super) async fn validate_chain(
             return Err(PaymentStoreError::InvalidStoredData);
         }
         let Some(id) = &current.intent.previous_page_id else {
-            return Ok(());
+            result.push(current);
+            return Ok(result);
         };
         let previous = one(tx, frozen, started_at, None, Some(id))
             .await?
@@ -73,6 +99,7 @@ pub(super) async fn validate_chain(
         if !current.follows(&previous) {
             return Err(PaymentStoreError::InvalidStoredData);
         }
+        result.push(current);
         current = previous;
     }
     Err(PaymentStoreError::InvalidStoredData)

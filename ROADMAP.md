@@ -311,11 +311,13 @@ crash-resumable discovery without treating empty/end pages as absence. No creden
 sticky paid facts, with visible ambiguity, operation receipts and atomic events.
 Profile-scoped supervised GET-only recovery now persists leases, search/fetch/poll
 checkpoints, bounded retries and explicit review reasons through a local/test
-worker command. No runtime key or scheduler is installed. Private finance-authorized transient
+worker command. A separate read-only command inspects one checkpoint with a
+redacted summary and no provider credential. No runtime key or scheduler is installed. Private finance-authorized transient
 recovery now retains immutable full-checkpoint decisions and permits at most three
 lifetime resumes without resetting claim, poll or scan budgets. Fresh session/MFA,
 exact generation and confirmation protect every call, including receipt replay.
-Paid, ambiguous, capped and invalid-custody stops remain unresolved. Private
+A private original-attempt preflight validates bounded retained evidence without
+provider access or job enrollment. Paid, ambiguous, capped and invalid-custody stops remain unresolved. Private
 callback-ID GETs now obtain exact-profile minimal evidence and use authenticated
 metadata only to locate and fully match the original frozen order/attempt/dispatch
 before atomic observation/outbox custody. No callback body or return status grants

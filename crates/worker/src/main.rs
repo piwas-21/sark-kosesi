@@ -15,6 +15,8 @@ enum Mode {
     Probe,
     Expire,
     Reconcile,
+    InspectPaymentRecovery(String),
+    InspectPaymentCustody(String),
     Callbacks,
     ReversalPages,
     ReversalItems,
@@ -32,6 +34,16 @@ fn parse_mode(args: &[String]) -> Result<Mode, std::io::Error> {
         [] => Ok(Mode::Probe),
         [argument] if argument == "--expire-holds" => Ok(Mode::Expire),
         [argument] if argument == "--reconcile-payments" => Ok(Mode::Reconcile),
+        [argument, attempt]
+            if argument == "--inspect-payment-recovery" && reversal_pages::identifier(attempt) =>
+        {
+            Ok(Mode::InspectPaymentRecovery(attempt.clone()))
+        }
+        [argument, attempt]
+            if argument == "--inspect-payment-custody" && reversal_pages::identifier(attempt) =>
+        {
+            Ok(Mode::InspectPaymentCustody(attempt.clone()))
+        }
         [argument] if argument == "--reconcile-callbacks" => Ok(Mode::Callbacks),
         [argument] if argument == "--reconcile-reversal-pages" => Ok(Mode::ReversalPages),
         [argument] if argument == "--reconcile-reversal-items" => Ok(Mode::ReversalItems),
@@ -135,6 +147,8 @@ async fn main() -> Result<(), std::io::Error> {
             }
         }
         Mode::Reconcile => payments::run(&pool).await?,
+        Mode::InspectPaymentRecovery(attempt) => payments::inspect(&pool, &attempt).await?,
+        Mode::InspectPaymentCustody(attempt) => payments::inspect_custody(&pool, &attempt).await?,
         Mode::Callbacks => callbacks::run(&pool).await?,
         Mode::ReversalPages => reversal_pages::run(&pool, None).await?,
         Mode::ReversalItems => reversal_items::run(&pool, None).await?,

@@ -1,7 +1,7 @@
 //! Explicit test-only GET supervisor; no environment key enters logs or DB custody.
 use commerce_infrastructure::{
     mollie::{ReconciliationClient, TestCredential},
-    payment_attempts::reconciliation::{Batch, run_batch},
+    payment_attempts::reconciliation::{Batch, read_job, run_batch},
     runtime::{SecureIdentifiers, SystemClock},
 };
 use sqlx::PgPool;
@@ -58,6 +58,51 @@ pub async fn run(pool: &PgPool) -> Result<()> {
         .map_err(|_| Error::other("payment reconciliation unavailable"))?;
     report(&batch)
 }
+
+pub(super) async fn inspect(pool: &PgPool, attempt: &str) -> Result<()> {
+    let job = read_job(pool, attempt)
+        .await
+        .map_err(|_| Error::other("payment recovery checkpoint unavailable"))?;
+    if let Some(job) = job {
+        tracing::info!(
+            code = "payment_recovery_checkpoint",
+            state = "present",
+            phase = ?job.phase,
+            review_reason = ?job.review_reason,
+            generation = job.generation,
+            resume_revision = job.resume_revision,
+            due_at = job.due_at,
+            lease_until = ?job.lease_until,
+            polls = job.polls,
+            failures = job.failures,
+        );
+    } else {
+        tracing::info!(code = "payment_recovery_checkpoint", state = "absent");
+    }
+    Ok(())
+}
+
+/// One redacted local/test evidence snapshot; no credential or provider request.
+pub(super) async fn inspect_custody(pool: &PgPool, attempt: &str) -> Result<()> {
+    let custody =
+        commerce_infrastructure::payment_attempts::reconciliation::custody::inspect_custody(
+            pool, attempt,
+        )
+        .await
+        .map_err(|_| Error::other("payment custody inspection unavailable"))?;
+    tracing::info!(
+        code = "payment_custody_inspection",
+        checkpoint_phase = ?custody.checkpoint_phase,
+        checkpoint_review = ?custody.checkpoint_review,
+        checkpoint_page = custody.checkpoint_page,
+        observations = custody.observations,
+        identities = custody.identities,
+        paid_observed = custody.paid_observed,
+        resolution_current = ?custody.resolution_current,
+    );
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

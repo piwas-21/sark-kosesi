@@ -20,3 +20,8 @@ zeroize.workspace = true
 
 [dev-dependencies]
 commerce-domain.workspace = true
+# Shared synthetic checkout and catalogue fixtures used by the CLI integration test.
+image.workspace = true
+serde_json.workspace = true
+sha2.workspace = true
+tower-sessions.workspace = true
