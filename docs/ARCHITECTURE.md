@@ -831,6 +831,17 @@ payment state. Supervised search jobs, identity resolution, callbacks, late-paid
 stock recovery and separate finance/fulfilment transitions remain required.
 Loopback instruments are not provider sandbox acceptance or configured credentials.
 
+The private test dispatch orchestration composes the committed one-use start,
+exact create, separate authenticated GET and minimal observation/event write. It
+uses the permit's original frozen attempt and the ID returned by that same create;
+a caller cannot supply a payment ID. An existing start returns reconciliation
+without network I/O. Every failure after the start is uncertain, including an
+observation commit failure; recovery retains the original reconciliation event.
+The entry returns no provider identifier or checkout URL and installs no route,
+scheduler, credential or payment/stock transition. Even a failed start call can
+have an unknown database commit outcome and must be retried only through the
+same serialized start entry, never by independently calling create.
+
 Private unknown-ID discovery performs one authenticated list request per explicit
 call, with a fixed ten-payment limit, descending order and the existing byte/time
 bounds. It sends neither profileId nor testmode with the profile-bound test key.
