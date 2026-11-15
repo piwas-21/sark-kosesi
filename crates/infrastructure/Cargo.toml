@@ -12,8 +12,9 @@ workspace = true
 [dependencies]
 commerce-domain.workspace = true
 commerce-application.workspace = true
+commerce-image-codec.workspace = true
 sqlx.workspace = true
-tokio.workspace = true
+tokio = { workspace = true, features = ["io-util"] }
 getrandom.workspace = true
 sha2.workspace = true
 ring.workspace = true
@@ -21,7 +22,6 @@ argon2.workspace = true
 unicode-normalization.workspace = true
 zeroize.workspace = true
 time.workspace = true
-image.workspace = true
 
 serde_json = { workspace = true, features = ["raw_value"] }
 serde.workspace = true
@@ -39,6 +39,7 @@ name = "browser-fixture-effect"
 path = "tests/support/browser_fixture_effect.rs"
 
 [dev-dependencies]
+image.workspace = true
 tracing.workspace = true
 hyper.workspace = true
 hyper-util.workspace = true

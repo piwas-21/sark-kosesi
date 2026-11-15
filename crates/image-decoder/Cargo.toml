@@ -1,0 +1,20 @@
+[package]
+name = "commerce-image-decoder"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[lints]
+workspace = true
+
+[target.'cfg(target_os = "linux")'.dependencies]
+commerce-image-codec = { path = "../image-codec", version = "=0.1.0" }
+rustix = { version = "=1.1.5", features = ["process", "thread"] }
+libc = "=0.2.191"
+seccompiler = "=0.5.0"
+tokio = { workspace = true, features = ["io-util", "process"] }
+
+[target.'cfg(target_os = "linux")'.dev-dependencies]
+image.workspace = true

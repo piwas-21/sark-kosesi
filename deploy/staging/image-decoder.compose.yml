@@ -1,0 +1,41 @@
+{
+  "services": {
+    "api": {
+      "environment": {
+        "PREVIEW_IMAGE_DECODER_SOCKET": "/decoder-socket/decoder.sock"
+      },
+      "volumes": [
+        {
+          "type": "bind",
+          "source": "${STAGING_IMAGE_DECODER_DIR:?pre-provisioned private decoder directory required}",
+          "target": "/decoder-socket",
+          "read_only": true,
+          "bind": { "create_host_path": false }
+        }
+      ]
+    },
+    "image-decoder": {
+      "profiles": ["image-decoder"],
+      "image": "sark-kosesi-image-decoder:${STAGING_REVISION:?reviewed source revision required}",
+      "user": "65532:1000",
+      "command": ["serve", "/decoder-socket/decoder.sock", "1000"],
+      "network_mode": "none",
+      "read_only": true,
+      "volumes": [
+        {
+          "type": "bind",
+          "source": "${STAGING_IMAGE_DECODER_DIR:?pre-provisioned private decoder directory required}",
+          "target": "/decoder-socket",
+          "bind": { "create_host_path": false }
+        }
+      ],
+      "restart": "no",
+      "mem_limit": "1g",
+      "memswap_limit": "1g",
+      "cpus": 1.0,
+      "pids_limit": 32,
+      "cap_drop": ["ALL"],
+      "security_opt": ["no-new-privileges:true"]
+    }
+  }
+}

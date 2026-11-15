@@ -1,3 +1,4 @@
+use commerce_infrastructure::image_ingestion::DecoderEndpoint;
 use std::{collections::HashMap, net::SocketAddr};
 
 /// Capability created only by validated test-mode configuration.
@@ -9,6 +10,7 @@ pub struct Config {
     pub preview_database_preapplied: bool,
     pub preview_token: String,
     pub bind: SocketAddr,
+    pub image_decoder: Option<DecoderEndpoint>,
     pub guest_origin: Option<crate::guest::GuestOrigin>,
     pub test_guest_cancellation: Option<TestGuestCancellation>,
     pub verification: Option<crate::verification::VerificationConfig>,
@@ -61,6 +63,10 @@ impl Config {
         if !bind.ip().is_loopback() {
             return Err("Preview API must bind loopback");
         }
+        let image_decoder = values
+            .get("PREVIEW_IMAGE_DECODER_SOCKET")
+            .map(|value| DecoderEndpoint::parse(value))
+            .transpose()?;
         let guest_origin = values
             .get("GUEST_ORIGIN")
             .map(|value| crate::guest::GuestOrigin::parse(value))
@@ -106,6 +112,7 @@ impl Config {
             preview_database_preapplied,
             preview_token,
             bind,
+            image_decoder,
             guest_origin,
             test_guest_cancellation,
             callback_profile,

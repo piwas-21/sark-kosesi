@@ -167,8 +167,16 @@ claimed digest/codec/raw dimensions and excludes personal derivative metadata.
 It performs CPU work outside transactions, with bounded concurrency and fresh
 authority before effects/private return; immutable complete hash-bound sets are
 stored atomically. There is no arbitrary URL fetching or caller-selected path.
-No public storage/delivery or image publication is enabled. P4 still owns safe
-HTTP upload/session/CSRF controls; P7 owns measured process memory/CPU isolation.
+Public delivery uses the separate guarded rendition path after publication.
+The optional Linux decoder also validates those stored bytes. It exchanges bounded,
+versioned frames over a shared socket, checks peer identities, and has no network
+attachment or database credentials. Each request uses a disposable child with
+hard memory and CPU limits. It installs a deny-by-default seccomp filter before
+reading input, so image processing cannot open files, create sockets, start
+processes or signal the supervisor. P4 still owns safe HTTP upload/session/CSRF controls.
+P7 requires exact-image runtime, fault recovery and capacity evidence.
+The API verifies the framed result and binds the derivative bytes to stored
+hashes. The codec remains trusted for rendition content and metadata removal.
 
 Copy review uses a separate, unseeded `catalogue.review` grant and rejects the
 target draft's own author even if that account holds both grants. The recent-MFA

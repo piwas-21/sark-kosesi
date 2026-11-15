@@ -1,10 +1,15 @@
-FROM rust:1.99.1-bookworm@sha256:9181b56c2a21ab1d5e73cffe04fc762426d30aa7fac3c91141dd033f49a7fc8b AS rust-build
+FROM rust:1.99.1-bookworm@sha256:9181b56c2a21ab1d5e73cffe04fc762426d30aa7fac3c91141dd033f49a7fc8b AS rust-source
 WORKDIR /source
 COPY Cargo.toml Cargo.lock rust-toolchain.toml ./
 COPY crates ./crates
 COPY migrations ./migrations
 ENV CARGO_BUILD_JOBS=1
+
+FROM rust-source AS rust-build
 RUN cargo build --release --locked -p commerce-api --bins
+
+FROM rust-source AS decoder-build
+RUN cargo build --release --locked -p commerce-image-decoder
 
 FROM node:24.22.3-bookworm-slim@sha256:dc26ae92c9fb15cf6b1d63e20f0944b2efe0f115b20e00be48fb23fceb061c54 AS node-runtime
 
@@ -38,6 +43,14 @@ WORKDIR /app
 COPY --from=rust-build /source/target/release/commerce-api /app/commerce-api
 USER node
 ENTRYPOINT ["/app/commerce-api"]
+
+FROM runtime AS image-decoder
+ARG SOURCE_REVISION
+LABEL org.opencontainers.image.source="https://github.com/piwas-21/sark-kosesi" org.opencontainers.image.revision=$SOURCE_REVISION org.piwas.environment="staging"
+WORKDIR /app
+COPY --from=decoder-build /source/target/release/commerce-image-decoder /app/commerce-image-decoder
+USER 65532:1000
+ENTRYPOINT ["/app/commerce-image-decoder"]
 
 FROM runtime AS callback-edge
 ARG SOURCE_REVISION
