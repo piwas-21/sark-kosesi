@@ -554,6 +554,50 @@ committed start retains recovery and sends no POST. Started cases never POST aga
 the success control retains a matching observation and event. These are not
 provider evidence.
 
+Initial provenance controls bind the fresh create capability to the matched GET,
+earlier start, new observation and event. Exercise native immutability and reject a
+different fetched identity. A real callback occupying the initial effect key must
+retain its normal exact replay while the initial path remains uncertain and cannot
+mint or later attach a provenance receipt. A receipt-write fault must roll back the
+observation and event while retaining the original start and reconciliation path.
+A silently suppressed receipt insert must also leave an independent write witness
+and roll back, without a second POST. An isolated post-insert deletion fault
+retains the native insertion checks, witnesses the exact row being removed, and
+requires the final readback to fail with the same rollback and no retry. An
+authenticated loopback GET bound to a
+synthetic, different frozen request must be rejected; the stored original must
+still be accepted. Legacy transaction fields remain nullable, historical reads
+continue to work, and an absent origin receipt remains unproven. Verify the source
+digest against an independent fixed-byte oracle and
+under different timezone, DateStyle and bytea settings. A coherently changed
+provider ID and observation snapshot must fail the unchanged receipt's native and
+Rust source checks; exact repair must restore both. These controls do not detect
+a privileged rewrite of both receipt and source, or establish that the trusted database writer performed
+provider I/O or that any provider accepted a live payment.
+Exercise an inherited asynchronous session and a post-receipt setting sabotage:
+observe the inserted-write witness, rollback of observation/event/receipt, an
+uncertain outcome and no second POST. PostgreSQL fsync must be enabled; these
+settings do not prove underlying storage flush behavior.
+For the isolated server-fsync control, after the disposable PostgreSQL wrapper
+with `--fsync-off` is composed, run the same infrastructure lib test binary in
+two separate owned native clusters. Set `P1_POSTGRES_BIN` to the pinned native
+PostgreSQL 18 directory, then invoke `python3 scripts/with_postgres.py` once
+with `--fsync-off` and once without it, each followed by
+`-- <infrastructure-lib-test> --exact mollie::tests::test_initial_provenance_durability::initial_provenance_requires_server_fsync --ignored`.
+The fixture checks the wrapper's disposable marker before creating its own
+database. It seeds a synthetic historical start and constructs synthetic create
+evidence bound to an authenticated loopback GET; it sends no create POST and
+does not prove real provider origin. A raw repeatable-read insert must fail the
+native isolation guard even when the inherited search path spoofs its setting.
+Also shadow transaction-ID and digest functions in an isolated schema: verify
+real start and observation XIDs, reject a later attempted generic-receipt
+upgrade, and check the fixed canonical digest against its independent oracle.
+Shadow text equality so an unqualified off-to-on comparison lies while the
+actual receipt writer still rejects an unsafe server.
+These controls assume the actual public tables and functions remain owned by
+the trusted migration authority; privileged database rewrites remain outside
+the evidence boundary.
+
 Compiled provider controls bypass authenticated-profile verification, fetched
 payment matching, the early streamed-byte limit, duplicate-field preservation and
 sensitive authorization marking. Each must compile and fail its named assertion;
