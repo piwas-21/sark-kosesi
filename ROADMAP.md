@@ -364,10 +364,10 @@ stored revalidation and complete original matching protect idempotent observatio
 processing. Private callback intake and GET-only supervision now retain atomic
 profile/global quotas, generation/operation custody, fenced checkpoints and
 independent receipt processing. An unseeded recent-MFA reversal-review capability
-can inspect one exact item review stop with a redacted local summary. A private
-one-candidate inbox discovers validated stops under the same authority. An explicit
-local/test worker command uses the exact-item review with bounded non-terminal
-credential input. Staff session issuance and production operator access remain
+can inspect one exact item review stop with a redacted local summary. The private
+one-candidate inbox discovers validated stops under the same authority. The
+local/test worker exposes both reads with bounded non-terminal staff credential
+input. Staff session issuance and production operator access remain
 absent. These reads confer no retry, provider or financial authority. Unresolved
 older generations retain capacity;
 late paid facts stay visible after newer open results or review stops. A private

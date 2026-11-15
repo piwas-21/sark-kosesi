@@ -439,6 +439,16 @@ retains one authenticated fact. Inspection of an uncertain job indicates when
 the operation's exact late observation is available. The review state and
 provider history remain unresolved.
 
+For an authorized local/test staff session, `commerce-worker
+--review-reversal-inbox` reads one current review stop without provider credentials.
+Supply exactly 32 raw session bytes followed by EOF on non-terminal stdin within
+five seconds; never place the session in an argument. The closed output is empty
+or contains the internal job ID and update time with a review summary. Continue
+with `--review-reversal-inbox <updated-at> <job-id>` using those exact values.
+This is a live scan; restart without a cursor to find earlier changes. It cannot
+retry, fetch from the provider, resolve the stop or authorize financial effects.
+Staff sessions and production operator access are not installed by this command.
+
 ## Private callback supervision
 
 `cargo run --locked -p commerce-worker -- --reconcile-callbacks` runs one bounded

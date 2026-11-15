@@ -492,9 +492,11 @@ full workload bounds and operational acceptance remain separate.
    under the same staff and attempt claims. A private inbox uses the same authority
    and full proof to return one candidate with a live keyset cursor. Its redacted
    result grants no retry or financial authority and produces no provider or state
-   effects. The local/test worker's exact-item review accepts exactly 32 raw staff
-   session bytes on non-terminal stdin with a five-second EOF deadline and returns
-   a closed summary. Credentials do not appear in arguments or logs. Staff session
+   effects. The local/test worker exposes both the exact-item review and the
+   one-entry inbox, accepting exactly 32 raw staff session bytes on non-terminal
+   stdin with a five-second EOF deadline and returning a closed summary. The inbox
+   cursor is internal and live; restarting the scan finds earlier changes.
+   Credentials do not appear in arguments or logs. Staff session
    issuance and production operator access remain open. Add operator recovery and
    scheduling before
    provider acceptance. An exact
