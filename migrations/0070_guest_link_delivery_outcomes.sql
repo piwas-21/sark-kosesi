@@ -1,0 +1,45 @@
+-- Trusted local callback classifications only, not provider or mailbox delivery.
+CREATE TABLE guest_link_delivery_outcomes (
+ verifier bytea PRIMARY KEY REFERENCES guest_link_delivery_starts(verifier),
+ start_transaction_id xid8 NOT NULL,
+ ciphertext_sha256 bytea NOT NULL CHECK(octet_length(ciphertext_sha256)=32),
+ outcome text NOT NULL CHECK(outcome IN ('accepted','explicit_rejection','uncertain')),
+ observed_at bigint NOT NULL CHECK(observed_at BETWEEN 0 AND 9007199254740991),
+ transaction_id xid8 NOT NULL
+);
+
+CREATE FUNCTION guard_guest_link_delivery_outcome() RETURNS trigger LANGUAGE plpgsql VOLATILE AS $$
+DECLARE original guest_link_delivery_starts%ROWTYPE; ciphertext_digest bytea;
+BEGIN
+ IF TG_OP<>'INSERT' THEN RAISE EXCEPTION 'Guest link outcomes are immutable' USING ERRCODE='23514'; END IF;
+ IF current_setting('transaction_isolation')<>'read committed'
+  OR current_setting('fsync')<>'on' OR current_setting('synchronous_commit')<>'on' THEN
+  RAISE EXCEPTION 'Guest link outcome requires durable read committed' USING ERRCODE='23514'; END IF;
+ IF NEW.transaction_id IS NOT NULL THEN RAISE EXCEPTION 'Outcome transaction is assigned by database' USING ERRCODE='23514'; END IF;
+ SELECT * INTO original FROM guest_link_delivery_starts WHERE verifier=NEW.verifier FOR SHARE;
+ SELECT CASE WHEN octet_length(ciphertext)=48 THEN sha256(ciphertext) END INTO ciphertext_digest
+  FROM guest_link_delivery_envelopes WHERE verifier=NEW.verifier FOR SHARE;
+ NEW.transaction_id=pg_current_xact_id();
+ IF original.verifier IS NULL OR ciphertext_digest IS DISTINCT FROM NEW.ciphertext_sha256
+  OR original.transaction_id IS DISTINCT FROM NEW.start_transaction_id
+  OR original.transaction_id=NEW.transaction_id OR NEW.observed_at<original.started_at THEN
+  RAISE EXCEPTION 'Guest link outcome requires its prior start' USING ERRCODE='23514'; END IF;
+ RETURN NEW;
+END $$;
+CREATE TRIGGER guard_guest_link_delivery_outcome BEFORE INSERT OR UPDATE OR DELETE ON guest_link_delivery_outcomes
+ FOR EACH ROW EXECUTE FUNCTION guard_guest_link_delivery_outcome();
+
+CREATE FUNCTION require_guest_link_delivery_outcome() RETURNS trigger LANGUAGE plpgsql VOLATILE AS $$
+BEGIN
+ IF current_setting('fsync')<>'on' OR current_setting('synchronous_commit')<>'on'
+  OR NEW.transaction_id IS DISTINCT FROM pg_current_xact_id()
+  OR NOT EXISTS(SELECT 1 FROM guest_link_delivery_starts s WHERE s.verifier=NEW.verifier
+   AND s.transaction_id=NEW.start_transaction_id AND s.transaction_id<>NEW.transaction_id
+   AND s.started_at<=NEW.observed_at)
+  OR NOT EXISTS(SELECT 1 FROM guest_link_delivery_envelopes e WHERE e.verifier=NEW.verifier
+   AND CASE WHEN octet_length(e.ciphertext)=48 THEN sha256(e.ciphertext)=NEW.ciphertext_sha256 ELSE false END) THEN
+  RAISE EXCEPTION 'Guest link outcome requires its prior durable start' USING ERRCODE='23514'; END IF;
+ RETURN NULL;
+END $$;
+CREATE CONSTRAINT TRIGGER require_guest_link_delivery_outcome AFTER INSERT ON guest_link_delivery_outcomes
+ DEFERRABLE INITIALLY DEFERRED FOR EACH ROW EXECUTE FUNCTION require_guest_link_delivery_outcome();

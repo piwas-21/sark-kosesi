@@ -761,12 +761,32 @@ It requires the exact proof, order and verified buyer mailbox. Preserve the
 local part and fold only the ASCII domain through the existing normalizer.
 Keep bearer bytes and buyer information out of link records and diagnostics.
 PostgreSQL requires reciprocal consumption and a unique immutable link.
-Wrong scope, expiry or a competing link leaves the proof unspent. The synchronizer-bound redemption claims that exact session and proof in the same
+Wrong scope, expiry or a competing link leaves the proof unspent. The
+synchronizer-bound redemption claims that exact session and proof in the same
 transaction; legacy private callers remain separate. An independently enabled
 test-only POST requires preview authentication, the exact configured Origin,
 the canonical customer cookie and its bound synchronizer. Its bounded body holds
 only an order ID and proof, and its empty success response contains no identity.
 No public browser route or proof-delivery transport is installed.
+Private delivery issuance uses a dedicated HKDF-SHA256 guest-link key context and
+an independent deterministic nonce prefix. It authenticates the original order,
+basket, normalized buyer, verifier, timing, key fingerprint and nonce. Every
+version-1 AAD field is bounded to 255 bytes; valid normalized mailboxes are at
+most 254 bytes. A durable reservation commits before encryption; a failed proof write burns it. The Rust
+path leaves the nonce durability check deferred and checks `fsync` and local
+`synchronous_commit` before commit. The envelope path explicitly flushes its
+reciprocal checks and checks durability again before commit. A trusted SQL writer
+can force a deferred GUC check early and change its setting before commit; native
+constraints alone do not prevent that. Reacquire and recheck the guest and exact
+order after reservation waits. A nonce is not a
+proof of message delivery. A separate durable local start permits only its fresh
+winner to relock the proof and guest order, revalidate source and key, and open
+the envelope for a trusted synchronous in-process callback. A failed or uncertain
+start cannot be retried automatically, and source state can change after the final
+check. No transport is installed. As with nonce allocation, the durable-commit
+claim relies on the supported Rust writer; a privileged arbitrary SQL writer can
+force the deferred setting check early. Key generation, separate custody, abuse
+controls and expiry/deletion policy remain release work.
 Read linked orders only under live account and session claims. Filter the
 link by the session account, validate its exact consumed proof and accepted
 order, and check session time again before returning. Keep buyer, delivery
