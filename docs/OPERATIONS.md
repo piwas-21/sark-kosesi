@@ -161,13 +161,44 @@ compiled SQLx `ignore_missing` policy and ordered `migrations` entries containin
 a decimal-string `version`, `kind` (`simple`, `reversible_up` or
 `reversible_down`) and lowercase SHA-384 `checksum_sha384`. Both members of a
 reversible pair may have the same version. Extra arguments fail. Capture the
-output from the exact image and bind it to a separately verified image digest;
-the output does not attest its own provenance. Compare applied successful
-`_sqlx_migrations` versions and checksums, report candidate-only forward
-migrations as pending, and reject dirty records, checksum differences or applied
-versions absent from a binary whose `ignore_missing` is false. A manifest is not
-proof that pending migrations run, that queries remain compatible, or that an
-image starts or can roll back. Older binaries may not provide this command.
+output from the exact image and bind it to a separately verified image digest.
+Capture database history with one read-only query against the selected copy.
+Use the same database, connection role and effective `search_path` as the
+application. The unqualified table name resolves the same way as it does for
+the embedded migrator. Keep connection details out of the artifact. An empty
+migration table produces an empty history, while a missing table fails the capture.
+For the opted-in preapplied preview, set `pg_catalog, public, pg_temp` in the
+read-only capture transaction to match the API pool's fixed search path.
+
+```sh
+umask 077
+psql -X -qAt -v ON_ERROR_STOP=1 > history.json <<'SQL'
+BEGIN READ ONLY;
+SELECT json_build_object(
+  'schema_version', 1,
+  'migrations', COALESCE(json_agg(json_build_object(
+    'version', version::text,
+    'checksum_sha384', encode(checksum, 'hex'),
+    'success', success
+  ) ORDER BY version), '[]'::json)
+)
+FROM _sqlx_migrations;
+COMMIT;
+SQL
+python3 scripts/check_migration_compatibility.py candidate-manifest.json history.json
+```
+
+The offline comparison rejects dirty or duplicate rows, checksum differences
+and missing applied versions when `ignore_missing` is false. It lists pending
+forward versions and any applied versions permitted by `ignore_missing`. The
+report records SHA-256 digests of both captured files. After applying candidate
+migrations to an isolated copy, recapture that copy's history and compare it
+with both binaries. Add `--require-applied` to check the preview's startup
+requirements for a strict manifest and complete history. Retain the image
+digest and database
+snapshot identity alongside the report. Prove image provenance, migration
+execution, query compatibility and actual startup separately. Older binaries
+may lack the manifest command.
 
 For a quiescent non-selling preview only, the [staging runbook](../deploy/staging/README.md#rollback) permits a consistent snapshot restored into a separate owned project/database while preserving the old database and containers. Verify restore integrity, private startup and exclusive router ownership before switching. If business writes occur after the snapshot, require reviewed catch-up/reconciliation before cutover or rollback; a snapshot must not discard those writes.
 
