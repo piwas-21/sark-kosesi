@@ -68,6 +68,91 @@ The check reads delivery policy and application-file presence from the committed
 
 Before release: all required CI and independent reviews; populated Sonar with zero issues/hotspots; application/security/performance/discovery evidence; real market/provider/product/legal acceptance; isolated restore and compatible rollback. Create a release PR develop → main; no direct push. Build immutable digest-tagged images from the reviewed revision, sign/attest provenance, deploy staging and verify served version/health/routes before production. Add the deployment workflow only when these gates are real; merging foundation does not deploy anything.
 
+For an offline preliminary review of a Debian image vulnerability scan, use
+`scripts/inspect_image_scan.py`. Keep the raw Trivy JSON with all packages listed,
+the exact single-platform OCI manifest and its config bytes, and a separate capture
+receipt. Do not substitute a finding-count summary for the raw report. The receipt
+has these exact fields (replace the explanatory strings with actual values):
+
+```json
+{
+  "schema_version": 1,
+  "source_revision": "40-character lowercase commit ID",
+  "manifest_digest": "sha256:platform-manifest-digest",
+  "scanner_digest": "sha256:scanner-image-digest",
+  "report_digest": "sha256:raw-report-bytes-digest",
+  "scanned_at": "2026-11-15T11:00:00Z",
+  "exit_code": 0,
+  "database": {
+    "version": 2,
+    "updated_at": "2026-11-15T10:00:00Z",
+    "next_update": "2026-11-16T10:00:00Z"
+  },
+  "scope": {
+    "scanners": ["vuln"],
+    "package_types": ["os", "library"],
+    "severities": ["UNKNOWN", "LOW", "MEDIUM", "HIGH", "CRITICAL"],
+    "include_unfixed": true,
+    "include_all_packages": true,
+    "show_suppressed": true,
+    "ignore_rules": false,
+    "vex": false
+  }
+}
+```
+
+With pinned Trivy v0.70.0, a trusted capture must use a controlled empty config,
+empty ignore file and environment without `TRIVY_*` overrides. For the exact
+platform image, the relevant unfiltered invocation is:
+
+```sh
+trivy --config CONTROLLED_EMPTY_CONFIG image --format json --scanners vuln \
+  --pkg-types os,library --severity UNKNOWN,LOW,MEDIUM,HIGH,CRITICAL \
+  --pkg-relationships unknown,root,workspace,direct,indirect \
+  --list-all-pkgs --show-suppressed --exit-code 0 \
+  --ignorefile CONTROLLED_EMPTY_IGNORE_FILE --platform linux/amd64 \
+  --output RAW_TRIVY.json IMAGE_AT_VERIFIED_PLATFORM_DIGEST
+```
+
+Do not use ignore-status, ignore-unfixed, ignore-policy, VEX, skipped files or
+directories, alternate package relationship filters, or other settings that omit
+findings or targets. Preserve the capture's effective settings and scanner and
+database provenance for independent review. The receipt's `show_suppressed` field
+attests that the flag was enabled; absent modified findings alone cannot prove it,
+because Trivy's [JSON writer](https://github.com/aquasecurity/trivy/blob/v0.70.0/pkg/report/json.go)
+otherwise removes them. `--show-suppressed` does not authenticate capture or detect
+every way a scan may have been filtered.
+
+Use RFC 3339 UTC timestamps from the capture and vulnerability database metadata,
+and run the audit with independently verified source revision, scanner image digest,
+platform manifest digest, and platform:
+
+```sh
+python3 scripts/inspect_image_scan.py --receipt PRIVATE_RECEIPT.json \
+  --manifest OCI_PLATFORM_MANIFEST.json --image-config OCI_CONFIG.json \
+  --report RAW_TRIVY.json --revision REVIEWED_COMMIT \
+  --image-digest sha256:VERIFIED_PLATFORM_MANIFEST_DIGEST \
+  --scanner-digest sha256:VERIFIED_SCANNER_IMAGE_DIGEST --platform linux/amd64
+```
+
+The audit requires a populated Debian inventory, matching manifest/config and scan
+identity, a successful unfiltered scope and a database valid both at scan time and
+at audit time. It rejects modified findings, malformed evidence, stale database
+metadata and any reported HIGH or CRITICAL finding. Its zero finding result means
+only that none were reported in the supplied evidence. Scope, scanner execution,
+database metadata, source/build provenance and artifact custody must be established
+by trusted capture and independent review; self-declared receipt fields cannot prove
+them. The audit provides no waivers and does not replace release evidence or human
+security assessment. Review other severities, package reachability, SBOM, provenance
+and runtime separately. See the [Trivy report schema](https://github.com/aquasecurity/trivy/blob/v0.70.0/pkg/types/report.go)
+and [vulnerability scan configuration](https://trivy.dev/docs/v0.70/guide/scanner/vulnerability/).
+The focused tests include a field-level control based on the pinned upstream
+[Debian golden](https://github.com/aquasecurity/trivy/blob/v0.70.0/integration/testdata/debian-buster.json.golden)
+and [language golden](https://github.com/aquasecurity/trivy/blob/v0.70.0/integration/testdata/busybox-with-lockfile.json.golden).
+Those goldens omit package inventories, so they are not full compatibility proof
+for a deployed image or this capture contract. A missing language result may mean
+no recognizable language artifact was found; it does not prove none exists.
+
 Migrations follow expand/contract. Apply backward-compatible schema before switching services; test old/new code coexistence. Prove actual startup compatibility between each image's embedded migration manifest and the stored versions/checksums: an older SQLx migrator can reject newer history even when its queries still work. Irreversible data migrations need explicit backup/recovery design and approval. Roll back images only if that compatibility is proven; never delete migration history, reverse migrations or reset financial data to force an old image to start. Production requires its own compatible migration, coexistence and recovery plan. Reconcile provider outcomes after incidents before retrying financial effects.
 
 The API executable accepts `migration-manifest` without configuration, filesystem
