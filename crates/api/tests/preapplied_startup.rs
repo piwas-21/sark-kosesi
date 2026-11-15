@@ -79,6 +79,19 @@ fn preapplied_configuration_is_explicit_staging_only_and_excludes_writers() {
 }
 
 struct Process(Child);
+impl Process {
+    fn shutdown(&mut self) {
+        let status = Command::new("/bin/kill")
+            .args(["-s", "INT", &self.0.id().to_string()])
+            .status()
+            .expect("signal API");
+        assert!(status.success(), "signal API");
+        assert!(
+            self.0.wait().expect("stop API").success(),
+            "graceful shutdown"
+        );
+    }
+}
 impl Drop for Process {
     fn drop(&mut self) {
         let _ = self.0.kill();
@@ -89,8 +102,12 @@ fn start(pool: &PgPool, options: &str) -> (Process, std::net::SocketAddr) {
     let reserved = TcpListener::bind("127.0.0.1:0").expect("port");
     let address = reserved.local_addr().expect("address");
     drop(reserved);
-    let child = Command::new(env!("CARGO_BIN_EXE_commerce-api"))
-        .env_clear()
+    let mut command = Command::new(env!("CARGO_BIN_EXE_commerce-api"));
+    command.env_clear();
+    if let Some(profile) = std::env::var_os("LLVM_PROFILE_FILE") {
+        command.env("LLVM_PROFILE_FILE", profile);
+    }
+    let child = command
         .env("APP_ENV", "staging")
         .env("PREVIEW_DATABASE_PREAPPLIED", "1")
         .env("PREVIEW_TOKEN", TOKEN)
@@ -169,6 +186,7 @@ async fn preapplied_binary_validates_complete_history_without_writing(pool: PgPo
     let before = history(&pool).await;
     let (mut process, address) = start(&pool, options);
     ready(&mut process, address);
+    process.shutdown();
     drop(process);
     assert_eq!(
         history(&pool).await,
@@ -185,10 +203,26 @@ async fn preapplied_binary_validates_complete_history_without_writing(pool: PgPo
             "UPDATE public._sqlx_migrations SET checksum=decode(repeat('00',48),'hex') WHERE version=1",
             "",
         ),
+        (
+            "UPDATE public._sqlx_migrations SET checksum=decode(repeat('00',47),'hex') WHERE version=1",
+            "",
+        ),
+        (
+            "UPDATE public._sqlx_migrations SET checksum=decode(repeat('00',1048576),'hex') WHERE version=1",
+            "",
+        ),
         ("DELETE FROM public._sqlx_migrations WHERE version=66", ""),
         (
             "INSERT INTO public._sqlx_migrations(version,description,success,checksum,execution_time) VALUES (999999,'unknown',true,decode(repeat('00',48),'hex'),0)",
             "DELETE FROM public._sqlx_migrations WHERE version=999999",
+        ),
+        (
+            "DELETE FROM public._sqlx_migrations WHERE version=66; INSERT INTO public._sqlx_migrations(version,description,success,checksum,execution_time) VALUES (999999,'unknown',true,decode(repeat('00',48),'hex'),0)",
+            "DELETE FROM public._sqlx_migrations WHERE version=999999; INSERT INTO public._sqlx_migrations SELECT * FROM public.history_backup WHERE version=66",
+        ),
+        (
+            "INSERT INTO public._sqlx_migrations(version,description,success,checksum,execution_time) SELECT 1000000+n,'overflow',true,decode(repeat('00',48),'hex'),0 FROM generate_series(1,100) n",
+            "DELETE FROM public._sqlx_migrations WHERE version BETWEEN 1000001 AND 1000100",
         ),
     ] {
         // Restore the exact synthetic record after each corruption, not by running migrations.
@@ -217,4 +251,39 @@ async fn preapplied_binary_validates_complete_history_without_writing(pool: PgPo
         .await
         .expect("restore history");
     assert_eq!(history(&pool).await, before);
+
+    pool.execute("CREATE TABLE public.history_backup AS SELECT * FROM public._sqlx_migrations WHERE version=66; ALTER TABLE public._sqlx_migrations DROP CONSTRAINT _sqlx_migrations_pkey; DELETE FROM public._sqlx_migrations WHERE version=66; INSERT INTO public._sqlx_migrations SELECT * FROM public._sqlx_migrations WHERE version=1")
+        .await.expect("duplicate version");
+    let (mut process, address) = start(&pool, options);
+    rejected(&mut process, address);
+    pool.execute("DELETE FROM public._sqlx_migrations WHERE version=1 AND ctid NOT IN (SELECT min(ctid) FROM public._sqlx_migrations WHERE version=1); INSERT INTO public._sqlx_migrations SELECT * FROM public.history_backup; ALTER TABLE public._sqlx_migrations ADD PRIMARY KEY (version); DROP TABLE public.history_backup")
+        .await.expect("restore unique versions");
+    assert_eq!(history(&pool).await, before);
+
+    pool.execute("ALTER TABLE public._sqlx_migrations ALTER COLUMN checksum DROP NOT NULL; UPDATE public._sqlx_migrations SET checksum=NULL WHERE version=1")
+        .await.expect("null checksum");
+    let (mut process, address) = start(&pool, options);
+    rejected(&mut process, address);
+    pool.execute("UPDATE public._sqlx_migrations SET checksum=decode('66f189f0586c65fd9986e81a28a7b56e725c25ec394c94efcbd98d0aa77cd21246a3a564a884338da185392e7c796fc2','hex') WHERE version=1; ALTER TABLE public._sqlx_migrations ALTER COLUMN checksum SET NOT NULL")
+        .await.expect("restore checksum");
+    assert_eq!(history(&pool).await, before);
+
+    let mut blocker = pool.begin().await.expect("lock transaction");
+    sqlx::query("LOCK TABLE public._sqlx_migrations IN ACCESS EXCLUSIVE MODE")
+        .execute(&mut *blocker)
+        .await
+        .expect("block history");
+    let started = Instant::now();
+    let (mut process, address) = start(&pool, options);
+    rejected(&mut process, address);
+    assert!(
+        started.elapsed() < Duration::from_secs(4),
+        "locked history must fail promptly"
+    );
+    blocker.rollback().await.expect("release history");
+    let (mut process, address) = start(&pool, options);
+    ready(&mut process, address);
+    process.shutdown();
+    drop(process);
+    assert_eq!(history(&pool).await, before, "recovery changed history");
 }

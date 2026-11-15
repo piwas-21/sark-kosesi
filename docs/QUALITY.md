@@ -51,6 +51,10 @@ No fake commands or passing jobs before code exists. Pin the following free tool
 
 The required `Application gate` aggregates two independently checked-out jobs at the same candidate revision. `Application checks` retains the Rust, TypeScript, integration, migration, contract and coverage commands and publishes the revision-bound application artifact for Sonar. `Application browser` builds the production application and runs the full browser suite with its own isolated database, fallback capture and evidence upload. Both jobs must succeed; failed, skipped, cancelled or missing results fail the aggregate. Sonar validates the coverage and Clippy artifacts after that aggregate. Parallel jobs do not establish release or provider acceptance.
 
+Preapplied preview migration validation is critical Rust code. Exercise bounded
+history, malformed checksums and real lock timeouts against isolated PostgreSQL,
+including recovery after the lock is released.
+
 Rust line/region coverage runs on the pinned stable release. Rust branch instrumentation currently requires nightly in cargo-llvm-cov: P1 must pin a separate tested nightly toolchain for the branch-coverage job and run `cargo +<pinned-nightly> llvm-cov --branch`. Production builds remain on stable. Missing branch data fails the coverage gate; do not report it as 100% or silently substitute line coverage. See the [upstream coverage requirements](https://github.com/taiki-e/cargo-llvm-cov#readme).
 
 The API migration-manifest CLI test runs without configuration or a database,

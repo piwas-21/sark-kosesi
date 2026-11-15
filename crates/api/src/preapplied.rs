@@ -1,7 +1,19 @@
 //! Read-only startup validation for the explicitly selected staging preview.
 use commerce_infrastructure::MIGRATOR;
 use sqlx::{PgPool, postgres::PgPoolOptions};
-use std::{collections::HashMap, time::Duration};
+use std::{
+    collections::{HashMap, HashSet},
+    time::Duration,
+};
+
+fn require_strict(ignore_missing: bool) -> Result<(), sqlx::Error> {
+    if ignore_missing {
+        return Err(sqlx::Error::Protocol(
+            "incompatible migration history".into(),
+        ));
+    }
+    Ok(())
+}
 
 pub(super) async fn connect(url: &str) -> Result<PgPool, sqlx::Error> {
     PgPoolOptions::new()
@@ -20,28 +32,40 @@ pub(super) async fn connect(url: &str) -> Result<PgPool, sqlx::Error> {
 }
 
 pub(super) async fn validate(pool: &PgPool) -> Result<(), sqlx::Error> {
+    let incompatible = || sqlx::Error::Protocol("incompatible migration history".into());
+    // A relaxed manifest permits arbitrarily many unknown records and cannot be
+    // safely checked by this bounded, fully preapplied startup mode.
+    require_strict(MIGRATOR.ignore_missing)?;
+    let known: HashSet<_> = MIGRATOR.iter().map(|m| m.version).collect();
+    let limit = i64::try_from(known.len())
+        .map_err(|_| incompatible())?
+        .checked_add(1)
+        .ok_or_else(incompatible)?;
     let mut tx = pool.begin().await?;
     sqlx::query("SET TRANSACTION ISOLATION LEVEL REPEATABLE READ READ ONLY")
         .execute(&mut *tx)
         .await?;
-    let rows: Vec<(i64, bool, Vec<u8>)> = sqlx::query_as(
-        "SELECT version, success, checksum FROM public._sqlx_migrations ORDER BY version",
+    sqlx::query("SET LOCAL lock_timeout = '250ms'")
+        .execute(&mut *tx)
+        .await?;
+    sqlx::query("SET LOCAL statement_timeout = '1s'")
+        .execute(&mut *tx)
+        .await?;
+    let rows: Vec<(i64, bool, Option<Vec<u8>>)> = sqlx::query_as(
+        "SELECT version, success, CASE WHEN octet_length(checksum)=48 THEN checksum END FROM public._sqlx_migrations ORDER BY version LIMIT $1",
     )
+    .bind(limit)
     .fetch_all(&mut *tx)
     .await?;
-    let incompatible = || sqlx::Error::Protocol("incompatible migration history".into());
+    if rows.len() > known.len() {
+        return Err(incompatible());
+    }
     let mut applied = HashMap::new();
     for (version, success, checksum) in rows {
-        if !success || applied.insert(version, checksum).is_some() {
+        let checksum = checksum.ok_or_else(incompatible)?;
+        if !success || !known.contains(&version) || applied.insert(version, checksum).is_some() {
             return Err(incompatible());
         }
-    }
-    if !MIGRATOR.ignore_missing
-        && applied
-            .keys()
-            .any(|version| !MIGRATOR.iter().any(|m| m.version == *version))
-    {
-        return Err(incompatible());
     }
     for migration in MIGRATOR
         .iter()
@@ -53,4 +77,13 @@ pub(super) async fn validate(pool: &PgPool) -> Result<(), sqlx::Error> {
     }
     tx.rollback().await?;
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    #[test]
+    fn preapplied_mode_rejects_relaxed_manifest_policy() {
+        assert!(super::require_strict(false).is_ok());
+        assert!(super::require_strict(true).is_err());
+    }
 }
