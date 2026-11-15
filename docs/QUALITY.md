@@ -1028,6 +1028,8 @@ For synchronizer-bound redemption, verify the correct session proof commits one
 link, while missing, foreign and stale session proofs preserve the unspent order
 proof. Test disabled configuration, preview/Origin/cookie boundaries, closed
 bounded input, replay and expiry after lock waits with isolated PostgreSQL.
+Post-claim storage failures must still recheck the session clock: compare a live
+lock-timeout control with the same timeout after session expiry.
 No mailbox delivery or public acceptance follows.
 
 Test credential admission against isolated PostgreSQL from separate pools.

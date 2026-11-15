@@ -64,7 +64,7 @@ async fn redeem_requires_exact_bound_session_and_consumes_only_once(pool: PgPool
     let time = Arc::new(Time(AtomicU64::new(1000)));
     account(&pool, &time).await;
     let app = redeem_app(&pool, time.clone(), true);
-    let (cookie, csrf, _) = bound_issue(&app).await;
+    let (cookie, csrf, session) = bound_issue(&app).await;
     let (_, wrong_csrf, _) = bound_issue(&app).await;
     time.0.store(1100, Ordering::SeqCst);
     let (store, _) = quote_fixture::store(&pool, 1100);
@@ -170,6 +170,124 @@ async fn redeem_requires_exact_bound_session_and_consumes_only_once(pool: PgPool
         ),
         StatusCode::PAYLOAD_TOO_LARGE
     );
+
+    let mut wrong_type = redeem(&cookie, &csrf, body.clone());
+    wrong_type.headers_mut().remove("content-type");
+    assert_eq!(
+        status(app.clone().oneshot(wrong_type).await.expect("content type")),
+        StatusCode::UNSUPPORTED_MEDIA_TYPE
+    );
+    for invalid in [
+        "[]".to_owned(),
+        format!(r#"{{"order_id":"a","proof":"{proof_hex}"}}"#),
+        format!(
+            r#"{{"order_id":"{}","proof":"{proof_hex}"}}"#,
+            "z".repeat(32)
+        ),
+        format!(r#"{{"order_id":"{order}","proof":"invalid"}}"#),
+    ] {
+        assert_eq!(
+            status(
+                app.clone()
+                    .oneshot(redeem(&cookie, &csrf, invalid))
+                    .await
+                    .expect("invalid input")
+            ),
+            StatusCode::BAD_REQUEST
+        );
+    }
+    pool.execute("CREATE FUNCTION fixture_reject_link_update() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN RAISE EXCEPTION 'synthetic'; END $$").await.expect("fault function");
+    pool.execute("CREATE TRIGGER fixture_reject_link_update BEFORE UPDATE ON guest_order_link_proofs FOR EACH ROW EXECUTE FUNCTION fixture_reject_link_update()").await.expect("fault trigger");
+    assert_eq!(
+        status(
+            app.clone()
+                .oneshot(redeem(&cookie, &csrf, body.clone()))
+                .await
+                .expect("storage error")
+        ),
+        StatusCode::SERVICE_UNAVAILABLE
+    );
+    pool.execute("DROP TRIGGER fixture_reject_link_update ON guest_order_link_proofs")
+        .await
+        .expect("remove fault");
+
+    // A real premature EOF exercises the non-size body extraction failure.
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
+        .await
+        .expect("listener");
+    let address = listener.local_addr().expect("address");
+    let server_app = app.clone();
+    let server = tokio::spawn(async move { axum::serve(listener, server_app).await });
+    let wire_cookie = cookie.clone();
+    let wire_csrf = csrf.clone();
+    let wire_body = body.clone();
+    let response = tokio::task::spawn_blocking(move || {
+        use std::{io::{Read, Write}, net::{Shutdown, TcpStream}};
+        let mut stream = TcpStream::connect(address).expect("connect");
+        stream.set_read_timeout(Some(std::time::Duration::from_secs(3))).expect("deadline");
+        write!(stream, "POST {URL} HTTP/1.1\r\nHost: localhost\r\nAuthorization: Bearer {PREVIEW}\r\nOrigin: {ORIGIN}\r\nCookie: {wire_cookie}\r\nx-csrf-token: {wire_csrf}\r\nContent-Type: application/json\r\nContent-Length: 256\r\nConnection: close\r\n\r\n{wire_body}").expect("partial body");
+        stream.shutdown(Shutdown::Write).expect("EOF");
+        let mut output = String::new();
+        stream.read_to_string(&mut output).expect("response");
+        output
+    }).await.expect("transport");
+    assert!(response.starts_with("HTTP/1.1 400 Bad Request"));
+    assert!(!response.contains(&proof_hex));
+    server.abort();
+
+    // Both requests hit a real proof-lock timeout. Only the first session is
+    // still live when that storage failure returns; the second must fail closed.
+    let mut csrf_bytes = [0; 32];
+    for (index, pair) in csrf.as_bytes().as_chunks::<2>().0.iter().enumerate() {
+        let digit = |b: u8| if b <= b'9' { b - b'0' } else { b - b'a' + 10 };
+        csrf_bytes[index] = digit(pair[0]) * 16 + digit(pair[1]);
+    }
+    for expires_while_waiting in [false, true] {
+        let mut lock = pool.begin().await.expect("lock transaction");
+        sqlx::query("SELECT verifier FROM guest_order_link_proofs FOR UPDATE")
+            .fetch_one(&mut *lock)
+            .await
+            .expect("locked proof");
+        let task_pool = pool.clone();
+        let task_time = time.clone();
+        let task_order = order.clone();
+        let task_session = CustomerSessionToken::from_bytes(*session.expose_bytes());
+        let task_csrf = CustomerCsrfToken::from_bytes(csrf_bytes);
+        let task_proof = guest_order_links::GuestOrderLinkToken::from_bytes(*proof.expose_bytes());
+        let task = tokio::spawn(async move {
+            guest_order_links::link_with_csrf(
+                &task_pool,
+                &task_session,
+                &task_csrf,
+                &task_order,
+                &task_proof,
+                task_time.as_ref(),
+            )
+            .await
+        });
+        tokio::time::timeout(std::time::Duration::from_secs(5), async {
+            loop {
+                let waiting: i64 = sqlx::query_scalar("SELECT count(*) FROM pg_stat_activity WHERE datname=current_database() AND wait_event_type='Lock' AND query LIKE '%FROM guest_order_link_proofs WHERE verifier%'")
+                    .fetch_one(&pool).await.expect("wait query");
+                if waiting > 0 { break; }
+                tokio::time::sleep(std::time::Duration::from_millis(5)).await;
+            }
+        }).await.expect("proof lock wait");
+        if expires_while_waiting {
+            time.0.store(44200, Ordering::SeqCst);
+        }
+        let result = task.await.expect("join");
+        if expires_while_waiting {
+            assert!(matches!(result, Err(guest_order_links::LinkError::Denied)));
+        } else {
+            assert!(matches!(
+                result,
+                Err(guest_order_links::LinkError::Unavailable)
+            ));
+        }
+        lock.commit().await.expect("release proof");
+        time.0.store(1100, Ordering::SeqCst);
+    }
 
     // Hold the exact proof row until the in-flight request is waiting on its lock.
     let mut lock = pool.begin().await.expect("lock transaction");
