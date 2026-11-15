@@ -4,6 +4,23 @@ use image::{DynamicImage, ImageFormat};
 use std::io::Cursor;
 static CASES: tokio::sync::Mutex<()> = tokio::sync::Mutex::const_new(());
 
+#[test]
+fn decoder_rejections_preserve_application_error_kinds() {
+    for (received, expected) in [
+        (Rejection::MetadataMismatch, ImageError::MetadataMismatch),
+        (Rejection::InvalidImage, ImageError::InvalidImage),
+        (Rejection::UnsupportedImage, ImageError::UnsupportedImage),
+        (Rejection::ResourceLimit, ImageError::ResourceLimit),
+        (Rejection::InvalidStoredData, ImageError::InvalidStoredData),
+        (Rejection::Unavailable, ImageError::ProcessingUnavailable),
+    ] {
+        assert_eq!(
+            std::mem::discriminant(&ImageError::from(received)),
+            std::mem::discriminant(&expected)
+        );
+    }
+}
+
 #[cfg(unix)]
 #[tokio::test]
 async fn configured_processing_failure_does_not_decode_locally() {
@@ -130,6 +147,14 @@ async fn decoder_dimension_and_stored_byte_boundaries_fail_closed() {
         height_px: 3,
         ..metadata
     };
+    let wrong_digest = MediaAssetDraft {
+        sha256: [0; 32],
+        ..registered.clone()
+    };
+    assert!(matches!(
+        run(wrong_digest, bytes.clone()).await,
+        Err(ImageError::MetadataMismatch)
+    ));
     let prepared = run(registered, bytes.clone())
         .await
         .expect("valid original");
@@ -139,7 +164,7 @@ async fn decoder_dimension_and_stored_byte_boundaries_fail_closed() {
         .await
         .expect("metadata-free rendition");
     assert_eq!(verified.bytes, bytes);
-    for case in 0..10 {
+    for case in 0..11 {
         let mut original = bytes.clone();
         let mut kind = "png".to_owned();
         let mut width = 2;
@@ -155,6 +180,7 @@ async fn decoder_dimension_and_stored_byte_boundaries_fail_closed() {
             7 => width = 3,
             8 => original = b"\x89PNG\r\n\x1a\n".to_vec(),
             9 => original = b"corrupt private image signature".to_vec(),
+            10 => kind = "webp".into(),
             _ => unreachable!(),
         }
         let digest = Sha256::digest(&original).to_vec();
