@@ -1216,3 +1216,192 @@ async fn guest_link_open_refuses_expiry_after_durable_start(pool: PgPool) {
         delivery::OpenOutcome::AlreadyStarted
     );
 }
+
+// Wait for an actual server-side lock waiter, not merely a scheduled Rust task.
+async fn wait_for_lock_query(pool: &PgPool, pattern: &str) {
+    tokio::time::timeout(Duration::from_millis(800), async {
+        loop {
+            let waiting: bool = sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM pg_stat_activity WHERE datname=current_database() AND pid<>pg_backend_pid() AND wait_event_type='Lock' AND cardinality(pg_blocking_pids(pid))>0 AND query LIKE $1)")
+                .bind(pattern).fetch_one(pool).await.expect("observe waiter");
+            if waiting {
+                break;
+            }
+            tokio::time::sleep(Duration::from_millis(5)).await;
+        }
+    })
+    .await
+    .expect("expected PostgreSQL lock waiter");
+}
+
+async fn compete_link_with_open(pool: PgPool, after_start: bool) {
+    use admitted_proofs::{
+        customer_passwords, email_verification, verified_customer_accounts::establish,
+    };
+    use sha2::{Digest, Sha256};
+    use std::sync::{Arc, atomic::AtomicUsize};
+
+    quote::seed(&pool).await;
+    let (store, clock) = quote::store(&pool, 1100);
+    let (session, csrf) = quote::guest(&store).await;
+    let guest = GuestCredential::from_session(&session).expect("guest");
+    let id = order(
+        &store,
+        &guest,
+        &csrf,
+        if after_start {
+            "compete-after"
+        } else {
+            "compete-before"
+        },
+    )
+    .await;
+    let key = key();
+    delivery::register_key(&pool, clock.as_ref(), &key)
+        .await
+        .expect("key");
+    let receipt = delivery::issue_for_delivery(&store, &guest, &csrf, &id, &key)
+        .await
+        .expect("encrypted proof");
+    let other = guest_order_links::issue(&store, &guest, &csrf, &id)
+        .await
+        .expect("other proof");
+    let other_verifier = Sha256::new()
+        .chain_update(b"piwas:guest-order-link:verifier:v1\0")
+        .chain_update(other.expose_bytes())
+        .finalize();
+    let email = "buyer@example.test";
+    let proof = email_verification::issue(&pool, email, clock.as_ref())
+        .await
+        .expect("email proof");
+    establish(&pool, email, &proof, clock.as_ref())
+        .await
+        .expect("account");
+    let proof = customer_passwords::issue(&pool, email, clock.as_ref())
+        .await
+        .expect("password proof");
+    customer_passwords::replace(
+        &pool,
+        email,
+        &proof,
+        "correct horse battery staple",
+        clock.as_ref(),
+    )
+    .await
+    .expect("password");
+    let customer =
+        admitted_login::login(&pool, email, "correct horse battery staple", clock.as_ref())
+            .await
+            .expect("session");
+
+    // Both locks are held by this connection; all triggers exist only in the isolated test database.
+    let start_lock: i64 = if after_start { 7138401 } else { 7138301 };
+    let link_lock: i64 = if after_start { 7138402 } else { 7138302 };
+    let mut controller = pool.acquire().await.expect("controller");
+    sqlx::query("SELECT pg_advisory_lock($1)")
+        .bind(link_lock)
+        .execute(&mut *controller)
+        .await
+        .expect("link latch");
+    if after_start {
+        sqlx::query("SELECT pg_advisory_lock($1)")
+            .bind(start_lock)
+            .execute(&mut *controller)
+            .await
+            .expect("start latch");
+        sqlx::query("CREATE FUNCTION fixture_pause_start() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN PERFORM pg_advisory_xact_lock(7138401); RETURN NEW; END $$")
+            .execute(&pool).await.expect("start function");
+        sqlx::query("CREATE TRIGGER zz_fixture_pause_start BEFORE INSERT ON guest_link_delivery_starts FOR EACH ROW EXECUTE FUNCTION fixture_pause_start()")
+            .execute(&pool).await.expect("start trigger");
+    }
+    let link_function = if after_start {
+        "CREATE FUNCTION fixture_pause_link() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN PERFORM pg_advisory_xact_lock(7138402); RETURN NEW; END $$"
+    } else {
+        "CREATE FUNCTION fixture_pause_link() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN PERFORM pg_advisory_xact_lock(7138302); RETURN NEW; END $$"
+    };
+    sqlx::query(link_function)
+        .execute(&pool)
+        .await
+        .expect("link function");
+    sqlx::query("CREATE TRIGGER zz_fixture_pause_link BEFORE INSERT ON customer_order_links FOR EACH ROW EXECUTE FUNCTION fixture_pause_link()")
+        .execute(&pool).await.expect("link trigger");
+
+    let calls = Arc::new(AtomicUsize::new(0));
+    let spawn_open = || {
+        let pool = pool.clone();
+        let clock = clock.clone();
+        let calls = calls.clone();
+        let verifier = receipt.verifier;
+        let key = DeliveryKey::capture("guest-key-1", [7; 32]).expect("key");
+        tokio::spawn(async move {
+            delivery::claim_and_open(&pool, &verifier, clock.as_ref(), &key, |_, _| {
+                calls.fetch_add(1, Ordering::SeqCst);
+            })
+            .await
+        })
+    };
+    let spawn_link = || {
+        let pool = pool.clone();
+        let clock = clock.clone();
+        let id = id.clone();
+        tokio::spawn(async move {
+            guest_order_links::link(&pool, &customer.token, &id, &other, clock.as_ref()).await
+        })
+    };
+    let (opening, linking) = if after_start {
+        let opening = spawn_open();
+        wait_for_lock_query(&pool, "%INSERT INTO guest_link_delivery_starts%").await;
+        let linking = spawn_link();
+        wait_for_lock_query(&pool, "%SELECT id FROM checkout_orders%FOR UPDATE%").await;
+        sqlx::query("SELECT pg_advisory_unlock($1)")
+            .bind(start_lock)
+            .execute(&mut *controller)
+            .await
+            .expect("release start");
+        wait_for_lock_query(&pool, "%INSERT INTO customer_order_links%").await;
+        wait_for_lock_query(&pool, "%SELECT id FROM checkout_orders%FOR UPDATE%").await;
+        (opening, linking)
+    } else {
+        let linking = spawn_link();
+        wait_for_lock_query(&pool, "%INSERT INTO customer_order_links%").await;
+        let opening = spawn_open();
+        wait_for_lock_query(&pool, "%SELECT id FROM checkout_orders%FOR UPDATE%").await;
+        (opening, linking)
+    };
+    let starts: i64 =
+        sqlx::query_scalar("SELECT count(*) FROM guest_link_delivery_starts WHERE verifier=$1")
+            .bind(receipt.verifier.as_slice())
+            .fetch_one(&pool)
+            .await
+            .expect("start visibility");
+    assert_eq!(starts, i64::from(after_start));
+    assert!(!opening.is_finished());
+    assert!(!linking.is_finished());
+    sqlx::query("SELECT pg_advisory_unlock($1)")
+        .bind(link_lock)
+        .execute(&mut *controller)
+        .await
+        .expect("release link");
+    linking
+        .await
+        .expect("link task")
+        .expect("competing proof links order");
+    assert!(matches!(
+        opening.await.expect("open task"),
+        Err(LinkError::Denied)
+    ));
+    assert_eq!(calls.load(Ordering::SeqCst), 0);
+    let (linked_verifier, still_unconsumed): (Vec<u8>, bool) = sqlx::query_as("SELECT (SELECT proof_verifier FROM customer_order_links WHERE order_id=$2), consumed_at IS NULL AND consumed_account_id IS NULL AND consumed_xid IS NULL FROM guest_order_link_proofs WHERE verifier=$1")
+        .bind(receipt.verifier.as_slice()).bind(&id).fetch_one(&pool).await.expect("result custody");
+    assert_eq!(linked_verifier.as_slice(), &other_verifier[..]);
+    assert!(still_unconsumed);
+}
+
+#[sqlx::test(migrator = "MIGRATOR")]
+async fn guest_link_open_waits_for_competing_order_link_before_start(pool: PgPool) {
+    compete_link_with_open(pool, false).await;
+}
+
+#[sqlx::test(migrator = "MIGRATOR")]
+async fn guest_link_open_waits_for_competing_order_link_after_committed_start(pool: PgPool) {
+    compete_link_with_open(pool, true).await;
+}

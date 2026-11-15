@@ -1,6 +1,5 @@
 //! One durable local start followed by a trusted synchronous in-process opening.
 use super::*;
-use zeroize::Zeroize;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum OpenOutcome {
@@ -38,15 +37,10 @@ struct Envelope {
 struct Source {
     basket: String,
     order: String,
-    identity: String,
+    identity: Zeroizing<String>,
     created_at: i64,
     expires_at: i64,
     envelope: Envelope,
-}
-impl Drop for Source {
-    fn drop(&mut self) {
-        self.identity.zeroize();
-    }
 }
 impl Source {
     fn live(&self, clock: &dyn Clock) -> Result<(), LinkError> {
@@ -89,7 +83,7 @@ async fn source(
     let snapshot = checkout_orders::guest_snapshot_in_transaction(tx, &p.basket_id, &p.order_id)
         .await
         .map_err(order_error)?;
-    let identity = normalize_email(&snapshot.buyer.email).ok_or(LinkError::Denied)?;
+    let identity = Zeroizing::new(normalize_email(&snapshot.buyer.email).ok_or(LinkError::Denied)?);
     let e: Option<Envelope> = sqlx::query_as("SELECT left(e.key_id,65) AS key_id,e.nonce_counter,k.key_fingerprint AS fingerprint,e.ciphertext,e.envelope_version AS version,p.delivery_transaction_id::text AS proof_xid,e.transaction_id::text AS envelope_xid,n.transaction_id::text AS nonce_xid,n.verifier AS nonce_verifier,n.reserved_at,k.registered_at FROM guest_order_link_proofs p JOIN guest_link_delivery_envelopes e ON e.verifier=p.verifier JOIN guest_link_delivery_nonces n ON n.key_id=e.key_id AND n.nonce_counter=e.nonce_counter JOIN guest_link_delivery_keys k ON k.key_id=e.key_id WHERE p.verifier=$1 AND p.delivery_mode='envelope'")
         .bind(verifier.as_slice()).fetch_optional(&mut **tx).await.map_err(|_| LinkError::Unavailable)?;
     let e = e.ok_or(LinkError::Denied)?;

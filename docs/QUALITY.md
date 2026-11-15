@@ -1069,7 +1069,9 @@ HKDF vector, purpose/context/ciphertext changes, key aliases, legacy direct proo
 upgrade and redemption. No ciphertext or receipt may copy the recipient or bearer.
 For the local start and opening, check concurrent one-winner custody, exact
 bearer authentication, bad keys, untrusted ciphertext, expiry after real lock
-waits, immutable starts and the absence of retry after a committed failure. A
+waits, immutable starts and the absence of retry after a committed failure. Two
+isolated controls observe the order lock wait before and after a committed start,
+then verify a different proof linked the order and no opening callback ran. A
 populated schema upgrade preserves prior direct proofs and encrypted envelopes.
 The native durability guard assumes the supported Rust writer leaves the commit
 check in its specified sequence; arbitrary SQL can force a deferred check early.

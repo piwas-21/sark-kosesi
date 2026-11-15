@@ -13,7 +13,7 @@ fn fixture() -> (DeliveryKey, Source, Started) {
     let source = Source {
         basket: "a".repeat(32),
         order: "b".repeat(32),
-        identity: "buyer@example.test".into(),
+        identity: Zeroizing::new("buyer@example.test".into()),
         created_at: 100,
         expires_at: 1000,
         envelope: Envelope {
