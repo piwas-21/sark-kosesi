@@ -518,3 +518,32 @@ in for proxy identity. Then require exact-revision TLS and isolated provider
 delivery acceptance. The committed source and Compose checks prove none of these
 runtime states. Rollback disables both callback ingress and the separate web
 ingress flag before recreating only this project's services.
+
+## Optional PostgreSQL Gosu rebuild experiment
+
+The opt-in `Optional PostgreSQL Gosu candidate` workflow is a disposable,
+synthetic experiment, not a deployment path. It pins Gosu 1.19's upstream source
+commit and source-archive SHA-256, the official Go 1.27.4 Linux AMD64 archive
+SHA-256, and dependencies against the source's `go.sum`. The archive hash fixes
+what the experiment builds; the source commit is not signed, and neither this
+pin nor a matching local build proves correspondence to the maintainer's signed
+release binary. Source and Go archives are fetched only on the hosted runner.
+
+After dependencies are prepared, two fresh, separate containers build the same
+read-only source and vendor inputs with network disabled. The byte comparison
+proves only repeatability under those inputs and this runner; it is not independent
+provenance. The artifact records the executable digest, `go version -m`, vendor
+file hashes, candidate image identity and synthetic checks. The pinned PostgreSQL
+platform is used only as an isolated test image; the candidate is not published or
+installed. One test checks the expected PostgreSQL UID, GID and supplementary group,
+rejects a non-root attempt to become root, checks the selected Gosu path and bytes,
+and starts an empty PostgreSQL instance for a synthetic query without network
+access. It does not cover every identity, group, signal, ownership or restore case.
+
+The workflow runs only when manually dispatched or the pull request has the
+`run-gosu-candidate` label. An opt-in or passing source test does not establish
+hosted execution. Before any future operational decision, independently verify
+source and dependency provenance, exact image and executable identities,
+privilege-drop and entrypoint compatibility, persistent-data restore/rollback,
+and current full-image scans and symbol-aware findings. The separate libxml2
+and other image vulnerabilities remain open; no risk acceptance follows.
