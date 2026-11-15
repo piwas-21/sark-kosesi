@@ -123,8 +123,8 @@ jobs:
       - uses: github/codeql-action/analyze@33d7b85da1a04171e211befe2c739303b9a4c066
         with:
           category: /language:${{ matrix.language }}
-  application:
-    name: Application gate
+  application_checks:
+    name: Application checks
     runs-on: ubuntu-24.04
     timeout-minutes: 80
     permissions:
@@ -165,7 +165,6 @@ jobs:
             coverage/rust.lcov
           if-no-files-found: ignore
           retention-days: 7
-      - run: npm run build
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
         with:
           name: application-${{ env.ANALYSIS_REVISION }}
@@ -179,6 +178,27 @@ jobs:
           include-hidden-files: true
           if-no-files-found: error
           retention-days: 30
+  application_browser:
+    name: Application browser
+    runs-on: ubuntu-24.04
+    timeout-minutes: 80
+    permissions:
+      contents: read
+    env:
+      ANALYSIS_REVISION: ${{ github.event.pull_request.head.sha || github.sha }}
+      PLAYWRIGHT_SKIP_BROWSER_GC: 1
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+      - run: npm ci --ignore-scripts
+      - run: python3 scripts/install_app_tools.py
+      - run: npm run build
       - name: Configure browser dependency downloads
         run: |
           test -f /etc/apt/apt-mirrors.txt
@@ -202,6 +222,29 @@ jobs:
           include-hidden-files: true
           if-no-files-found: error
           retention-days: 30
+  application:
+    name: Application gate
+    if: always()
+    needs: [application_checks, application_browser]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 2
+    permissions: {}
+    steps:
+      - name: Require both application legs
+        env:
+          RESULTS: ${{ toJSON(needs) }}
+        run: |
+          python3 - <<'PY_GATE'
+          import json, os
+          results = json.loads(os.environ['RESULTS'])
+          required = {'application_checks', 'application_browser'}
+          if not isinstance(results, dict) or set(results) != required or any(
+              not isinstance(results[name], dict) or results[name].get('result') != 'success'
+              for name in required
+          ):
+              raise SystemExit('An application leg failed, was cancelled, skipped or missing.')
+          print('Both application legs succeeded.')
+          PY_GATE
   sonar:
     name: SonarQube
     needs: [application]
