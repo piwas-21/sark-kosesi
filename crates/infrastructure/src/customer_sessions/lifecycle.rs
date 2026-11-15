@@ -217,13 +217,16 @@ async fn logout_inner(
     let verifier = token.verifier();
     let mut tx = begin(pool).await?;
     let row = claim(&mut tx, &verifier, true, &observed).await?;
-    if let Some(csrf) = csrf {
-        check_csrf(&mut tx, &verifier, &row.created_xid, csrf).await?;
-    }
+    let csrf_result = if let Some(csrf) = csrf {
+        check_csrf(&mut tx, &verifier, &row.created_xid, csrf).await
+    } else {
+        Ok(())
+    };
     let captured = now(&observed)?;
     if !row.active(captured) {
         return Err(SessionError::Denied);
     }
+    csrf_result?;
     let changed = sqlx::query("UPDATE customer_sessions SET revoked_at=$2,revocation_kind='logout',revoked_xid=NULL WHERE verifier=$1 AND revoked_at IS NULL")
         .bind(verifier.as_slice()).bind(captured).execute(&mut *tx).await.map_err(|_| SessionError::Unavailable)?;
     if changed.rows_affected() != 1 {
