@@ -522,7 +522,9 @@ ingress flag before recreating only this project's services.
 ### Hosted PostgreSQL scan capture
 
 The narrowly scoped `PostgreSQL image evidence` workflow can capture the pinned
-staging PostgreSQL image from Docker Hub on a disposable GitHub-hosted runner.
+staging PostgreSQL image through the public Docker Hub mirror `mirror.gcr.io` on a
+disposable GitHub-hosted runner. All retrieved image identity documents are checked
+against their pinned digests before use; mirror availability on a runner is not assumed.
 It is triggered by relevant pull request paths or by manual dispatch. Its checkout
 is bound to the pull request head or dispatched commit; Compose renders the checked
 in configuration without interpolation, and the capture verifies the `db` service's
@@ -536,7 +538,9 @@ configuration, database metadata, command, scanner log, receipt, offline audit
 output and checksums; the database cache is not uploaded. The offline audit must
 accept the evidence's structure even when its result is blocked by findings.
 Scanner errors fail capture, while reported vulnerabilities do not fail capture
-or constitute an acceptance. Independently verify the workflow revision, scanner
+or constitute an acceptance. A sanitized capture status is retained even if an
+identity request fails; it records the mirror endpoint and HTTP status without
+credentials or response bodies. Independently verify the workflow revision, scanner
 and image identities, scope and custody; inspect the unfiltered report with the
 offline audit above. A successful capture does not establish deployment, image
 provenance, vulnerability disposition or release readiness.

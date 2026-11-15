@@ -7,6 +7,7 @@ import os
 import re
 import subprocess
 import sys
+import urllib.error
 import urllib.request
 from datetime import UTC, datetime
 from pathlib import Path
@@ -15,8 +16,9 @@ INDEX = "sha256:9f4fd4aa918f52ae3d6f3b687f1de90d8f867cd4d520021545a9a50c120eae3b
 PLATFORM = "sha256:c7fedce47eff6a78cb35dad6b627f0d684107f75ab15c0870e40c093766ba452"
 SCANNER = "sha256:85e87be1a96459c38a4eea47dc64eb2d342bb14cd4b4cef96adcf6ff03378b7c"
 SCANNER_INDEX = "sha256:be1190afcb28352bfddc4ddeb71470835d16462af68d310f9f4bca710961a41e"
-SCANNER_IMAGE = f"docker.io/aquasec/trivy@{SCANNER}"
-TARGET = f"docker.io/library/postgres@{PLATFORM}"
+REGISTRY = "mirror.gcr.io"
+SCANNER_IMAGE = f"{REGISTRY}/aquasec/trivy@{SCANNER}"
+TARGET = f"{REGISTRY}/library/postgres@{PLATFORM}"
 ACCEPT = ", ".join(
     (
         "application/vnd.oci.image.index.v1+json",
@@ -31,24 +33,26 @@ def sha(raw):
     return "sha256:" + hashlib.sha256(raw).hexdigest()
 
 
-def get_registry(repo, kind, reference, token):
+class RegistryFailure(RuntimeError):
+    def __init__(self, repo, kind, reference, status):
+        self.endpoint = f"{REGISTRY}/v2/{repo}/{kind}/{reference}"
+        self.status = status
+        super().__init__(f"{self.endpoint}: HTTP {status}")
+
+
+def get_registry(repo, kind, reference):
     request = urllib.request.Request(
-        f"https://registry-1.docker.io/v2/{repo}/{kind}/{reference}",
-        headers={"Authorization": f"Bearer {token}", "Accept": ACCEPT},
+        f"https://{REGISTRY}/v2/{repo}/{kind}/{reference}", headers={"Accept": ACCEPT}
     )
-    with urllib.request.urlopen(request, timeout=60) as response:
-        return response.read()
-
-
-def registry_token(repo):
-    url = f"https://auth.docker.io/token?service=registry.docker.io&scope=repository:{repo}:pull"
-    with urllib.request.urlopen(url, timeout=60) as response:
-        return json.load(response)["token"]
+    try:
+        with urllib.request.urlopen(request, timeout=60) as response:
+            return response.read()
+    except urllib.error.HTTPError as error:
+        raise RegistryFailure(repo, kind, reference, error.code) from None
 
 
 def capture_registry_identity(output, repo, index_digest, platform_digest, prefix):
-    token = registry_token(repo)
-    index_raw = get_registry(repo, "manifests", index_digest, token)
+    index_raw = get_registry(repo, "manifests", index_digest)
     if sha(index_raw) != index_digest:
         raise ValueError("registry index digest mismatch")
     index = json.loads(index_raw)
@@ -59,14 +63,14 @@ def capture_registry_identity(output, repo, index_digest, platform_digest, prefi
     ]
     if len(matches) != 1 or matches[0]["digest"] != platform_digest:
         raise ValueError("pinned index does not select expected AMD64 manifest")
-    manifest_raw = get_registry(repo, "manifests", platform_digest, token)
+    manifest_raw = get_registry(repo, "manifests", platform_digest)
     if sha(manifest_raw) != platform_digest:
         raise ValueError("platform digest mismatch")
     manifest = json.loads(manifest_raw)
     config_digest = manifest["config"]["digest"]
     if not re.fullmatch(r"sha256:[0-9a-f]{64}", config_digest):
         raise ValueError("invalid image config digest")
-    config_raw = get_registry(repo, "blobs", config_digest, token)
+    config_raw = get_registry(repo, "blobs", config_digest)
     if sha(config_raw) != config_digest:
         raise ValueError("image config digest mismatch")
     config = json.loads(config_raw)
@@ -141,7 +145,13 @@ def verify_staging_image(path):
         raise ValueError("staging db image pin changed; review capture pins")
 
 
-def main():
+def write_status(output, stage, outcome, **details):
+    status = {"stage": stage, "outcome": outcome, **details}
+    (output / "capture-status.json").write_text(json.dumps(status, indent=2) + "\n")
+
+
+def capture(output):
+    write_status(output, "source", "running")
     revision = os.environ["CAPTURE_REVISION"]
     if not re.fullmatch(r"[0-9a-f]{40}", revision):
         raise ValueError("invalid capture revision")
@@ -149,8 +159,7 @@ def main():
     if actual != revision:
         raise ValueError("checkout revision mismatch")
     verify_staging_image(Path("deploy/staging/compose.yml"))
-    output = Path(os.environ["CAPTURE_OUTPUT"]).resolve()
-    output.mkdir(mode=0o755, parents=True, exist_ok=False)
+    write_status(output, "registry_identity", "running")
     capture_identity(output)
     (output / "empty.yml").write_text("{}\n")
     (output / "empty.ignore").write_text("")
@@ -203,6 +212,7 @@ def main():
         TARGET,
     ]
     (output / "command.json").write_text(json.dumps(command, indent=2) + "\n")
+    write_status(output, "scanner", "running")
     with (output / "scanner.log").open("w") as log:
         result = subprocess.run(command, stdout=log, stderr=subprocess.STDOUT, check=False)
     if result.returncode != 0:
@@ -216,6 +226,7 @@ def main():
     (output / "db-metadata.json").write_bytes(metadata_raw)
     receipt = make_receipt(revision, metadata, report, scanned_at)
     (output / "receipt.json").write_text(json.dumps(receipt, indent=2) + "\n")
+    write_status(output, "offline_audit", "running")
     audit = subprocess.run(
         [
             sys.executable,
@@ -266,10 +277,29 @@ def main():
         "command.json",
         "scanner.log",
         "audit.log",
+        "capture-status.json",
     )
+    write_status(output, "complete", "success")
     (output / "SHA256SUMS").write_text(
         "".join(f"{sha((output / name).read_bytes())[7:]}  {name}\n" for name in files)
     )
+
+
+def main():
+    output = Path(os.environ["CAPTURE_OUTPUT"]).resolve()
+    output.mkdir(mode=0o755, parents=True, exist_ok=True)
+    if any(path.name != "capture-status.json" for path in output.iterdir()):
+        raise ValueError("capture output must be empty")
+    write_status(output, "initializing", "running")
+    try:
+        capture(output)
+    except Exception as error:
+        status = json.loads((output / "capture-status.json").read_text())
+        details = {"error_type": type(error).__name__}
+        if isinstance(error, RegistryFailure):
+            details.update(endpoint=error.endpoint, http_status=error.status)
+        write_status(output, status["stage"], "failed", **details)
+        raise
 
 
 if __name__ == "__main__":

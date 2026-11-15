@@ -17,6 +17,10 @@ jobs:
     permissions:
       contents: read
     steps:
+      - name: Initialize capture diagnostics
+        run: |
+          mkdir -p "$RUNNER_TEMP/db-image-evidence"
+          printf '%s\n' '{"stage":"checkout","outcome":"not_started"}' > "$RUNNER_TEMP/db-image-evidence/capture-status.json"
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
           ref: ${{ github.event.pull_request.head.sha || github.sha }}
@@ -33,6 +37,7 @@ jobs:
           name: db-image-evidence-${{ github.event.pull_request.head.sha || github.sha }}
           if-no-files-found: error
           path: |
+            ${{ runner.temp }}/db-image-evidence/capture-status.json
             ${{ runner.temp }}/db-image-evidence/index.json
             ${{ runner.temp }}/db-image-evidence/manifest.json
             ${{ runner.temp }}/db-image-evidence/config.json

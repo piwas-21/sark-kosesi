@@ -5,6 +5,7 @@ import importlib.util
 import json
 import tempfile
 import unittest
+import urllib.error
 from pathlib import Path
 from unittest import mock
 
@@ -17,10 +18,41 @@ SPEC.loader.exec_module(capture)
 
 
 class CaptureTests(unittest.TestCase):
+    def test_registry_http_failure_retains_sanitized_stage_and_endpoint(self):
+        revision = "a" * 40
+        http_error = urllib.error.HTTPError(
+            "https://example.invalid/?secret=do-not-log", 400, "", {}, None
+        )
+        with tempfile.TemporaryDirectory() as directory:
+            output = Path(directory) / "capture"
+            with (
+                mock.patch.dict(
+                    capture.os.environ,
+                    {"CAPTURE_REVISION": revision, "CAPTURE_OUTPUT": str(output)},
+                ),
+                mock.patch.object(capture.subprocess, "check_output", return_value=revision),
+                mock.patch.object(capture, "verify_staging_image"),
+                mock.patch.object(capture.urllib.request, "urlopen", side_effect=http_error),
+                self.assertRaises(capture.RegistryFailure) as failure,
+            ):
+                capture.main()
+            status_raw = (output / "capture-status.json").read_text()
+            status = json.loads(status_raw)
+            self.assertEqual(status["stage"], "registry_identity")
+            self.assertEqual(status["outcome"], "failed")
+            self.assertEqual(status["http_status"], 400)
+            self.assertEqual(
+                status["endpoint"], f"mirror.gcr.io/v2/library/postgres/manifests/{capture.INDEX}"
+            )
+            self.assertNotIn("do-not-log", status_raw + str(failure.exception))
+            self.assertFalse((output / "receipt.json").exists())
+
     def test_scanner_failure_cannot_produce_a_receipt(self):
         revision = "a" * 40
         with tempfile.TemporaryDirectory() as directory:
             output = Path(directory) / "capture"
+            output.mkdir()
+            (output / "capture-status.json").write_text('{"stage":"checkout"}')
             with (
                 mock.patch.dict(
                     capture.os.environ,
@@ -36,6 +68,8 @@ class CaptureTests(unittest.TestCase):
             ):
                 capture.main()
             self.assertFalse((output / "receipt.json").exists())
+            status = json.loads((output / "capture-status.json").read_text())
+            self.assertEqual((status["stage"], status["outcome"]), ("scanner", "failed"))
             command = run.call_args.args[0]
             self.assertEqual(command[command.index("--image-src") + 1], "remote")
             self.assertNotIn("/var/run/docker.sock", " ".join(command))
