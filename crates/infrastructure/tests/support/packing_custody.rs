@@ -1538,3 +1538,109 @@ async fn released_record_keeps_target_pack_recognition_across_new_received_evide
         .replayed
     );
 }
+
+#[sqlx::test(migrations = false)]
+async fn populated_schema66_upgrade_preserves_settled_order_and_accepts_packing(pool: PgPool) {
+    MIGRATOR.run_to(66, &pool).await.expect("schema 0066");
+    let f = fixture::accepted(&pool, false, true).await;
+    setup(&pool).await;
+    let order = &f.order.identity.id;
+    let attempt = &f.frozen.snapshot().binding.id;
+    let settlement = settle(&pool, f.time.as_ref(), f.ids.as_ref(), order)
+        .await
+        .expect("real pre-upgrade paid settlement")
+        .settlement;
+    assert!(
+        crate::order_stock::read_settlement(&pool, order)
+            .await
+            .expect("original reader")
+            == Some(settlement.clone())
+    );
+    let recognition = crate::payment_attempts::recognition::current(&pool, attempt)
+        .await
+        .expect("original recognition")
+        .expect("received");
+    assert_eq!(
+        recognition.state,
+        crate::payment_attempts::recognition::State::Received
+    );
+    let source = fixture::unchanged(&pool).await;
+    let stock = fixture::footprint(&pool).await;
+    let old_events: Vec<serde_json::Value> =
+        sqlx::query_scalar("SELECT to_jsonb(e) FROM commerce_outbox e ORDER BY id")
+            .fetch_all(&pool)
+            .await
+            .expect("pre-upgrade immutable events");
+    let original_evidence: serde_json::Value = sqlx::query_scalar("SELECT jsonb_build_object('attempts',(SELECT jsonb_agg(to_jsonb(a) ORDER BY a.id) FROM payment_attempts a),'observations',(SELECT jsonb_agg(to_jsonb(o) ORDER BY o.id) FROM payment_observations o),'resolutions',(SELECT jsonb_agg(to_jsonb(i) ORDER BY i.id) FROM payment_identity_resolutions i),'recognitions',(SELECT jsonb_agg(to_jsonb(r) ORDER BY r.id) FROM payment_recognitions r),'current',(SELECT jsonb_agg(to_jsonb(r) ORDER BY r.order_id) FROM payment_recognition_current r),'allocations',(SELECT jsonb_agg(to_jsonb(a) ORDER BY a.order_id) FROM order_stock_allocations a))")
+        .fetch_one(&pool).await.expect("pre-upgrade financial and allocation custody");
+    assert!(!old_events.is_empty());
+
+    MIGRATOR.run_to(67, &pool).await.expect("upgrade to 0067");
+    assert_eq!(fixture::unchanged(&pool).await, source);
+    assert_eq!(fixture::footprint(&pool).await, stock);
+    assert_eq!(
+        sqlx::query_scalar::<_, serde_json::Value>(
+            "SELECT to_jsonb(e) FROM commerce_outbox e ORDER BY id"
+        )
+        .fetch_all(&pool)
+        .await
+        .expect("preserved events"),
+        old_events
+    );
+    let upgraded_evidence: serde_json::Value = sqlx::query_scalar("SELECT jsonb_build_object('attempts',(SELECT jsonb_agg(to_jsonb(a) ORDER BY a.id) FROM payment_attempts a),'observations',(SELECT jsonb_agg(to_jsonb(o) ORDER BY o.id) FROM payment_observations o),'resolutions',(SELECT jsonb_agg(to_jsonb(i) ORDER BY i.id) FROM payment_identity_resolutions i),'recognitions',(SELECT jsonb_agg(to_jsonb(r) ORDER BY r.id) FROM payment_recognitions r),'current',(SELECT jsonb_agg(to_jsonb(r) ORDER BY r.order_id) FROM payment_recognition_current r),'allocations',(SELECT jsonb_agg(to_jsonb(a) ORDER BY a.order_id) FROM order_stock_allocations a))")
+        .fetch_one(&pool).await.expect("upgraded financial and allocation custody");
+    assert_eq!(upgraded_evidence, original_evidence);
+    assert!(
+        crate::order_stock::read_settlement(&pool, order)
+            .await
+            .expect("upgraded old reader")
+            == Some(settlement.clone())
+    );
+    assert!(
+        crate::payment_attempts::recognition::current(&pool, attempt)
+            .await
+            .expect("upgraded recognition")
+            == Some(recognition)
+    );
+    let initial_count: i64 = sqlx::query_scalar("SELECT count(*) FROM packing_custody")
+        .fetch_one(&pool)
+        .await
+        .expect("no seeded packing");
+    assert_eq!(initial_count, 0);
+    let items = [units("SET-FILLED")];
+    let packages = [vec![part("SEAT-COVER", 2), part("SEAT-FOAM", 2)]];
+    let pack = record(
+        &pool,
+        &token(71),
+        f.time.as_ref(),
+        f.ids.as_ref(),
+        packed(order, "upgrade-pack", &items, &packages),
+    )
+    .await
+    .expect("first upgraded pack");
+    let release = record(
+        &pool,
+        &token(71),
+        f.time.as_ref(),
+        f.ids.as_ref(),
+        released(order, "upgrade-release", &pack.record.id),
+    )
+    .await
+    .expect("first upgraded release");
+    assert_eq!((pack.record.generation, release.record.generation), (1, 2));
+    assert_eq!(fixture::unchanged(&pool).await, source);
+    assert_eq!(fixture::footprint(&pool).await, stock);
+    assert_eq!(sqlx::query_scalar::<_,serde_json::Value>("SELECT to_jsonb(e) FROM commerce_outbox e WHERE kind<>'order.packing_custody_recorded.v1' ORDER BY id").fetch_all(&pool).await.expect("original events after packing"),old_events);
+    assert!(
+        crate::order_stock::read_settlement(&pool, order)
+            .await
+            .expect("old reader after packing")
+            == Some(settlement)
+    );
+    let exact: bool = sqlx::query_scalar("SELECT packing_custody_history_exact($1)")
+        .bind(order)
+        .fetch_one(&pool)
+        .await
+        .expect("upgraded exact packing custody");
+    assert!(exact);
+}
