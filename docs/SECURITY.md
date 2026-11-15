@@ -737,8 +737,12 @@ It requires the exact proof, order and verified buyer mailbox. Preserve the
 local part and fold only the ASCII domain through the existing normalizer.
 Keep bearer bytes and buyer information out of link records and diagnostics.
 PostgreSQL requires reciprocal consumption and a unique immutable link.
-Wrong scope, expiry or a competing link leaves the proof unspent. The
-private adapter provides no browser route or proof-delivery transport.
+Wrong scope, expiry or a competing link leaves the proof unspent. The synchronizer-bound redemption claims that exact session and proof in the same
+transaction; legacy private callers remain separate. An independently enabled
+test-only POST requires preview authentication, the exact configured Origin,
+the canonical customer cookie and its bound synchronizer. Its bounded body holds
+only an order ID and proof, and its empty success response contains no identity.
+No public browser route or proof-delivery transport is installed.
 Read linked orders only under live account and session claims. Filter the
 link by the session account, validate its exact consumed proof and accepted
 order, and check session time again before returning. Keep buyer, delivery

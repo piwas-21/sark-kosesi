@@ -587,8 +587,9 @@ order. Return captured items and amounts through a minimal projection.
 An independently enabled test-only history route requires preview authority,
 the configured Origin and the customer cookie. It returns up to eight linked
 guest orders and uses the last order's linked time and ID as a live position
-when more remain. Decimal strings carry times and amounts. No linking or proof
-delivery route is installed. Public browser controls, safe proof delivery, rate
+when more remain. Decimal strings carry times and amounts. An independently enabled test-only redemption route binds the current customer
+session synchronizer in the same transaction as proof consumption and linking.
+No public linking or proof delivery route is installed. Public browser controls, safe proof delivery, rate
 limits and public order journeys remain separate work.
 
 ## P5 room-fit foundation

@@ -224,6 +224,11 @@ export type TestFavouriteReceipt = {
     revision: string;
 };
 
+export type TestGuestLinkRedemption = {
+    order_id: string;
+    proof: string;
+};
+
 export type TestLinkedOrder = {
     created_at: string;
     currency: string;
@@ -643,6 +648,38 @@ export type TestCustomerFavouritesSetResponses = {
 };
 
 export type TestCustomerFavouritesSetResponse = TestCustomerFavouritesSetResponses[keyof TestCustomerFavouritesSetResponses];
+
+export type TestCustomerGuestOrderLinkRedeemData = {
+    body: TestGuestLinkRedemption;
+    headers: {
+        Origin: string;
+        'x-csrf-token': string;
+    };
+    path?: never;
+    query?: never;
+    url: '/api/test/customer/guest-order-link/redeem';
+};
+
+export type TestCustomerGuestOrderLinkRedeemErrors = {
+    400: ApiError;
+    401: ApiError;
+    403: ApiError;
+    413: ApiError;
+    415: ApiError;
+    503: ApiError;
+    504: ApiError;
+};
+
+export type TestCustomerGuestOrderLinkRedeemError = TestCustomerGuestOrderLinkRedeemErrors[keyof TestCustomerGuestOrderLinkRedeemErrors];
+
+export type TestCustomerGuestOrderLinkRedeemResponses = {
+    /**
+     * Guest order linked to current account
+     */
+    204: void;
+};
+
+export type TestCustomerGuestOrderLinkRedeemResponse = TestCustomerGuestOrderLinkRedeemResponses[keyof TestCustomerGuestOrderLinkRedeemResponses];
 
 export type TestCustomerLinkedOrdersData = {
     body?: never;

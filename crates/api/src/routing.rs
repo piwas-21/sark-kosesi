@@ -113,6 +113,14 @@ fn build(
         );
     }
     if let Some(config) = login {
+        if config.guest_link_redeem_transport {
+            app = app.route(
+                "/api/test/customer/guest-order-link/redeem",
+                post(crate::test_guest_link_redeem::redeem)
+                    .layer::<_, std::convert::Infallible>(DefaultBodyLimit::max(256))
+                    .layer(Extension(config.clone())),
+            );
+        }
         if config.linked_orders_transport {
             app = app.route(
                 "/api/test/customer/linked-orders",

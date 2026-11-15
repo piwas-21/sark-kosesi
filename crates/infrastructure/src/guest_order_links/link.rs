@@ -40,13 +40,41 @@ pub async fn link(
     proof: &GuestOrderLinkToken,
     clock: &dyn Clock,
 ) -> Result<LinkedOrder, LinkError> {
+    link_inner(pool, customer, None, order_id, proof, clock).await
+}
+
+/// Consume a proof only under the exact live session's bound synchronizer.
+pub async fn link_with_csrf(
+    pool: &PgPool,
+    customer: &CustomerSessionToken,
+    csrf: &CustomerCsrfToken,
+    order_id: &str,
+    proof: &GuestOrderLinkToken,
+    clock: &dyn Clock,
+) -> Result<LinkedOrder, LinkError> {
+    link_inner(pool, customer, Some(csrf), order_id, proof, clock).await
+}
+
+async fn link_inner(
+    pool: &PgPool,
+    customer: &CustomerSessionToken,
+    csrf: Option<&CustomerCsrfToken>,
+    order_id: &str,
+    proof: &GuestOrderLinkToken,
+    clock: &dyn Clock,
+) -> Result<LinkedOrder, LinkError> {
     if !valid_hex(order_id, 32) {
         return Err(LinkError::Denied);
     }
     let observed = ObservedClock::new(clock, 0);
     time(&observed)?;
     let mut tx = customer_sessions::begin(pool).await?;
-    let session = customer_sessions::claim_session(&mut tx, customer, &observed).await?;
+    let session = match csrf {
+        Some(csrf) => {
+            customer_sessions::claim_session_with_csrf(&mut tx, customer, csrf, &observed).await?
+        }
+        None => customer_sessions::claim_session(&mut tx, customer, &observed).await?,
+    };
     let account_id = session.account_id();
     let verifier = proof.verifier();
     let row: Option<ProofRow> = sqlx::query_as("SELECT left(order_id,33) AS order_id,left(basket_id,33) AS basket_id,created_at,expires_at,consumed_at,consumed_account_id,consumed_xid IS NULL AS unconsumed_xid FROM guest_order_link_proofs WHERE verifier=$1 FOR UPDATE")

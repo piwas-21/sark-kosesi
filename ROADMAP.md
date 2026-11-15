@@ -223,6 +223,10 @@ retention and cancellation policy remain open.
 An independently enabled test-only mutation uses a bound session proof to add or
 cancel a subscription; it is not public ingress or notification delivery.
 
+A default-off test-only guest-order redemption route binds the customer session
+synchronizer to proof consumption and linking in the same transaction. Proof
+delivery, public linking and browser acceptance remain open.
+
 The local room-planner preview combines the rectangle calculator with keyboard
 measurement and rotation controls, a drawn footprint, and text clearance and fit
 results. Caller measurements stay on the page unless the user downloads a

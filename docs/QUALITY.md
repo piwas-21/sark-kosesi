@@ -1024,6 +1024,12 @@ check ownership, closed cursor parsing, same-time keyset ties, final empty page,
 invalid session and Origin, damaged reciprocal evidence and private output.
 Verify that reading creates no order, proof, link, stock or outbox changes.
 
+For synchronizer-bound redemption, verify the correct session proof commits one
+link, while missing, foreign and stale session proofs preserve the unspent order
+proof. Test disabled configuration, preview/Origin/cookie boundaries, closed
+bounded input, replay and expiry after lock waits with isolated PostgreSQL.
+No mailbox delivery or public acceptance follows.
+
 Test credential admission against isolated PostgreSQL from separate pools.
 Assert exact independent target and global caps, domain-case normalization,
 purpose separation, committed debits across later failures, and fresh window
