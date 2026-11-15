@@ -4,10 +4,12 @@ import json
 import os
 import re
 import subprocess
+import tempfile
 import unittest
 from pathlib import Path
 
 WORKFLOW = Path(__file__).resolve().parents[2] / ".github/workflows/ci.yml"
+PACKAGE = Path(__file__).resolve().parents[2] / "package.json"
 REVISION = "${{ github.event.pull_request.head.sha || github.sha }}"
 
 
@@ -27,21 +29,23 @@ def step(leg, marker):
 
 
 def check_application_graph(text):
-    checks, browser, coverage, gate, sonar, quality = (
+    checks, browser, stable, nightly, coverage, gate, sonar, quality = (
         job(text, name)
         for name in (
             "application_checks",
             "application_browser",
+            "coverage_stable",
+            "coverage_nightly",
             "application_coverage",
             "application",
             "sonar",
             "quality",
         )
     )
-    for guarded in (checks, browser, coverage, gate):
+    for guarded in (checks, browser, stable, nightly, coverage, gate):
         if re.search(r"(?m)^\s*(?:-\s+)?continue-on-error\s*:", guarded):
             raise ValueError("application work cannot continue on error")
-    for leg in (checks, browser, coverage):
+    for leg in (checks, browser, stable, nightly):
         for required in (
             f"ANALYSIS_REVISION: {REVISION}",
             f"ref: {REVISION}",
@@ -66,30 +70,105 @@ def check_application_graph(text):
             raise ValueError(f"missing application command: {command}")
         if re.search(r"(?m)^(?:        )?if:", step(checks, f"run: npm run {command}\n")):
             raise ValueError(f"conditional application command: {command}")
-    for command in ("check:rust", "test:coverage"):
-        marker = f"run: npm run {command}\n"
-        if len(re.findall(rf"(?m)^\s+(?:- )?run: npm run {re.escape(command)}$", coverage)) != 1:
-            raise ValueError(f"missing coverage command: {command}")
-        if re.search(r"(?m)^(?:        )?if:", step(coverage, marker)):
-            raise ValueError(f"conditional coverage command: {command}")
-        if marker in checks or marker in browser:
-            raise ValueError(f"coverage command belongs to one leg: {command}")
-    if coverage.index("run: npm run check:rust") > coverage.index("run: npm run test:coverage"):
-        raise ValueError("Clippy must run before coverage validation")
-    for line in (
-        "rustup toolchain install nightly-2026-10-25 --profile minimal --component llvm-tools-preview",
-        "if: failure() && steps.coverage.outcome == 'failure'",
-        "name: rust-coverage-diagnostics-${{ env.ANALYSIS_REVISION }}",
-        "name: application-coverage-${{ env.ANALYSIS_REVISION }}",
-        "coverage/rust-stable.json",
-        "coverage/rust.json",
-        "coverage/rust.lcov",
-        "coverage/clippy.json",
-        "coverage/typescript/lcov.info",
-        "if-no-files-found: error",
+    for leg, commands in (
+        (stable, ("npm run check:rust", "npm run test:coverage:stable")),
+        (nightly, ("npm run test:coverage:nightly", "npm run test:coverage:typescript")),
     ):
-        if line not in coverage:
-            raise ValueError(f"missing coverage evidence: {line}")
+        for command in commands:
+            if len(re.findall(rf"(?m)^\s+(?:- )?(?:run: )?{re.escape(command)}$", leg)) != 1:
+                raise ValueError(f"missing coverage command: {command}")
+        if re.search(r"(?m)^(?:        )?if:", step(leg, "id: coverage\n")):
+            raise ValueError("coverage producer cannot be conditional")
+        if "if: failure() && steps.coverage.outcome == 'failure'" not in leg:
+            raise ValueError("missing failure diagnostics")
+    if re.search(r"(?m)^(?:        )?if:", step(stable, "run: npm run check:rust\n")):
+        raise ValueError("Clippy cannot be conditional")
+    if stable.index("run: npm run check:rust") > stable.index("id: coverage"):
+        raise ValueError("Clippy must precede the stable coverage producer")
+    if step(stable, "id: coverage\n").strip() != (
+        "id: coverage\n        run: npm run test:coverage:stable"
+    ) or step(nightly, "id: coverage\n").strip() != (
+        "id: coverage\n        run: |\n"
+        "          npm run test:coverage:nightly\n"
+        "          npm run test:coverage:typescript"
+    ):
+        raise ValueError("coverage producer commands must run directly")
+    if (
+        "rustup toolchain install nightly-2026-10-25 --profile minimal --component llvm-tools-preview"
+        not in nightly
+    ):
+        raise ValueError("nightly coverage toolchain missing")
+    for leg, artifact, paths in (
+        (stable, "coverage-stable-", ("coverage/rust-stable.json", "coverage/clippy.json")),
+        (
+            nightly,
+            "coverage-nightly-",
+            ("coverage/rust.json", "coverage/rust.lcov", "coverage/typescript/lcov.info"),
+        ),
+    ):
+        upload = step(leg, f"name: {artifact}${{{{ env.ANALYSIS_REVISION }}}}")
+        if (
+            "uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9" not in upload
+            or re.search(r"(?m)^(?:        )?if:", upload)
+            or "if-no-files-found: error" not in upload
+            or any(path not in upload for path in paths)
+        ):
+            raise ValueError("coverage producer upload is incomplete or conditional")
+    for leg, name, paths in (
+        (
+            stable,
+            "rust-stable-coverage-diagnostics-",
+            ("coverage/rust-stable.json", "coverage/clippy.json"),
+        ),
+        (nightly, "rust-coverage-diagnostics-", ("coverage/rust.json", "coverage/rust.lcov")),
+    ):
+        diagnostic = step(leg, f"name: {name}${{{{ env.ANALYSIS_REVISION }}}}")
+        if (
+            "uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9"
+            not in diagnostic
+            or "if: failure() && steps.coverage.outcome == 'failure'" not in diagnostic
+            or "if-no-files-found: ignore" not in diagnostic
+            or any(path not in diagnostic for path in paths)
+        ):
+            raise ValueError("coverage failure diagnostics missing")
+    if (
+        "needs: [coverage_stable, coverage_nightly]" not in coverage
+        or re.search(r"(?m)^    if:", coverage)
+        or f"ANALYSIS_REVISION: {REVISION}" not in coverage
+        or f"ref: {REVISION}" not in coverage
+        or "persist-credentials: false" not in coverage
+    ):
+        raise ValueError("coverage aggregation must depend on both exact-revision producers")
+    for artifact, path in (
+        ("coverage-stable-", ".local/coverage-stable-artifact"),
+        ("coverage-nightly-", ".local/coverage-nightly-artifact"),
+    ):
+        download = step(coverage, f"name: {artifact}${{{{ env.ANALYSIS_REVISION }}}}")
+        if (
+            "uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333"
+            not in download
+            or f"path: {path}" not in download
+            or re.search(r"(?m)^(?:        )?if:", download)
+            or re.search(r"(?m)^\s+(run-id|repository|github-token):", download)
+        ):
+            raise ValueError("coverage producer artifact missing or unbound")
+    validation = step(coverage, "name: Validate complete coverage")
+    for line in (
+        "cp .local/coverage-stable-artifact/rust-stable.json coverage/rust-stable.json",
+        "cp .local/coverage-stable-artifact/clippy.json coverage/clippy.json",
+        "cp .local/coverage-nightly-artifact/rust.json coverage/rust.json",
+        "cp .local/coverage-nightly-artifact/rust.lcov coverage/rust.lcov",
+        "cp .local/coverage-nightly-artifact/typescript/lcov.info coverage/typescript/lcov.info",
+        "python3 scripts/check_coverage_reports.py",
+    ):
+        if line not in validation:
+            raise ValueError(f"missing aggregate evidence check: {line}")
+    if re.search(r"(?m)^(?:        )?if:", validation):
+        raise ValueError("coverage validation cannot be conditional")
+    if coverage.index("name: Validate complete coverage") > coverage.index(
+        "name: application-coverage-${{ env.ANALYSIS_REVISION }}"
+    ):
+        raise ValueError("canonical upload must follow validation")
     for line in (
         "name: application-${{ env.ANALYSIS_REVISION }}",
         ".local/evidence/",
@@ -193,6 +272,28 @@ def aggregate_script(text):
     return "\n".join(line.removeprefix("          ") for line in match.group(1).splitlines())
 
 
+def coverage_script(text):
+    coverage = job(text, "application_coverage")
+    match = re.search(
+        r"(?ms)^      - name: Validate complete coverage\n        run: \|\n(.*?)(?=^      - |\Z)",
+        coverage,
+    )
+    if not match:
+        raise ValueError("missing coverage validation program")
+    return "\n".join(line.removeprefix("          ") for line in match.group(1).splitlines())
+
+
+def check_coverage_commands(scripts):
+    expected = {
+        "test:coverage:stable": "mkdir -p coverage && CARGO_TARGET_DIR=.local/coverage-target-stable cargo llvm-cov clean --workspace && CARGO_TARGET_DIR=.local/coverage-target-stable python3 scripts/with_postgres.py -- cargo llvm-cov --workspace --all-features --locked --json --output-path coverage/rust-stable.json",
+        "test:coverage:nightly": "mkdir -p coverage && CARGO_TARGET_DIR=.local/coverage-target-nightly cargo +nightly-2026-10-25 llvm-cov clean --workspace && CARGO_TARGET_DIR=.local/coverage-target-nightly python3 scripts/with_postgres.py -- cargo +nightly-2026-10-25 llvm-cov --workspace --all-features --locked --branch --json --output-path coverage/rust.json && CARGO_TARGET_DIR=.local/coverage-target-nightly cargo +nightly-2026-10-25 llvm-cov report --lcov --output-path coverage/rust.lcov",
+        "test:coverage:typescript": "mkdir -p coverage && vitest run --coverage",
+        "test:coverage": "npm run test:coverage:stable && npm run test:coverage:nightly && npm run test:coverage:typescript && python3 scripts/check_coverage_reports.py",
+    }
+    if any(scripts.get(name) != command for name, command in expected.items()):
+        raise ValueError("coverage command or local composition changed")
+
+
 class ApplicationWorkflow(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
@@ -208,9 +309,22 @@ class ApplicationWorkflow(unittest.TestCase):
             ("ref: " + REVISION, "ref: develop"),
             ("  application_coverage:\n", "  coverage_missing:\n"),
             ("run: npm run check:rust", "run: echo skipped"),
-            ("run: npm run test:coverage", "run: echo skipped"),
+            ("run: npm run test:coverage:stable", "run: echo skipped"),
+            ("npm run test:coverage:nightly", "echo skipped"),
+            ("npm run test:coverage:typescript", "echo skipped"),
+            ("needs: [coverage_stable, coverage_nightly]", "needs: [coverage_stable]"),
+            ("name: coverage-stable-${{ env.ANALYSIS_REVISION }}", "name: wrong-stable"),
+            ("name: coverage-nightly-${{ env.ANALYSIS_REVISION }}", "name: wrong-nightly"),
+            (
+                "path: .local/coverage-stable-artifact",
+                "path: .local/coverage-stable-artifact\n          run-id: 123",
+            ),
+            (
+                "name: rust-coverage-diagnostics-${{ env.ANALYSIS_REVISION }}",
+                "name: missing-diagnostics",
+            ),
             ("name: application-coverage-${{ env.ANALYSIS_REVISION }}", "name: wrong-revision"),
-            ("coverage/rust-stable.json", "coverage/missing.json"),
+            ("cp .local/coverage-stable-artifact/rust-stable.json", "cp missing.json"),
             (
                 "uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9\n"
                 "        with:\n          name: application-coverage-",
@@ -223,7 +337,7 @@ class ApplicationWorkflow(unittest.TestCase):
                 "name: application-coverage-wrong-revision\n"
                 "          path: .local/application-coverage-artifact",
             ),
-            ("coverage/clippy.json", "coverage/other.json"),
+            ("cp .local/coverage-stable-artifact/clippy.json", "cp other.json"),
             ("name: application-${{ env.ANALYSIS_REVISION }}", "name: other-artifact"),
             (
                 "- run: npm run test:integration",
@@ -237,6 +351,88 @@ class ApplicationWorkflow(unittest.TestCase):
         ):
             with self.subTest(old=old), self.assertRaises(ValueError):
                 check_application_graph(self.workflow.replace(old, new, 1))
+
+    def test_factored_coverage_commands_preserve_the_full_local_suite(self):
+        scripts = json.loads(PACKAGE.read_text())["scripts"]
+        check_coverage_commands(scripts)
+        for name in (
+            "test:coverage:stable",
+            "test:coverage:nightly",
+            "test:coverage:typescript",
+            "test:coverage",
+        ):
+            with self.subTest(name=name), self.assertRaises(ValueError):
+                check_coverage_commands({**scripts, name: "echo skipped"})
+
+    def test_each_coverage_producer_prepares_a_fresh_output_directory(self):
+        scripts = json.loads(PACKAGE.read_text())["scripts"]
+        for name in ("test:coverage:stable", "test:coverage:nightly", "test:coverage:typescript"):
+            with self.subTest(name=name), tempfile.TemporaryDirectory() as temp:
+                root = Path(temp)
+                bin_dir = root / "bin"
+                bin_dir.mkdir()
+                # Stand-ins reject missing output directories before any actual build or test.
+                for command in ("cargo", "python3", "vitest"):
+                    executable = bin_dir / command
+                    executable.write_text("#!/bin/sh\ntest -d coverage || exit 47\n")
+                    executable.chmod(0o755)
+                env = {**os.environ, "PATH": f"{bin_dir}:{os.environ['PATH']}"}
+
+                def run(program, cwd=root, environment=env):
+                    return subprocess.run(
+                        ["sh", "-c", program],
+                        cwd=cwd,
+                        env=environment,
+                        capture_output=True,
+                        check=False,
+                    ).returncode
+
+                without_directory_setup = scripts[name].removeprefix("mkdir -p coverage && ")
+                self.assertEqual(run(without_directory_setup), 47)
+                self.assertEqual(run(scripts[name]), 0)
+                self.assertTrue((root / "coverage").is_dir())
+
+    def test_coverage_assembly_fails_for_each_missing_file_and_failed_validation(self):
+        program = coverage_script(self.workflow)
+        inputs = (
+            ".local/coverage-stable-artifact/rust-stable.json",
+            ".local/coverage-stable-artifact/clippy.json",
+            ".local/coverage-nightly-artifact/rust.json",
+            ".local/coverage-nightly-artifact/rust.lcov",
+            ".local/coverage-nightly-artifact/typescript/lcov.info",
+        )
+
+        def run(missing=None, fail=False):
+            with tempfile.TemporaryDirectory() as temp:
+                root = Path(temp)
+                for name in inputs:
+                    if name != missing:
+                        path = root / name
+                        path.parent.mkdir(parents=True, exist_ok=True)
+                        path.write_text("synthetic input")
+                script = root / "scripts/check_coverage_reports.py"
+                script.parent.mkdir()
+                script.write_text(
+                    "from pathlib import Path\n"
+                    "Path('validator-ran').write_text('yes')\n"
+                    f"raise SystemExit({int(fail)})\n"
+                )
+                result = subprocess.run(
+                    ["bash", "-e", "-o", "pipefail", "-c", program],
+                    cwd=root,
+                    capture_output=True,
+                    text=True,
+                    check=False,
+                )
+                return result.returncode, (root / "validator-ran").exists()
+
+        self.assertEqual(run(), (0, True))
+        self.assertEqual(run(fail=True), (1, True))
+        for name in inputs:
+            with self.subTest(missing=name):
+                code, called = run(missing=name)
+                self.assertNotEqual(code, 0)
+                self.assertFalse(called)
 
     def test_required_step_conditions_cannot_be_disabled(self):
         mutations = (
@@ -259,6 +455,14 @@ class ApplicationWorkflow(unittest.TestCase):
                 "      - name: Exercise private guest checkout in Chromium\n        if: false\n",
             ),
             ("      - id: coverage\n", "      - id: coverage\n        if: false\n"),
+            (
+                "  application_coverage:\n    name: Application coverage\n",
+                "  application_coverage:\n    name: Application coverage\n    if: always()\n",
+            ),
+            (
+                "      - name: Validate complete coverage\n",
+                "      - name: Validate complete coverage\n        if: false\n",
+            ),
         )
         for old, new in mutations:
             with self.subTest(old=old), self.assertRaises(ValueError):
@@ -273,6 +477,8 @@ class ApplicationWorkflow(unittest.TestCase):
                 "  application_browser:\n    continue-on-error: ${{ true }}\n",
             ),
             ("  application_coverage:\n", "  application_coverage:\n    continue-on-error: true\n"),
+            ("  coverage_stable:\n", "  coverage_stable:\n    continue-on-error: true\n"),
+            ("  coverage_nightly:\n", "  coverage_nightly:\n    continue-on-error: true\n"),
             ("  application:\n", "  application:\n    continue-on-error: true\n"),
             ("      - id: coverage\n", "      - id: coverage\n        continue-on-error: true\n"),
             (
