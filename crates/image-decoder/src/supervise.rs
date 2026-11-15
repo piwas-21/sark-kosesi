@@ -5,6 +5,7 @@ use tokio::{
     io::{AsyncReadExt, AsyncWriteExt},
     net::UnixStream,
     process::{Child, Command},
+    sync::watch,
     time::timeout,
 };
 
@@ -15,7 +16,11 @@ pub(crate) async fn decode(
     socket: &mut UnixStream,
     header: &[u8; wire::HEADER_LEN],
     body: &[u8],
+    shutdown: &mut watch::Receiver<bool>,
 ) -> io::Result<Option<Vec<u8>>> {
+    if *shutdown.borrow() {
+        return Ok(None);
+    }
     let mut command = Command::new(std::env::current_exe()?);
     command
         .arg("decode")
@@ -25,7 +30,7 @@ pub(crate) async fn decode(
         .stderr(Stdio::null())
         .kill_on_drop(true);
     let child = command.spawn()?;
-    run_child(socket, child, header, body, WALL_LIMIT).await
+    run_child(socket, child, header, body, WALL_LIMIT, shutdown).await
 }
 
 async fn run_child(
@@ -34,6 +39,7 @@ async fn run_child(
     header: &[u8],
     body: &[u8],
     deadline: Duration,
+    shutdown: &mut watch::Receiver<bool>,
 ) -> io::Result<Option<Vec<u8>>> {
     let Some(mut input) = child.stdin.take() else {
         terminate(&mut child).await;
@@ -46,6 +52,7 @@ async fn run_child(
     let result = timeout(deadline, async {
         tokio::select! {
             biased;
+            _ = cancelled(shutdown) => Ok(None),
             // Prefer an already-readable disconnect or extra request byte to a ready result.
             _ = socket.read_u8() => Ok(None),
             result = async {
@@ -83,6 +90,13 @@ async fn run_child(
             terminate(&mut child).await;
             Err(io::Error::other("child timeout"))
         }
+    }
+}
+
+pub(crate) async fn cancelled(shutdown: &mut watch::Receiver<bool>) {
+    let stopped = *shutdown.borrow();
+    if !stopped {
+        let _ = shutdown.changed().await;
     }
 }
 

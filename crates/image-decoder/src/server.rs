@@ -15,7 +15,8 @@ use tokio::{
     io::{AsyncReadExt, AsyncWriteExt},
     net::{UnixListener, UnixStream},
     signal::unix::{SignalKind, signal},
-    sync::Semaphore,
+    sync::{Semaphore, watch},
+    task::JoinSet,
     time::timeout,
 };
 
@@ -70,10 +71,22 @@ pub(crate) async fn serve(path: PathBuf, allowed_uid: u32) -> io::Result<()> {
     let mut shutdown = signal(SignalKind::terminate())?;
     let (listener, _guard) = bind(&path)?;
     let capacity = Arc::new(Semaphore::new(1));
-    loop {
+    let (shutdown_tx, _) = watch::channel(false);
+    let mut tasks = JoinSet::new();
+    let result = loop {
         let (mut socket, _) = tokio::select! {
-            _ = shutdown.recv() => return Ok(()),
-            connection = listener.accept() => connection?,
+            biased;
+            _ = shutdown.recv() => break Ok(()),
+            completed = tasks.join_next(), if !tasks.is_empty() => {
+                if let Some(Err(error)) = completed {
+                    break Err(io::Error::other(error));
+                }
+                continue;
+            },
+            connection = listener.accept() => match connection {
+                Ok(connection) => connection,
+                Err(error) => break Err(error),
+            },
         };
         if !socket
             .peer_cred()
@@ -83,16 +96,40 @@ pub(crate) async fn serve(path: PathBuf, allowed_uid: u32) -> io::Result<()> {
         }
         match capacity.clone().try_acquire_owned() {
             Ok(permit) => {
-                tokio::spawn(async move {
+                let receiver = shutdown_tx.subscribe();
+                tasks.spawn(async move {
                     let _permit = permit;
-                    let _ = request(socket).await;
+                    let _ = request(socket, receiver).await;
                 });
             }
             Err(_) => {
-                let _ = timeout(IO_DEADLINE, unavailable(&mut socket)).await;
+                // A busy response must not block signal handling or create queued tasks.
+                let _ = unavailable_now(&mut socket);
             }
         }
+    };
+    shutdown_tasks(&shutdown_tx, &mut tasks).await?;
+    result
+}
+
+pub(crate) async fn shutdown_tasks(
+    shutdown: &watch::Sender<bool>,
+    tasks: &mut JoinSet<()>,
+) -> io::Result<()> {
+    shutdown.send_replace(true);
+    let mut failure = None;
+    while let Some(result) = tasks.join_next().await {
+        if let Err(error) = result {
+            failure = Some(io::Error::other(error));
+        }
     }
+    failure.map_or(Ok(()), Err)
+}
+
+fn unavailable_now(socket: &mut UnixStream) -> io::Result<()> {
+    let bytes = wire::encode_response(&Response::Rejected(Rejection::Unavailable))
+        .map_err(|_| io::Error::other("response"))?;
+    socket.try_write(&bytes).map(|_| ())
 }
 
 async fn unavailable(socket: &mut UnixStream) -> io::Result<()> {
@@ -101,33 +138,47 @@ async fn unavailable(socket: &mut UnixStream) -> io::Result<()> {
     socket.write_all(&bytes).await
 }
 
-async fn request(mut socket: UnixStream) -> io::Result<()> {
-    let input = timeout(IO_DEADLINE, async {
-        let mut header = [0; wire::HEADER_LEN];
-        socket.read_exact(&mut header).await?;
-        let (_, len) =
-            wire::parse_request_header(&header).map_err(|_| io::Error::other("header"))?;
-        if len == 0 || len > MAX_INPUT {
-            return Err(io::Error::other("input length"));
-        }
-        let mut body = vec![0; len];
-        socket.read_exact(&mut body).await?;
-        Ok::<_, io::Error>((header, body))
-    })
-    .await;
-    let Ok(Ok((header, body))) = input else {
-        return timeout(IO_DEADLINE, unavailable(&mut socket))
-            .await
-            .map_err(|_| io::Error::other("response timeout"))?;
+async fn request(mut socket: UnixStream, mut shutdown: watch::Receiver<bool>) -> io::Result<()> {
+    let input = tokio::select! {
+        biased;
+        _ = supervise::cancelled(&mut shutdown) => return Ok(()),
+        input = timeout(IO_DEADLINE, async {
+            let mut header = [0; wire::HEADER_LEN];
+            socket.read_exact(&mut header).await?;
+            let (_, len) = wire::parse_request_header(&header)
+                .map_err(|_| io::Error::other("header"))?;
+            if len == 0 || len > MAX_INPUT {
+                return Err(io::Error::other("input length"));
+            }
+            let mut body = vec![0; len];
+            socket.read_exact(&mut body).await?;
+            Ok::<_, io::Error>((header, body))
+        }) => input,
     };
-    match supervise::decode(&mut socket, &header, &body).await {
-        Ok(Some(response)) => timeout(IO_DEADLINE, socket.write_all(&response))
-            .await
-            .map_err(|_| io::Error::other("response timeout"))?,
-        Ok(None) => Ok(()), // Peer closed its write half or sent an extra byte.
-        Err(_) => timeout(IO_DEADLINE, unavailable(&mut socket))
-            .await
-            .map_err(|_| io::Error::other("response timeout"))?,
+    let Ok(Ok((header, body))) = input else {
+        return send_unavailable(&mut socket, &mut shutdown).await;
+    };
+    match supervise::decode(&mut socket, &header, &body, &mut shutdown).await {
+        Ok(Some(response)) => tokio::select! {
+            biased;
+            _ = supervise::cancelled(&mut shutdown) => Ok(()),
+            result = timeout(IO_DEADLINE, socket.write_all(&response)) =>
+                result.map_err(|_| io::Error::other("response timeout"))?,
+        },
+        Ok(None) => Ok(()),
+        Err(_) => send_unavailable(&mut socket, &mut shutdown).await,
+    }
+}
+
+async fn send_unavailable(
+    socket: &mut UnixStream,
+    shutdown: &mut watch::Receiver<bool>,
+) -> io::Result<()> {
+    tokio::select! {
+        biased;
+        _ = supervise::cancelled(shutdown) => Ok(()),
+        result = timeout(IO_DEADLINE, unavailable(socket)) =>
+            result.map_err(|_| io::Error::other("response timeout"))?,
     }
 }
 
@@ -164,5 +215,35 @@ mod tests {
         drop(guard);
         assert!(!path.exists());
         std::fs::remove_dir(&dir).expect("remove fixture directory");
+    }
+
+    #[tokio::test]
+    async fn shutdown_cancels_partial_request_read() {
+        let (socket, mut peer) = UnixStream::pair().expect("socket pair");
+        let (shutdown, receiver) = watch::channel(false);
+        let task = tokio::spawn(request(socket, receiver));
+        peer.write_all(b"x").await.expect("partial header");
+        tokio::task::yield_now().await;
+        shutdown.send_replace(true);
+        let result = timeout(Duration::from_secs(1), task)
+            .await
+            .expect("request cancellation deadline")
+            .expect("request task");
+        assert!(result.is_ok());
+        let mut byte = [0_u8; 1];
+        assert_eq!(peer.read(&mut byte).await.expect("closed socket"), 0);
+    }
+
+    #[tokio::test]
+    async fn shutdown_prevents_failure_response_write() {
+        let (mut socket, mut peer) = UnixStream::pair().expect("socket pair");
+        let (shutdown, mut receiver) = watch::channel(false);
+        shutdown.send_replace(true);
+        send_unavailable(&mut socket, &mut receiver)
+            .await
+            .expect("cancelled response");
+        drop(socket);
+        let mut byte = [0_u8; 1];
+        assert_eq!(peer.read(&mut byte).await.expect("closed socket"), 0);
     }
 }

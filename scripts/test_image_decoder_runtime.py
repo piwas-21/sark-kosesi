@@ -115,7 +115,7 @@ def client(mode, path):
     while True:
         try:
             result = exchange(path, request(1, image))
-            if result == b"ICR1\x01\x06\0\0" and time.monotonic() < deadline:
+            if result in (b"", b"ICR1\x01\x06\0\0") and time.monotonic() < deadline:
                 time.sleep(0.1)
                 continue
             prepared_bytes(result)
@@ -158,6 +158,7 @@ def assert_runtime(container):
         or status["Gid"].split()[:2] != ["1000", "1000"]
         or int(status["CapEff"], 16) != 0
         or status["NoNewPrivs"] != "1"
+        or status["Seccomp"] != "2"
     ):
         raise AssertionError("live daemon identity or privilege state differs")
     mounts = run(["sudo", "-n", "cat", f"/proc/{pid}/mountinfo"], capture=True).stdout.splitlines()

@@ -67,4 +67,8 @@ pub fn process(operation: Operation, bytes: &[u8]) -> Response {
 }
 
 #[cfg(test)]
+mod processing_tests;
+#[cfg(test)]
 mod tests;
+#[cfg(test)]
+mod wire_tests;

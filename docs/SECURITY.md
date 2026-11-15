@@ -175,6 +175,8 @@ hard memory and CPU limits. It installs a deny-by-default seccomp filter before
 reading input, so image processing cannot open files, create sockets, start
 processes or signal the supervisor. P4 still owns safe HTTP upload/session/CSRF controls.
 P7 requires exact-image runtime, fault recovery and capacity evidence.
+The API verifies the framed result and binds the derivative bytes to stored
+hashes. The codec remains trusted for rendition content and metadata removal.
 
 Copy review uses a separate, unseeded `catalogue.review` grant and rejects the
 target draft's own author even if that account holds both grants. The recent-MFA

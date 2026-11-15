@@ -59,6 +59,7 @@ class RustCoverage(unittest.TestCase):
         for name, zero_allowed in (
             ("crates/image-codec/src/framing.rs", False),
             ("crates/image-codec/src/processing.rs", False),
+            ("crates/image-codec/src/wire.rs", False),
             ("crates/domain/src/inventory.rs", False),
             ("crates/domain/src/quotes/mod.rs", False),
             ("crates/domain/src/quotes/policy.rs", False),

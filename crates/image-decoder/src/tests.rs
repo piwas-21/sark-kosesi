@@ -27,26 +27,42 @@ fn probe() {
         | "blocked-signal" | "control-signal" => {
             let pid = rustix::process::getpid();
             let path = std::env::var_os("DECODER_TEST_PATH").expect("probe path");
-            if mode.starts_with("blocked-") {
+            let blocked = mode.starts_with("blocked-");
+            if blocked {
                 crate::sandbox::install().expect("install sandbox");
             }
-            if mode.ends_with("open") {
-                let _ = std::fs::read(path).expect("read control");
+            let result: io::Result<()> = if mode.ends_with("open") {
+                std::fs::read(path).map(|_| ())
             } else if mode.ends_with("unlink") {
-                std::fs::remove_file(path).expect("unlink control");
+                std::fs::remove_file(path)
             } else if mode.ends_with("socket") {
-                let _ = std::os::unix::net::UnixStream::connect(path).expect("socket control");
+                std::os::unix::net::UnixStream::connect(path).map(|_| ())
             } else if mode.ends_with("spawn") {
-                assert!(
-                    std::process::Command::new("/bin/true")
-                        .status()
-                        .expect("spawn control")
-                        .success()
+                std::process::Command::new("/bin/true")
+                    .status()
+                    .and_then(|status| {
+                        if status.success() {
+                            Ok(())
+                        } else {
+                            Err(io::Error::other("control child failed"))
+                        }
+                    })
+            } else {
+                rustix::process::test_kill_process(pid).map_err(io::Error::from)
+            };
+            if blocked {
+                assert_eq!(
+                    result
+                        .expect_err("sandbox must deny operation")
+                        .raw_os_error(),
+                    Some(libc::EPERM),
+                    "sandbox must return EPERM"
                 );
             } else {
-                rustix::process::test_kill_process(pid).expect("signal control");
+                result.expect("unfiltered control must succeed");
             }
         }
+        "term-supervisor" => term_supervisor_probe(),
         "sleep" => std::thread::sleep(Duration::from_secs(30)),
         "crash" => std::process::exit(23),
         _ => panic!("unknown test probe"),
@@ -102,7 +118,16 @@ async fn exercise(mode: &str, cancel: bool) -> (io::Result<Option<Vec<u8>>>, u32
             drop(peer);
         });
     }
-    let result = run_child(&mut socket, child, b"", b"", Duration::from_millis(250)).await;
+    let (_shutdown_tx, mut shutdown) = watch::channel(false);
+    let result = run_child(
+        &mut socket,
+        child,
+        b"",
+        b"",
+        Duration::from_millis(250),
+        &mut shutdown,
+    )
+    .await;
     assert!(
         !std::path::Path::new(&format!("/proc/{pid}")).exists(),
         "child must be reaped"
@@ -144,18 +169,14 @@ fn seccomp_rejects_real_privileged_operations_with_working_controls() {
                     .stderr(Stdio::null())
                     .status()
                     .expect("probe status");
+            assert!(
+                status.success(),
+                "{name} probe must verify its expected outcome"
+            );
             if blocked {
-                assert_eq!(
-                    status.signal(),
-                    Some(31),
-                    "{name} must terminate with SIGSYS"
-                );
                 assert!(marker.exists(), "blocked probe must preserve fixture");
-            } else {
-                assert!(status.success(), "{name} control must execute successfully");
-                if name == "unlink" {
-                    assert!(!marker.exists());
-                }
+            } else if name == "unlink" {
+                assert!(!marker.exists());
             }
         }
     }
@@ -170,7 +191,92 @@ async fn an_extra_socket_byte_cancels_and_reaps_the_child() {
     let pid = child.id().expect("child pid");
     let (mut socket, mut peer) = UnixStream::pair().expect("socket pair");
     peer.write_all(b"x").await.expect("extra byte");
-    let outcome = run_child(&mut socket, child, b"", b"", Duration::from_secs(3)).await;
+    let (_shutdown_tx, mut shutdown) = watch::channel(false);
+    let outcome = run_child(
+        &mut socket,
+        child,
+        b"",
+        b"",
+        Duration::from_secs(3),
+        &mut shutdown,
+    )
+    .await;
     assert!(matches!(outcome, Ok(None)));
     assert!(!std::path::Path::new(&format!("/proc/{pid}")).exists());
+}
+
+fn term_supervisor_probe() {
+    let ready_path = std::env::var_os("DECODER_TEST_READY").expect("readiness path");
+    tokio::runtime::Builder::new_current_thread()
+        .enable_all()
+        .build()
+        .expect("test runtime")
+        .block_on(async {
+            let mut term =
+                tokio::signal::unix::signal(tokio::signal::unix::SignalKind::terminate())
+                    .expect("SIGTERM handler");
+            let child = command("sleep").spawn().expect("active child");
+            let pid = child.id().expect("child pid");
+            let (mut socket, peer) = UnixStream::pair().expect("socket pair");
+            let (shutdown_tx, mut shutdown_rx) = watch::channel(false);
+            let mut tasks = tokio::task::JoinSet::new();
+            tasks.spawn(async move {
+                let _peer = peer;
+                let result = run_child(
+                    &mut socket,
+                    child,
+                    b"",
+                    b"",
+                    Duration::from_secs(20),
+                    &mut shutdown_rx,
+                )
+                .await;
+                assert!(matches!(result, Ok(None)), "SIGTERM cancels child");
+            });
+            tokio::task::yield_now().await;
+            std::fs::write(ready_path, pid.to_string()).expect("ready marker");
+            term.recv().await.expect("SIGTERM received");
+            crate::server::shutdown_tasks(&shutdown_tx, &mut tasks)
+                .await
+                .expect("drain tasks");
+            assert!(
+                !std::path::Path::new(&format!("/proc/{pid}")).exists(),
+                "child reaped before returning"
+            );
+        });
+}
+
+#[tokio::test]
+async fn sigterm_cancels_real_child_and_waits_for_reaping() {
+    let marker = std::env::temp_dir().join(format!("decoder-term-{}", std::process::id()));
+    let mut supervisor = command("term-supervisor")
+        .env("DECODER_TEST_READY", &marker)
+        .spawn()
+        .expect("supervisor probe");
+    let child_pid = timeout(Duration::from_secs(5), async {
+        loop {
+            if let Ok(content) = std::fs::read_to_string(&marker) {
+                break content.parse::<u32>().expect("child pid");
+            }
+            tokio::time::sleep(Duration::from_millis(10)).await;
+        }
+    })
+    .await
+    .expect("supervisor ready");
+    assert!(std::path::Path::new(&format!("/proc/{child_pid}")).exists());
+    let pid = rustix::process::Pid::from_raw(
+        i32::try_from(supervisor.id().expect("supervisor pid")).expect("pid range"),
+    )
+    .expect("nonzero pid");
+    rustix::process::kill_process(pid, rustix::process::Signal::TERM).expect("send SIGTERM");
+    let status = timeout(Duration::from_secs(5), supervisor.wait())
+        .await
+        .expect("supervisor shutdown timeout")
+        .expect("supervisor status");
+    assert!(
+        status.success(),
+        "supervisor must drain its child before exit"
+    );
+    assert!(!std::path::Path::new(&format!("/proc/{child_pid}")).exists());
+    std::fs::remove_file(marker).expect("remove readiness marker");
 }

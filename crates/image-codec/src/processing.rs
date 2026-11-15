@@ -95,17 +95,18 @@ pub(crate) fn prepare(
             continue;
         }
         let mut encoded = Vec::new();
-        let kind = if resized.has_alpha() {
-            resized
-                .write_to(&mut Cursor::new(&mut encoded), ImageFormat::Png)
-                .map_err(|_| Rejection::InvalidImage)?;
-            Kind::Png
+        let (kind, result) = if resized.has_alpha() {
+            (
+                Kind::Png,
+                resized.write_to(&mut Cursor::new(&mut encoded), ImageFormat::Png),
+            )
         } else {
-            JpegEncoder::new_with_quality(&mut encoded, 82)
-                .encode_image(&resized)
-                .map_err(|_| Rejection::InvalidImage)?;
-            Kind::Jpeg
+            (
+                Kind::Jpeg,
+                JpegEncoder::new_with_quality(&mut encoded, 82).encode_image(&resized),
+            )
         };
+        result.map_err(|_| Rejection::InvalidImage)?;
         if encoded.len() > MAX_RENDITION_BYTES {
             return Err(Rejection::ResourceLimit);
         }

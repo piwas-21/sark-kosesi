@@ -54,7 +54,8 @@ def valid_runtime(source):
                 return False
             stages[next(reversed(stages))][1].append(line)
     if stages.get("decoder-build") != [
-        "rust-build", ["RUN cargo build --release --locked -p commerce-image-decoder"]
+        "rust-source",
+        ["RUN cargo build --release --locked -p commerce-image-decoder"],
     ]:
         return False
     if stages.get("node-runtime") != [NODE, []]:
@@ -102,7 +103,9 @@ class StagingRuntime(unittest.TestCase):
                 "FROM runtime AS callback-edge\nRUN npm install\n",
             ),
             source.replace("USER 65532:1000", "USER 1000:1000"),
-            source.replace("FROM rust-build AS decoder-build", "FROM node-runtime AS decoder-build"),
+            source.replace(
+                "FROM rust-source AS decoder-build", "FROM node-runtime AS decoder-build"
+            ),
             source.replace("FROM runtime AS image-decoder", "FROM node-runtime AS image-decoder"),
             source.replace(
                 "FROM runtime AS callback-edge\n",

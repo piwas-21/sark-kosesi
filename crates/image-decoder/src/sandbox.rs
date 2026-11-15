@@ -69,7 +69,7 @@ pub(crate) fn install() -> io::Result<()> {
         .map_err(io::Error::other)?;
     let filter: BpfProgram = SeccompFilter::new(
         rules,
-        SeccompAction::KillProcess,
+        SeccompAction::Errno(libc::EPERM as u32),
         SeccompAction::Allow,
         arch,
     )
