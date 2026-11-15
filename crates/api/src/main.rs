@@ -1,5 +1,6 @@
 #![forbid(unsafe_code)]
 mod migration_manifest;
+mod preapplied;
 
 use commerce_api::{
     AppState, PREVIEW_REQUEST_CAPACITY, config::Config, contract, router_with_test_login,
@@ -33,13 +34,24 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 async fn run_server() -> Result<(), Box<dyn std::error::Error>> {
     tracing_subscriber::fmt().json().init();
     let config = Config::parse(&std::env::vars().collect()).map_err(std::io::Error::other)?;
-    let pool = connect(&config.database_url)
-        .await
-        .map_err(|_| std::io::Error::other("database connection failed"))?;
-    MIGRATOR
-        .run(&pool)
-        .await
-        .map_err(|_| std::io::Error::other("migration failed"))?;
+    let pool = if config.preview_database_preapplied {
+        let pool = preapplied::connect(&config.database_url)
+            .await
+            .map_err(|_| std::io::Error::other("database connection failed"))?;
+        preapplied::validate(&pool)
+            .await
+            .map_err(|_| std::io::Error::other("preapplied migration validation failed"))?;
+        pool
+    } else {
+        let pool = connect(&config.database_url)
+            .await
+            .map_err(|_| std::io::Error::other("database connection failed"))?;
+        MIGRATOR
+            .run(&pool)
+            .await
+            .map_err(|_| std::io::Error::other("migration failed"))?;
+        pool
+    };
     let listener = tokio::net::TcpListener::bind(config.bind).await?;
     let state = AppState {
         pool,

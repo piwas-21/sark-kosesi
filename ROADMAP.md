@@ -12,6 +12,10 @@ The API's offline migration-manifest command reports the compiled SQLx migration
 versions, types, checksums and missing-version policy. It does not prove image
 provenance, database state or startup compatibility.
 
+An opt-in staging startup can validate preapplied SQLx history without running
+migrations. A restricted runtime role, the catalogue's row-locking privileges,
+grant provisioning and deployment evidence remain separate work.
+
 Product families, separable variants, shared cover/foam components and sealed,
 immutable BOM revisions are implemented behind the existing read-only preview.
 The database rejects fill mismatches and serializes sealing against line edits.
