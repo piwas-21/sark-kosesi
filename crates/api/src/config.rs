@@ -6,6 +6,7 @@ pub struct TestGuestCancellation(());
 
 pub struct Config {
     pub database_url: String,
+    pub preview_database_preapplied: bool,
     pub preview_token: String,
     pub bind: SocketAddr,
     pub guest_origin: Option<crate::guest::GuestOrigin>,
@@ -22,6 +23,14 @@ impl Config {
         if !matches!(environment, Some("local" | "test" | "staging")) {
             return Err("APP_ENV must be local, test or staging; production is disabled");
         }
+        let preview_database_preapplied = match values
+            .get("PREVIEW_DATABASE_PREAPPLIED")
+            .map(String::as_str)
+        {
+            None | Some("0") => false,
+            Some("1") if environment == Some("staging") => true,
+            _ => return Err("PREVIEW_DATABASE_PREAPPLIED requires staging and must be 0 or 1"),
+        };
         let database_url = values
             .get("DATABASE_URL")
             .ok_or("DATABASE_URL required")?
@@ -77,6 +86,14 @@ impl Config {
             .transpose()?;
         let verification = crate::verification::VerificationConfig::from_env(environment, values)?;
         let test_login = crate::test_login::LoginConfig::from_env(environment, values)?;
+        if preview_database_preapplied
+            && (guest_origin.is_some()
+                || callback_profile.is_some()
+                || verification.is_some()
+                || test_login.is_some())
+        {
+            return Err("Preapplied preview cannot enable writing transports");
+        }
         if test_login.is_some()
             && verification.is_some()
             && values.get("TEST_LOGIN_ADMISSION_KEY")
@@ -86,6 +103,7 @@ impl Config {
         }
         Ok(Self {
             database_url,
+            preview_database_preapplied,
             preview_token,
             bind,
             guest_origin,
