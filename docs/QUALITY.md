@@ -1085,8 +1085,10 @@ disposable PostgreSQL cluster. The fixture verifies a per-cluster startup marker
 before database creation. The negative control confirms the database remains
 absent after a wrong marker. The runner rejects inherited connection options and
 redacts malformed URLs. It starts a loopback Rust API and an ephemeral HTTPS
-browser bridge with a guarded synthetic database. Chromium
-checks the guest cookie, Origin and CSRF controls through quote, order acceptance,
+browser bridge with a guarded synthetic database. Node explicitly trusts the
+generated certificate, and Chromium pins its ephemeral public key. Both clients
+must reject a separately generated certificate before sending an HTTP request.
+Chromium checks the guest cookie, Origin and CSRF through quote, order acceptance,
 cancellation and exact replay. The bridge keeps its independently generated API
 credential on the server and forwards only the fixture's private checkout routes.
 Database checks verify one order, one cancellation, two component reservation

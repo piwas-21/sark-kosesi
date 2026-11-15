@@ -1,7 +1,7 @@
 // Synthetic private browser transport exercise. Never targets a deployed service.
 import assert from "node:assert/strict";
 import { spawn, spawnSync } from "node:child_process";
-import { randomBytes } from "node:crypto";
+import { createHash, randomBytes, X509Certificate } from "node:crypto";
 import { mkdtemp, readFile, rm } from "node:fs/promises";
 import { createServer, request as httpsRequest } from "node:https";
 import { tmpdir } from "node:os";
@@ -91,34 +91,46 @@ let origin = "";
 let server;
 let browser;
 let crossOrigin;
+let untrustedServer;
 try {
-  const cert = spawnSync(
-    "openssl",
-    [
-      "req",
-      "-x509",
-      "-newkey",
-      "rsa:2048",
-      "-nodes",
-      "-keyout",
-      join(directory, "key.pem"),
-      "-out",
-      join(directory, "cert.pem"),
-      "-days",
-      "1",
-      "-subj",
-      "/CN=127.0.0.1",
-      "-addext",
-      "subjectAltName=IP:127.0.0.1",
-    ],
-    { stdio: "ignore" },
-  );
-  if (cert.status !== 0)
-    throw new Error("Could not create ephemeral fixture certificate");
+  const createCertificate = (prefix) =>
+    spawnSync(
+      "openssl",
+      [
+        "req",
+        "-x509",
+        "-newkey",
+        "rsa:2048",
+        "-nodes",
+        "-keyout",
+        join(directory, `${prefix}-key.pem`),
+        "-out",
+        join(directory, `${prefix}-cert.pem`),
+        "-days",
+        "1",
+        "-subj",
+        "/CN=127.0.0.1",
+        "-addext",
+        "subjectAltName=IP:127.0.0.1",
+      ],
+      { stdio: "ignore" },
+    );
+  if (
+    createCertificate("fixture").status !== 0 ||
+    createCertificate("untrusted").status !== 0
+  )
+    throw new Error("Could not create ephemeral fixture certificates");
+  const fixtureKey = await readFile(join(directory, "fixture-key.pem"));
+  const fixtureCert = await readFile(join(directory, "fixture-cert.pem"));
+  const spki = new X509Certificate(fixtureCert).publicKey.export({
+    type: "spki",
+    format: "der",
+  });
+  const fixturePin = createHash("sha256").update(spki).digest("base64");
   server = createServer(
     {
-      key: await readFile(join(directory, "key.pem")),
-      cert: await readFile(join(directory, "cert.pem")),
+      key: fixtureKey,
+      cert: fixtureCert,
     },
     async (request, response) => {
       const deny = (status) => {
@@ -301,12 +313,46 @@ try {
   if (!ready || child.exitCode !== null)
     throw new Error("Owned API did not start");
   assert.equal((await fetch(`${api}/api/guest/basket`)).status, 401);
+  let untrustedRequests = 0;
+  untrustedServer = createServer(
+    {
+      key: await readFile(join(directory, "untrusted-key.pem")),
+      cert: await readFile(join(directory, "untrusted-cert.pem")),
+    },
+    (_request, response) => {
+      untrustedRequests++;
+      response.end("Untrusted fixture");
+    },
+  );
+  await new Promise((ok, fail) => {
+    untrustedServer.once("error", fail);
+    untrustedServer.listen(0, "127.0.0.1", ok);
+  });
+  const untrustedBound = untrustedServer.address();
+  if (!untrustedBound || typeof untrustedBound === "string")
+    throw new Error("No untrusted fixture port");
+  const untrustedOrigin = `https://127.0.0.1:${untrustedBound.port}`;
+  await assert.rejects(
+    new Promise((resolveStatus, reject) => {
+      const request = httpsRequest(
+        untrustedOrigin,
+        { ca: fixtureCert },
+        (response) => {
+          response.resume();
+          resolveStatus(response.statusCode);
+        },
+      );
+      request.on("error", reject);
+      request.end();
+    }),
+    { code: "DEPTH_ZERO_SELF_SIGNED_CERT" },
+  );
   const wrongOriginStatus = await new Promise((resolveStatus, reject) => {
     const request = httpsRequest(
       `${origin}/api/guest/session`,
       {
         method: "POST",
-        rejectUnauthorized: false,
+        ca: fixtureCert,
         headers: {
           origin: "https://wrong.invalid",
           "content-type": "application/json",
@@ -321,8 +367,18 @@ try {
     request.end("{}");
   });
   assert.equal(wrongOriginStatus, 403);
-  browser = await chromium.launch({ headless: true });
-  const context = await browser.newContext({ ignoreHTTPSErrors: true });
+  browser = await chromium.launch({
+    headless: true,
+    args: [`--ignore-certificate-errors-spki-list=${fixturePin}`],
+  });
+  const context = await browser.newContext();
+  const untrustedPage = await context.newPage();
+  await assert.rejects(
+    untrustedPage.goto(untrustedOrigin),
+    /ERR_CERT_AUTHORITY_INVALID/,
+  );
+  await untrustedPage.close();
+  assert.equal(untrustedRequests, 0);
   const allowedOrigins = new Set([origin]);
   let blockedNetwork = false;
   await context.route("**/*", (route) => {
@@ -371,8 +427,8 @@ try {
   // The same cookie-bearing browser context cannot mutate across origins.
   crossOrigin = createServer(
     {
-      key: await readFile(join(directory, "key.pem")),
-      cert: await readFile(join(directory, "cert.pem")),
+      key: fixtureKey,
+      cert: fixtureCert,
     },
     (_request, response) => {
       response.writeHead(200, { "content-type": "text/html" });
@@ -450,7 +506,7 @@ try {
     accepted_terms_version: "synthetic-terms-v1",
     confirmed: true,
   };
-  const stranger = await browser.newContext({ ignoreHTTPSErrors: true });
+  const stranger = await browser.newContext();
   const strangerPage = await stranger.newPage();
   await strangerPage.goto(origin);
   const missingCookie = await strangerPage.evaluate(
@@ -520,6 +576,7 @@ try {
 } finally {
   if (browser) await browser.close();
   if (crossOrigin) await new Promise((done) => crossOrigin.close(done));
+  if (untrustedServer) await new Promise((done) => untrustedServer.close(done));
   if (server) await new Promise((done) => server.close(done));
   for (const child of children.reverse())
     if (child.exitCode === null) child.kill("SIGTERM");
