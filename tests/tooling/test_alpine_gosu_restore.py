@@ -1,5 +1,6 @@
 """Safety controls for the hosted synthetic application-schema restore adapter."""
 
+import ipaddress
 import json
 import os
 import socket
@@ -17,6 +18,35 @@ import restore_loopback as loopback
 
 
 class RestoreAdapterTests(unittest.TestCase):
+    def test_private_ipv4_policy_rejects_public_and_special_ranges(self):
+        for value in ("10.23.0.0/16", "172.31.0.0/16", "192.168.1.0/24"):
+            with self.subTest(value=value):
+                network = ipaddress.ip_network(value)
+                for part in (network, network.network_address, network.broadcast_address):
+                    self.assertTrue(loopback.suitable_private_ipv4(part))
+        for value in (
+            "0.0.0.0/0",
+            "0.0.0.0/8",
+            "127.0.0.0/8",
+            "169.254.0.0/16",
+            "224.0.0.0/4",
+            "240.0.0.0/4",
+            "100.64.0.0/10",
+            "8.8.8.0/24",
+            "::1/128",
+        ):
+            with self.subTest(value=value):
+                network = ipaddress.ip_network(value)
+                self.assertFalse(
+                    all(
+                        loopback.suitable_private_ipv4(part)
+                        for part in (network, network.network_address, network.broadcast_address)
+                    )
+                )
+        for value in ("0.0.0.0", "127.0.0.1", "169.254.1.2", "224.0.0.1", "240.0.0.1", "8.8.8.8"):
+            with self.subTest(value=value):
+                self.assertFalse(loopback.suitable_private_ipv4(ipaddress.ip_address(value)))
+
     def test_diagnostics_are_fixed_codes_without_exception_details(self):
         with tempfile.TemporaryDirectory() as directory:
             progress = lab.Progress()
@@ -204,7 +234,9 @@ class RestoreAdapterTests(unittest.TestCase):
             "port",
             "ports_shape",
             "address",
+            "global_member",
             "subnet",
+            "broad_subnet",
             "network_id",
             "extra_network",
             "stopped",
@@ -229,8 +261,13 @@ class RestoreAdapterTests(unittest.TestCase):
                     records[0]["NetworkSettings"]["Ports"] = None
                 elif change == "address":
                     records[0]["NetworkSettings"]["Networks"]["owned"]["IPAddress"] = "172.31.0.8"
+                elif change == "global_member":
+                    records[0]["NetworkSettings"]["Networks"]["owned"]["IPAddress"] = "8.8.8.8"
+                    net["Containers"][ids[0]]["IPv4Address"] = "8.8.8.8/16"
                 elif change == "subnet":
                     net["IPAM"]["Config"][0]["Subnet"] = "8.8.8.0/24"
+                elif change == "broad_subnet":
+                    net["IPAM"]["Config"][0]["Subnet"] = "0.0.0.0/0"
                 elif change == "network_id":
                     records[0]["NetworkSettings"]["Networks"]["owned"]["NetworkID"] = "f" * 64
                 elif change == "stopped":
