@@ -49,7 +49,7 @@ No fake commands or passing jobs before code exists. Pin the following free tool
 | `npm run test:discovery`                     | Served HTML, sitemap, canonical/hreflang, product/feed and negative controls in DISCOVERY                                                                                                                     |
 | `npm run test:performance`                   | Production-build Lighthouse CI and payload budgets; k6 isolated API/load fixture in performance config                                                                                                        |
 
-The required `Application gate` aggregates checks, browser and validated coverage at the same candidate revision. `Application checks` runs the Rust audit, TypeScript, unit, integration, migration and contract commands and publishes its revision-bound evidence. Two independently checked-out coverage producers run the stable Rust format/Clippy and line suite, and the nightly Rust branch/LCOV and TypeScript coverage suites, with separate isolated databases. `Application coverage` depends on both, downloads their same-run revision-bound artifacts, validates all five required reports and publishes the unchanged canonical artifact only on success. `Application browser` builds the production application and runs the full browser suite with its own isolated databases, fallback capture and evidence upload, including the private guest Chromium transport. Failed, skipped, cancelled, missing or invalid evidence fails the aggregate. Sonar imports and validates the canonical artifact after that aggregate. Measure timing on the current hosted revision; parallel jobs do not establish release or provider acceptance.
+The required `Application gate` aggregates checks, browser and validated coverage at the same candidate revision. `Application checks` runs the Rust audit, TypeScript, unit, integration, migration and contract commands and publishes its revision-bound evidence. Two independently checked-out coverage producers run the stable Rust format/Clippy and line suite, and the nightly Rust branch/LCOV and TypeScript coverage suites, with separate isolated databases. `Application coverage` depends on both, downloads their same-run revision-bound artifacts, validates all five required reports and publishes the unchanged canonical artifact only on success. `Application browser` builds the production application and runs the full browser suite with its own isolated databases, fallback capture and evidence upload, including the private guest Chromium transport. Failed, skipped, cancelled, missing or invalid evidence fails the aggregate. Sonar requires successful application coverage, then imports and validates that same-run revision-bound artifact while the other application legs may still run. The final Quality gate requires both the complete Application gate and Sonar. Measure timing on the current hosted revision; parallel jobs do not establish release or provider acceptance.
 
 Preapplied preview migration validation is critical Rust code. Exercise bounded
 history, malformed checksums and real lock timeouts against isolated PostgreSQL,
@@ -1185,3 +1185,18 @@ credential on the server and forwards only the fixture's private checkout routes
 Database checks verify one order, one cancellation, two component reservation
 movements and zero payment attempts. The storefront checkout UI, provider and
 production accessibility still need their own acceptance evidence.
+
+Private Test dispatch controls use isolated PostgreSQL and synthetic loopback.
+An inherited asynchronous session proves the start and recovery event commit with
+synchronous WAL settings; a post-insert setting change rolls both back before any
+POST. The standalone integration test checks the same refusal through the
+exported start API, then verifies repaired custody and a reconcile-only replay.
+The server-fsync control runs with ordinary settings in application CI. Run
+the same exact compiled `dispatch_requires_server_fsync_before_post` test with
+`P1_POSTGRES_BIN=/path/to/postgresql18/bin python3 scripts/with_postgres.py --fsync-off -- <test-binary> --exact mollie::tests::test_payment_orchestration::durability::dispatch_requires_server_fsync_before_post`
+to exercise an owned native server started with fsync disabled. It verifies the
+actual setting and disposable cluster marker, then checks rejection with no start,
+event or POST. In both cases the fixture shows that a shadow text-equality
+operator can report fsync as enabled; the writer compares the typed setting
+values in Rust. The fault runner requires one exact passing test. These tests
+do not establish provider or production acceptance.

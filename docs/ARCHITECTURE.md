@@ -793,7 +793,9 @@ retained attempt and order association when restoring history.
 The trusted internal dispatch entry serializes contenders on the immutable attempt.
 A new start requires the same configuration and fresh commercial/held-stock claims.
 One immutable start and a reconciliation-required event commit before a noncloneable,
-nonserializable dispatch permit is returned. Permit consumption checks the final
+nonserializable dispatch permit is returned. New starts force local synchronous WAL
+flush and check both fsync and synchronous_commit immediately before commit;
+historical reconciliation does not require a new durable write. Permit consumption checks the final
 observed clock minimum, configuration, stock deadline and retained market/photo/
 seller time limits again, after database claims have ended. The permit retains
 only the pure eligibility proof and seller expiry, without a transaction or buyer/
