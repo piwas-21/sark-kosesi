@@ -78,13 +78,15 @@ a decimal-string `version`, `kind` (`simple`, `reversible_up` or
 reversible pair may have the same version. Extra arguments fail. Capture the
 output from the exact image and bind it to a separately verified image digest.
 Capture database history with one read-only query against the selected copy.
-Use the configured libpq connection and keep the connection details out of the
-artifact. The query requires the migration table to exist. An empty table
-produces an empty history, while a missing table fails the capture.
+Use the same database, connection role and effective `search_path` as the
+application. The unqualified table name resolves the same way as it does for
+the embedded migrator. Keep connection details out of the artifact. An empty
+migration table produces an empty history, while a missing table fails the capture.
 
 ```sh
 umask 077
 psql -X -qAt -v ON_ERROR_STOP=1 > history.json <<'SQL'
+BEGIN READ ONLY;
 SELECT json_build_object(
   'schema_version', 1,
   'migrations', COALESCE(json_agg(json_build_object(
@@ -93,7 +95,8 @@ SELECT json_build_object(
     'success', success
   ) ORDER BY version), '[]'::json)
 )
-FROM public._sqlx_migrations;
+FROM _sqlx_migrations;
+COMMIT;
 SQL
 python3 scripts/check_migration_compatibility.py candidate-manifest.json history.json
 ```
