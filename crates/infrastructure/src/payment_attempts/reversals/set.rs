@@ -30,6 +30,14 @@ pub async fn inspect_set(pool: &PgPool, attempt: &str) -> Result<SetInspection, 
     if entries.len() > 128 {
         return Err(PaymentStoreError::InvalidStoredData);
     }
+    // The order has one immutable attempt. Do not trust the event payload to
+    // select its scope: even a malformed orphan event must be accounted for.
+    let event_ids: Vec<String> = sqlx::query_scalar("SELECT left(id,33) FROM commerce_outbox WHERE aggregate_id=$1 AND kind='payment.reversal_observed.v1' ORDER BY id COLLATE \"C\" LIMIT 129")
+        .bind(&frozen.snapshot().binding.order_id).fetch_all(&mut *tx).await?;
+    if event_ids.len() != entries.len() {
+        return Err(PaymentStoreError::InvalidStoredData);
+    }
+    let mut event_ids: std::collections::HashSet<_> = event_ids.into_iter().collect();
     let mut digest = Sha256::new();
     digest.update(b"piwas:reversal-observation-set:v1\0");
     let scope =
@@ -47,6 +55,7 @@ pub async fn inspect_set(pool: &PgPool, attempt: &str) -> Result<SetInspection, 
             .as_deref()
             .ok_or(PaymentStoreError::InvalidStoredData)?;
         if receipt.id != *id
+            || !event_ids.remove(&receipt.event_id)
             || event_digest.len() != 64
             || !event_digest
                 .bytes()

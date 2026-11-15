@@ -529,7 +529,8 @@ outside this evidence path.
 
 A private set inspection claims the same original attempt, revalidates each
 bounded stored reversal receipt and reciprocal event, and returns only a count
-and source-bound digest of the local journal. Repeated child observations and
+and source-bound digest of the local journal. It also checks that every reversal
+event for the order has its exact journal receipt. Repeated child observations and
 unknown statuses remain separate. The detached result becomes stale when the
 local set changes and neither proves provider completeness nor a net balance.
 It must not be combined with another detached inspection as if both held the

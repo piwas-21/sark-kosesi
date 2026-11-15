@@ -62,6 +62,54 @@ fn chargeback(reversed: Option<Value>) -> Value {
 }
 
 #[sqlx::test(migrator = "MIGRATOR")]
+async fn reversal_set_inspection_rejects_orphan_event_and_accepts_repaired_custody(pool: PgPool) {
+    use crate::payment_attempts::reversals::inspect_set;
+    let (time, frozen) = observation_cases::prepared(&pool, true).await;
+    let attempt = &frozen.snapshot().binding.id;
+    let empty = inspect_set(&pool, attempt)
+        .await
+        .expect("healthy empty set");
+    assert_eq!(empty.observations, 0);
+    let verified = fetched(frozen.snapshot(), refund("pending", "12.34"), false).await;
+    let receipt = record(
+        &pool,
+        time.as_ref(),
+        &observation_cases::ids(),
+        "orphan-source",
+        &verified,
+    )
+    .await
+    .expect("authenticated receipt");
+    let healthy = inspect_set(&pool, attempt).await.expect("complete set");
+    assert_eq!(healthy.observations, 1);
+    sqlx::query("CREATE TABLE public.reversal_backup AS SELECT * FROM payment_reversal_observations WHERE id=$1")
+        .bind(&receipt.id).execute(&pool).await.expect("save synthetic source");
+    pool.execute("ALTER TABLE payment_reversal_observations DISABLE TRIGGER USER")
+        .await
+        .expect("isolate missing journal row");
+    sqlx::query("DELETE FROM payment_reversal_observations WHERE id=$1")
+        .bind(&receipt.id)
+        .execute(&pool)
+        .await
+        .expect("remove source only");
+    pool.execute("ALTER TABLE payment_reversal_observations ENABLE TRIGGER USER")
+        .await
+        .expect("restore guard");
+    let counts = crate::payment_test_fixture::counts(&pool).await;
+    assert!(matches!(
+        inspect_set(&pool, attempt).await,
+        Err(PaymentStoreError::InvalidStoredData)
+    ));
+    assert_eq!(counts, crate::payment_test_fixture::counts(&pool).await);
+    pool.execute("ALTER TABLE payment_reversal_observations DISABLE TRIGGER USER; INSERT INTO payment_reversal_observations SELECT * FROM public.reversal_backup; ALTER TABLE payment_reversal_observations ENABLE TRIGGER USER; DROP TABLE public.reversal_backup")
+        .await.expect("restore exact synthetic source");
+    assert_eq!(
+        healthy,
+        inspect_set(&pool, attempt).await.expect("repaired source")
+    );
+}
+
+#[sqlx::test(migrator = "MIGRATOR")]
 async fn reversal_set_inspection_preserves_local_facts_and_detects_damage(pool: PgPool) {
     use crate::payment_attempts::reversals::inspect_set;
     let (time, frozen) = observation_cases::prepared(&pool, true).await;
