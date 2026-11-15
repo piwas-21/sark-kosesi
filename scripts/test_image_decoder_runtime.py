@@ -66,7 +66,10 @@ def exchange(path, message):
 
 def prepared_bytes(response):
     if len(response) < 40 or response[:8] != b"ICR1\x02\0\0\0":
-        raise AssertionError("prepare did not return a prepared image")
+        raise AssertionError(
+            f"prepare did not return a prepared image (length={len(response)}, "
+            f"header={response[:8].hex()})"
+        )
     width, height, count = struct.unpack_from(">III", response, 8)
     edge, rw, rh = struct.unpack_from(">III", response, 20)
     kind = response[32:36]

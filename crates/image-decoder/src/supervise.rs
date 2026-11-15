@@ -56,10 +56,13 @@ async fn run_child(
             // Prefer an already-readable disconnect or extra request byte to a ready result.
             _ = socket.read_u8() => Ok(None),
             result = async {
-                let writer = async {
+                let writer = async move {
                     input.write_all(header).await?;
                     input.write_all(body).await?;
-                    input.shutdown().await
+                    // The child checks EOF before decoding. Closing this pipe
+                    // must precede waiting for the child's stdout.
+                    drop(input);
+                    Ok::<_, io::Error>(())
                 };
                 let reader = async {
                     let mut bytes = Vec::new();
