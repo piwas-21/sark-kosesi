@@ -11,16 +11,25 @@ use std::{
 const JOB: &str = "0123456789abcdef0123456789abcdef";
 const BEARER: &[u8; 32] = b"synthetic-staff-token-0123456789";
 
-fn command() -> Command {
+fn base_command() -> Command {
     let mut cmd = Command::new(env!("CARGO_BIN_EXE_commerce-worker"));
-    cmd.args(["--review-reversal-item", JOB])
-        .env("APP_ENV", "test")
+    cmd.env("APP_ENV", "test")
         .env_remove("DATABASE_URL")
         .env_remove("MOLLIE_TEST_API_KEY")
         .env_remove("MOLLIE_TEST_PROFILE_ID")
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped());
+    cmd
+}
+fn command() -> Command {
+    let mut cmd = base_command();
+    cmd.args(["--review-reversal-item", JOB]);
+    cmd
+}
+fn inbox_command() -> Command {
+    let mut cmd = base_command();
+    cmd.arg("--review-reversal-inbox");
     cmd
 }
 fn output(mut cmd: Command, input: &[u8]) -> Output {
@@ -78,27 +87,67 @@ fn input_is_bounded_and_fails_before_database_and_provider() {
 }
 
 #[test]
-fn open_pipe_cannot_hang_process_after_input_deadline() {
-    let mut child = command().spawn().expect("spawn worker");
-    child
-        .stdin
-        .as_mut()
-        .expect("pipe")
-        .write_all(BEARER)
-        .expect("synthetic input");
-    let start = Instant::now();
-    while child.try_wait().expect("poll").is_none() && start.elapsed() < Duration::from_secs(9) {
-        std::thread::sleep(Duration::from_millis(50));
+fn inbox_arguments_and_authority_fail_closed_before_database() {
+    for args in [
+        vec!["--review-reversal-inbox", "1"],
+        vec!["--review-reversal-inbox", "-1", JOB],
+        vec!["--review-reversal-inbox", "01", JOB],
+        vec!["--review-reversal-inbox", "9007199254740992", JOB],
+        vec!["--review-reversal-inbox", "1", "secret-invalid-id"],
+        vec!["--review-reversal-inbox", "1", JOB, "secret-extra"],
+    ] {
+        let mut cmd = base_command();
+        cmd.args(args);
+        let result = output(cmd, b"");
+        assert!(!result.status.success());
+        assert!(text(&result).contains("unsupported worker command"));
+        assert!(!text(&result).contains("secret-"));
     }
-    if child.try_wait().expect("poll").is_none() {
-        child.kill().expect("stop stuck synthetic worker");
-        let _ = child.wait();
-        panic!("worker did not stop after input deadline");
+    for input in [b"".as_slice(), &BEARER[..31], &[b'x'; 33]] {
+        let result = output(inbox_command(), input);
+        assert!(!result.status.success());
+        assert!(text(&result).contains("staff review input unavailable"));
+        assert!(!text(&result).contains("DATABASE_URL required"));
     }
-    let result = child.wait_with_output().expect("worker output");
+    for environment in ["production", "staging"] {
+        let mut cmd = inbox_command();
+        cmd.env("APP_ENV", environment);
+        let result = output(cmd, b"");
+        assert!(!result.status.success());
+        assert!(text(&result).contains("production is disabled"));
+    }
+    let result = output(inbox_command(), BEARER);
     assert!(!result.status.success());
-    assert!(text(&result).contains("staff review input unavailable"));
+    assert!(text(&result).contains("DATABASE_URL required"));
     assert!(!text(&result).contains("synthetic-staff-token"));
+    assert!(!text(&result).contains("test payment configuration"));
+}
+
+#[test]
+fn open_pipe_cannot_hang_process_after_input_deadline() {
+    for mut cmd in [command(), inbox_command()] {
+        let mut child = cmd.spawn().expect("spawn worker");
+        child
+            .stdin
+            .as_mut()
+            .expect("pipe")
+            .write_all(BEARER)
+            .expect("synthetic input");
+        let start = Instant::now();
+        while child.try_wait().expect("poll").is_none() && start.elapsed() < Duration::from_secs(9)
+        {
+            std::thread::sleep(Duration::from_millis(50));
+        }
+        if child.try_wait().expect("poll").is_none() {
+            child.kill().expect("stop stuck synthetic worker");
+            let _ = child.wait();
+            panic!("worker did not stop after input deadline");
+        }
+        let result = child.wait_with_output().expect("worker output");
+        assert!(!result.status.success());
+        assert!(text(&result).contains("staff review input unavailable"));
+        assert!(!text(&result).contains("synthetic-staff-token"));
+    }
 }
 
 #[cfg(unix)]
@@ -203,6 +252,19 @@ async fn staff_authority_is_required_and_absent_review_is_read_only(pool: PgPool
     assert!(result.status.success());
     assert!(text(&result).contains("reversal_item_review_absent"));
     assert!(!text(&result).contains("synthetic-staff-token"));
+    let mut inbox = inbox_command();
+    inbox.env("DATABASE_URL", &database);
+    let empty = output(inbox, BEARER);
+    assert!(empty.status.success());
+    assert!(text(&empty).contains("reversal_item_review_inbox_empty"));
+    assert!(!text(&empty).contains("synthetic-staff-token"));
+    let mut after_cursor = inbox_command();
+    after_cursor
+        .args(["1500", JOB])
+        .env("DATABASE_URL", &database);
+    let continued = output(after_cursor, BEARER);
+    assert!(continued.status.success());
+    assert!(text(&continued).contains("reversal_item_review_inbox_empty"));
     for byte in [7_u8, 8, 9, 10, 11] {
         let denied = output(
             {
@@ -214,9 +276,16 @@ async fn staff_authority_is_required_and_absent_review_is_read_only(pool: PgPool
         );
         assert!(!denied.status.success());
         assert!(text(&denied).contains("staff review unavailable"));
+        let mut inbox = inbox_command();
+        inbox.env("DATABASE_URL", &database);
+        let denied = output(inbox, &[byte; 32]);
+        assert!(!denied.status.success());
+        assert!(text(&denied).contains("staff review unavailable"));
+        assert!(!text(&denied).contains("reversal_item_review_inbox_empty"));
     }
     let after: (i64, i64, i64) = sqlx::query_as("SELECT (SELECT count(*) FROM reversal_item_jobs),(SELECT count(*) FROM reversal_item_operations),(SELECT count(*) FROM commerce_outbox)")
         .fetch_one(&pool).await.expect("after");
     assert_eq!(before, after);
     assert!(!text(&result).contains(&database));
+    assert!(!text(&empty).contains(&database));
 }

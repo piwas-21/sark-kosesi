@@ -1,5 +1,6 @@
 //! Read-only probe by default; explicit local/test worker passes are bounded.
 #![forbid(unsafe_code)]
+use commerce_infrastructure::payment_attempts::reversal_item_supervision::inbox::Cursor;
 use commerce_infrastructure::runtime::SystemClock;
 use commerce_infrastructure::{connect, readiness};
 use commerce_worker::expire_batch;
@@ -23,6 +24,7 @@ enum Mode {
     EnrollReversalItem(reversal_items::Enrollment),
     InspectReversalItem(String),
     ReviewReversalItem(String),
+    ReviewReversalInbox(Option<Cursor>),
     EnrollReversal(reversal_pages::Enrollment),
     InspectReversal(String),
     InspectPaidParent(paid_parent::Inspection),
@@ -62,6 +64,17 @@ fn parse_mode(args: &[String]) -> Result<Mode, std::io::Error> {
             if argument == "--review-reversal-item" && reversal_pages::identifier(job) =>
         {
             Ok(Mode::ReviewReversalItem(job.clone()))
+        }
+        [argument] if argument == "--review-reversal-inbox" => Ok(Mode::ReviewReversalInbox(None)),
+        [argument, timestamp, job] if argument == "--review-reversal-inbox" => {
+            let time = timestamp
+                .parse::<i64>()
+                .ok()
+                .filter(|time| time.to_string() == *timestamp)
+                .ok_or_else(|| std::io::Error::other("unsupported worker command"))?;
+            let cursor = Cursor::new(time, job)
+                .map_err(|_| std::io::Error::other("unsupported worker command"))?;
+            Ok(Mode::ReviewReversalInbox(Some(cursor)))
         }
         [argument, attempt, observation, kind, effect] if argument == "--enroll-reversal-scan" => {
             reversal_pages::Enrollment::parse(attempt, observation, kind, effect)
@@ -113,7 +126,10 @@ async fn main() -> Result<(), std::io::Error> {
     }
     let mode = mode()?;
     // Read before any DB or provider configuration; never accept a token argument.
-    let review_token = if matches!(mode, Mode::ReviewReversalItem(_)) {
+    let review_token = if matches!(
+        mode,
+        Mode::ReviewReversalItem(_) | Mode::ReviewReversalInbox(_)
+    ) {
         Some(staff_reversal_review::read_token()?)
     } else {
         None
@@ -159,6 +175,11 @@ async fn main() -> Result<(), std::io::Error> {
                 review_token.ok_or_else(|| std::io::Error::other("staff review unavailable"))?;
             staff_reversal_review::inspect(&pool, &token, &id).await?
         }
+        Mode::ReviewReversalInbox(after) => {
+            let token =
+                review_token.ok_or_else(|| std::io::Error::other("staff review unavailable"))?;
+            staff_reversal_review::next(&pool, &token, after.as_ref()).await?
+        }
         Mode::EnrollReversal(intent) => reversal_pages::run(&pool, Some(intent)).await?,
         Mode::InspectReversal(id) => reversal_pages::inspect(&pool, &id).await?,
         Mode::InspectPaidParent(intent) => paid_parent::inspect(&pool, intent).await?,
@@ -202,6 +223,16 @@ mod tests {
             parse_mode(&args(&["--review-reversal-item", id])),
             Ok(Mode::ReviewReversalItem(_))
         ));
+        assert!(matches!(
+            parse_mode(&args(&["--review-reversal-inbox"])),
+            Ok(Mode::ReviewReversalInbox(None))
+        ));
+        for time in ["0", "9007199254740991"] {
+            assert!(matches!(
+                parse_mode(&args(&["--review-reversal-inbox", time, id])),
+                Ok(Mode::ReviewReversalInbox(Some(_)))
+            ));
+        }
         for command in [
             vec!["--reconcile-reversal-items", "extra"],
             vec!["--enroll-reversal-item", id, id, id, "0", "key"],
@@ -212,6 +243,13 @@ mod tests {
             vec!["--inspect-reversal-item", "bad"],
             vec!["--review-reversal-item", "bad"],
             vec!["--review-reversal-item", id, "token"],
+            vec!["--review-reversal-inbox", "1"],
+            vec!["--review-reversal-inbox", "-1", id],
+            vec!["--review-reversal-inbox", "+1", id],
+            vec!["--review-reversal-inbox", "01", id],
+            vec!["--review-reversal-inbox", "9007199254740992", id],
+            vec!["--review-reversal-inbox", "1", "bad"],
+            vec!["--review-reversal-inbox", "1", id, "token"],
         ] {
             assert!(parse_mode(&args(&command)).is_err());
         }
