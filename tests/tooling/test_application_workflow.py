@@ -11,6 +11,15 @@ from pathlib import Path
 WORKFLOW = Path(__file__).resolve().parents[2] / ".github/workflows/ci.yml"
 PACKAGE = Path(__file__).resolve().parents[2] / "package.json"
 REVISION = "${{ github.event.pull_request.head.sha || github.sha }}"
+SONAR_GUARD = "\n".join(
+    (
+        "import json, os",
+        "results = json.loads(os.environ['RESULTS'])",
+        "if not isinstance(results, dict) or set(results) != {'application_coverage'} or not isinstance(results['application_coverage'], dict) or results['application_coverage'].get('result') != 'success':",
+        "    raise SystemExit('Application coverage failed, was cancelled, skipped or missing.')",
+        "print('Application coverage succeeded.')",
+    )
+)
 
 
 def job(text, name):
@@ -42,7 +51,7 @@ def check_application_graph(text):
             "quality",
         )
     )
-    for guarded in (checks, browser, stable, nightly, coverage, gate):
+    for guarded in (checks, browser, stable, nightly, coverage, gate, sonar):
         if re.search(r"(?m)^\s*(?:-\s+)?continue-on-error\s*:", guarded):
             raise ValueError("application work cannot continue on error")
     for leg in (checks, browser, stable, nightly):
@@ -243,10 +252,30 @@ def check_application_graph(text):
         not in coverage_download
         or "path: .local/application-coverage-artifact" not in coverage_download
         or re.search(r"(?m)^(?:        )?if:", coverage_download)
+        or re.search(r"(?m)^\s+(run-id|repository|github-token):", coverage_download)
     ):
         raise ValueError("Sonar must download the exact coverage artifact")
-    if "needs: [application]" not in sonar or "if: always()" not in sonar:
-        raise ValueError("Sonar must depend on the aggregate")
+    if re.findall(r"(?m)^    needs:\s*(.*?)\s*$", sonar) != ["[application_coverage]"] or (
+        re.findall(r"(?m)^    if:\s*(.*?)\s*$", sonar) != ["always()"]
+    ):
+        raise ValueError("Sonar must depend only on the coverage aggregate and always run")
+    guard = step(sonar, "name: Require successful application coverage")
+    if (
+        re.search(r"(?m)^(?:        )?if:", guard)
+        or "RESULTS: ${{ toJSON(needs) }}" not in guard
+        or "python3 - <<'PY_SONAR'" not in guard
+        or sonar_guard_script(text) != SONAR_GUARD
+        or sonar.index("name: Require successful application coverage")
+        > sonar.index("uses: actions/checkout@")
+    ):
+        raise ValueError("Sonar must first fail closed on coverage result")
+    permissions = re.search(r"(?ms)^    permissions:\n(.*?)(?=^    [a-z_]+:|\Z)", sonar)
+    if (
+        re.findall(r"(?m)^    permissions:[ \t]*(.*?)$", sonar) != [""]
+        or not permissions
+        or permissions.group(1).strip() != "contents: read"
+    ):
+        raise ValueError("Sonar requires read-only contents permission")
     for line in (
         f"ANALYSIS_REVISION: {REVISION}",
         f"ref: {REVISION}",
@@ -269,6 +298,14 @@ def aggregate_script(text):
     match = re.search(r"(?ms)^          python3 - <<'PY_GATE'\n(.*?)^          PY_GATE$", gate)
     if not match:
         raise ValueError("missing application aggregate program")
+    return "\n".join(line.removeprefix("          ") for line in match.group(1).splitlines())
+
+
+def sonar_guard_script(text):
+    guard = step(job(text, "sonar"), "name: Require successful application coverage")
+    match = re.search(r"(?ms)^          python3 - <<'PY_SONAR'\n(.*?)^          PY_SONAR$", guard)
+    if not match:
+        raise ValueError("missing Sonar coverage guard program")
     return "\n".join(line.removeprefix("          ") for line in match.group(1).splitlines())
 
 
@@ -346,7 +383,24 @@ class ApplicationWorkflow(unittest.TestCase):
             ("run: npm run test:browser", "run: echo skipped"),
             ("run: npm run test:guest-browser", "run: echo skipped"),
             ("name: application-browser-${{ env.ANALYSIS_REVISION }}", "name: other-browser"),
-            ("needs: [application]", "needs: [application_checks]"),
+            ("needs: [application_coverage]", "needs: [application_checks]"),
+            (
+                "RESULTS: ${{ toJSON(needs) }}\n        run: |\n          python3 - <<'PY_SONAR'",
+                "RESULTS: '{}'\n        run: |\n          python3 - <<'PY_SONAR'",
+            ),
+            ("name: Require successful application coverage", "name: Skip coverage precheck"),
+            (
+                "if not isinstance(results, dict) or set(results) != {'application_coverage'}",
+                "if False and set(results) != {'application_coverage'}",
+            ),
+            (
+                "  sonar:\n    name: SonarQube\n",
+                "  sonar:\n    name: SonarQube\n    permissions: write-all\n",
+            ),
+            (
+                "path: .local/application-coverage-artifact",
+                "path: .local/application-coverage-artifact\n          run-id: 123",
+            ),
             ("python3 scripts/check_coverage_reports.py", "echo skipped"),
         ):
             with self.subTest(old=old), self.assertRaises(ValueError):
@@ -445,6 +499,10 @@ class ApplicationWorkflow(unittest.TestCase):
                 "      - name: Require all application legs\n        if: false\n",
             ),
             (
+                "      - name: Require successful application coverage\n",
+                "      - name: Require successful application coverage\n        if: false\n",
+            ),
+            (
                 "if: always()\n        with:\n          name: application-browser-",
                 "if: always() && false\n        with:\n          name: application-browser-",
             ),
@@ -480,6 +538,7 @@ class ApplicationWorkflow(unittest.TestCase):
             ("  coverage_stable:\n", "  coverage_stable:\n    continue-on-error: true\n"),
             ("  coverage_nightly:\n", "  coverage_nightly:\n    continue-on-error: true\n"),
             ("  application:\n", "  application:\n    continue-on-error: true\n"),
+            ("  sonar:\n", "  sonar:\n    continue-on-error: true\n"),
             ("      - id: coverage\n", "      - id: coverage\n        continue-on-error: true\n"),
             (
                 "      - id: browser\n",
@@ -522,5 +581,32 @@ class ApplicationWorkflow(unittest.TestCase):
             with self.subTest(missing=name):
                 self.assertNotEqual(result(missing), 0)
         for value in ({}, {"application_checks": {"result": "success"}}, [], None):
+            with self.subTest(value=value):
+                self.assertNotEqual(result(value), 0)
+
+    def test_sonar_coverage_guard_rejects_missing_or_unsuccessful_coverage(self):
+        program = sonar_guard_script(self.workflow)
+
+        def result(value):
+            return subprocess.run(
+                ["python3", "-c", program],
+                env={**os.environ, "RESULTS": json.dumps(value)},
+                capture_output=True,
+                text=True,
+                check=False,
+            ).returncode
+
+        self.assertEqual(result({"application_coverage": {"result": "success"}}), 0)
+        for state in ("failure", "cancelled", "skipped", "", None):
+            with self.subTest(state=state):
+                self.assertNotEqual(result({"application_coverage": {"result": state}}), 0)
+        for value in (
+            {},
+            [],
+            None,
+            {"application_coverage": {}},
+            {"application_coverage": None},
+            {"application_coverage": {"result": "success"}, "other": {"result": "success"}},
+        ):
             with self.subTest(value=value):
                 self.assertNotEqual(result(value), 0)
