@@ -80,9 +80,11 @@ separate pinned-nightly branch run. The normal coverage command uses distinct
 owned target directories for these toolchains, including cleanup and nightly
 LCOV export. Sharing instrumented output can mix incompatible object mappings
 and produce false zero-hit regions; never repair those counters by hand.
-LLVM LCOV summary line totals include async
-and macro regions that do not map one-to-one to emitted DA records; do not rewrite
-those totals to manufacture consistency. LCOV remains the Sonar import format.
+LLVM aggregates line summaries by function instantiation group. Its LCOV `DA`
+records come from merged file segments, so mapped lines and covered counts can
+differ. Validate the summary totals against native summaries and independently
+project every `DA` line and hit count from the native segments. LCOV remains
+the Sonar import format. [LLVM coverage mapping](https://github.com/llvm/llvm-project/blob/llvmorg-23.1.4/llvm/lib/ProfileData/Coverage/CoverageMapping.cpp#L1448-L1501).
 LLVM reports branch summaries from function instantiations and merges LCOV
 branch details by source location. Those views can disagree when instantiations
 cover different directions or a direction is folded. Validate LCOV summary
