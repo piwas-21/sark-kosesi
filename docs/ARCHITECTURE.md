@@ -704,6 +704,18 @@ units only to bound one proposed batch against the original order. It cannot
 establish remaining unshipped units, physical packages or dispatch eligibility;
 refund and chargeback disposition remains independent.
 
+Private packing custody records a recent-MFA warehouse staff assertion for complete
+variant units and one or more package component lists, with explicit confirmation.
+Under the order's attempt claim it revalidates the exact allocation, sealed BOM and
+current received gross recognition, reconstructs all active recorded batches, and
+rejects overclaim or mismatched component totals. The immutable bounded journal and
+digest-bound outbox event commit together; exact effect replay retains its original
+result. An authenticated release only relinquishes the assertion, even if payment
+recognition has since changed; it does not report unpacking or restocking. At most
+64 journal entries per order are admitted, including releases; every active
+record reserves its own release slot. Neither a record nor its release proves physical possession, net payment, dispatch, delivery, stock
+availability or permission to ship. No carrier, payment or stock operation follows.
+
 Write domain changes and outbox events in one transaction. Workers claim leases using PostgreSQL, retry with backoff and stable effect identifiers, and recover abandoned leases. Emails, stock alerts and fulfilment requests are idempotent. Record provider acceptance separately from customer delivery. Failed jobs are visible and replayable only through bounded, audited admin actions.
 
 ### Initial test-attempt model

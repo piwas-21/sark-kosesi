@@ -31,6 +31,7 @@ pub mod image_review;
 pub mod market_policies;
 pub mod media;
 pub mod mollie;
+pub mod packing_custody;
 pub mod promotion_policies;
 pub mod publication;
 pub mod published_catalogue;

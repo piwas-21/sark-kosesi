@@ -979,6 +979,14 @@ and branch thresholds. Isolated PostgreSQL controls cover received recognition,
 original and late allocation, wrong authority, incomplete or damaged custody,
 review stops, stale evidence and session expiry during actual attempt-lock waits.
 They do not establish unshipped quantities, packages or dispatch authority.
+Private packing custody modules require the 95% critical line and branch gates.
+Isolated PostgreSQL tests cover serialized competing
+whole-unit claims, exact effect replay and conflicts, original and late allocation,
+shared component totals, release after stale payment evidence, authority expiry
+during an attempt-lock wait, reserved release capacity, and altered-event negative
+and repaired controls.
+They establish source journal behavior, not physical package contents, carrier
+acceptance or dispatch eligibility.
 
 ### Private customer favourites
 

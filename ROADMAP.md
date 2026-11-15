@@ -350,5 +350,8 @@ whole-variant quantity check now bounds a shipment proposal against an accepted
 order and caller-supplied prior counts. A private warehouse projection uses
 current received payment recognition, validated original or late stock allocation
 and sealed order-bound BOMs to compute the expected components for a proposed
-batch. Remaining shipment quantities require durable shipment history. Package
-contents and dispatch authority require separate evidence.
+batch. Private packing custody now records confirmed staff assertions of bounded
+whole units and package components, with serialized occupancy, replay and an
+audited release. These assertions do not establish unshipped units, physical
+contents or dispatch authority. Complete shipment handover and delivery custody,
+reversal/refund disposition and physical fulfilment evidence separately.
