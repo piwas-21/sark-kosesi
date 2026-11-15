@@ -530,10 +530,13 @@ async fn initial_provenance_rejects_coherently_changed_identity_until_exact_repa
     .fetch_one(&pool)
     .await
     .expect("receipt");
+    let replacement = "tr_SYNTHETIC_NotARealPaymenX";
+    assert_ne!(original.0, replacement);
+    assert_eq!(original.0.len(), replacement.len(), "UTF-8 byte lengths");
     pool.execute("ALTER TABLE payment_observations DISABLE TRIGGER USER")
         .await
         .expect("fault setup");
-    sqlx::query("UPDATE payment_observations SET provider_id='tr_SYNTHETIC_CHANGED',snapshot=jsonb_set(snapshot,'{intent,payment,id}',to_jsonb('tr_SYNTHETIC_CHANGED'::text)) WHERE attempt_id=$1").bind(id).execute(&pool).await.expect("coherent identity fault");
+    sqlx::query("UPDATE payment_observations SET provider_id=$2,snapshot=jsonb_set(snapshot,'{intent,payment,id}',to_jsonb($2::text)) WHERE attempt_id=$1").bind(id).bind(replacement).execute(&pool).await.expect("coherent identity fault");
     pool.execute("ALTER TABLE payment_observations ENABLE TRIGGER USER")
         .await
         .expect("restore guard");
@@ -541,7 +544,7 @@ async fn initial_provenance_rejects_coherently_changed_identity_until_exact_repa
         .await
         .expect("ordinary decoder accepts structurally valid fault")
         .expect("observation");
-    assert_eq!(changed.intent.payment.id, "tr_SYNTHETIC_CHANGED");
+    assert_eq!(changed.intent.payment.id, replacement);
     let exact: bool=sqlx::query_scalar("SELECT payment_initial_dispatch_provenance_exact(p) FROM payment_initial_dispatch_provenance p WHERE attempt_id=$1").bind(id).fetch_one(&pool).await.expect("native exact");
     assert!(!exact);
     let mut tx = pool.begin().await.expect("read");
