@@ -104,8 +104,9 @@ admin/unknown/mutation routes retain a separate test-admin browser gate. The API
 remains loopback-only and authenticated, with a separate database and disabled production. Deployment/provider acceptance is
 recorded independently from source/CI. Server quote source now reads approved publications and aggregated shared-component
 stock with explicit exact-destination policies and bounded integer tax/shipping
-allocations. No policies are seeded or accepted from clients. Quotes are indicative:
-no stock is reserved and no payment is authorized. Private market policy drafts and independent approvals now persist exact country/
+allocations. No policies are seeded or accepted from clients. Owned quote issue and
+reads recheck held guest and customer expiry before returning source failures after
+waits. Quotes are indicative: no stock is reserved and no payment is authorized. Private market policy drafts and independent approvals now persist exact country/
 postcode, publication, VAT, parcel limits and validity windows with immutable audit
 history. Separate market author/reviewer grants and recent MFA protect changes.
 The latest draft and its latest review govern indicative quotes under one database

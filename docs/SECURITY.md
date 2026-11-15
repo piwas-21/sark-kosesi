@@ -319,8 +319,10 @@ Closed bounded JSON and static errors prevent internal source/destination exposu
 Snapshots and command inputs omit Debug; customer projections omit owner, policy
 and destination. Stored JSON is size-bounded and allocation/shape/header validated.
 Immutable rows cannot be edited/deleted or rebound to another basket/review/BOM.
-Final source/identity checks follow inserts; revocation waits for active claims,
-and rollback leaves no quote or successful-issuance charge. Historical receipts
+Final source/identity checks follow inserts; after source-dependent failures, the
+held guest and any customer session are also checked against a fresh clock before
+returning the error. Revocation waits for active claims, and rollback leaves no
+quote or successful-issuance charge. Historical receipts
 cannot refresh expiry or bypass current order readiness. Public bridge abuse
 controls, retention operations and complete order/payment authority remain required.
 
