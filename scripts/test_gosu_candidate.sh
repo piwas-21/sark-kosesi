@@ -94,10 +94,23 @@ installed_sha=$(docker run --rm --network none --entrypoint sha256sum "$image" /
 [[ "$installed_sha" == "$(cat "$evidence/gosu-sha256.txt")" ]] || fail 'candidate executable identity mismatch'
 selected_path=$(docker run --rm --network none --entrypoint sh "$image" -c 'command -v gosu')
 [[ "$selected_path" == /usr/local/bin/gosu ]] || fail 'unexpected entrypoint PATH selection'
+# The pinned base, not a guessed singleton, defines PostgreSQL's supplementary groups.
+normalize_groups() {
+  local value=$1
+  [[ "$value" =~ ^[0-9]+(\ [0-9]+)*$ ]] || return 1
+  printf '%s\n' "$value" | tr ' ' '\n' | LC_ALL=C sort -n -u | paste -sd ',' -
+}
 uid=$(docker run --rm --network none --entrypoint /usr/local/bin/gosu "$image" postgres id -u)
 gid=$(docker run --rm --network none --entrypoint /usr/local/bin/gosu "$image" postgres id -g)
 groups=$(docker run --rm --network none --entrypoint /usr/local/bin/gosu "$image" postgres id -G)
-[[ "$uid" == 999 && "$gid" == 999 && "$groups" == 999 ]] || fail 'incorrect postgres identity'
+base_groups=$(docker run --rm --network none --entrypoint /usr/bin/id "$base" -G postgres)
+[[ "$uid" =~ ^[0-9]+$ && "$gid" =~ ^[0-9]+$ ]] || fail 'invalid postgres numeric identity'
+group_set=$(normalize_groups "$groups") || fail 'invalid candidate group list'
+base_group_set=$(normalize_groups "$base_groups") || fail 'invalid base group list'
+printf 'postgres_uid=%s\npostgres_gid=%s\ncandidate_group_set=%s\nbase_group_set=%s\n' \
+  "$uid" "$gid" "$group_set" "$base_group_set" > "$evidence/identity-check.txt"
+[[ "$uid" == 999 && "$gid" == 999 && "$group_set" == "$base_group_set" ]] || fail 'incorrect postgres identity'
+[[ ",$group_set," != *,0,* && ",$group_set," == *,999,* ]] || fail 'unsafe postgres groups'
 if docker run --rm --network none --user 999:999 --entrypoint /usr/local/bin/gosu "$image" root id > "$scratch/denied.log" 2>&1; then
   fail 'nonroot privilege escalation unexpectedly succeeded'
 fi
@@ -110,7 +123,7 @@ for ((attempt=0; attempt<60; attempt++)); do
 done
 result=$(docker exec "$db_id" psql -X -A -t -v ON_ERROR_STOP=1 -U postgres -d postgres -c 'SELECT 2+3')
 [[ "$result" == 5 ]] || fail 'synthetic database query mismatch'
-printf 'postgres_uid=%s\npostgres_gid=%s\npostgres_groups=%s\nnonroot_to_root=denied\nsynthetic_query=%s\n' "$uid" "$gid" "$groups" "$result" > "$evidence/synthetic-checks.txt"
+printf 'postgres_uid=%s\npostgres_gid=%s\npostgres_groups=%s\nnonroot_to_root=denied\nsynthetic_query=%s\n' "$uid" "$gid" "$group_set" "$result" > "$evidence/synthetic-checks.txt"
 printf 'stage=complete outcome=success\n' > "$evidence/status.txt"
 (cd "$evidence" && find . -type f -print0 | LC_ALL=C sort -z | xargs -0 sha256sum > "$scratch/SHA256SUMS")
 mv "$scratch/SHA256SUMS" "$evidence/SHA256SUMS"

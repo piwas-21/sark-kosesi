@@ -99,6 +99,27 @@ def check_candidate_execution(source):
     require(source, r'"\$uid" == 999 && "\$gid" == 999', "identity checked")
     require(
         source,
+        r'base_groups=\$\(docker run --rm --network none --entrypoint /usr/bin/id "\$base" -G postgres\)',
+        "independent pinned base group query",
+    )
+    require(
+        source,
+        r'^group_set=\$\(normalize_groups "\$groups"\) \|\| fail ',
+        "candidate group normalization",
+    )
+    require(
+        source,
+        r'^base_group_set=\$\(normalize_groups "\$base_groups"\) \|\| fail ',
+        "base group normalization",
+    )
+    require(source, r'"\$group_set" == "\$base_group_set"', "group set matches base")
+    require(
+        source,
+        r'",\$group_set," != \*,0,\* && ",\$group_set," == \*,999,\*',
+        "reject root group and require postgres group",
+    )
+    require(
+        source,
         r"if docker run [^\n]*--user 999:999 --entrypoint /usr/local/bin/gosu "
         r'"\$image" root id [^\n]*; then\n\s*fail ',
         "non-root to root denied",
@@ -202,6 +223,12 @@ class GosuCandidatePolicy(unittest.TestCase):
             ),
             ('"$selected_path" == /usr/local/bin/gosu', '"$selected_path" == ignored'),
             ('"$uid" == 999 && "$gid" == 999', '"$uid" == 0 && "$gid" == 0'),
+            ('"$group_set" == "$base_group_set"', '"$group_set" == "$group_set"'),
+            ('",$group_set," != *,0,*', '",$group_set," == *,0,*'),
+            (
+                '--entrypoint /usr/bin/id "$base" -G postgres',
+                '--entrypoint /usr/bin/id "$image" -G postgres',
+            ),
             (
                 '--user 999:999 --entrypoint /usr/local/bin/gosu "$image" root id',
                 '--user 999:999 --entrypoint /usr/local/bin/gosu "$image" postgres id',
@@ -211,6 +238,53 @@ class GosuCandidatePolicy(unittest.TestCase):
                 self.assertIn(old, source)
                 with self.assertRaises(ValueError):
                     check_candidate_execution(source.replace(old, new))
+
+    def test_group_normalization_and_guard_with_synthetic_values(self):
+        source = (ROOT / "scripts/test_gosu_candidate.sh").read_text()
+        function = re.search(r"(?ms)^normalize_groups\(\) \{\n.*?^\}", source)
+        self.assertIsNotNone(function)
+        guard = next(
+            line for line in source.splitlines() if "fail 'unsafe postgres groups'" in line
+        )
+        identity = next(
+            line for line in source.splitlines() if "fail 'incorrect postgres identity'" in line
+        )
+        fail = "fail() { exit 1; }"
+
+        def evaluate(groups, base, uid="999", gid="999"):
+            code = "\n".join(
+                (
+                    fail,
+                    function.group(),
+                    'group_set=$(normalize_groups "$1") || exit 1',
+                    'base_group_set=$(normalize_groups "$2") || exit 1',
+                    "uid=$3 gid=$4",
+                    identity,
+                    guard,
+                    'printf "%s" "$group_set"',
+                )
+            )
+            return subprocess.run(
+                ["bash", "-c", code, "synthetic", groups, base, uid, gid],
+                capture_output=True,
+                text=True,
+                check=False,
+            )
+
+        valid = evaluate("999 1001 123 999", "123 999 1001")
+        self.assertEqual(valid.returncode, 0)
+        self.assertEqual(valid.stdout, "123,999,1001")
+        for groups, base, uid, gid in (
+            ("999 0", "0 999", "999", "999"),
+            ("999 1001", "999", "999", "999"),
+            ("999 x", "999", "999", "999"),
+            ("", "999", "999", "999"),
+            ("999", "999", "0", "999"),
+            ("999", "999", "999", "0"),
+            ("1001", "1001", "999", "999"),
+        ):
+            with self.subTest(groups=groups, base=base, uid=uid, gid=gid):
+                self.assertNotEqual(evaluate(groups, base, uid, gid).returncode, 0)
 
     def test_workflow_is_path_scoped_and_has_no_release_action(self):
         source = (ROOT / ".github/workflows/db-gosu-candidate.yml").read_text()

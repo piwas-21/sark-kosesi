@@ -562,8 +562,8 @@ proves only repeatability under those inputs and this runner; it is not independ
 provenance. The artifact records the executable digest, `go version -m`, vendor
 file hashes, candidate image identity and synthetic checks. The pinned PostgreSQL
 platform is used only as an isolated test image; the candidate is not published or
-installed. One test checks the expected PostgreSQL UID, GID and supplementary group,
-rejects a non-root attempt to become root, checks the selected Gosu path and bytes,
+installed. One test checks PostgreSQL UID/GID and compares its non-root group set
+with the pinned base, rejects a non-root attempt to become root, checks the selected Gosu path and bytes,
 and starts an empty PostgreSQL instance for a synthetic query without network
 access. It does not cover every identity, group, signal, ownership or restore case.
 
