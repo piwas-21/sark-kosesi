@@ -518,3 +518,83 @@ in for proxy identity. Then require exact-revision TLS and isolated provider
 delivery acceptance. The committed source and Compose checks prove none of these
 runtime states. Rollback disables both callback ingress and the separate web
 ingress flag before recreating only this project's services.
+
+### Hosted PostgreSQL scan capture
+
+The narrowly scoped `PostgreSQL image evidence` workflow can capture the pinned
+staging PostgreSQL image through the public Docker Hub mirror `mirror.gcr.io` on a
+disposable GitHub-hosted runner. All retrieved image identity documents are checked
+against their pinned digests before use; mirror availability on a runner is not assumed.
+It is triggered by relevant pull request paths or by manual dispatch. Its checkout
+is bound to the pull request head or dispatched commit; Compose renders the checked
+in configuration without interpolation, and the capture verifies the `db` service's
+staging index, its Linux AMD64 platform manifest and image config. The
+scanner is Trivy 0.70.0 at its pinned Linux AMD64 image digest and accesses the
+registry directly without the Docker socket or credentials. Empty configuration
+and ignore files and a fresh scanner cache are used for each run. The scanner
+uses the unprivileged runner's UID and GID to write into owner-only scratch.
+
+The artifact contains the raw report, image and scanner identity documents, empty
+configuration, database metadata, command, scanner log, receipt, offline audit
+output and checksums; the database cache is not uploaded. The offline audit must
+accept the evidence's structure even when its result is blocked by findings.
+Scanner errors fail capture, while reported vulnerabilities do not fail capture
+or constitute an acceptance. A sanitized capture status is retained even if an
+identity request fails; it records the mirror endpoint and HTTP status without
+credentials or response bodies. Independently verify the workflow revision, scanner
+and image identities, scope and custody; inspect the unfiltered report with the
+offline audit above. A successful capture does not establish deployment, image
+provenance, vulnerability disposition or release readiness.
+
+## Isolated PostgreSQL zlib candidate
+
+`ops/db-zlib-candidate/Dockerfile` and `scripts/test_db_zlib_candidate.sh`
+prepare a disposable AMD64-only candidate from the pinned PostgreSQL platform
+manifest. The candidate obtains one exact `zlib1g` security package from the
+Debian security archive using the pinned base's Debian archive keyring, checks
+APT's authenticated index and a pinned package SHA-256, and rejects any change
+to another installed package. A read-only build mount provides the hosted
+runner's CA bundle for HTTPS; APT signature verification remains mandatory.
+It preserves the signed APT index, exact package, trust-input hashes, bounded
+stage results and before/after inventories in the candidate evidence. Raw
+package-manager output is not retained or printed. Treat those records as
+review evidence, not independent attestation by themselves.
+
+The path-scoped PostgreSQL zlib candidate workflow runs the script on a
+throwaway Linux runner when its candidate files change in a PR. It uses only
+synthetic rows, no external network for either database container, an actual
+compressed custom-format dump/restore and a rejected invalid-archive control.
+It scans the pinned base and built candidate using the same fresh vulnerability
+database, retains both raw reports, and checks the target zlib package and
+finding delta. Success establishes only the checks actually recorded. Review
+image and package provenance, other vulnerabilities, restore and rollback,
+operational configuration and exact-revision release gates separately. The
+workflow does not update staging, activate production or accept any risk.
+
+## Optional PostgreSQL Gosu rebuild experiment
+
+The `PostgreSQL Gosu candidate` workflow uses a disposable runner and synthetic
+data. It pins Gosu 1.19's upstream source
+commit and source-archive SHA-256, the official Go 1.27.4 Linux AMD64 archive
+SHA-256, and dependencies against the source's `go.sum`. The archive hash fixes
+what the experiment builds; the source commit is not signed, and neither this
+pin nor a matching local build proves correspondence to the maintainer's signed
+release binary. Source and Go archives are fetched only on the hosted runner.
+
+After dependencies are prepared, two fresh, separate containers build the same
+read-only source and vendor inputs with network disabled. The byte comparison
+proves only repeatability under those inputs and this runner; it is not independent
+provenance. The artifact records the executable digest, `go version -m`, vendor
+file hashes, candidate image identity and synthetic checks. The pinned PostgreSQL
+platform is used only as an isolated test image; the candidate is not published or
+installed. One test checks PostgreSQL UID/GID and compares its non-root group set
+with the pinned base, rejects a non-root attempt to become root, checks the selected Gosu path and bytes,
+and starts an empty PostgreSQL instance for a synthetic query without network
+access. It does not cover every identity, group, signal, ownership or restore case.
+
+The workflow runs for pull requests that change its candidate files, and also
+supports manual dispatch. Before any future operational decision, independently verify
+source and dependency provenance, exact image and executable identities,
+privilege-drop and entrypoint compatibility, persistent-data restore/rollback,
+and current full-image scans and symbol-aware findings. The separate libxml2
+and other image vulnerabilities remain open; no risk acceptance follows.

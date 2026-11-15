@@ -1,0 +1,35 @@
+name: PostgreSQL Gosu candidate
+on:
+  workflow_dispatch:
+  pull_request:
+    branches: [develop]
+    paths:
+      - .github/workflows/db-gosu-candidate.yml
+      - ops/db-gosu-candidate/**
+      - scripts/test_gosu_candidate.sh
+      - tests/tooling/test_gosu_candidate.py
+permissions: {}
+jobs:
+  candidate:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 35
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+      - name: Build and exercise isolated candidate
+        env:
+          GOSU_SOURCE_REVISION: ${{ github.event.pull_request.head.sha || github.sha }}
+          GOSU_EVIDENCE_DIR: ${{ runner.temp }}/db-gosu-evidence
+          GOSU_SCRATCH_DIR: ${{ runner.temp }}/db-gosu-scratch
+        run: bash scripts/test_gosu_candidate.sh
+      - name: Retain candidate evidence and failures
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+        with:
+          name: db-gosu-candidate-${{ github.event.pull_request.head.sha || github.sha }}
+          path: ${{ runner.temp }}/db-gosu-evidence/
+          if-no-files-found: error
