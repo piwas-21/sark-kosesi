@@ -2,22 +2,22 @@
   "schemaVersion": 1,
   "humanApproved": true,
   "reviewer": "Mahmut Kaya",
-  "reviewedAt": "2026-11-14T16:03:48.905715+00:00",
-  "evidence": "Mahmut Kaya selected \"Approve this gallery\" for PR #138 Ubuntu artifact 14120645772 at 5dfb22f. All 252 screenshots match the previously approved PNG hashes.",
-  "sourceSha256": "f051ffed08724bad94c54da779fcd4c09d7178d02ab1367a02961cefc6c1c737",
+  "reviewedAt": "2026-11-15T20:45:23+00:00",
+  "evidence": "Mahmut Kaya selected \"Approve the visual baseline binding\" for PR #157. All 252 captures in Linux run 43713481708, artifact 14162196233, match the existing approved baselines pixel for pixel.",
+  "sourceSha256": "83dcb7d4b95ddb5288aae8ed908b62fff562bb6a1e2497bcf09521357a2c8fef",
   "capture": {
-    "revision": "5dfb22f0e6eb67c0347d7b0313155d471a81df07",
-    "ciRun": 43604914711,
-    "artifactId": 14120645772,
+    "revision": "766817ca6d0b35b5acdc9111a5feb97237bafb7f",
+    "ciRun": 43713481708,
+    "artifactId": 14162196233,
     "platform": "linux",
-    "capturedAt": "2026-11-14T15:35:08.876Z",
-    "manifestSha256": "3c6a207df7c2edc2ca8467f583695fd20bfddf908f4892df2a1ca9c25036e843",
-    "workingTreeClean": false
+    "capturedAt": "2026-11-15T12:45:21.456Z",
+    "manifestSha256": "a8c1604f4a321b87af51d379f02ec6d050e1461a6df27fee7b7308ce77b61922",
+    "workingTreeClean": true
   },
   "supersedes": {
-    "revision": "cbb8153af693cf33524d1c28a8215cadfb17829b",
-    "approvalFileSha256": "3f144724b8d8613a2f76da48a60f9e6cdb50ebd6515051d2560056984d2d10cd",
-    "sourceSha256": "9f5916b348ef027bc57008af17b6c04b3b2ee65af400ec475ec111939da5fa98",
+    "revision": "d0120a6a4ba0782f15c699595185c9642785c020",
+    "approvalFileSha256": "cdf56a9c3c630fbc18c9f94189aa8b4e6272ee19cadffee271e61e4e5159f891",
+    "sourceSha256": "f051ffed08724bad94c54da779fcd4c09d7178d02ab1367a02961cefc6c1c737",
     "imageCount": 252
   },
   "images": {
