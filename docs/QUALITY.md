@@ -1196,5 +1196,7 @@ the same exact compiled `dispatch_requires_server_fsync_before_post` test with
 `P1_POSTGRES_BIN=/path/to/postgresql18/bin python3 scripts/with_postgres.py --fsync-off -- <test-binary> --exact mollie::tests::test_payment_orchestration::durability::dispatch_requires_server_fsync_before_post`
 to exercise an owned native server started with fsync disabled. It verifies the
 actual setting and disposable cluster marker, then checks rejection with no start,
-event or POST. The fault runner requires one exact passing test. These tests do
-not establish provider or production acceptance.
+event or POST. In both cases the fixture shows that a shadow text-equality
+operator can report fsync as enabled; the writer compares the typed setting
+values in Rust. The fault runner requires one exact passing test. These tests
+do not establish provider or production acceptance.

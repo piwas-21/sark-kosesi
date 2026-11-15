@@ -132,6 +132,38 @@ async fn dispatch_requires_server_fsync_before_post(pool: PgPool) {
     }
 
     let (clock, frozen) = prepared(&pool).await;
+    pool.execute(
+        "CREATE FUNCTION public.fixture_dispatch_text_eq(l text, r text) RETURNS boolean
+         LANGUAGE sql IMMUTABLE AS $$ SELECT
+           (l OPERATOR(pg_catalog.=) 'off' AND r OPERATOR(pg_catalog.=) 'on')
+             OR l OPERATOR(pg_catalog.=) r $$;
+         CREATE OPERATOR public.= (FUNCTION=public.fixture_dispatch_text_eq,
+           LEFTARG=text, RIGHTARG=text)",
+    )
+    .await
+    .expect("owned fixture operator");
+    let hostile_pool = sqlx::postgres::PgPoolOptions::new()
+        .max_connections(1)
+        .after_connect(|connection, _| {
+            Box::pin(async move {
+                sqlx::query("SET search_path=public,pg_catalog")
+                    .execute(connection)
+                    .await?;
+                Ok(())
+            })
+        })
+        .connect_with((*pool.connect_options()).clone())
+        .await
+        .expect("isolated hostile session");
+    let (actual, claims_on): (String, bool) = sqlx::query_as(
+        "SELECT pg_catalog.current_setting('fsync'), pg_catalog.current_setting('fsync') = 'on'",
+    )
+    .fetch_one(&hostile_pool)
+    .await
+    .expect("hostile operator result");
+    assert_eq!(actual, expected);
+    assert!(claims_on, "unqualified equality always claims fsync is on");
+
     let body = payment(frozen.snapshot());
     let server = Server::start(vec![
         profile(),
@@ -141,7 +173,7 @@ async fn dispatch_requires_server_fsync_before_post(pool: PgPool) {
     let client = local(&server).verify_profile().await.expect("test profile");
     let ids = crate::payment_test_fixture::Ids(AtomicU64::new(10000));
     let outcome = dispatch_and_observe_test_payment(
-        &pool,
+        &hostile_pool,
         clock.as_ref(),
         &ids,
         &client,
@@ -167,4 +199,5 @@ async fn dispatch_requires_server_fsync_before_post(pool: PgPool) {
         }
         _ => panic!("invalid server fsync expectation"),
     }
+    hostile_pool.close().await;
 }

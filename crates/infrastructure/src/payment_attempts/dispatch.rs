@@ -150,12 +150,12 @@ pub async fn start_dispatch(
         .await?;
     sqlx::query("INSERT INTO commerce_outbox(id,aggregate_id,kind,payload,created_at) VALUES($1,$2,'payment.reconciliation_required.v1',$3,$4)")
         .bind(event_id).bind(&order.identity.id).bind(serde_json::json!({"schema_version":1,"order_id":order.identity.id,"attempt_id":attempt_id,"dispatch_id":dispatch_id})).bind(started_at).execute(&mut *tx).await?;
-    let durable: bool = sqlx::query_scalar(
-        "SELECT pg_catalog.current_setting('fsync')='on' AND pg_catalog.current_setting('synchronous_commit')='on'",
+    let (fsync, synchronous_commit): (String, String) = sqlx::query_as(
+        "SELECT pg_catalog.current_setting('fsync'),pg_catalog.current_setting('synchronous_commit')",
     )
     .fetch_one(&mut *tx)
     .await?;
-    if !durable {
+    if (fsync.as_str(), synchronous_commit.as_str()) != ("on", "on") {
         return Err(PaymentStoreError::Unavailable);
     }
     let at = now(&clock)?;
