@@ -132,6 +132,7 @@ pub(super) struct Permit {
     fingerprint: Vec<u8>,
     started_at: i64,
     transaction_id: String,
+    ciphertext_sha256: [u8; 32],
 }
 impl Permit {
     pub(super) async fn matches_start(
@@ -146,6 +147,9 @@ impl Permit {
     }
     pub(super) fn transaction_id(&self) -> &str {
         &self.transaction_id
+    }
+    pub(super) fn ciphertext_sha256(&self) -> &[u8; 32] {
+        &self.ciphertext_sha256
     }
 }
 async fn read_start(
@@ -246,15 +250,6 @@ async fn open<T>(
     original.live(observed)?;
     tx.commit().await.map_err(|_| LinkError::Unavailable)?;
 
-    let permit = Permit {
-        verifier: *verifier,
-        key_id: start.key_id.clone(),
-        counter: start.nonce_counter,
-        fingerprint: start.fingerprint.clone(),
-        started_at: start.started_at,
-        transaction_id: start.transaction_id.clone(),
-    };
-
     let mut tx = super::super::super::begin(pool)
         .await
         .map_err(LinkError::from)?;
@@ -281,6 +276,16 @@ async fn open<T>(
         counter: current.envelope.nonce_counter,
     };
     let token = crypto::open(key, &context, &current.envelope.ciphertext)?;
+    // Seal only the ciphertext that this opening actually authenticated.
+    let permit = Permit {
+        verifier: *verifier,
+        key_id: start.key_id.clone(),
+        counter: start.nonce_counter,
+        fingerprint: start.fingerprint.clone(),
+        started_at: start.started_at,
+        transaction_id: start.transaction_id.clone(),
+        ciphertext_sha256: Sha256::digest(&current.envelope.ciphertext).into(),
+    };
     current.live(observed)?;
     tx.commit().await.map_err(|_| LinkError::Unavailable)?;
     current.live(observed)?;

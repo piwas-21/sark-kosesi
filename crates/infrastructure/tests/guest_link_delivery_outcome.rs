@@ -105,6 +105,8 @@ async fn classification(pool: PgPool, expected: TransportOutcome) {
     );
     assert_eq!(calls.load(Ordering::SeqCst), 1);
     assert_eq!(effects().await, before);
+    let digest_matches: bool = sqlx::query_scalar("SELECT o.ciphertext_sha256=sha256(e.ciphertext) FROM guest_link_delivery_outcomes o JOIN guest_link_delivery_envelopes e USING(verifier) WHERE o.verifier=$1").bind(verifier.as_slice()).fetch_one(&pool).await.expect("ciphertext commitment");
+    assert!(digest_matches);
     assert!(
         sqlx::query("UPDATE guest_link_delivery_outcomes SET outcome='accepted' WHERE verifier=$1")
             .bind(verifier.as_slice())
@@ -126,6 +128,7 @@ async fn classification(pool: PgPool, expected: TransportOutcome) {
         [
             "verifier",
             "start_transaction_id",
+            "ciphertext_sha256",
             "outcome",
             "observed_at",
             "transaction_id"
@@ -165,6 +168,19 @@ async fn guest_link_outcome_lost_result_stays_unknown_and_never_reopens(pool: Pg
     pool.execute("DROP TRIGGER z_suppress_guest_link_outcome ON guest_link_delivery_outcomes")
         .await
         .expect("restore");
+    pool.execute("ALTER TABLE guest_link_delivery_envelopes DISABLE TRIGGER USER")
+        .await
+        .expect("fault setup");
+    sqlx::query("UPDATE guest_link_delivery_envelopes SET ciphertext=set_byte(ciphertext,0,get_byte(ciphertext,0) # 1) WHERE verifier=$1").bind(verifier.as_slice()).execute(&pool).await.expect("same-length fault");
+    // With no authenticated outcome, Unknown asserts only relational custody.
+    assert_eq!(
+        outcome::inspect(&pool, &verifier).await,
+        Ok(DeliveryState::Unknown)
+    );
+    sqlx::query("UPDATE guest_link_delivery_envelopes SET ciphertext=set_byte(ciphertext,0,get_byte(ciphertext,0) # 1) WHERE verifier=$1").bind(verifier.as_slice()).execute(&pool).await.expect("restore ciphertext");
+    pool.execute("ALTER TABLE guest_link_delivery_envelopes ENABLE TRIGGER USER")
+        .await
+        .expect("restore guards");
     assert_eq!(
         delivery::claim_open_and_record(&pool, &verifier, clock.as_ref(), &key, |_, _| panic!(
             "must not reopen"
@@ -184,28 +200,30 @@ async fn guest_link_outcome_native_guards_require_exact_prior_start(pool: PgPool
     let mut same = pool.begin().await.expect("same transaction");
     sqlx::query("INSERT INTO guest_link_delivery_starts(verifier,key_id,nonce_counter,key_fingerprint,started_at) SELECT e.verifier,e.key_id,e.nonce_counter,k.key_fingerprint,1100 FROM guest_link_delivery_envelopes e JOIN guest_link_delivery_keys k ON k.key_id=e.key_id WHERE e.verifier=$1")
         .bind(verifier.as_slice()).execute(&mut *same).await.expect("start in transaction");
-    assert!(sqlx::query("INSERT INTO guest_link_delivery_outcomes(verifier,start_transaction_id,outcome,observed_at) SELECT verifier,transaction_id,'accepted',1100 FROM guest_link_delivery_starts WHERE verifier=$1")
+    assert!(sqlx::query("INSERT INTO guest_link_delivery_outcomes(verifier,start_transaction_id,ciphertext_sha256,outcome,observed_at) SELECT verifier,transaction_id,(SELECT sha256(ciphertext) FROM guest_link_delivery_envelopes WHERE verifier=$1),'accepted',1100 FROM guest_link_delivery_starts WHERE verifier=$1")
         .bind(verifier.as_slice()).execute(&mut *same).await.is_err());
     same.rollback().await.expect("rollback same transaction");
     delivery::claim_and_open(&pool, &verifier, clock.as_ref(), &key, |_, _| {})
         .await
         .expect("start");
-    assert!(sqlx::query("INSERT INTO guest_link_delivery_outcomes(verifier,start_transaction_id,outcome,observed_at) VALUES($1,pg_current_xact_id(),'accepted',1100)")
+    assert!(sqlx::query("INSERT INTO guest_link_delivery_outcomes(verifier,start_transaction_id,ciphertext_sha256,outcome,observed_at) SELECT $1,pg_current_xact_id(),sha256(ciphertext),'accepted',1100 FROM guest_link_delivery_envelopes WHERE verifier=$1")
         .bind(verifier.as_slice()).execute(&pool).await.is_err());
-    assert!(sqlx::query("INSERT INTO guest_link_delivery_outcomes(verifier,start_transaction_id,outcome,observed_at) SELECT verifier,transaction_id,'provider-body',1100 FROM guest_link_delivery_starts WHERE verifier=$1")
+    assert!(sqlx::query("INSERT INTO guest_link_delivery_outcomes(verifier,start_transaction_id,ciphertext_sha256,outcome,observed_at) SELECT verifier,transaction_id,(SELECT sha256(ciphertext) FROM guest_link_delivery_envelopes WHERE verifier=$1),'provider-body',1100 FROM guest_link_delivery_starts WHERE verifier=$1")
         .bind(verifier.as_slice()).execute(&pool).await.is_err());
-    assert!(sqlx::query("INSERT INTO guest_link_delivery_outcomes(verifier,start_transaction_id,outcome,observed_at) SELECT verifier,transaction_id,'accepted',1099 FROM guest_link_delivery_starts WHERE verifier=$1")
+    assert!(sqlx::query("INSERT INTO guest_link_delivery_outcomes(verifier,start_transaction_id,ciphertext_sha256,outcome,observed_at) SELECT verifier,transaction_id,(SELECT sha256(ciphertext) FROM guest_link_delivery_envelopes WHERE verifier=$1),'accepted',1099 FROM guest_link_delivery_starts WHERE verifier=$1")
+        .bind(verifier.as_slice()).execute(&pool).await.is_err());
+    assert!(sqlx::query("INSERT INTO guest_link_delivery_outcomes(verifier,start_transaction_id,ciphertext_sha256,outcome,observed_at) SELECT verifier,transaction_id,decode(repeat('00',32),'hex'),'accepted',1100 FROM guest_link_delivery_starts WHERE verifier=$1")
         .bind(verifier.as_slice()).execute(&pool).await.is_err());
     let mut nondurable = pool.begin().await.expect("transaction");
     sqlx::query("SET LOCAL synchronous_commit='off'")
         .execute(&mut *nondurable)
         .await
         .expect("weaken durability");
-    assert!(sqlx::query("INSERT INTO guest_link_delivery_outcomes(verifier,start_transaction_id,outcome,observed_at) SELECT verifier,transaction_id,'accepted',1100 FROM guest_link_delivery_starts WHERE verifier=$1")
+    assert!(sqlx::query("INSERT INTO guest_link_delivery_outcomes(verifier,start_transaction_id,ciphertext_sha256,outcome,observed_at) SELECT verifier,transaction_id,(SELECT sha256(ciphertext) FROM guest_link_delivery_envelopes WHERE verifier=$1),'accepted',1100 FROM guest_link_delivery_starts WHERE verifier=$1")
         .bind(verifier.as_slice()).execute(&mut *nondurable).await.is_err());
     nondurable.rollback().await.expect("rollback nondurable");
     let mut weakened = pool.begin().await.expect("transaction");
-    sqlx::query("INSERT INTO guest_link_delivery_outcomes(verifier,start_transaction_id,outcome,observed_at) SELECT verifier,transaction_id,'accepted',1100 FROM guest_link_delivery_starts WHERE verifier=$1")
+    sqlx::query("INSERT INTO guest_link_delivery_outcomes(verifier,start_transaction_id,ciphertext_sha256,outcome,observed_at) SELECT verifier,transaction_id,(SELECT sha256(ciphertext) FROM guest_link_delivery_envelopes WHERE verifier=$1),'accepted',1100 FROM guest_link_delivery_starts WHERE verifier=$1")
         .bind(verifier.as_slice()).execute(&mut *weakened).await.expect("insert");
     sqlx::query("SET LOCAL synchronous_commit='off'")
         .execute(&mut *weakened)
@@ -268,12 +286,62 @@ async fn guest_link_outcome_inspection_rejects_damaged_binding_and_history(pool:
     .execute(&pool)
     .await
     .expect("repair history");
+    sqlx::query("UPDATE guest_link_delivery_envelopes SET ciphertext=set_byte(ciphertext,0,get_byte(ciphertext,0) # 1) WHERE verifier=$1").bind(verifier.as_slice()).execute(&pool).await.expect("same-length fault");
+    assert_eq!(
+        outcome::inspect(&pool, &verifier).await,
+        Err(LinkError::Unavailable)
+    );
+    sqlx::query("UPDATE guest_link_delivery_envelopes SET ciphertext=set_byte(ciphertext,0,get_byte(ciphertext,0) # 1) WHERE verifier=$1").bind(verifier.as_slice()).execute(&pool).await.expect("restore ciphertext");
     pool.execute("ALTER TABLE guest_link_delivery_envelopes ENABLE TRIGGER USER")
         .await
         .expect("restore guards");
     assert_eq!(
         outcome::inspect(&pool, &verifier).await,
         Ok(DeliveryState::Recorded(TransportOutcome::Accepted))
+    );
+}
+
+#[sqlx::test(migrator = "MIGRATOR")]
+async fn guest_link_outcome_rejects_ciphertext_changed_after_callback_opening(pool: PgPool) {
+    let (clock, key, verifier, _) = sample(&pool, "interleave").await;
+    let options = (*pool.connect_options()).clone();
+    let result = delivery::claim_open_and_record(&pool, &verifier, clock.as_ref(), &key, |_, _| {
+        std::thread::spawn(move || {
+            let runtime = tokio::runtime::Builder::new_current_thread().enable_all().build().expect("runtime");
+            runtime.block_on(async move {
+                let other = sqlx::postgres::PgPoolOptions::new().max_connections(2).connect_with(options).await.expect("separate pool");
+                tokio::time::timeout(Duration::from_secs(5), async {
+                    other.execute("ALTER TABLE guest_link_delivery_envelopes DISABLE TRIGGER USER").await.expect("fault setup");
+                    sqlx::query("UPDATE guest_link_delivery_envelopes SET ciphertext=set_byte(ciphertext,0,get_byte(ciphertext,0) # 1) WHERE verifier=$1").bind(verifier.as_slice()).execute(&other).await.expect("same-length fault");
+                    other.execute("ALTER TABLE guest_link_delivery_envelopes ENABLE TRIGGER USER").await.expect("restore guards");
+                }).await.expect("callback must not retain locks");
+                other.close().await;
+            });
+        }).join().expect("callback thread");
+        TransportOutcome::Accepted
+    }).await;
+    assert_eq!(result, Err(LinkError::Unavailable));
+    assert_eq!(
+        outcome::inspect(&pool, &verifier).await,
+        Ok(DeliveryState::Unknown)
+    );
+    pool.execute("ALTER TABLE guest_link_delivery_envelopes DISABLE TRIGGER USER")
+        .await
+        .expect("fault setup");
+    sqlx::query("UPDATE guest_link_delivery_envelopes SET ciphertext=set_byte(ciphertext,0,get_byte(ciphertext,0) # 1) WHERE verifier=$1").bind(verifier.as_slice()).execute(&pool).await.expect("restore ciphertext");
+    pool.execute("ALTER TABLE guest_link_delivery_envelopes ENABLE TRIGGER USER")
+        .await
+        .expect("restore guards");
+    assert_eq!(
+        delivery::claim_open_and_record(&pool, &verifier, clock.as_ref(), &key, |_, _| panic!(
+            "must not reopen"
+        ))
+        .await,
+        Ok(OpenOutcome::AlreadyStarted)
+    );
+    assert_eq!(
+        outcome::inspect(&pool, &verifier).await,
+        Ok(DeliveryState::Unknown)
     );
 }
 

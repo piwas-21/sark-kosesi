@@ -1820,7 +1820,10 @@ classification: accepted, explicit rejection or uncertain. A separate durable
 transaction binds the result to that exact committed start and a database-assigned
 transaction identity. Inspection validates its original proof, envelope and
 nonce history without requiring the proof to remain unconsumed or unexpired.
-An absent result remains unknown and never authorizes another opening. The
+The outcome commits a SHA-256 digest of the exact ciphertext authenticated by
+the fresh opener, checked against the stored envelope at record and inspection.
+An absent result remains unknown and checks relational history only; it cannot
+attest ciphertext authentication or authorize another opening. The
 classification is local caller evidence, not provider or mailbox acceptance.
 
 A separate immutable outcome can retain only a closed accepted, explicit rejection

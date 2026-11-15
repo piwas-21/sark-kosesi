@@ -615,7 +615,10 @@ Only its fresh winner receives the buyer and proof in a synchronous callback;
 existing or uncertain starts are never reopened automatically. An optional
 synthetic callback returns only a closed classification, recorded in a separate
 durable transaction bound to its exact start. A missing result stays unknown;
-redemption or expiry does not erase historical custody. This establishes no
+it has only relational custody, not an authenticated ciphertext commitment.
+A recorded result binds the exact authenticated ciphertext by SHA-256, which is
+checked against the retained envelope. Redemption or expiry does not erase
+historical custody. This establishes no
 sender, transport, public route or mailbox acceptance. Migration 0070 follows
 the protected 0067 and the queued 0068 and 0069 prerequisites.
 

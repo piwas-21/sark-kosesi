@@ -1,7 +1,10 @@
 -- Historical source only: current redemption or expiry must not erase an outcome.
 SELECT s.verifier IS NOT NULL, o.verifier IS NOT NULL, left(o.outcome,20),
  COALESCE(o.start_transaction_id=s.transaction_id AND o.transaction_id<>s.transaction_id
-  AND o.observed_at>=s.started_at AND o.observed_at<=9007199254740991,false),
+  AND o.observed_at>=s.started_at AND o.observed_at<=9007199254740991
+  AND octet_length(o.ciphertext_sha256)=32 AND EXISTS(
+   SELECT 1 FROM guest_link_delivery_envelopes e WHERE e.verifier=s.verifier
+   AND CASE WHEN octet_length(e.ciphertext)=48 THEN sha256(e.ciphertext)=o.ciphertext_sha256 ELSE false END),false),
  COALESCE(EXISTS(
   SELECT 1 FROM guest_order_link_proofs p
   JOIN checkout_orders ord ON ord.id=p.order_id AND ord.basket_id=p.basket_id

@@ -1076,7 +1076,10 @@ populated schema upgrade preserves prior direct proofs and encrypted envelopes.
 For synthetic outcomes, check all closed classifications, one callback only,
 loss before outcome commit, exact earlier-start and transaction binding, and
 historical reads after consumption and expiry. Missing or corrupt custody must
-not grant a new opening or establish external delivery.
+not grant a new opening or establish external delivery. Corrupt one ciphertext
+byte without changing its length after recording and between callback and record;
+restore it and verify the respective recovery and unknown boundaries. Unknown
+without an authenticated outcome proves relational custody only.
 The native durability guard assumes the supported Rust writer leaves the commit
 check in its specified sequence; arbitrary SQL can force a deferred check early.
 These controls do not establish transport or mailbox delivery.
