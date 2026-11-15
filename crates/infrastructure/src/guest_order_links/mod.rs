@@ -10,6 +10,7 @@ use crate::{
     customer_sessions::{self, CustomerCsrfToken, CustomerSessionToken, SessionError},
 };
 
+pub mod delivery;
 mod issue;
 mod link;
 mod read;
@@ -57,6 +58,12 @@ pub struct LinkedOrder {
     pub linked_at: i64,
 }
 
+// All cryptographic failures are deliberately redacted at this boundary.
+impl From<ring::error::Unspecified> for LinkError {
+    fn from(_: ring::error::Unspecified) -> Self {
+        Self::Unavailable
+    }
+}
 impl From<SessionError> for LinkError {
     fn from(error: SessionError) -> Self {
         match error {
