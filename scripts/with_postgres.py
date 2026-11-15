@@ -3,6 +3,7 @@
 
 import argparse
 import os
+import re
 import secrets
 import socket
 import subprocess
@@ -25,7 +26,15 @@ def run(*args, **kwargs):
         raise RuntimeError(f"{Path(args[0]).name} failed; command details withheld") from None
 
 
-def native_cluster(directory, binaries):
+def disposable_marker(marker=None):
+    value = secrets.token_hex(32) if marker is None else marker
+    if not isinstance(value, str) or re.fullmatch(r"[0-9a-f]{64}", value) is None:
+        raise ValueError("Invalid disposable PostgreSQL marker")
+    return value
+
+
+def native_cluster(directory, binaries, marker=None):
+    marker = disposable_marker(marker)
     data = directory / "data"
     password = secrets.token_urlsafe(32)
     with socket.socket() as listener:
@@ -53,7 +62,8 @@ def native_cluster(directory, binaries):
         "-l",
         str(directory / "postgres.log"),
         "-o",
-        f"-c listen_addresses=127.0.0.1 -c unix_socket_directories='' -p {port}",
+        f"-c listen_addresses=127.0.0.1 -c unix_socket_directories='' -p {port} "
+        f"-c sark.disposable_marker={marker}",
         "start",
     )
     negative = subprocess.run(
@@ -84,7 +94,8 @@ def native_cluster(directory, binaries):
     return f"postgresql://p1_test:{password}@127.0.0.1:{port}/postgres"
 
 
-def docker_cluster(name):
+def docker_cluster(name, marker=None):
+    marker = disposable_marker(marker)
     password = secrets.token_urlsafe(32)
     run(
         "docker",
@@ -102,6 +113,8 @@ def docker_cluster(name):
         "--env",
         "POSTGRES_DB=postgres",
         IMAGE,
+        "-c",
+        f"sark.disposable_marker={marker}",
     )
     port = run("docker", "port", name, "5432/tcp").stdout.strip().rsplit(":", 1)[1]
     for _ in range(60):
@@ -127,14 +140,20 @@ def main():
         parser.error("A real command is required")
     (ROOT / ".local").mkdir(exist_ok=True)
     name = "sark-p1-" + secrets.token_hex(8)
+    marker = disposable_marker()
     binaries = Path(os.environ["P1_POSTGRES_BIN"]) if os.environ.get("P1_POSTGRES_BIN") else None
     with tempfile.TemporaryDirectory(prefix="sark-p1-pg-") as temporary:
         directory = Path(temporary)
         try:
-            database = native_cluster(directory, binaries) if binaries else docker_cluster(name)
+            database = (
+                native_cluster(directory, binaries, marker)
+                if binaries
+                else docker_cluster(name, marker)
+            )
             environment = {
                 **{key: value for key, value in os.environ.items() if not key.startswith("PG")},
                 "DATABASE_URL": database,
+                "P1_POSTGRES_DISPOSABLE_MARKER": marker,
                 "APP_ENV": "test",
             }
             result = subprocess.run(command, cwd=ROOT, env=environment, check=False)

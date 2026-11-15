@@ -1,12 +1,18 @@
 use std::{collections::HashMap, net::SocketAddr};
 
+/// Capability created only by validated test-mode configuration.
+#[derive(Clone)]
+pub struct TestGuestCancellation(());
+
 pub struct Config {
     pub database_url: String,
     pub preview_token: String,
     pub bind: SocketAddr,
     pub guest_origin: Option<crate::guest::GuestOrigin>,
+    pub test_guest_cancellation: Option<TestGuestCancellation>,
     pub verification: Option<crate::verification::VerificationConfig>,
     pub test_login: Option<crate::test_login::LoginConfig>,
+    pub test_guest_order: Option<crate::guest::test_orders::TestOrderConfig>,
     pub callback_profile: Option<crate::callbacks::CallbackProfile>,
 }
 
@@ -50,6 +56,21 @@ impl Config {
             .get("GUEST_ORIGIN")
             .map(|value| crate::guest::GuestOrigin::parse(value))
             .transpose()?;
+        let test_guest_order =
+            crate::guest::test_orders::TestOrderConfig::from_env(environment, values)?;
+        if test_guest_order.is_some() && guest_origin.is_none() {
+            return Err("Test guest order requires guest origin");
+        }
+        let test_guest_cancellation = match values
+            .get("TEST_GUEST_CANCELLATION_TRANSPORT")
+            .map(String::as_str)
+        {
+            None => None,
+            Some("1") if environment == Some("test") && guest_origin.is_some() => {
+                Some(TestGuestCancellation(()))
+            }
+            _ => return Err("Test guest cancellation requires test mode and GUEST_ORIGIN"),
+        };
         let callback_profile = values
             .get("CALLBACK_INTAKE_PROFILE_ID")
             .map(|value| crate::callbacks::CallbackProfile::parse(value))
@@ -68,9 +89,11 @@ impl Config {
             preview_token,
             bind,
             guest_origin,
+            test_guest_cancellation,
             callback_profile,
             verification,
             test_login,
+            test_guest_order,
         })
     }
 }

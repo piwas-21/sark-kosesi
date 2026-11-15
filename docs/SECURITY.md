@@ -361,6 +361,12 @@ an attempt claim and reject a conflicting durable effect after waiting. Both
 cancellation and receipt reads recheck held guest and account authority before
 returning source-dependent success or failure, including after a lock wait. The
 event carries only the order ID and schema version.
+The separately enabled test-only guest cancellation route requires preview
+identity, the exact Origin, guest cookie and synchronizer plus an explicit
+confirmation and stable effect key. The route uses the session middleware's
+cookie parser to reject normalized duplicate or noncanonical guest identities
+while preserving unrelated cookies. Closed, bounded request bodies and private
+responses do not establish public edge, abuse or account-bound authority.
 Public coupon access still requires authenticated checkout and trusted-edge
 abuse controls.
 
@@ -381,6 +387,18 @@ and any verified account session remain current after source waits. Address/emai
 syntax is neither ownership nor delivery proof. Seller/legal snapshots require
 trusted configuration; installation supplies none. Public routes, abuse controls,
 retention/erasure operations, coupon accounting and payment authority remain gates.
+An independently opted-in test-only order POST requires preview authentication,
+the exact guest Origin, one canonical host-only guest cookie and its CSRF proof.
+Acceptance and cancellation use the same cookie identity check. It accepts
+bounded closed intent objects and an effect key, never seller policy, price or
+ownership authority. An explicit bounded server-only seller policy is required;
+no seller facts are seeded. Startup performs structural validation only. New
+acceptances require the policy's current locale, terms and validity while exact
+replays preserve the existing receipt. Test mode is mandatory; the route is
+absent by default and the configuration is rejected in local, staging and
+production modes. Responses expose only order ID and replay state; neither
+request data nor database detail belongs in logs. This is not public checkout,
+legal approval, provider acceptance or retention evidence.
 
 The private Mollie test client accepts no live key or caller-controlled provider
 origin. Raw authorization is sensitive and excluded from Debug/serialization and
