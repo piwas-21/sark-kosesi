@@ -242,6 +242,73 @@ async fn redeem_requires_exact_bound_session_and_consumes_only_once(pool: PgPool
         let digit = |b: u8| if b <= b'9' { b - b'0' } else { b - b'a' + 10 };
         csrf_bytes[index] = digit(pair[0]) * 16 + digit(pair[1]);
     }
+    // The synchronizer SELECT can itself time out after a live session claim.
+    // Both branches must preserve the unspent proof and all link state.
+    let before: (i64, i64, i64) = sqlx::query_as("SELECT (SELECT count(*) FROM guest_order_link_proofs), (SELECT count(*) FROM guest_order_link_proofs WHERE consumed_at IS NOT NULL OR consumed_account_id IS NOT NULL OR consumed_xid IS NOT NULL), (SELECT count(*) FROM customer_order_links)")
+        .fetch_one(&pool).await.expect("initial custody");
+    let proof_before: Vec<String> = sqlx::query_scalar(
+        "SELECT row_to_json(p)::text FROM guest_order_link_proofs p ORDER BY verifier",
+    )
+    .fetch_all(&pool)
+    .await
+    .expect("original proof rows");
+    for expires_while_waiting in [false, true] {
+        let mut lock = pool.begin().await.expect("csrf table lock transaction");
+        sqlx::query("LOCK TABLE customer_session_csrf IN ACCESS EXCLUSIVE MODE")
+            .execute(&mut *lock)
+            .await
+            .expect("lock csrf table");
+        let task_pool = pool.clone();
+        let task_time = time.clone();
+        let task_order = order.clone();
+        let task_session = CustomerSessionToken::from_bytes(*session.expose_bytes());
+        let task_csrf = CustomerCsrfToken::from_bytes(csrf_bytes);
+        let task_proof = guest_order_links::GuestOrderLinkToken::from_bytes(*proof.expose_bytes());
+        let task = tokio::spawn(async move {
+            guest_order_links::link_with_csrf(
+                &task_pool,
+                &task_session,
+                &task_csrf,
+                &task_order,
+                &task_proof,
+                task_time.as_ref(),
+            )
+            .await
+        });
+        tokio::time::timeout(std::time::Duration::from_secs(5), async {
+            loop {
+                let waiting: bool = sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM pg_stat_activity WHERE datname=current_database() AND pid<>pg_backend_pid() AND wait_event_type='Lock' AND cardinality(pg_blocking_pids(pid))>0 AND query LIKE '%SELECT csrf_digest FROM customer_session_csrf%')")
+                    .fetch_one(&pool).await.expect("csrf wait query");
+                if waiting { break; }
+                tokio::time::sleep(std::time::Duration::from_millis(5)).await;
+            }
+        }).await.expect("observed csrf table lock wait");
+        if expires_while_waiting {
+            time.0.store(44200, Ordering::SeqCst);
+        }
+        let result = task.await.expect("join");
+        if expires_while_waiting {
+            assert!(matches!(result, Err(guest_order_links::LinkError::Denied)));
+        } else {
+            assert!(matches!(
+                result,
+                Err(guest_order_links::LinkError::Unavailable)
+            ));
+        }
+        lock.commit().await.expect("release csrf table");
+        let after: (i64, i64, i64) = sqlx::query_as("SELECT (SELECT count(*) FROM guest_order_link_proofs), (SELECT count(*) FROM guest_order_link_proofs WHERE consumed_at IS NOT NULL OR consumed_account_id IS NOT NULL OR consumed_xid IS NOT NULL), (SELECT count(*) FROM customer_order_links)")
+            .fetch_one(&pool).await.expect("unchanged custody");
+        assert_eq!(after, before);
+        let proof_after: Vec<String> = sqlx::query_scalar(
+            "SELECT row_to_json(p)::text FROM guest_order_link_proofs p ORDER BY verifier",
+        )
+        .fetch_all(&pool)
+        .await
+        .expect("unchanged proof rows");
+        assert_eq!(proof_after, proof_before);
+        time.0.store(1100, Ordering::SeqCst);
+    }
+
     for expires_while_waiting in [false, true] {
         let mut lock = pool.begin().await.expect("lock transaction");
         sqlx::query("SELECT verifier FROM guest_order_link_proofs FOR UPDATE")
