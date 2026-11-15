@@ -844,6 +844,13 @@ payment state. Supervised search jobs, identity resolution, callbacks, late-paid
 stock recovery and separate finance/fulfilment transitions remain required.
 Loopback instruments are not provider sandbox acceptance or configured credentials.
 
+A private owner-scoped read validates the frozen order and attempt, then claims
+that attempt before checking its one dispatch start and exact reconciliation event.
+A surviving pre-dispatch cancellation alongside a start is invalid custody. Both
+held owner authorities are rechecked after any wait or source failure. The bounded,
+redacted result is a point-in-time local fact: it does not prove provider receipt,
+payment, cancellation rights or future eligibility, and installs no route or effect.
+
 The private test dispatch orchestration composes the committed one-use start,
 exact create, separate authenticated GET and minimal observation/event write. It
 uses the permit's original frozen attempt and the ID returned by that same create;
