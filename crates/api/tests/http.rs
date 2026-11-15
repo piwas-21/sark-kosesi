@@ -219,6 +219,21 @@ fn generated_contract_has_real_response_and_security() {
         value["paths"]["/api/guest/quotes/{id}"]["get"]["operationId"],
         "read_guest_quote"
     );
+    let order = &value["paths"]["/api/test/guest/orders"]["post"];
+    assert_eq!(order["operationId"], "test_guest_order_create");
+    assert_eq!(
+        order["responses"]["200"]["content"]["application/json"]["schema"]["$ref"],
+        "#/components/schemas/TestOrderReceipt"
+    );
+    for status in [
+        "400", "401", "403", "404", "409", "410", "413", "415", "429", "503", "504",
+    ] {
+        assert_eq!(
+            order["responses"][status]["content"]["application/json"]["schema"]["$ref"],
+            "#/components/schemas/ApiError",
+            "missing order response {status}"
+        );
+    }
 }
 #[sqlx::test(migrator = "MIGRATOR")]
 async fn authenticated_read_has_real_data_and_no_cache_leak(pool: PgPool) {

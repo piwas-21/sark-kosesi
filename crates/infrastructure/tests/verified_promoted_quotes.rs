@@ -717,3 +717,6 @@ async fn schema53_native_checkout_rejects_account_bound_quotes_but_accepts_guest
     let counts: (i64, i64, i64) = sqlx::query_as("SELECT (SELECT count(*) FROM checkout_orders),(SELECT count(*) FROM promotion_redemptions),(SELECT count(*) FROM commerce_outbox WHERE kind='checkout.order_created.v1')").fetch_one(&pool).await.expect("only guest checkout effects");
     assert_eq!(counts, (1, 1, 1));
 }
+
+#[path = "support/verified_quote_custody_waits.rs"]
+mod verified_quote_custody_waits;
