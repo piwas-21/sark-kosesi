@@ -10,20 +10,28 @@ import { chromium } from "@playwright/test";
 import { availablePort } from "../ports.mjs";
 
 if (process.env.APP_ENV !== "test") throw new Error("Requires test mode");
-const database = new URL(process.env.DATABASE_URL ?? "");
+if (process.env.PGOPTIONS !== undefined)
+  throw new Error("Invalid disposable PostgreSQL configuration");
+const rawDatabase = process.env.DATABASE_URL ?? "";
+let database;
+try {
+  database = new URL(rawDatabase);
+} catch {
+  throw new Error("Invalid disposable PostgreSQL configuration");
+}
 if (
-  !["postgres:", "postgresql:"].includes(database.protocol) ||
-  database.hostname !== "127.0.0.1" ||
-  database.username !== "p1_test" ||
-  !/^[A-Za-z0-9_-]{43}$/.test(database.password) ||
-  !database.port ||
-  database.pathname !== "/postgres" ||
-  database.search ||
-  database.hash
+  !/^postgresql:\/\/p1_test:[A-Za-z0-9_-]{43}@127\.0\.0\.1:[1-9][0-9]{0,4}\/postgres$/.test(
+    rawDatabase,
+  ) ||
+  database.port === "0" ||
+  Number(database.port) > 65535
 )
-  throw new Error("Requires an isolated loopback PostgreSQL database");
+  throw new Error("Invalid disposable PostgreSQL configuration");
 const directory = await mkdtemp(join(tmpdir(), "sark-guest-browser-"));
 const token = randomBytes(32).toString("hex");
+const disposableMarker = process.env.P1_POSTGRES_DISPOSABLE_MARKER ?? "";
+if (!/^[0-9a-f]{64}$/.test(disposableMarker))
+  throw new Error("Requires the disposable cluster marker");
 const clusterUrl = database.href;
 const fixtureName = `sark_guest_browser_${randomBytes(16).toString("hex")}`;
 const fixtureMarker = randomBytes(32).toString("hex");
@@ -208,22 +216,47 @@ try {
       ].includes(key)
     )
       delete env[key];
+  const testArgs = [
+    "test",
+    "--locked",
+    "-p",
+    "commerce-infrastructure",
+    "--test",
+    "guest_browser_fixture",
+    "--",
+    "--ignored",
+    "--exact",
+  ];
   await run(
     "cargo",
-    [
-      "test",
-      "--locked",
-      "-p",
-      "commerce-infrastructure",
-      "--test",
-      "guest_browser_fixture",
-      "--",
-      "--ignored",
-      "--exact",
-      "seed_guest_browser_database",
-    ],
+    [...testArgs, "verify_guest_browser_database_absent"],
     env,
   );
+  const wrongMarker = disposableMarker.startsWith("0")
+    ? "1".repeat(64)
+    : "0".repeat(64);
+  const denied = spawnSync(
+    "cargo",
+    [...testArgs, "seed_guest_browser_database"],
+    {
+      env: { ...env, P1_POSTGRES_DISPOSABLE_MARKER: wrongMarker },
+      encoding: "utf8",
+      maxBuffer: 1_000_000,
+    },
+  );
+  if (
+    denied.status === 0 ||
+    !`${denied.stdout ?? ""}${denied.stderr ?? ""}`.includes(
+      "cluster ownership marker mismatch",
+    )
+  )
+    throw new Error("Foreign cluster marker negative control failed");
+  await run(
+    "cargo",
+    [...testArgs, "verify_guest_browser_database_absent"],
+    env,
+  );
+  await run("cargo", [...testArgs, "seed_guest_browser_database"], env);
   await run("cargo", ["build", "--locked", "-p", "commerce-api"], env);
   const binary = resolve(
     process.env.CARGO_TARGET_DIR ?? "target",
@@ -233,6 +266,7 @@ try {
   delete apiEnv.GUEST_BROWSER_CLUSTER_URL;
   delete apiEnv.GUEST_BROWSER_DATABASE_MARKER;
   delete apiEnv.GUEST_BROWSER_DATABASE_NAME;
+  delete apiEnv.P1_POSTGRES_DISPOSABLE_MARKER;
   const child = spawn(binary, [], { env: apiEnv, stdio: "inherit" });
   children.push(child);
   let ready = false;

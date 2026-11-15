@@ -10,6 +10,10 @@ mod fixture;
 
 fn inputs() -> (String, String, String) {
     assert_eq!(std::env::var("APP_ENV").as_deref(), Ok("test"));
+    assert!(
+        std::env::vars_os().all(|(name, _)| !name.to_string_lossy().starts_with("PG")),
+        "inherited PostgreSQL options are forbidden"
+    );
     let url = std::env::var("DATABASE_URL").expect("fixture database");
     let name = std::env::var("GUEST_BROWSER_DATABASE_NAME").expect("fixture name");
     let marker = std::env::var("GUEST_BROWSER_DATABASE_MARKER").expect("fixture marker");
@@ -28,7 +32,16 @@ fn inputs() -> (String, String, String) {
                 .bytes()
                 .all(|b| b.is_ascii_digit() || (b'a'..=b'f').contains(&b))
     );
+    let parsed = url::Url::parse(&url).expect("database URL");
+    assert!(
+        parsed.query().is_none() && parsed.fragment().is_none(),
+        "database options are forbidden"
+    );
     let options: sqlx::postgres::PgConnectOptions = url.parse().expect("database URL");
+    assert!(
+        options.get_options().is_none(),
+        "database options are forbidden"
+    );
     assert_eq!(options.get_host(), "127.0.0.1");
     assert_eq!(options.get_username(), "p1_test");
     assert_eq!(options.get_database(), Some(name.as_str()));
@@ -60,12 +73,18 @@ async fn guarded_pool() -> PgPool {
     pool
 }
 
-#[tokio::test]
-#[ignore = "manual browser harness creates and owns a fresh named database"]
-async fn seed_guest_browser_database() {
-    let (url, name, marker) = inputs();
+async fn checked_cluster(url: &str) -> PgPool {
     let cluster_url = std::env::var("GUEST_BROWSER_CLUSTER_URL").expect("disposable cluster");
+    let parsed = url::Url::parse(&cluster_url).expect("cluster URL");
+    assert!(
+        parsed.query().is_none() && parsed.fragment().is_none(),
+        "cluster options are forbidden"
+    );
     let cluster: sqlx::postgres::PgConnectOptions = cluster_url.parse().expect("cluster URL");
+    assert!(
+        cluster.get_options().is_none(),
+        "cluster options are forbidden"
+    );
     let target: sqlx::postgres::PgConnectOptions = url.parse().expect("fixture URL");
     assert_eq!(cluster.get_host(), "127.0.0.1");
     assert_eq!(cluster.get_username(), "p1_test");
@@ -74,6 +93,46 @@ async fn seed_guest_browser_database() {
     let parent = PgPool::connect(&cluster_url)
         .await
         .expect("disposable cluster");
+    let cluster_marker =
+        std::env::var("P1_POSTGRES_DISPOSABLE_MARKER").expect("disposable cluster marker");
+    assert!(
+        cluster_marker.len() == 64
+            && cluster_marker
+                .bytes()
+                .all(|b| b.is_ascii_digit() || (b'a'..=b'f').contains(&b)),
+        "invalid cluster marker"
+    );
+    let actual: Option<String> =
+        sqlx::query_scalar("SELECT current_setting('sark.disposable_marker', true)")
+            .fetch_one(&parent)
+            .await
+            .expect("read disposable cluster marker");
+    assert!(
+        actual.as_deref() == Some(cluster_marker.as_str()),
+        "cluster ownership marker mismatch"
+    );
+    parent
+}
+
+#[tokio::test]
+#[ignore = "manual browser harness checks absence in its disposable cluster"]
+async fn verify_guest_browser_database_absent() {
+    let (url, name, _) = inputs();
+    let parent = checked_cluster(&url).await;
+    let present: bool =
+        sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM pg_database WHERE datname=$1)")
+            .bind(name)
+            .fetch_one(&parent)
+            .await
+            .expect("database absence");
+    assert!(!present, "fixture database already exists");
+}
+
+#[tokio::test]
+#[ignore = "manual browser harness creates and owns a fresh named database"]
+async fn seed_guest_browser_database() {
+    let (url, name, marker) = inputs();
+    let parent = checked_cluster(&url).await;
     // The validated random identifier is never supplied as SQL syntax unchecked.
     let create_database = format!("CREATE DATABASE {name}");
     sqlx::query(sqlx::AssertSqlSafe(create_database))
