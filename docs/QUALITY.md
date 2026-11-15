@@ -53,6 +53,10 @@ The required `Application gate` aggregates checks, browser and validated coverag
 
 Rust line/region coverage runs on the pinned stable release. Rust branch instrumentation currently requires nightly in cargo-llvm-cov: P1 must pin a separate tested nightly toolchain for the branch-coverage job and run `cargo +<pinned-nightly> llvm-cov --branch`. Production builds remain on stable. Missing branch data fails the coverage gate; do not report it as 100% or silently substitute line coverage. See the [upstream coverage requirements](https://github.com/taiki-e/cargo-llvm-cov#readme).
 
+Preference controls must remain disabled until client initialization. Hold the
+browser's hydration scripts to verify the initial theme and unavailable controls,
+then release them and exercise theme and locale changes with storage denied.
+
 The API migration-manifest CLI test runs without configuration or a database,
 compares the entire compiled output with independently hashed migration files,
 and rejects synthetic omissions, duplicates, altered checksums, wrong types and
