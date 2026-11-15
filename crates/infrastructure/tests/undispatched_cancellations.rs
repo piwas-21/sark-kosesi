@@ -348,3 +348,78 @@ async fn damaged_attempt_identifiers_cannot_create_or_replay_cancellation(pool: 
             .replayed
     );
 }
+
+#[sqlx::test(migrator = "MIGRATOR")]
+async fn expired_guest_cannot_learn_dispatch_conflict_after_real_attempt_wait(pool: PgPool) {
+    let (store, time, session, csrf, order) = payment::accepted(&pool).await;
+    let key = GuestCredential::from_session(&session).expect("owner");
+    let prepared = prepare_attempt(
+        &store,
+        &key,
+        &csrf,
+        "pay",
+        &payment::intent(&order),
+        &payment::config(),
+    )
+    .await
+    .expect("prepared attempt");
+    let expiry: i64 =
+        sqlx::query_scalar("SELECT expires_at FROM guest_sessions WHERE basket_id=$1")
+            .bind(&order.identity.basket_id)
+            .fetch_one(&pool)
+            .await
+            .expect("exact guest expiry");
+    let before = payment::counts(&pool).await;
+    let mut winner = pool.begin().await.expect("dispatch winner");
+    insert_dispatch(
+        &mut winner,
+        &order.identity.id,
+        &prepared.frozen.snapshot().binding.id,
+    )
+    .await
+    .expect("uncommitted dispatch");
+    let worker_store = store.clone();
+    let worker_key = GuestCredential::from_session(&session).expect("owner");
+    let order_id = order.identity.id.clone();
+    let worker_csrf = csrf.clone();
+    let worker = tokio::spawn(async move {
+        cancel_order(
+            &worker_store,
+            &worker_key,
+            &worker_csrf,
+            "cancel",
+            &order_id,
+        )
+        .await
+    });
+    waiting(&pool).await;
+    time.0.store(
+        u64::try_from(expiry).expect("bounded expiry"),
+        Ordering::SeqCst,
+    );
+    winner.commit().await.expect("dispatch commits");
+    assert!(matches!(
+        worker.await.expect("cancel task"),
+        Err(OrderStoreError::Denied)
+    ));
+    time.0.store(1500, Ordering::SeqCst);
+    assert!(
+        matches!(
+            cancel_order(&store, &key, &csrf, "cancel", &order.identity.id).await,
+            Err(OrderStoreError::Conflict)
+        ),
+        "live owner sees the same dispatch conflict"
+    );
+    let after = payment::counts(&pool).await;
+    assert_eq!(
+        (after.0, after.1, after.2, after.3, after.4),
+        (before.0, before.1 + 1, before.2, before.3, before.4)
+    );
+    assert_eq!(
+        sqlx::query_scalar::<_, i64>("SELECT count(*) FROM checkout_order_cancellations")
+            .fetch_one(&pool)
+            .await
+            .expect("no cancellation"),
+        0
+    );
+}

@@ -4,17 +4,47 @@ export type ClientOptions = {
     baseUrl: `${string}://packages` | (string & {});
 };
 
+export type AddressInput = {
+    city: string;
+    country: string;
+    line1: string;
+    line2?: string | null;
+    postcode: string;
+    recipient: string;
+    region?: string | null;
+};
+
 export type ApiError = {
     code: string;
 };
 
 export type Availability = 'in_stock' | 'out_of_stock';
 
+export type BuyerInput = {
+    email: string;
+    name: string;
+};
+
 export type CallbackForm = {
     /**
      * Opaque payment identifier, at most 256 UTF-8 bytes.
      */
     id: string;
+};
+
+export type CancellationRequest = {
+    /**
+     * Must be true to confirm the pre-dispatch cancellation.
+     */
+    confirmed: boolean;
+    /**
+     * Stable identifier for exact retries of this cancellation.
+     */
+    effect_key: string;
+};
+
+export type CancellationResponse = {
+    replayed: boolean;
 };
 
 export type Catalogue = {
@@ -250,11 +280,27 @@ export type TestOrderAmount = {
     vat_minor: string;
 };
 
+export type TestOrderInput = {
+    accepted_terms_version: string;
+    billing_address: AddressInput;
+    buyer: BuyerInput;
+    confirmed: boolean;
+    effect_key: string;
+    expected_basket_revision: number;
+    quote_id: string;
+    shipping_address: AddressInput;
+};
+
 export type TestOrderLine = {
     amounts: TestOrderAmount;
     quantity: number;
     sku: string;
     title: string;
+};
+
+export type TestOrderReceipt = {
+    id: string;
+    replayed: boolean;
 };
 
 export type TestRestockItem = {
@@ -871,6 +917,72 @@ export type TestCustomerLogoutResponses = {
 };
 
 export type TestCustomerLogoutResponse = TestCustomerLogoutResponses[keyof TestCustomerLogoutResponses];
+
+export type TestGuestOrderCreateData = {
+    body: TestOrderInput;
+    headers: {
+        Origin: string;
+        'x-csrf-token': string;
+    };
+    path?: never;
+    query?: never;
+    url: '/api/test/guest/orders';
+};
+
+export type TestGuestOrderCreateErrors = {
+    400: ApiError;
+    401: ApiError;
+    403: ApiError;
+    404: ApiError;
+    409: ApiError;
+    410: ApiError;
+    413: ApiError;
+    415: ApiError;
+    429: ApiError;
+    503: ApiError;
+    504: ApiError;
+};
+
+export type TestGuestOrderCreateError = TestGuestOrderCreateErrors[keyof TestGuestOrderCreateErrors];
+
+export type TestGuestOrderCreateResponses = {
+    200: TestOrderReceipt;
+};
+
+export type TestGuestOrderCreateResponse = TestGuestOrderCreateResponses[keyof TestGuestOrderCreateResponses];
+
+export type TestGuestCancelOrderData = {
+    body: CancellationRequest;
+    headers: {
+        Origin: string;
+        'x-csrf-token': string;
+    };
+    path: {
+        id: string;
+    };
+    query?: never;
+    url: '/api/test/guest/orders/{id}/cancellation';
+};
+
+export type TestGuestCancelOrderErrors = {
+    400: ApiError;
+    401: ApiError;
+    403: ApiError;
+    404: ApiError;
+    409: ApiError;
+    413: ApiError;
+    415: ApiError;
+    503: ApiError;
+    504: ApiError;
+};
+
+export type TestGuestCancelOrderError = TestGuestCancelOrderErrors[keyof TestGuestCancelOrderErrors];
+
+export type TestGuestCancelOrderResponses = {
+    200: CancellationResponse;
+};
+
+export type TestGuestCancelOrderResponse = TestGuestCancelOrderResponses[keyof TestGuestCancelOrderResponses];
 
 export type RedeemTestVerificationData = {
     body: RedeemRequest;

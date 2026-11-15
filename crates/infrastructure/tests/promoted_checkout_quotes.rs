@@ -496,3 +496,6 @@ async fn imported_v2_cannot_be_relabelled_as_legacy_by_replacing_the_envelope(po
             .replayed
     );
 }
+
+#[path = "support/quote_custody_waits.rs"]
+mod quote_custody_waits;
