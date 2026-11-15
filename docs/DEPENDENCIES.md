@@ -18,8 +18,8 @@ contracts remain separate and pending.
 | webpki-roots                                                                   | CDLA-Permissive-2.0                  | Trust-root data; preserve the agreement with redistributed data                                                                                                                  |
 | sharp/libvips optional native packages                                         | Apache-2.0 / LGPL-3.0-or-later / MIT | Unmodified dynamically loaded libraries. Preserve licence/source/relinking material when distributing runtime images; do not statically combine or modify without renewed review |
 
-ESLint 10.14.0 (MIT) retains the verified minimatch backport, and jsdom 31.0.0
-(MIT) runs the frontend unit tests under the pinned Node version.
+ESLint 10.15.0 (MIT) and jsdom 31.0.0 (MIT) run development lint and
+frontend unit tests under the pinned Node version.
 
 The private password credential module uses RustCrypto Argon2 0.6.0 and
 zeroize 1.9.1 under MIT or Apache-2.0, and unicode-normalization 0.1.26 under
@@ -98,43 +98,20 @@ configuration changes; the existing MIT/Apache-2.0 review applies.
 
 ## Development minimatch advisory
 
-`GHSA-g3hv-75wg-m249` is a moderate resource-exhaustion advisory affecting the
-locked `minimatch` 10.2.6 copy in ESLint and typescript-eslint. The replacement
-OpenAPI generator removes Redocly and its 5.1.9 copy. The exact installed lint
-backport below addresses the advisory in the maintained lint entrypoint.
-The advisory's fix is 11.0.1, outside the installed parents' declared major ranges.
-Current compatible parent metadata still selects those older major ranges.
-See the [reviewed advisory](https://github.com/advisories/GHSA-g3hv-75wg-m249).
+ESLint 10.15.0 and its `@eslint/config-array` 0.23.6 dependency select
+`minimatch` 11.0.8. This release fixes both
+[GHSA-g3hv-75wg-m249](https://github.com/isaacs/minimatch/security/advisories/GHSA-g3hv-75wg-m249)
+and [GHSA-c859-jr93-m5j4](https://github.com/isaacs/minimatch/security/advisories/GHSA-c859-jr93-m5j4).
+The upstream fix replaces the former local mutation of minimatch 10.2.6.
 
-The prior development-only exception expired at 2026-11-03T00:00:00Z; it does not authorize continued affected work. No replacement exception is recorded.
-The lint entrypoint applies a development-only backport of upstream minimatch
-[commit 77a0f5c](https://github.com/isaacs/minimatch/commit/77a0f5c4b80bdc641c3c930a1d9edf5ad2db57f8)
-to the locked 10.2.6 CommonJS and ESM distributions before loading ESLint. It
-checks original and patched SHA-256 digests, package metadata, both file states
-and the current lint consumers' CommonJS resolution; unknown bytes, mixed states, symlinks
-or unexpected consumers fail the lint gate. An interrupted patch requires a
-fresh `npm ci --ignore-scripts`. The normal tooling tests exercise both module
-formats, bounded expansion, healthy matching and rejection controls. This alters
-only the local installed package and does not change npm's lock or audit result.
-
-The normal npm audit still reports 11 propagated moderate findings against the
-registry version. The lock and audit retain those findings. No audit waiver or
-forced-major override is used. The maintained lint command rejects additional
-locked minimatch copies or consumers and requires the verified backport before
-loading ESLint. Re-evaluate the patch and dependency closure when a compatible
-upstream release lands. Production release requires a fresh dependency and image
-review.
-
-The separate [GHSA-c859-jr93-m5j4](https://github.com/isaacs/minimatch/security/advisories/GHSA-c859-jr93-m5j4)
-also affects the locked development copy, `minimatch` 10.2.6: `escape()` can
-produce a glob with unintended matching semantics. The backport above addresses
-GHSA-g3hv-75wg-m249 and does not fix this `escape()` advisory. Review of the
-installed locked consumers found ESLint and `@eslint/config-array` constructing
-`Minimatch`, and `@typescript-eslint/typescript-estree` calling `minimatch()`;
-no current call to `escape()` was identified in those consumers or the tracked
-application and lint paths. Recheck usage and the advisory on dependency, lint
-configuration or build-path changes. This is a source and installed-graph review;
-the runtime image has not been inspected for this assessment.
+`@typescript-eslint/typescript-estree` 8.72.2 still declares minimatch `^10.2.2`.
+A narrowly scoped npm override selects 11.0.8 for that development-only parser;
+this crosses the declared major range and requires a compatibility check. The
+parser currently calls the exported `minimatch()` function with glob patterns.
+Revisit and remove the override when typescript-eslint supports a fixed minimatch.
+Minimatch and its new `@isaacs/nonrecursive-glob-match` helper use the already
+reviewed BlueOak-1.0.0 licence. The lock retains package integrity hashes; release
+still requires fresh dependency and image review and distribution notices.
 
 The contract generator uses `@hey-api/openapi-ts` 0.99.0 (MIT) for schema and
 parameter types. The upstream parser 1.4.4 pins `js-yaml` 4.2.0;
