@@ -949,8 +949,10 @@ redact provider identity and perform no provider request.
 
 For optional synchronizer custody, use real PostgreSQL to verify exact session
 and proof binding, immutable digest, wrong and other-session proofs, old-schema
-upgrade, expiration, rotation and competing revocations. Existing bearer-only
-operations must remain compatible. These tests do not establish HTTP CSRF policy.
+upgrade, expiration, rotation and competing revocations. Observe an actual
+synchronizer-table lock timeout and distinguish live storage failure from expiry,
+with unchanged session and outbox state. Existing bearer-only operations must
+remain compatible. These tests do not establish HTTP CSRF policy.
 
 Use isolated PostgreSQL with real verified accounts and current password
 hashes. Check wrong or missing credentials, verifier domains, reset racing
