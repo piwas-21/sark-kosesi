@@ -1,7 +1,7 @@
 //! Explicit test-only GET supervisor; no environment key enters logs or DB custody.
 use commerce_infrastructure::{
     mollie::{ReconciliationClient, TestCredential},
-    payment_attempts::reconciliation::{Batch, Job, read_job, run_batch},
+    payment_attempts::reconciliation::{Batch, read_job, run_batch},
     runtime::{SecureIdentifiers, SystemClock},
 };
 use sqlx::PgPool;
@@ -64,100 +64,27 @@ pub(super) async fn inspect(pool: &PgPool, attempt: &str) -> Result<()> {
         .await
         .map_err(|_| Error::other("payment recovery checkpoint unavailable"))?;
     if let Some(job) = job {
-        report_checkpoint(&job);
+        tracing::info!(
+            code = "payment_recovery_checkpoint",
+            state = "present",
+            phase = ?job.phase,
+            review_reason = ?job.review_reason,
+            generation = job.generation,
+            resume_revision = job.resume_revision,
+            due_at = job.due_at,
+            lease_until = ?job.lease_until,
+            polls = job.polls,
+            failures = job.failures,
+        );
     } else {
         tracing::info!(code = "payment_recovery_checkpoint", state = "absent");
     }
     Ok(())
 }
 
-fn report_checkpoint(job: &Job) {
-    tracing::info!(
-        code = "payment_recovery_checkpoint",
-        state = "present",
-        phase = ?job.phase,
-        review_reason = ?job.review_reason,
-        generation = job.generation,
-        resume_revision = job.resume_revision,
-        due_at = job.due_at,
-        lease_until = ?job.lease_until,
-        polls = job.polls,
-        failures = job.failures,
-    );
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
-    use commerce_infrastructure::payment_attempts::reconciliation::{Phase, ReviewReason};
-    use std::io::Write;
-    use std::sync::{Arc, Mutex};
-
-    struct LogBuffer(Arc<Mutex<Vec<u8>>>);
-    impl Write for LogBuffer {
-        fn write(&mut self, bytes: &[u8]) -> Result<usize> {
-            self.0.lock().expect("checkpoint log").write(bytes)
-        }
-
-        fn flush(&mut self) -> Result<()> {
-            Ok(())
-        }
-    }
-
-    #[test]
-    fn checkpoint_report_contains_only_closed_state_and_operational_counts() {
-        let job = Job {
-            attempt_id: "1".repeat(32),
-            source_event_id: "2".repeat(32),
-            page_id: Some("3".repeat(32)),
-            created_at: 1500,
-            updated_at: 1540,
-            due_at: 1546,
-            generation: 23,
-            resume_revision: 2,
-            lease_until: None,
-            phase: Phase::NeedsReview,
-            candidate_index: 1,
-            operation: 22,
-            polls: 3,
-            failures: 5,
-            review_reason: Some(ReviewReason::RetryExhausted),
-        };
-        let buffer = Arc::new(Mutex::new(Vec::new()));
-        let capture = Arc::clone(&buffer);
-        let subscriber = tracing_subscriber::fmt()
-            .json()
-            .without_time()
-            .with_writer(move || LogBuffer(Arc::clone(&capture)))
-            .finish();
-        tracing::subscriber::with_default(subscriber, || report_checkpoint(&job));
-        let output = buffer.lock().expect("checkpoint log");
-        let message = std::str::from_utf8(&output).expect("JSON log");
-        for field in [
-            r#""state":"present""#,
-            r#""phase":"NeedsReview""#,
-            r#""review_reason":"Some(RetryExhausted)""#,
-            r#""generation":23"#,
-            r#""resume_revision":2"#,
-            r#""due_at":1546"#,
-            r#""lease_until":"None""#,
-            r#""polls":3"#,
-            r#""failures":5"#,
-        ] {
-            assert!(message.contains(field), "missing checkpoint field {field}");
-        }
-        for private in [
-            job.attempt_id.as_str(),
-            job.source_event_id.as_str(),
-            job.page_id.as_deref().expect("fixture page"),
-        ] {
-            assert!(
-                !message.contains(private),
-                "checkpoint exposed an identifier"
-            );
-        }
-    }
-
     #[test]
     fn settings_accept_only_bounded_test_credentials_and_redacted_outcomes() {
         let key = format!("test_{}", "synthetic".repeat(4));

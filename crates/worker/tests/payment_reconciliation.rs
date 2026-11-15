@@ -1,7 +1,15 @@
 //! Worker command rejects production and uninstalled/live keys before provider I/O.
-use commerce_infrastructure::MIGRATOR;
-use sqlx::{ConnectOptions, PgPool};
+#[allow(dead_code)]
+#[path = "../../infrastructure/tests/support/payment_fixture.rs"]
+mod payment_fixture;
+use commerce_infrastructure::{
+    MIGRATOR,
+    guest_baskets::GuestCredential,
+    payment_attempts::{DispatchOutcome, prepare_attempt, start_dispatch},
+};
+use sqlx::{ConnectOptions, Executor, PgPool};
 use std::process::{Command, Output};
+use std::sync::atomic::AtomicU64;
 fn command() -> Command {
     let mut command = worker();
     command.arg("--reconcile-payments");
@@ -69,6 +77,117 @@ async fn missing_checkpoint_is_reported_without_provider_configuration_or_effect
         .await
         .expect("no recovery jobs written");
     assert_eq!(count, 0);
+}
+
+#[sqlx::test(migrator = "MIGRATOR")]
+async fn stored_checkpoint_is_redacted_and_bound_to_dispatch_evidence(pool: PgPool) {
+    let (store, clock, session, csrf, order) = payment_fixture::accepted(&pool).await;
+    let guest = GuestCredential::from_session(&session).expect("fixture owner");
+    let config = payment_fixture::config();
+    let prepared = prepare_attempt(
+        &store,
+        &guest,
+        &csrf,
+        "inspection-fixture",
+        &payment_fixture::intent(&order),
+        &config,
+    )
+    .await
+    .expect("prepared payment");
+    let binding = &prepared.frozen.snapshot().binding;
+    let ids = payment_fixture::Ids(AtomicU64::new(20000));
+    assert!(matches!(
+        start_dispatch(&pool, clock.as_ref(), &ids, &binding.id, &config).await,
+        Ok(DispatchOutcome::Start(_))
+    ));
+    let source: String = sqlx::query_scalar(
+        "SELECT id FROM commerce_outbox WHERE kind='payment.reconciliation_required.v1'",
+    )
+    .fetch_one(&pool)
+    .await
+    .expect("committed dispatch event");
+    sqlx::query(
+        "INSERT INTO payment_reconciliation_jobs(attempt_id,source_event_id,created_at,updated_at,due_at)
+         VALUES ($1,$2,1500,1500,1500)",
+    )
+    .bind(&binding.id)
+    .bind(&source)
+    .execute(&pool)
+    .await
+    .expect("guarded initial checkpoint");
+    pool.execute(
+        "UPDATE payment_reconciliation_jobs SET phase='needs_review',review_reason='unresolved',
+         updated_at=1501,due_at=1501,generation=1,operation=1",
+    )
+    .await
+    .expect("guarded review checkpoint");
+
+    let snapshot = || async {
+        sqlx::query_scalar::<_, String>(
+            "SELECT to_jsonb(j)::text FROM payment_reconciliation_jobs j",
+        )
+        .fetch_one(&pool)
+        .await
+        .expect("read checkpoint snapshot")
+    };
+    let before = snapshot().await;
+    let database = pool.connect_options().to_url_lossy().to_string();
+    let inspect = || {
+        worker()
+            .args(["--inspect-payment-recovery", &binding.id])
+            .env("DATABASE_URL", &database)
+            .output()
+            .expect("worker inspection")
+    };
+    let output = inspect();
+    assert!(output.status.success());
+    let message = log(&output);
+    for field in [
+        r#""code":"payment_recovery_checkpoint""#,
+        r#""state":"present""#,
+        r#""phase":"NeedsReview""#,
+        r#""review_reason":"Some(Unresolved)""#,
+        r#""generation":1"#,
+        r#""resume_revision":0"#,
+        r#""due_at":1501"#,
+        r#""lease_until":"None""#,
+        r#""polls":0"#,
+        r#""failures":0"#,
+    ] {
+        assert!(message.contains(field), "missing checkpoint field {field}");
+    }
+    assert!(
+        snapshot().await == before,
+        "inspection must preserve the checkpoint"
+    );
+
+    // Simulate damaged custody in this disposable database after the positive control.
+    pool.execute(
+        "ALTER TABLE commerce_outbox DISABLE TRIGGER guard_commerce_outbox;
+         UPDATE commerce_outbox SET payload='{}' WHERE kind='payment.reconciliation_required.v1';
+         ALTER TABLE commerce_outbox ENABLE TRIGGER guard_commerce_outbox",
+    )
+    .await
+    .expect("damage fixture event");
+    let damaged = inspect();
+    assert!(!damaged.status.success());
+    let diagnostic = log(&damaged);
+    assert!(diagnostic.contains("payment recovery checkpoint unavailable"));
+    assert!(!diagnostic.contains("payment_recovery_checkpoint"));
+    assert!(
+        snapshot().await == before,
+        "inspection must preserve the damaged checkpoint"
+    );
+    for private in [database.as_str(), &binding.id, &binding.profile.id, &source] {
+        assert!(
+            !message.contains(private),
+            "checkpoint exposed a private value"
+        );
+        assert!(
+            !diagnostic.contains(private),
+            "diagnostic exposed a private value"
+        );
+    }
 }
 fn log(output: &Output) -> String {
     format!(
