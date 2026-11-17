@@ -44,9 +44,10 @@ pub async fn inspect(
     // Do not expose state-dependent outcomes until fresh authority is rechecked.
     let result = inspect_locked(&mut access.tx, id).await;
     access.check_time(&observed).map_err(staff)?;
-    let result = result?;
-    access.tx.rollback().await?;
-    Ok(result)
+    // Dropping the read transaction schedules rollback without another await
+    // between the final authority check and returning the detached result.
+    drop(access);
+    result
 }
 
 async fn inspect_locked(

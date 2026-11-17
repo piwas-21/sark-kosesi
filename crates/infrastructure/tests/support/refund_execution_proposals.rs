@@ -1156,3 +1156,127 @@ async fn inspection_rechecks_mfa_after_waiting_for_payment_claim(pool: PgPool) {
     );
     assert_eq!(counts(&pool).await, (1, 1));
 }
+
+#[sqlx::test(migrator = "MIGRATOR")]
+async fn inspection_rejects_damaged_attempt_before_and_after_claim(pool: PgPool) {
+    let f = accepted(&pool, false, true).await;
+    let (reservation, proof, through) = reservation(&pool, &f).await;
+    let token = staff(&pool, "inspection-damage", 95, "refund.execution.prepare").await;
+    let proposal = propose(
+        &pool,
+        &token,
+        f.time.as_ref(),
+        f.ids.as_ref(),
+        request(
+            &f.order.identity.id,
+            &reservation,
+            &proof,
+            through,
+            "inspect-damage",
+        ),
+    )
+    .await
+    .expect("genuine proposal");
+    let original = f.frozen.snapshot().binding.id.clone();
+    assert!(
+        inspect(&pool, &token, f.time.as_ref(), &proposal.id)
+            .await
+            .expect("healthy source")
+            .is_some()
+    );
+
+    // Only this disposable database permits simulated damaged imported state.
+    pool.execute("ALTER TABLE refund_execution_proposals DISABLE TRIGGER ALL")
+        .await
+        .expect("allow simulated corruption");
+    sqlx::query("UPDATE refund_execution_proposals SET attempt_id='malformed' WHERE id=$1")
+        .bind(&proposal.id)
+        .execute(&pool)
+        .await
+        .expect("damage attempt identifier");
+    assert!(matches!(
+        inspect(&pool, &token, f.time.as_ref(), &proposal.id).await,
+        Err(ProposalError::InvalidStoredData)
+    ));
+    sqlx::query("UPDATE refund_execution_proposals SET attempt_id=$2 WHERE id=$1")
+        .bind(&proposal.id)
+        .bind(&original)
+        .execute(&pool)
+        .await
+        .expect("restore attempt");
+    assert!(
+        inspect(&pool, &token, f.time.as_ref(), &proposal.id)
+            .await
+            .expect("restored source")
+            .is_some()
+    );
+
+    let mut blocker = pool.begin().await.expect("attempt blocker");
+    sqlx::query("SELECT id FROM payment_attempts WHERE id=$1 FOR UPDATE")
+        .bind(&original)
+        .execute(&mut *blocker)
+        .await
+        .expect("claim attempt");
+    let worker_pool = pool.clone();
+    let worker_clock = f.time.clone();
+    let id = proposal.id.clone();
+    let worker = tokio::spawn(async move {
+        let result = inspect(&worker_pool, &token, worker_clock.as_ref(), &id).await;
+        (token, result)
+    });
+    wait_for_attempt_claim(&pool).await;
+    sqlx::query("UPDATE refund_execution_proposals SET attempt_id=$2 WHERE id=$1")
+        .bind(&proposal.id)
+        .bind("ffffffffffffffffffffffffffffffff")
+        .execute(&mut *blocker)
+        .await
+        .expect("replace attempt while inspector waits");
+    blocker.commit().await.expect("release changed source");
+    let (token, result) = worker.await.expect("inspector completed");
+    assert!(matches!(result, Err(ProposalError::InvalidStoredData)));
+    sqlx::query("UPDATE refund_execution_proposals SET attempt_id=$2 WHERE id=$1")
+        .bind(&proposal.id)
+        .bind(&original)
+        .execute(&pool)
+        .await
+        .expect("restore attempt");
+    assert!(
+        inspect(&pool, &token, f.time.as_ref(), &proposal.id)
+            .await
+            .expect("restored custody")
+            .is_some()
+    );
+
+    let mut blocker = pool.begin().await.expect("second attempt blocker");
+    sqlx::query("SELECT id FROM payment_attempts WHERE id=$1 FOR UPDATE")
+        .bind(&original)
+        .execute(&mut *blocker)
+        .await
+        .expect("claim attempt again");
+    let worker_pool = pool.clone();
+    let worker_clock = f.time.clone();
+    let id = proposal.id.clone();
+    let worker = tokio::spawn(async move {
+        let result = inspect(&worker_pool, &token, worker_clock.as_ref(), &id).await;
+        (token, result)
+    });
+    wait_for_attempt_claim(&pool).await;
+    sqlx::query("DELETE FROM refund_execution_proposals WHERE id=$1")
+        .bind(&proposal.id)
+        .execute(&mut *blocker)
+        .await
+        .expect("remove row while inspector waits");
+    blocker.commit().await.expect("release missing source");
+    let (token, result) = worker.await.expect("inspector completed");
+    assert!(matches!(result, Err(ProposalError::InvalidStoredData)));
+    pool.execute("ALTER TABLE refund_execution_proposals ENABLE TRIGGER ALL")
+        .await
+        .expect("restore all guards");
+    assert!(
+        inspect(&pool, &token, f.time.as_ref(), &proposal.id)
+            .await
+            .expect("now absent")
+            .is_none()
+    );
+    assert_eq!(counts(&pool).await, (0, 1));
+}
