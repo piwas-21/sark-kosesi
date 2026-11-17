@@ -18,7 +18,7 @@ use sha2::{Digest, Sha256};
 use sqlx::{Executor, PgConnection, PgPool};
 use std::sync::{
     Arc,
-    atomic::{AtomicBool, AtomicU64, AtomicUsize, Ordering},
+    atomic::{AtomicBool, AtomicI32, AtomicU64, AtomicUsize, Ordering},
 };
 
 const ADDRESS: &str = "Case+tag@EXAMPLE.COM";
@@ -287,6 +287,72 @@ fn challenge_wait_sql() -> &'static str {
 async fn consumption_queued_before_fresh_open_denies_callback_but_keeps_start(pool: PgPool) {
     let (time, key, verifier) = fixture(&pool).await;
     let token = test_bearer(&pool, &verifier).await;
+    let opener_pid = Arc::new(AtomicI32::new(0));
+    let consumer_pid = Arc::new(AtomicI32::new(0));
+    let start_committed = Arc::new(tokio::sync::Notify::new());
+    let resume_opening = Arc::new(tokio::sync::Notify::new());
+    let gate_timed_out = Arc::new(AtomicBool::new(false));
+    let first_release = Arc::new(AtomicBool::new(true));
+    let opening_pool = sqlx::postgres::PgPoolOptions::new()
+        .max_connections(1)
+        .after_connect({
+            let opener_pid = opener_pid.clone();
+            move |connection, _| {
+                let opener_pid = opener_pid.clone();
+                Box::pin(async move {
+                    let pid: i32 = sqlx::query_scalar("SELECT pg_backend_pid()")
+                        .fetch_one(connection)
+                        .await?;
+                    opener_pid.store(pid, Ordering::SeqCst);
+                    Ok(())
+                })
+            }
+        })
+        .after_release({
+            let start_committed = start_committed.clone();
+            let resume_opening = resume_opening.clone();
+            let gate_timed_out = gate_timed_out.clone();
+            let first_release = first_release.clone();
+            move |_, _| {
+                let start_committed = start_committed.clone();
+                let resume_opening = resume_opening.clone();
+                let gate_timed_out = gate_timed_out.clone();
+                let first_release = first_release.clone();
+                Box::pin(async move {
+                    if first_release.swap(false, Ordering::SeqCst) {
+                        start_committed.notify_one();
+                        if tokio::time::timeout(
+                            std::time::Duration::from_secs(15),
+                            resume_opening.notified(),
+                        )
+                        .await
+                        .is_err()
+                        {
+                            gate_timed_out.store(true, Ordering::SeqCst);
+                            return Ok(false);
+                        }
+                    }
+                    Ok(true)
+                })
+            }
+        })
+        .connect_lazy_with(pool.connect_options().as_ref().clone());
+    let consuming_pool = sqlx::postgres::PgPoolOptions::new()
+        .max_connections(1)
+        .after_connect({
+            let consumer_pid = consumer_pid.clone();
+            move |connection, _| {
+                let consumer_pid = consumer_pid.clone();
+                Box::pin(async move {
+                    let pid: i32 = sqlx::query_scalar("SELECT pg_backend_pid()")
+                        .fetch_one(connection)
+                        .await?;
+                    consumer_pid.store(pid, Ordering::SeqCst);
+                    Ok(())
+                })
+            }
+        })
+        .connect_lazy_with(pool.connect_options().as_ref().clone());
     pool.execute("CREATE FUNCTION test_opening_start_wait() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN PERFORM pg_advisory_xact_lock(1936876990,1); RETURN NEW; END; $$; CREATE TRIGGER z_test_opening_start_wait AFTER INSERT ON email_verification_delivery_starts FOR EACH ROW EXECUTE FUNCTION test_opening_start_wait()").await.expect("start gate");
     let mut gate = pool.begin().await.expect("gate");
     sqlx::query("SELECT pg_advisory_xact_lock(1936876990,1)")
@@ -295,7 +361,7 @@ async fn consumption_queued_before_fresh_open_denies_callback_but_keeps_start(po
         .expect("hold");
     let calls = Arc::new(AtomicUsize::new(0));
     let opening = tokio::spawn({
-        let pool = pool.clone();
+        let pool = opening_pool.clone();
         let time = time.clone();
         let key = key.clone();
         let calls = calls.clone();
@@ -308,7 +374,7 @@ async fn consumption_queued_before_fresh_open_denies_callback_but_keeps_start(po
     });
     wait_for(&pool, start_gate_sql()).await;
     let consuming = tokio::spawn({
-        let pool = pool.clone();
+        let pool = consuming_pool.clone();
         let time = time.clone();
         async move {
             email_verification::consume(
@@ -322,19 +388,62 @@ async fn consumption_queued_before_fresh_open_denies_callback_but_keeps_start(po
             .await
         }
     });
-    wait_for(&pool, challenge_wait_sql()).await;
+    // The consumer must actually wait on this opening transaction's challenge lock.
+    let mut monitor = pool.acquire().await.expect("lock monitor");
+    tokio::time::timeout(std::time::Duration::from_secs(2), async {
+        while consumer_pid.load(Ordering::SeqCst) == 0 {
+            tokio::task::yield_now().await;
+        }
+    })
+    .await
+    .expect("consumer backend deadline");
+    let blocker = opener_pid.load(Ordering::SeqCst);
+    assert!(blocker > 0, "opening backend selected");
+    wait_for_blocked(
+        &mut monitor,
+        blocker,
+        consumer_pid.load(Ordering::SeqCst),
+        "consumption before start commit",
+    )
+    .await;
+    drop(monitor);
     gate.rollback().await.expect("release start");
-    assert_eq!(consuming.await.expect("consume task"), Ok(()));
-    assert!(matches!(
-        opening.await.expect("opening task"),
-        Err(VerificationError::Denied)
-    ));
+    tokio::time::timeout(
+        std::time::Duration::from_secs(5),
+        start_committed.notified(),
+    )
+    .await
+    .expect("opening connection released after start");
+    assert_eq!(
+        starts(&pool).await,
+        1,
+        "start committed before fresh opening"
+    );
+    assert_eq!(
+        tokio::time::timeout(std::time::Duration::from_secs(5), consuming)
+            .await
+            .expect("consumption deadline")
+            .expect("consume task"),
+        Ok(())
+    );
+    resume_opening.notify_one();
+    let outcome = opening.await.expect("opening task");
+    assert!(
+        matches!(outcome, Err(VerificationError::Denied)),
+        "opening after committed consumption: {outcome:?}"
+    );
+    assert!(
+        !gate_timed_out.load(Ordering::SeqCst),
+        "opening gate timed out"
+    );
     assert_eq!(calls.load(Ordering::SeqCst), 0);
     assert_eq!(
         starts(&pool).await,
         1,
         "start precedes subsequent consumption"
     );
+    opening_pool.close().await;
+    consuming_pool.close().await;
 }
 
 #[sqlx::test(migrator = "MIGRATOR")]
