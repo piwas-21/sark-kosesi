@@ -99,6 +99,23 @@ execute the same worker configuration, verified GET orchestration and redacted
 reporting code. No package version, production dependency or provider-origin
 configuration changes; the existing MIT/Apache-2.0 review applies.
 
+## Frontend test runner and coverage
+
+The TypeScript test suite uses the pinned Node test runner with tsx 4.23.15
+for TypeScript and React JSX. The coverage transformer uses the exact esbuild
+0.28.2 dependency. Chai 6.3.0 and the standalone `@vitest/expect` and
+`@vitest/spy` packages at 5.1.0 retain the matchers and spies. jsdom provides the
+DOM. Monocart Coverage Reports 3.2.1 converts V8 coverage into source-mapped
+LCOV, including maintained files that no test loaded. The existing aggregate,
+per-package and critical-file thresholds still apply. The added packages use
+MIT licences and are development dependencies. The DOM declarations come from
+`@types/jsdom` 30.0.0 under MIT.
+
+Oxlint replaces the former TypeScript-eslint chain. The Node runner replaces
+Vitest and Vite. Both changes were needed to remove picomatch from the locked
+dependency tree. The required npm audit still checks all dependencies against
+the high threshold. [GitHub advisory](https://github.com/advisories/GHSA-fc5q-39xc-vjpf)
+
 ## Development minimatch advisory
 
 ESLint 10.15.0 and its `@eslint/config-array` 0.23.6 dependency select

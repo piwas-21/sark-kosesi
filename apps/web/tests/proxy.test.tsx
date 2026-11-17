@@ -1,4 +1,9 @@
-import { afterEach, it, expect, vi } from "vitest";
+import {
+  afterEach,
+  it,
+  expect,
+  vi,
+} from "../../../tests/application/unit-runtime.mjs";
 import { NextRequest } from "next/server";
 import { proxy } from "../src/proxy";
 import { publicStagingRead } from "../src/lib/staging-access";

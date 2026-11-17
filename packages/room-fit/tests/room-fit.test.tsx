@@ -1,4 +1,8 @@
-import { describe, expect, it } from "vitest";
+import {
+  describe,
+  expect,
+  it,
+} from "../../../tests/application/unit-runtime.mjs";
 import { assessRoomFit, measurementNanometres } from "../src/index";
 
 const room = { width: "500", depth: "400" };
