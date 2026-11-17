@@ -18,8 +18,11 @@ contracts remain separate and pending.
 | webpki-roots                                                                   | CDLA-Permissive-2.0                  | Trust-root data; preserve the agreement with redistributed data                                                                                                                  |
 | sharp/libvips optional native packages                                         | Apache-2.0 / LGPL-3.0-or-later / MIT | Unmodified dynamically loaded libraries. Preserve licence/source/relinking material when distributing runtime images; do not statically combine or modify without renewed review |
 
-ESLint 10.15.0 (MIT) and jsdom 31.0.0 (MIT) run development lint and
-frontend unit tests under the pinned Node version.
+ESLint 10.15.0 (MIT) lints JavaScript. Oxlint 1.94.0 (MIT) lints TypeScript
+and TSX with an explicit rule set and a separate TypeScript compiler check.
+The lint policy tests exercise each configured rule and check that generated
+files and the design specimen are excluded. jsdom 31.0.0 (MIT) supplies the
+DOM for frontend unit tests under the pinned Node version.
 
 The private password credential module uses RustCrypto Argon2 0.6.0 and
 zeroize 1.9.1 under MIT or Apache-2.0, and unicode-normalization 0.1.26 under
@@ -45,8 +48,8 @@ no production deployment; a green metadata allowlist alone does not establish
 compliance of a future distributed image.
 
 The lint and test updates keep TypeScript on 5.9.3 and Node declarations on
-the Node 24 line. Globals 17.14.0 and typescript-eslint 8.72.2 keep the existing
-MIT licence and minimatch consumers. Ruff 0.17.4 and coverage.py 7.17.2 remain
+the Node 24 line. Globals 17.14.0 supplies the existing JavaScript globals
+under the MIT licence. Ruff 0.17.4 and coverage.py 7.17.2 remain
 hash-pinned developer tools. Ruff uses the MIT licence and coverage.py uses
 Apache-2.0.
 
@@ -104,14 +107,12 @@ ESLint 10.15.0 and its `@eslint/config-array` 0.23.6 dependency select
 and [GHSA-c859-jr93-m5j4](https://github.com/isaacs/minimatch/security/advisories/GHSA-c859-jr93-m5j4).
 The upstream fix replaces the former local mutation of minimatch 10.2.6.
 
-`@typescript-eslint/typescript-estree` 8.72.2 still declares minimatch `^10.2.2`.
-A narrowly scoped npm override selects 11.0.8 for that development-only parser;
-this crosses the declared major range and requires a compatibility check. The
-parser currently calls the exported `minimatch()` function with glob patterns.
-Revisit and remove the override when typescript-eslint supports a fixed minimatch.
-Minimatch and its new `@isaacs/nonrecursive-glob-match` helper use the already
-reviewed BlueOak-1.0.0 licence. The lock retains package integrity hashes; release
-still requires fresh dependency and image review and distribution notices.
+The TypeScript lint toolchain no longer installs `@typescript-eslint/typescript-estree`
+or its former minimatch override. The JavaScript lint toolchain retains positive
+and negative controls for its installed `minimatch` interfaces. Minimatch and its
+`@isaacs/nonrecursive-glob-match` helper use the reviewed BlueOak-1.0.0 licence.
+The lock retains package integrity hashes. Release still requires fresh dependency
+and image review and distribution notices.
 
 The contract generator uses `@hey-api/openapi-ts` 0.99.0 (MIT) for schema and
 parameter types. The upstream parser 1.4.4 pins `js-yaml` 4.2.0;
