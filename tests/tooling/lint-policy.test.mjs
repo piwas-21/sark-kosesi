@@ -40,6 +40,11 @@ const cases = [
   ["no-unsafe-function-type", "let x: Function; console.log(x);"],
   ["no-unused-expressions", "declare const x: number; x;"],
   ["no-unused-vars", "const unused = 2;"],
+  ["no-unused-vars", "const _unused = 2;"],
+  [
+    "no-unused-vars",
+    "export function probe(_unused: string): string { return ''; }",
+  ],
   ["no-wrapper-object-types", "let x: String; console.log(x);"],
   ["prefer-as-const", 'let x = "x" as "x"; console.log(x);'],
   [
