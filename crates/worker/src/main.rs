@@ -209,4 +209,5 @@ async fn main() -> Result<(), std::io::Error> {
 }
 
 #[cfg(test)]
+#[path = "../tests/support/command_modes.rs"]
 mod command_modes_tests;
