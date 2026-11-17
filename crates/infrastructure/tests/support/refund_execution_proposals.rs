@@ -3,7 +3,7 @@ use super::order_stock_cases::fixture::{self, accepted, footprint, observe};
 use crate::{
     MIGRATOR,
     payment_attempts::recognition::recognize,
-    refund_execution_proposals::{ProposalError, ProposalRequest, propose},
+    refund_execution_proposals::{ProposalError, ProposalRequest, inspect, propose},
     refund_reservations::{RefundLine, RefundRequest, reserve},
     staff_access::SessionToken,
 };
@@ -982,4 +982,177 @@ async fn replay_fails_closed_when_committed_reciprocal_event_is_missing(pool: Pg
         "a detached receipt cannot be replayed"
     );
     assert_eq!(counts(&pool).await, (1, 0));
+}
+
+#[sqlx::test(migrator = "MIGRATOR")]
+async fn inspection_requires_authority_and_complete_historical_custody(pool: PgPool) {
+    let f = accepted(&pool, false, true).await;
+    let (reservation, proof, through) = reservation(&pool, &f).await;
+    let preparer = staff(&pool, "inspection-preparer", 95, "refund.execution.prepare").await;
+    let reviewer = staff(&pool, "inspection-reviewer", 96, "refund.execution.prepare").await;
+    let denied = staff(&pool, "inspection-denied", 97, "refund.prepare").await;
+    let proposal = propose(
+        &pool,
+        &preparer,
+        f.time.as_ref(),
+        f.ids.as_ref(),
+        request(
+            &f.order.identity.id,
+            &reservation,
+            &proof,
+            through,
+            "inspect-proposal",
+        ),
+    )
+    .await
+    .expect("genuine proposal");
+    let stock = footprint(&pool).await;
+    let result = inspect(&pool, &reviewer, f.time.as_ref(), &proposal.id)
+        .await
+        .expect("authorized historical inspection")
+        .expect("proposal exists");
+    assert_eq!(
+        (
+            &result.id,
+            &result.order_id,
+            &result.reservation_id,
+            &result.recognition_id
+        ),
+        (&proposal.id, &proposal.order_id, &reservation, &proof)
+    );
+    assert_eq!(result.through_observation, through);
+    assert_eq!(
+        (
+            result.allocation.total.gross_minor,
+            result.allocation.total.net_minor,
+            result.allocation.total.vat_minor
+        ),
+        (3101, 2562, 539)
+    );
+    let debug = format!("{result:?}");
+    assert!(!debug.contains("Synthetic execution proposal"));
+    assert!(!debug.contains("3101"));
+    assert!(
+        inspect(
+            &pool,
+            &reviewer,
+            f.time.as_ref(),
+            "ffffffffffffffffffffffffffffffff"
+        )
+        .await
+        .expect("authorized absent lookup")
+        .is_none()
+    );
+    assert!(matches!(
+        inspect(&pool, &reviewer, f.time.as_ref(), "bad").await,
+        Err(ProposalError::InvalidRequest)
+    ));
+    assert!(matches!(
+        inspect(&pool, &denied, f.time.as_ref(), &proposal.id).await,
+        Err(ProposalError::Denied)
+    ));
+    assert_eq!(counts(&pool).await, (1, 1));
+    assert_eq!(footprint(&pool).await, stock);
+
+    observe(
+        &pool,
+        &f,
+        "tr_AMBIGUOUS",
+        "open",
+        "inspection-later-evidence",
+    )
+    .await;
+    recognize(
+        &pool,
+        f.time.as_ref(),
+        f.ids.as_ref(),
+        &f.frozen.snapshot().binding.id,
+    )
+    .await
+    .expect("new ambiguous current recognition");
+    assert_eq!(
+        inspect(&pool, &reviewer, f.time.as_ref(), &proposal.id)
+            .await
+            .expect("historical custody remains inspectable"),
+        Some(result)
+    );
+
+    // Damage only the disposable database, then restore the exact event.
+    let event: serde_json::Value = sqlx::query_scalar("SELECT to_jsonb(e) FROM commerce_outbox e JOIN refund_execution_proposals p ON p.event_id=e.id WHERE p.id=$1")
+        .bind(&proposal.id).fetch_one(&pool).await.expect("retained event");
+    pool.execute("ALTER TABLE commerce_outbox DISABLE TRIGGER USER")
+        .await
+        .expect("allow damage");
+    sqlx::query("DELETE FROM commerce_outbox WHERE id=(SELECT event_id FROM refund_execution_proposals WHERE id=$1)")
+        .bind(&proposal.id).execute(&pool).await.expect("detach event");
+    assert!(matches!(
+        inspect(&pool, &reviewer, f.time.as_ref(), &proposal.id).await,
+        Err(ProposalError::InvalidStoredData)
+    ));
+    sqlx::query(
+        "INSERT INTO commerce_outbox SELECT (jsonb_populate_record(NULL::commerce_outbox,$1)).*",
+    )
+    .bind(event)
+    .execute(&pool)
+    .await
+    .expect("restore exact event");
+    pool.execute("ALTER TABLE commerce_outbox ENABLE TRIGGER USER")
+        .await
+        .expect("restore guards");
+    assert!(
+        inspect(&pool, &reviewer, f.time.as_ref(), &proposal.id)
+            .await
+            .expect("restored custody")
+            .is_some()
+    );
+    assert_eq!(counts(&pool).await, (1, 1));
+    assert_eq!(footprint(&pool).await, stock);
+}
+
+#[sqlx::test(migrator = "MIGRATOR")]
+async fn inspection_rechecks_mfa_after_waiting_for_payment_claim(pool: PgPool) {
+    let f = accepted(&pool, false, true).await;
+    let (reservation, proof, through) = reservation(&pool, &f).await;
+    let token = staff(&pool, "inspection-wait", 95, "refund.execution.prepare").await;
+    let proposal = propose(
+        &pool,
+        &token,
+        f.time.as_ref(),
+        f.ids.as_ref(),
+        request(
+            &f.order.identity.id,
+            &reservation,
+            &proof,
+            through,
+            "inspect-wait",
+        ),
+    )
+    .await
+    .expect("genuine proposal");
+    let mut blocker = pool.begin().await.expect("attempt blocker");
+    sqlx::query("SELECT id FROM payment_attempts WHERE id=$1 FOR UPDATE")
+        .bind(&f.frozen.snapshot().binding.id)
+        .execute(&mut *blocker)
+        .await
+        .expect("claim attempt");
+    let worker_pool = pool.clone();
+    let worker_clock = f.time.clone();
+    let id = proposal.id.clone();
+    let worker = tokio::spawn(async move {
+        let result = inspect(&worker_pool, &token, worker_clock.as_ref(), &id).await;
+        (token, result)
+    });
+    wait_for_attempt_claim(&pool).await;
+    f.time.0.store(2301, Ordering::SeqCst);
+    blocker.rollback().await.expect("release attempt");
+    let (token, result) = worker.await.expect("worker completed");
+    assert!(matches!(result, Err(ProposalError::Denied)));
+    f.time.0.store(1500, Ordering::SeqCst);
+    assert!(
+        inspect(&pool, &token, f.time.as_ref(), &proposal.id)
+            .await
+            .expect("fresh authority")
+            .is_some()
+    );
+    assert_eq!(counts(&pool).await, (1, 1));
 }
