@@ -601,6 +601,29 @@ artifact. This is a feasibility test, not a bit-reproducible build, a complete
 entrypoint or lifecycle test, a TLS test, a vulnerability scan, staging clone or
 rollback acceptance. It publishes no image and does not deploy or alter staging.
 
+## PostgreSQL sibling scan comparison
+
+The path-scoped `PostgreSQL sibling scan evidence` workflow first rebuilds and
+checks the source, sibling root and composition on one disposable AMD64 runner.
+It validates the saved composed image’s configuration and all layer hashes,
+then compares the pinned stock image and that exact composed image with the
+pinned Trivy scanner and one freshly acquired, unchanged vulnerability database.
+Both raw reports retain every reported severity, status and package inventory;
+CycloneDX files are converted from those same reports. A stock positive finding,
+image identities, report and database timestamps, dpkg inventories and empty
+suppression inputs are checked. Exact unmatched scanner rows are recorded as
+comparison evidence, not as vulnerability fixes or acceptance.
+
+PostgreSQL and libpq in the composed image are compiled from source rather than
+installed as Debian PostgreSQL packages. The package scanner and generated SBOM
+may omit those components and their advisories. A separate same-run source
+component manifest records the upstream version and archive digest, executable
+hashes and evidence limits; it does not invent scanner matches or establish
+source vulnerability status. A source-aware advisory review remains necessary.
+All scanner findings remain open until separately disposed; scanner output is not
+proof of complete vulnerability coverage, deployment, or release readiness.
+The workflow publishes no image and does not connect to staging data.
+
 ## Isolated PostgreSQL zlib candidate
 
 `ops/db-zlib-candidate/Dockerfile` and `scripts/test_db_zlib_candidate.sh`
