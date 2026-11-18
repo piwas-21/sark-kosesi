@@ -7,6 +7,7 @@ import { discoverUnitTests } from "./unit-inventory.mjs";
 
 const dom = new JSDOM("<!doctype html><html><body></body></html>", {
   url: "http://localhost/",
+  pretendToBeVisual: true,
 });
 const browserGlobals = new Set([
   "Blob",
@@ -25,6 +26,16 @@ for (const name of Object.getOwnPropertyNames(dom.window)) {
     });
   }
 }
+Object.defineProperty(globalThis, "requestAnimationFrame", {
+  value: dom.window.requestAnimationFrame.bind(dom.window),
+  configurable: true,
+  writable: true,
+});
+Object.defineProperty(globalThis, "cancelAnimationFrame", {
+  value: dom.window.cancelAnimationFrame.bind(dom.window),
+  configurable: true,
+  writable: true,
+});
 Object.defineProperty(globalThis, "window", {
   value: dom.window,
   configurable: true,
