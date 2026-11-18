@@ -762,3 +762,45 @@ compatibility of an existing physical volume, application extensions or default
 locale semantics across libc implementations. Actual restore, ownership, indexes,
 collations, extension compatibility, current security disposition and deployment
 remain separate gates. The lab never connects to or alters staging or production.
+
+## PostgreSQL source feature smoke
+
+The path-scoped `PostgreSQL source feature smoke` workflow is an optional,
+synthetic experiment on a disposable hosted AMD64 runner. It builds upstream
+PostgreSQL 18.7 from the project's HTTPS source archive after checking the
+pinned SHA-256 `441dfae4280cae3e0425e5f876f80559fb0731c140f1aae22b3e5a54d0411bfd`
+before extraction. The archive and upstream checksum share an HTTPS origin;
+this pin is not an independent release signature. The exact pinned stock PGDG
+image supplies both build and runtime bases. The locked direct build dependencies come from a timestamped Debian Trixie
+snapshot and its dated security snapshot; APT verifies both with the pinned
+base's Debian archive keyring, while
+expiry checking is disabled for the historical snapshot. The complete installed
+package inventory and trust-input hashes are recorded. Transitive packages are
+not individually locked, so this is not a reproducible build. The lock's
+source and index hashes are documented in
+`ops/db-source-feature-smoke/PACKAGE-PROVENANCE.md`.
+
+The new binary enables ICU, OpenSSL and zlib, and disables GSSAPI, LDAP and
+libxml/libxslt. The workflow captures each image's PostgreSQL configure flags,
+architecture, available locales, libc version, full installed-package list and
+resolved libraries for the server and client library. It checks selected missing
+libraries in the candidate's resolved linkage, with stock positive controls;
+this does not establish their absence from the full image. The runtime retains
+the stock image and its packages. Synthetic non-root, network-isolated clusters
+check SCRAM success and the expected wrong-password diagnosis, stock-to-candidate compressed
+custom archive restore, SQL/XML availability and its specific unsupported-feature
+SQLSTATE, and invalid-archive
+rejection. Retained evidence includes source and image identity, build output,
+fixture results and checksums. Fixture files are transferred through the owned
+container processes with size limits and matching SHA-256 checks; status records
+the failed fixture stage without database output. Passwords are fixed synthetic
+values and are
+not included in the evidence.
+
+This is a binary and feature smoke, not a compatible replacement image or a
+privilege, vulnerability, collation, TLS handshake, staging or release acceptance.
+It does not compare actual database roles, extensions, schema or data, inspect
+the entire executable tree, scan images, validate the official entrypoint or
+exercise an operational rollback. Actual-clone collation and custody checks,
+security disposition and a reviewed operating model remain separate work. The
+workflow publishes no image and makes no deployment or staging change.
