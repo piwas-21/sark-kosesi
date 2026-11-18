@@ -1336,3 +1336,10 @@ The stable and nightly coverage producers run the exact instrumented test binary
 on this separate cluster after the ordinary suite, require its named passing test
 and a fresh profile, then export their normal reports. Ordinary tests do not change
 PostgreSQL configuration; these controls do not establish provider acceptance.
+
+The hosted Alpine Gosu synthetic restore compares bounded literal ordering, case
+conversion and equality under each database's default collation and explicit `C`.
+It rejects absent or malformed observations and exercises fixed positive and
+negative bytewise controls. Different observations are recorded, not suppressed
+or treated as proof of application compatibility. Focused tooling tests exercise
+both matching and deliberately different observations and damaged controls.

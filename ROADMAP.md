@@ -279,6 +279,10 @@ The optional Linux decoder separates image processing from the API and
 PostgreSQL. P7 requires the exact reviewed runtime on staging and measured
 capacity and recovery under cgroup limits before release.
 
+The synthetic Alpine restore lab records default and bytewise collation probes.
+P7 still needs a separately isolated clone validation of the actual database's
+collations, indexes and historical order-sensitive custody before migration.
+
 Remaining delivery sequence: P0 business inputs in parallel → P2 inventory/catalogue → P3 checkout/payments → P4 customer/admin operations → P5 room planning and content → P6 acceptance → P7 controlled launch. Each phase has explicit exit evidence in the plan.
 
 External blockers: final brand/domain, real product specification/media, market/carrier/tax readiness, Mollie retail website approval, translated legal/product content, email delivery and recovery evidence. EU-wide intent is unchanged; an unready country cannot take payment.

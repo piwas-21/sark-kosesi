@@ -19,6 +19,106 @@ import restore_loopback as loopback
 
 
 class RestoreAdapterTests(unittest.TestCase):
+    def test_collation_probe_checks_controls_and_records_mismatch(self):
+        import copy
+
+        # Independent bytewise oracle, not computed using the implementation's sorter.
+        c_order = ["A", "A-1", "A-C", "A1", "AB", "B", "a", "É", "é", "ا", "ب"]
+        healthy = {
+            "default_order": c_order.copy(),
+            "c_order": c_order.copy(),
+            "default_case": ["i", "I", "É", "é"],
+            "c_case": ["i", "I", "É", "é"],
+            "default_equality": [False, False, False, True],
+            "c_equality": [False, False, False, True],
+        }
+        result = lab.compare_collations(healthy, copy.deepcopy(healthy))
+        self.assertTrue(result["default_order_matches"])
+        self.assertTrue(result["explicit_c_controls_match"])
+        self.assertTrue(result["source_default_order_matches_c"])
+        changed = copy.deepcopy(healthy)
+        changed["default_order"] = ["A", "A-1", "A1", "AB", "A-C", "B", "a", "É", "é", "ا", "ب"]
+        changed["default_case"][2:] = ["é", "É"]
+        changed["default_equality"][0] = True
+        result = lab.compare_collations(healthy, changed)
+        for key in (
+            "default_order_matches",
+            "default_case_matches",
+            "default_equality_matches",
+            "target_default_order_matches_c",
+            "target_default_case_matches_c",
+            "target_default_equality_matches_c",
+        ):
+            self.assertFalse(result[key], key)
+        self.assertTrue(result["explicit_c_controls_match"])
+        self.assertEqual(result["target"], changed)
+        identifiers = {"A-1", "A-C", "A1", "AB", "B"}
+        self.assertEqual(
+            [v for v in result["target"]["default_order"] if v in identifiers],
+            ["A-1", "A1", "AB", "A-C", "B"],
+        )
+        self.assertEqual(
+            [v for v in result["target"]["c_order"] if v in identifiers],
+            ["A-1", "A-C", "A1", "AB", "B"],
+        )
+
+        for key, value in (
+            ("default_order", []),
+            ("default_order", ["A"] * len(c_order)),
+            ("c_order", list(reversed(c_order))),
+            ("default_case", ["i", "I", "é"]),
+            ("default_case", ["i", "I", "x" * 9, "é"]),
+            ("default_case", ["i", "I", "x", "é"]),
+            ("c_case", ["i", "I", "é", "É"]),
+            ("default_equality", [False, False, False, 1]),
+            ("default_equality", [False, False, False, False]),
+            ("c_equality", [False, False, False, False]),
+        ):
+            with self.subTest(key=key, value=value):
+                bad = copy.deepcopy(healthy)
+                bad[key] = value
+                with self.assertRaises(ValueError):
+                    lab.compare_collations(healthy, bad)
+        missing = copy.deepcopy(healthy)
+        del missing["default_order"]
+        with self.assertRaises(ValueError):
+            lab.compare_collations(missing, healthy)
+        with self.assertRaises(ValueError):
+            lab.compare_collations(None, healthy)
+
+    def test_collation_capture_queries_each_database_and_rejects_missing_output(self):
+        expected_order = ["A", "A-1", "A-C", "A1", "AB", "B", "a", "É", "é", "ا", "ب"]
+        source = {
+            "default_order": expected_order,
+            "c_order": expected_order,
+            "default_case": ["i", "I", "É", "é"],
+            "c_case": ["i", "I", "É", "é"],
+            "default_equality": [False, False, False, True],
+            "c_equality": [False, False, False, True],
+        }
+        target = {
+            **source,
+            "default_order": ["a", "A", "A-1", "A1", "AB", "A-C", "B", "É", "é", "ا", "ب"],
+        }
+        wrapper = Path("/owned/client")
+        envs = [{"PGDATABASE": "source"}, {"PGDATABASE": "target"}]
+        with patch.object(
+            lab, "psql", side_effect=[json.dumps(source), json.dumps(target)]
+        ) as query:
+            report = lab.capture_collations(wrapper, envs)
+        self.assertEqual(query.call_count, 2)
+        self.assertEqual(query.call_args_list[0].args, (wrapper, envs[0], lab.COLLATION_SQL))
+        self.assertEqual(query.call_args_list[1].args, (wrapper, envs[1], lab.COLLATION_SQL))
+        self.assertFalse(report["default_order_matches"])
+        self.assertTrue(report["explicit_c_controls_match"])
+        with patch.object(lab, "psql", side_effect=[json.dumps(source), ""]):
+            with self.assertRaises(ValueError):
+                lab.capture_collations(wrapper, envs)
+        with patch.object(lab, "psql") as query:
+            with self.assertRaises(ValueError):
+                lab.capture_collations(wrapper, [envs[0]])
+            query.assert_not_called()
+
     def test_reviewed_private_network_policy_is_exact_and_tamper_evident(self):
         self.assertEqual(
             {str(network) for network in loopback.private_network_policy()},
