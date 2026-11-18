@@ -933,7 +933,11 @@ pre-dispatch denial, source/event tampering, an actual write wait with expired
 authority, and a healthy restoration. A populated pre-provenance upgrade retains
 NULL start provenance; a modern same-transaction start is rejected. Assert one
 digest-bound pending event and unchanged cancellation, payment, stock, promotion,
-refund and packing state. This does not prove customer or provider acceptance.
+refund and packing state. Staff inspection tests require the dedicated unseeded
+grant and current MFA, exercise missing and damaged reciprocal custody and an
+actual attempt-lock wait, and include account-bound and legacy-start controls.
+Inspection does not change the underlying state or prove customer or provider
+acceptance.
 
 ### Private refund reservations
 

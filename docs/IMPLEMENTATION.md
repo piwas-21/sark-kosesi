@@ -313,6 +313,9 @@ full workload bounds and operational acceptance remain separate.
    intent against the original attempt and exact reconciliation event. It can replay
    under live authority but neither cancels the order nor pauses packing or dispatch.
    Operator disposition, customer handling and account-only access remain separate.
+   Private exact-order inspection requires the unseeded `cancellation.review`
+   capability and recent MFA, revalidates the historical request and dispatch
+   under the original attempt claim, and grants no disposition authority.
    Finish post-dispatch disposition, redemption disposition, lifecycle/payment
    transitions and retention before public checkout. Seller and legal facts
    remain required trusted configuration.
