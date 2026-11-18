@@ -1,0 +1,47 @@
+name: PostgreSQL sibling scan evidence
+on:
+  workflow_dispatch:
+  pull_request:
+    branches: [develop]
+    paths:
+      - .github/workflows/db-sibling-scan-evidence.yml
+      - ops/db-sibling-scan-evidence/**
+      - ops/db-sibling-postgres/**
+      - ops/db-sibling-runtime-root/**
+      - ops/db-source-feature-smoke/**
+      - ops/db-zlib-candidate/pull_verified_base.sh
+      - scripts/capture_db_image_scan.py
+      - scripts/check_alpine_gosu_image.py
+      - scripts/check_db_alpine_gosu.py
+permissions: {}
+jobs:
+  comparison:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 90
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+      - name: Check scan evidence controls
+        env:
+          PYTHONPATH: scripts
+        run: python3 ops/db-sibling-scan-evidence/test_compare.py
+      - name: Rebuild composition and compare image scans
+        env:
+          SCAN_REVISION: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: bash ops/db-sibling-scan-evidence/run.sh
+      - name: Retain raw evidence and failure status
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+        with:
+          name: db-sibling-scan-evidence-${{ github.event.pull_request.head.sha || github.sha }}
+          path: |
+            ${{ runner.temp }}/db-sibling-scan-evidence/
+            ${{ runner.temp }}/db-sibling-postgres-evidence/
+            ${{ runner.temp }}/db-sibling-root-evidence/
+            ${{ runner.temp }}/db-source-feature-evidence/
+          if-no-files-found: error
+          retention-days: 30
