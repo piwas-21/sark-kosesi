@@ -772,11 +772,12 @@ pinned SHA-256 `441dfae4280cae3e0425e5f876f80559fb0731c140f1aae22b3e5a54d0411bfd
 before extraction. The archive and upstream checksum share an HTTPS origin;
 this pin is not an independent release signature. The exact pinned stock PGDG
 image supplies both build and runtime bases. The locked direct build dependencies come from a timestamped Debian Trixie
-snapshot; APT verifies it with the pinned base's Debian archive keyring, while
+snapshot and its dated security snapshot; APT verifies both with the pinned
+base's Debian archive keyring, while
 expiry checking is disabled for the historical snapshot. The complete installed
 package inventory and trust-input hashes are recorded. Transitive packages are
 not individually locked, so this is not a reproducible build. The lock's
-source and index hash are documented in
+source and index hashes are documented in
 `ops/db-source-feature-smoke/PACKAGE-PROVENANCE.md`.
 
 The new binary enables ICU, OpenSSL and zlib, and disables GSSAPI, LDAP and

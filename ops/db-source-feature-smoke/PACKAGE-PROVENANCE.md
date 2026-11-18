@@ -1,6 +1,6 @@
 # Build dependency provenance
 
-The direct package versions in `packages.lock` are from the Debian Trixie
+Most direct package versions in `packages.lock` are from the Debian Trixie
 AMD64 index at the [2026-11-18 snapshot](https://snapshot.debian.org/archive/debian/20261118T000000Z/dists/trixie/main/binary-amd64/Packages.xz).
 The corresponding [Release](https://snapshot.debian.org/archive/debian/20261118T000000Z/dists/trixie/Release)
 identifies `trixie`, is dated 2026-09-12 07:55:41 UTC and specifies the index
@@ -15,3 +15,18 @@ versions, including transitive packages, are retained in build evidence.
 
 The snapshot is intentionally historical for this disposable experiment. It is
 not a vulnerability disposition or a production package-update policy.
+
+The OpenSSL development and shared-library pins instead come from the
+[Debian security snapshot](https://snapshot.debian.org/archive/debian-security/20261118T000000Z/dists/trixie-security/main/binary-amd64/Packages.xz).
+Its [Release](https://snapshot.debian.org/archive/debian-security/20261118T000000Z/dists/trixie-security/Release)
+is dated 2026-11-17 22:33:40 UTC and records the AMD64 index SHA-256
+`334e342e487a7dc95eef769d7dce4843053e686eef92e11416243149fc0366ea`;
+the streamed index matched it. The index gives both packages version
+`3.5.7-1~deb13u3` and makes the development package depend on exactly that
+shared-library version. The builder first verifies that the immutable stock
+base has the same shared-library version. APT verifies both archive signatures
+with the same scoped Debian keyring. The final image retains the stock runtime.
+
+The matching `curl`/`libcurl4t64` and `zlib1g-dev`/`zlib1g` pairs are
+explicitly pinned to the main snapshot versions so adding the security index
+does not make APT select incompatible newer companion packages.

@@ -3,7 +3,8 @@ FROM mirror.gcr.io/library/postgres@sha256:c7fedce47eff6a78cb35dad6b627f0d684107
 COPY packages.lock /tmp/smoke-packages.lock
 RUN --mount=type=bind,source=ca-certificates.crt,target=/tmp/runner-ca.crt \
     set -eu; \
-    printf '%s\n' 'deb [signed-by=/usr/share/keyrings/debian-archive-keyring.gpg check-valid-until=no] https://snapshot.debian.org/archive/debian/20261118T000000Z/ trixie main' > /tmp/smoke-sources.list; \
+    test "$(dpkg-query -W -f='${Version}' libssl3t64)" = '3.5.7-1~deb13u3'; \
+    printf '%s\n' 'deb [signed-by=/usr/share/keyrings/debian-archive-keyring.gpg check-valid-until=no] https://snapshot.debian.org/archive/debian/20261118T000000Z/ trixie main' 'deb [signed-by=/usr/share/keyrings/debian-archive-keyring.gpg check-valid-until=no] https://snapshot.debian.org/archive/debian-security/20261118T000000Z/ trixie-security main' > /tmp/smoke-sources.list; \
     rm -rf /var/lib/apt/lists/*; \
     apt-get -o Acquire::https::CAInfo=/tmp/runner-ca.crt -o Dir::Etc::sourcelist=/tmp/smoke-sources.list -o Dir::Etc::sourceparts=- -o Acquire::AllowInsecureRepositories=false -o Acquire::AllowDowngradeToInsecureRepositories=false -o APT::Get::AllowUnauthenticated=false -o APT::Update::Error-Mode=any update; \
     xargs -r apt-get -y --no-install-recommends --allow-downgrades -o Acquire::https::CAInfo=/tmp/runner-ca.crt -o Dir::Etc::sourcelist=/tmp/smoke-sources.list -o Dir::Etc::sourceparts=- -o APT::Get::AllowUnauthenticated=false install < /tmp/smoke-packages.lock; \
