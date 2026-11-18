@@ -733,11 +733,13 @@ separately, checks a hydrated fit and changed conflict, and rejects the same
 interaction on a JavaScript-disabled shell. Results belong to the measured
 revision and fixture; field and production-topology performance remain open.
 
-## Next session prompt
-
-> Read AGENTS.md and ROADMAP.md, then docs/IMPLEMENTATION.md and its linked requirements. Continue P3 in small independently reviewed PRs to develop. Complete the country/territory readiness matrix and promotions, then durable guest checkout, atomic basket holds and immutable orders. Keep missing P0 facts and unready destinations blocked. Mollie work is sandbox-only; preserve stable payment attempts, reconcile unknown outcomes, fetch/verify notifications and recover late paid stock explicitly. Retain exact money/refund allocations, all real CI/review/merge gates, the approved courtyard design and disabled production. Report source/CI, provider, deployment and fulfilment evidence separately.
-
 A separately triggered passive security rehearsal builds the staging-configured
 web and API against a disposable synthetic seed on a Docker internal network.
 Its controls and bounded HTTP scope are documented in [SECURITY.md](SECURITY.md#isolated-passive-preview-assessment).
-Exact-revision hosted success and the broader P6 assessment remain open.
+Evidence is specific to the exact revision and scope. Independent assessment of
+real ingress and browser behavior, and manual threat review, remain open even
+after these scoped checks pass.
+
+## Next session prompt
+
+> Read AGENTS.md and ROADMAP.md, then docs/IMPLEMENTATION.md and its linked requirements. Continue P3 in small independently reviewed PRs to develop. Complete the country/territory readiness matrix and promotions, then durable guest checkout, atomic basket holds and immutable orders. Keep missing P0 facts and unready destinations blocked. Mollie work is sandbox-only; preserve stable payment attempts, reconcile unknown outcomes, fetch/verify notifications and recover late paid stock explicitly. Retain exact money/refund allocations, all real CI/review/merge gates, the approved courtyard design and disabled production. Report source/CI, provider, deployment and fulfilment evidence separately.

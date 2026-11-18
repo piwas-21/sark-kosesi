@@ -429,7 +429,8 @@ The local/test worker exposes this inspection to authorized warehouse staff
 through bounded non-terminal session input and a private JSON report. Staff
 session issuance, physical handover and operational acceptance remain open.
 
-The isolated staging-config passive preview workflow is a source-level P6
-rehearsal pending its first successful exact-revision hosted execution and review.
-Actual ingress, browser-driven authenticated security assessment and manual
-threat review remain P6 acceptance work; production stays disabled.
+The isolated staging-config passive preview workflow is a bounded P6 rehearsal.
+Evidence must bind the exact revision, synthetic fixture, authenticated scope and
+completed passive checks. Actual ingress, browser-driven authenticated security
+assessment and manual threat review remain P6 acceptance work even after a
+successful rehearsal; production stays disabled.
