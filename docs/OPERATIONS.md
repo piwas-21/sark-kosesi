@@ -461,6 +461,18 @@ and logs. The command returns one JSON object on stdout with `kind` set to
 Store this output as private order evidence. Assertion counts do not establish
 which units have shipped or whether dispatch is permitted.
 
+To record a packing assertion in an isolated local/test environment, run
+`commerce-worker --record-packing <order-id> <effect-key> <payload-file> --confirm`
+with the same bounded staff session input. The payload is a regular, non-symlink
+file of at most 256 KiB, with a closed JSON object shaped as
+`{"units":[{"sku":"SKU","units":1}],"packages":[[{"code":"COMPONENT","quantity":1}]]}`.
+Provide 1–20 SKU entries and 1–32 packages, each with 1–64 components. Supply
+actual values from the order and physical process; the server validates them
+against the frozen order and allocation. The JSON receipt contains the record ID,
+record time and replay flag. Keep the payload and output private; a retry after
+lost output must use the same actor, effect key and exact payload. A recorded
+assertion does not prove physical contents or grant permission to dispatch.
+
 To relinquish one existing assertion in an isolated local/test environment, run
 `commerce-worker --release-packing <order-id> <packed-record-id> <effect-key> --confirm`
 with the same bounded staff session input. Use a unique effect key for the exact

@@ -540,10 +540,11 @@ complete shipment/handover lifecycle, reversal disposition and physical evidence
 An authenticated private inspection reconstructs recorded active packing and
 unasserted units from complete custody history without changing that authority
 boundary. It does not establish remaining unshipped stock or payment eligibility.
-The local/test worker exposes this inspection and an explicitly confirmed
-assertion release with bounded non-terminal staff session input and closed JSON
-reports. Exact release retries retain their original receipt; they establish no
-physical unpacking or restock. Staff session issuance and physical handover remain
+The local/test worker exposes this inspection and explicitly confirmed assertion
+record and release with bounded non-terminal staff session input and closed JSON
+reports. The record reads a bounded closed payload from a regular file. Exact
+retries retain their original receipt; a release establishes no physical
+unpacking or restock. Staff session issuance and physical handover remain
 separate work.
 
 Trusted whole-basket reservation primitives now provide immutable manifests,
