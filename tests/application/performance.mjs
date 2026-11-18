@@ -7,6 +7,7 @@ import lighthouse from "lighthouse";
 import { gzipSync } from "node:zlib";
 import { spawnSync } from "node:child_process";
 import { lighthouseEvidenceName } from "./evidence-name.mjs";
+import { checkPlannerInteraction } from "./planner-performance.mjs";
 import { availablePort } from "./ports.mjs";
 const debuggingPort = await availablePort();
 const budgets = JSON.parse(
@@ -23,6 +24,7 @@ assert.equal(database.catalogueItems, 5);
 assert.equal(database.translations, 7);
 assert.ok(database.databaseBytes > 0);
 const evidence = [];
+const plannerPath = "/nl/room-planner";
 await mkdir(".local/evidence", { recursive: true });
 const browser = await chromium.launch({
   headless: true,
@@ -35,6 +37,7 @@ try {
     "/nl/gallery",
     "/nl/collection",
     "/nl/collection/isolated-room?variant=SET-COVERS",
+    plannerPath,
   ]) {
     const reports = [];
     for (let run = 0; run < budgets.lab.runs; run++) {
@@ -113,7 +116,10 @@ try {
       if (response.url().startsWith(base) && response.status() === 200)
         resources.push(response);
     });
-    await page.goto(base + path, { waitUntil: "networkidle" });
+    const navigation = await page.goto(base + path, {
+      waitUntil: "networkidle",
+    });
+    assert.equal(navigation?.status(), 200, `${path} must load`);
     let total = 0,
       javascript = 0,
       fonts = 0;
@@ -150,6 +156,32 @@ try {
       fonts <= budgets.transfer.initialFontsKiB * 1024,
       `${path} fonts ${fonts}`,
     );
+    if (path === plannerPath) {
+      await checkPlannerInteraction(page);
+      const staticContext = await browser.newContext({
+        httpCredentials: {
+          username: "preview",
+          password: process.env.PREVIEW_TOKEN,
+        },
+        javaScriptEnabled: false,
+        viewport: { width: 390, height: 844 },
+      });
+      try {
+        const staticPage = await staticContext.newPage();
+        const staticResponse = await staticPage.goto(base + path, {
+          waitUntil: "networkidle",
+        });
+        assert.equal(staticResponse?.status(), 200);
+        assert.equal(await staticPage.locator("#plan-unit").count(), 1);
+        await assert.rejects(
+          checkPlannerInteraction(staticPage, 1000),
+          /#plan-unit:disabled/,
+          "A planner shell without hydration must fail the interaction check",
+        );
+      } finally {
+        await staticContext.close();
+      }
+    }
     evidence.push({
       path,
       performance,
@@ -159,6 +191,9 @@ try {
       totalGzip: total,
       javascriptGzip: javascript,
       fontsGzip: fonts,
+      ...(path === plannerPath
+        ? { interaction: "fit-and-conflict; static-shell-negative-passed" }
+        : {}),
     });
     await context.close();
   }
