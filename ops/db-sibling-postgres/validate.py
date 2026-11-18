@@ -20,6 +20,8 @@ def load_root_parser():
 
 parse_live_packages = load_root_parser()
 
+ZLIB_OLD = "1:1.3.dfsg+really1.3.1-1+b1"
+ZLIB_FIXED = "1:1.3.dfsg+really1.3.1-1+deb13u1"
 READLINE = {"libreadline8t64": "8.2-6", "readline-common": "8.2-6"}
 FORBIDDEN = re.compile(r"lib(?:xml2|xslt|gssapi|krb5|ldap|lber|curl)[^\s/]*[.]", re.I)
 
@@ -42,13 +44,67 @@ def check_image(sibling, candidate):
         raise ValueError("candidate locale configuration changed")
 
 
+def check_zlib_builder(stock, package_image, package_id):
+    expected_stock = "sha256:3cccc725163a95947178f4da5e9bf16add75cb286170ac5a2cd2f6513534955d"
+    if stock.get("Id") != expected_stock or package_image.get("Id") != package_id:
+        raise ValueError("zlib package source identity mismatch")
+    if not re.fullmatch(r"sha256:[0-9a-f]{64}", package_id) or package_id == expected_stock:
+        raise ValueError("invalid zlib package source identity")
+    if any(
+        image.get("Os") != "linux" or image.get("Architecture") != "amd64"
+        for image in (stock, package_image)
+    ):
+        raise ValueError("zlib package source platform mismatch")
+    base = stock.get("RootFS", {}).get("Layers", [])
+    layers = package_image.get("RootFS", {}).get("Layers", [])
+    if not base or len(layers) != len(base) + 1 or layers[:-1] != base:
+        raise ValueError("zlib package source lineage mismatch")
+    keys = (
+        "Entrypoint",
+        "Cmd",
+        "Env",
+        "WorkingDir",
+        "User",
+        "Volumes",
+        "StopSignal",
+        "ExposedPorts",
+    )
+    if any(
+        stock.get("Config", {}).get(key) != package_image.get("Config", {}).get(key) for key in keys
+    ):
+        raise ValueError("zlib package source runtime metadata changed")
+
+
 def check_packages(sibling, candidate):
     if any(name in sibling for name in READLINE):
         raise ValueError("readline addition unexpectedly present")
-    if candidate != {**sibling, **READLINE}:
+    if sibling.get("zlib1g") != ZLIB_OLD:
+        raise ValueError("unexpected original zlib package")
+    if candidate != {**sibling, **READLINE, "zlib1g": ZLIB_FIXED}:
         raise ValueError("unexpected installed package change")
     if sibling.get("libtinfo6") != "6.5+20250216-2":
         raise ValueError("unexpected terminal library version")
+
+
+def check_zlib_layer(before_raw, after_raw):
+    before = parse_live_packages(before_raw)
+    after = parse_live_packages(after_raw)
+    if before.get("zlib1g") != ZLIB_OLD or after.get("zlib1g") != ZLIB_FIXED:
+        raise ValueError("zlib layer version mismatch")
+    if {k: v for k, v in before.items() if k != "zlib1g"} != {
+        k: v for k, v in after.items() if k != "zlib1g"
+    }:
+        raise ValueError("other installed package changed in zlib layer")
+
+    def other_lines(text):
+        return [
+            line
+            for line in text.splitlines()
+            if line.split("\t", 1)[0].split(":", 1)[0] != "zlib1g"
+        ]
+
+    if other_lines(before_raw) != other_lines(after_raw):
+        raise ValueError("other dpkg state changed in zlib layer")
 
 
 def check_linkage(text):
@@ -129,10 +185,24 @@ def main(directory):
             raise ValueError("invalid image inspection")
         images.append(value[0])
     check_image(*images)
+    identities = {}
+    for line in read("image-ids.txt").splitlines():
+        key, separator, value = line.partition("=")
+        if not separator or not key or not value or key in identities:
+            raise ValueError("invalid composition image identities")
+        identities[key] = value
+    package_images = []
+    for name in ("zlib-stock-image.json", "zlib-image.json"):
+        value = json.loads(read(name))
+        if not isinstance(value, list) or len(value) != 1:
+            raise ValueError("invalid zlib image inspection")
+        package_images.append(value[0])
+    check_zlib_builder(*package_images, identities.get("zlib_source", ""))
     check_packages(
         parse_live_packages(read("sibling-packages.txt")),
         parse_live_packages(read("composed-packages.txt")),
     )
+    check_zlib_layer(read("zlib-before.txt"), read("zlib-after.txt"))
     check_tree(
         read("source-files.txt"),
         read("composed-files.txt"),

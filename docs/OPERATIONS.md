@@ -585,10 +585,15 @@ No image is published or deployed by this workflow.
 
 The path-scoped `PostgreSQL sibling composition lab` rebuilds and validates the
 sibling root and source feature experiments at the same checkout. It installs
-only the snapshot-pinned readline runtime pair and the already-present terminal
+the snapshot-pinned readline runtime pair and the already-present terminal
 library version, then copies the source experiment’s `/opt/pg-smoke` tree into
-the sibling root. Package delta, file hashes, modes, owners and symlinks are
-compared. The lab inspects executable and module ELF linkages and samples
+the sibling root. A separate build of the existing verified zlib candidate
+verifies the Debian archive signature and the zlib package digest. The final
+layer installs the verified package from a read-only mount. The package archive
+stays in the build stage. The lab requires the installed zlib change from `1:1.3.dfsg+really1.3.1-1+b1` to
+`1:1.3.dfsg+really1.3.1-1+deb13u1` and no other final-layer package changes.
+Signed archive and package evidence is retained outside the resulting image.
+Package delta, file hashes, modes, owners and symlinks are compared. The lab inspects executable and module ELF linkages and samples
 libraries actually loaded by synthetic PostgreSQL and psql processes; missing
 or selected prohibited libraries fail. These measurements do not cover every
 possible dynamically loaded extension or operating path.
@@ -612,7 +617,10 @@ Both raw reports retain every reported severity, status and package inventory;
 CycloneDX files are converted from those same reports. A stock positive finding,
 image identities, report and database timestamps, dpkg inventories and empty
 suppression inputs are checked. Exact unmatched scanner rows are recorded as
-comparison evidence, not as vulnerability fixes or acceptance.
+comparison evidence, not as vulnerability fixes or acceptance. A separate
+same-run control requires stock zlib to report `CVE-2026-85091` as HIGH and
+requires the updated zlib package not to report that advisory at any severity;
+all other rows and findings remain retained and undisposed.
 
 PostgreSQL and libpq in the composed image are compiled from source rather than
 installed as Debian PostgreSQL packages. The package scanner and generated SBOM

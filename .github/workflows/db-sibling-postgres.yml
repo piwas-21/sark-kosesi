@@ -8,7 +8,7 @@ on:
       - ops/db-sibling-postgres/**
       - ops/db-sibling-runtime-root/**
       - ops/db-source-feature-smoke/**
-      - ops/db-zlib-candidate/pull_verified_base.sh
+      - ops/db-zlib-candidate/**
       - scripts/capture_db_image_scan.py
 permissions: {}
 jobs:
