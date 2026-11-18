@@ -761,11 +761,28 @@ async fn release_wins_the_attempt_claim_before_submission(pool: PgPool) {
     .await
     .expect("bounded count");
     assert_eq!(count, 4);
-    // Existing packing writers need no read access to the new evidence table.
-    pool.execute("CREATE ROLE handover_limited_packer NOLOGIN; GRANT USAGE ON SCHEMA public TO handover_limited_packer; GRANT SELECT ON ALL TABLES IN SCHEMA public TO handover_limited_packer; REVOKE SELECT ON public.handover_evidence_submissions FROM handover_limited_packer; GRANT INSERT ON public.packing_custody,public.commerce_outbox TO handover_limited_packer; GRANT UPDATE ON public.payment_attempts TO handover_limited_packer; GRANT USAGE ON SEQUENCE public.packing_custody_fence_key_seq TO handover_limited_packer")
-        .await.expect("isolated baseline packing permissions");
-    let allowed: bool = sqlx::query_scalar("SELECT pg_catalog.has_table_privilege('handover_limited_packer','public.handover_evidence_submissions','SELECT')")
-        .fetch_one(&pool).await.expect("role privileges");
+    // Roles are cluster-wide: create this backend-unique synthetic role only
+    // inside the transaction which is rolled back after the constrained write.
+    let mut limited = pool.begin().await.expect("restricted packing transaction");
+    let backend_pid: i32 = sqlx::query_scalar("SELECT pg_catalog.pg_backend_pid()")
+        .fetch_one(&mut *limited)
+        .await
+        .expect("restricted backend");
+    let role = format!("sark_handover_test_{backend_pid}");
+    let grants = format!(
+        "CREATE ROLE {role} NOLOGIN; GRANT USAGE ON SCHEMA public TO {role}; GRANT SELECT ON ALL TABLES IN SCHEMA public TO {role}; REVOKE SELECT ON public.handover_evidence_submissions FROM {role}; GRANT INSERT ON public.packing_custody,public.commerce_outbox TO {role}; GRANT UPDATE ON public.payment_attempts TO {role}; GRANT USAGE ON SEQUENCE public.packing_custody_fence_key_seq TO {role}"
+    );
+    (&mut *limited)
+        .execute(grants.as_str())
+        .await
+        .expect("isolated baseline packing permissions");
+    let allowed: bool = sqlx::query_scalar(
+        "SELECT pg_catalog.has_table_privilege($1,'public.handover_evidence_submissions','SELECT')",
+    )
+    .bind(&role)
+    .fetch_one(&mut *limited)
+    .await
+    .expect("role privileges");
     assert!(!allowed);
     let mut limited_release = new_pack.clone();
     limited_release.id = "55555555555555555555555555555555".into();
@@ -776,13 +793,48 @@ async fn release_wins_the_attempt_claim_before_submission(pool: PgPool) {
     limited_release.target_id = Some(new_pack.id.clone());
     limited_release.units = sqlx::types::Json(Vec::new());
     limited_release.packages = sqlx::types::Json(Vec::new());
-    let mut limited = pool.begin().await.expect("restricted packing transaction");
-    sqlx::query("SET LOCAL ROLE handover_limited_packer")
+    let set_role = format!("SET LOCAL ROLE {role}");
+    sqlx::query(&set_role)
         .execute(&mut *limited)
         .await
         .expect("restricted role");
     packing_custody::store::insert(&mut limited, &limited_release)
         .await
         .expect("restricted writer can release");
-    limited.commit().await.expect("restricted release commits");
+    sqlx::query("SET CONSTRAINTS ALL IMMEDIATE")
+        .execute(&mut *limited)
+        .await
+        .expect("restricted deferred checks");
+    limited
+        .rollback()
+        .await
+        .expect("roll back synthetic role and release");
+    let role_exists: bool =
+        sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM pg_catalog.pg_roles WHERE rolname=$1)")
+            .bind(&role)
+            .fetch_one(&pool)
+            .await
+            .expect("role cleanup");
+    assert!(!role_exists);
+    let committed = packing_custody::record(
+        &pool,
+        &token(71),
+        f.time.as_ref(),
+        f.ids.as_ref(),
+        packing_custody::Request {
+            order_id: &order,
+            effect_key: "committed-release",
+            confirmed: true,
+            action: packing_custody::Action::Released {
+                target_id: &new_pack.id,
+            },
+        },
+    )
+    .await
+    .expect("separate authorized release commits");
+    assert_eq!(committed.record.action, "released");
+    assert_eq!(
+        committed.record.target_id.as_deref(),
+        Some(new_pack.id.as_str())
+    );
 }
