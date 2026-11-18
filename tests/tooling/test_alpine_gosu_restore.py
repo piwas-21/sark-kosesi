@@ -19,6 +19,37 @@ import restore_loopback as loopback
 
 
 class RestoreAdapterTests(unittest.TestCase):
+    def test_stock_custody_reports_success_and_order_bound_rejection_distinctly(self):
+        source_probe = {"default_order": ["AB", "A-C"]}
+        target_probe = {"default_order": ["A-C", "AB"]}
+        different = {"source": source_probe, "target": target_probe}
+        matched = {"source": source_probe, "target": source_probe}
+        self.assertEqual(
+            lab.stock_custody_evidence("compatible", "ordering_incompatible", different),
+            {
+                "source": {"outcome": "compatible", "literal_default_order": ["AB", "A-C"]},
+                "target": {
+                    "outcome": "ordering_incompatible",
+                    "literal_default_order": ["A-C", "AB"],
+                },
+            },
+        )
+        for evidence in (matched, different):
+            self.assertEqual(
+                lab.stock_custody_evidence("compatible", "compatible", evidence)["target"][
+                    "outcome"
+                ],
+                "compatible",
+            )
+        for source, target, evidence in (
+            ("ordering_incompatible", "ordering_incompatible", different),
+            ("compatible", "ordering_incompatible", matched),
+            ("compatible", None, matched),
+        ):
+            with self.subTest(source=source, target=target):
+                with self.assertRaises(ValueError):
+                    lab.stock_custody_evidence(source, target, evidence)
+
     def test_collation_probe_checks_controls_and_records_mismatch(self):
         import copy
 

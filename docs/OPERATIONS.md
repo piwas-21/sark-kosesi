@@ -677,6 +677,13 @@ recorded. The report also records fixed synthetic ASCII, hyphenated, accented
 and Arabic literal ordering and case/equality probes under the default and `C`
 collations on each database. It compares each result, validates independent `C`
 controls and reports observed differences without declaring the locales equivalent.
+The source also records a synthetic original stock settlement for one covers-only
+order with the merchant component codes `A-C` and `AB`. The lab requires successful
+historical read and idempotent replay on the preserved source. It repeats those
+operations on the restored candidate and verifies unchanged stock effects. The
+report distinguishes compatible replay from a custody rejection accompanied by
+an independently observed ordering change for the two codes. Such a rejection
+is evidence against switching the database image.
 Database clients still run against owned loopback endpoints; no staging data,
 volume, keys or credentials are involved.
 
@@ -699,10 +706,10 @@ the overall workflow succeeds only when both checks succeed. The restore status
 artifact reports fixed stage/invariant codes, elapsed time and cleanup outcome;
 it does not include database credentials, exception text or process output.
 
-This small literal sample does not test populated application indexes, historical
-order-sensitive stock receipts or concurrent lock ordering. The actual source and
-candidate collations, versions, restored indexes and representative custody must
-be validated on a separate isolated clone before any migration decision.
+The probe covers one original settlement. An isolated clone must still validate
+the actual source and candidate collation metadata, restored application indexes,
+additional historical custody such as late allocations, and concurrent lock
+ordering before any migration decision.
 
 This does not prove physical-volume portability, default-locale equivalence,
 all schema definitions, roles and grants, application image startup, a router

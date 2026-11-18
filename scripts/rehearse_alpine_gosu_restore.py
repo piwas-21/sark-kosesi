@@ -133,6 +133,22 @@ def capture_collations(wrapper, envs):
     return compare_collations(source, target)
 
 
+def stock_custody_evidence(source, target, collations):
+    codes = {"A-C", "AB"}
+    orders = [
+        [code for code in collations[side]["default_order"] if code in codes]
+        for side in ("source", "target")
+    ]
+    if source != "compatible" or target not in ("compatible", "ordering_incompatible"):
+        raise ValueError("Unexpected stock custody replay outcome")
+    if target == "ordering_incompatible" and orders[0] == orders[1]:
+        raise ValueError("Stock custody rejection without observed collation difference")
+    return {
+        "source": {"outcome": source, "literal_default_order": orders[0]},
+        "target": {"outcome": target, "literal_default_order": orders[1]},
+    }
+
+
 class Progress:
     """Only fixed stage and failure codes may leave the private lab."""
 
@@ -400,6 +416,14 @@ def main(candidate, revision, scratch, evidence, progress=None):
             "RESTORE_OWNED_PORTS": json.dumps(dict(zip(ports, containers, strict=True))),
         }
         urls = [f"postgresql://p1_test:{password}@127.0.0.1:{port}/{database}" for port in ports]
+        fixture_envs = [
+            {
+                **client_env,
+                "RESTORE_FIXTURE_DATABASE_URL": url,
+                "RESTORE_FIXTURE_DATABASE_NAME": database,
+            }
+            for url in urls
+        ]
         envs = [
             {
                 **pg_env(url),
@@ -430,14 +454,12 @@ def main(candidate, revision, scratch, evidence, progress=None):
             progress.enter(f"{role}_database_create")
             psql(wrapper, admin, f'CREATE DATABASE "{database}"')
         progress.enter("synthetic_seed")
-        run_fixture(
-            {
-                **client_env,
-                "RESTORE_FIXTURE_DATABASE_URL": urls[0],
-                "RESTORE_FIXTURE_DATABASE_NAME": database,
-            },
-            "seed_synthetic",
-        )
+        run_fixture(fixture_envs[0], "seed_synthetic")
+        progress.enter("source_stock_custody")
+        run_fixture(fixture_envs[0], "seed_stock_custody")
+        source_custody = run_fixture(fixture_envs[0], "verify_stock_custody")
+        if source_custody != "compatible":
+            raise ValueError("Source stock custody replay failed")
         archive = scratch / "app-schema.dump"
         progress.enter("source_inventory")
         with Snapshot(wrapper, envs[0]) as source:
@@ -523,6 +545,17 @@ def main(candidate, revision, scratch, evidence, progress=None):
                 raise ValueError("Unexpected database encoding")
             progress.enter("collation_probe")
             collation_evidence = capture_collations(wrapper, envs)
+            progress.enter("candidate_stock_custody")
+            target_custody = run_fixture(fixture_envs[1], "verify_stock_custody")
+            custody_evidence = stock_custody_evidence(
+                source_custody, target_custody, collation_evidence
+            )
+            with Snapshot(wrapper, envs[1]) as checked_target:
+                if (
+                    inventory(checked_target) != before
+                    or sequence_inventory(checked_target) != sequences
+                ):
+                    raise ValueError("Stock custody read or replay changed restored state")
             roles = [
                 psql(
                     wrapper,
@@ -563,14 +596,7 @@ def main(candidate, revision, scratch, evidence, progress=None):
             checked_command(restore + ["--list"], envs[1], input_bytes=dump)
             require_invalid_archive_rejection(restore, envs[1])
             progress.enter("restored_key_fixture")
-            run_fixture(
-                {
-                    **client_env,
-                    "RESTORE_FIXTURE_DATABASE_URL": urls[1],
-                    "RESTORE_FIXTURE_DATABASE_NAME": database,
-                },
-                "verify_restored_keys",
-            )
+            run_fixture(fixture_envs[1], "verify_restored_keys")
             progress.enter("changed_content_control")
             psql(
                 wrapper,
@@ -629,6 +655,7 @@ def main(candidate, revision, scratch, evidence, progress=None):
                 "migration_history_sha256": before["_sqlx_migrations"][1],
                 "locales": locales,
                 "collation_probe": collation_evidence,
+                "stock_custody_probe": custody_evidence,
                 "roles": roles,
                 "postgres_versions": versions,
                 "postgres_uid_gid": identities,
