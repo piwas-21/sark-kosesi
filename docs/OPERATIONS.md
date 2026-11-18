@@ -771,9 +771,13 @@ PostgreSQL 18.7 from the project's HTTPS source archive after checking the
 pinned SHA-256 `441dfae4280cae3e0425e5f876f80559fb0731c140f1aae22b3e5a54d0411bfd`
 before extraction. The archive and upstream checksum share an HTTPS origin;
 this pin is not an independent release signature. The exact pinned stock PGDG
-image supplies both build and runtime bases. Debian's signed package repository
-supplies build dependencies, whose complete installed versions are recorded;
-they are not independently version-pinned and this is not a reproducible build.
+image supplies both build and runtime bases. The locked direct build dependencies come from a timestamped Debian Trixie
+snapshot; APT verifies it with the pinned base's Debian archive keyring, while
+expiry checking is disabled for the historical snapshot. The complete installed
+package inventory and trust-input hashes are recorded. Transitive packages are
+not individually locked, so this is not a reproducible build. The lock's
+source and index hash are documented in
+`ops/db-source-feature-smoke/PACKAGE-PROVENANCE.md`.
 
 The new binary enables ICU, OpenSSL and zlib, and disables GSSAPI, LDAP and
 libxml/libxslt. The workflow captures each image's PostgreSQL configure flags,
@@ -782,8 +786,9 @@ resolved libraries for the server and client library. It checks selected missing
 libraries in the candidate's resolved linkage, with stock positive controls;
 this does not establish their absence from the full image. The runtime retains
 the stock image and its packages. Synthetic non-root, network-isolated clusters
-check SCRAM success and wrong-password rejection, stock-to-candidate compressed
-custom archive restore, SQL/XML availability and absence, and invalid-archive
+check SCRAM success and the expected wrong-password diagnosis, stock-to-candidate compressed
+custom archive restore, SQL/XML availability and its specific unsupported-feature
+SQLSTATE, and invalid-archive
 rejection. Retained evidence includes source and image identity, build output,
 fixture results and checksums. Passwords are fixed synthetic values and are
 not included in the evidence.

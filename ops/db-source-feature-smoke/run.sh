@@ -31,7 +31,11 @@ base_id=$(sh ops/db-zlib-candidate/pull_verified_base.sh "$scratch/base-pull.log
 [[ "$base_id" == sha256:3cccc725163a95947178f4da5e9bf16add75cb286170ac5a2cd2f6513534955d ]] || fail 'stock identity mismatch'
 printf 'revision=%s\nstock_manifest=%s\nstock_image_id=%s\nsource_sha256=%s\n' "$SMOKE_REVISION" "$base" "$base_id" '441dfae4280cae3e0425e5f876f80559fb0731c140f1aae22b3e5a54d0411bfd' > "$out/identity.txt"
 stage=build
-docker build --platform linux/amd64 -t "local/pg-source-feature:$SMOKE_REVISION" -f ops/db-source-feature-smoke/Dockerfile ops/db-source-feature-smoke > "$out/build.log" 2>&1
+mkdir "$scratch/build-context"
+cp ops/db-source-feature-smoke/Dockerfile ops/db-source-feature-smoke/packages.lock "$scratch/build-context/"
+cp /etc/ssl/certs/ca-certificates.crt "$scratch/build-context/ca-certificates.crt"
+test -s "$scratch/build-context/ca-certificates.crt"
+docker build --platform linux/amd64 -t "local/pg-source-feature:$SMOKE_REVISION" -f "$scratch/build-context/Dockerfile" "$scratch/build-context" > "$out/build.log" 2>&1
 candidate_id=$(docker image inspect "local/pg-source-feature:$SMOKE_REVISION" --format '{{.Id}}')
 printf 'candidate_image_id=%s\n' "$candidate_id" >> "$out/identity.txt"
 stage=inventory
@@ -44,9 +48,12 @@ grep -Eq 'libxml2[.]' "$out/stock-linkage.txt" || fail 'stock XML positive contr
 grep -Eq 'libgssapi[^ ]*[.]' "$out/stock-linkage.txt" || fail 'stock GSS positive control missing'
 bash ops/db-source-feature-smoke/linkage.sh < "$out/candidate-linkage.txt" || fail 'candidate linkage assertion failed'
 docker run --rm --network none --entrypoint cat "$candidate_id" /smoke-build-evidence/build-packages.txt > "$out/build-packages.txt"
+docker run --rm --network none --entrypoint cat "$candidate_id" /smoke-build-evidence/trust-inputs.txt > "$out/trust-inputs.txt"
 stage=fixture
 source_id=$(docker run -d --network none --user postgres --tmpfs /tmp:rw,size=256m --memory 768m --cpus 1 --pids-limit 256 --entrypoint sleep "$base_id" 1800)
 target_id=$(docker run -d --network none --user postgres --tmpfs /tmp:rw,size=256m --memory 768m --cpus 1 --pids-limit 256 --entrypoint sleep "$candidate_id" 1800)
+docker cp ops/db-source-feature-smoke/diagnostics.sh "$source_id:/tmp/diagnostics.sh"
+docker cp ops/db-source-feature-smoke/diagnostics.sh "$target_id:/tmp/diagnostics.sh"
 docker exec -i "$source_id" bash -s -- /usr/lib/postgresql/18/bin source < ops/db-source-feature-smoke/fixture.sh > "$out/source-fixture.txt"
 docker cp "$source_id:/tmp/feature-smoke.dump" "$scratch/feature-smoke.dump"
 docker cp "$scratch/feature-smoke.dump" "$target_id:/tmp/feature-smoke.dump"

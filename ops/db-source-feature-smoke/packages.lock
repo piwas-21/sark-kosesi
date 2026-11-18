@@ -1,0 +1,11 @@
+bison=2:3.8.2+dfsg-1+b2
+build-essential=12.12
+bzip2=1.0.8-6
+ca-certificates=20250419
+curl=8.14.1-2+deb13u5
+flex=2.6.4-8.2+b4
+libicu-dev=76.1-4
+libssl-dev=3.5.7-1~deb13u2
+pkgconf=1.8.1-4
+libreadline-dev=8.2-6
+zlib1g-dev=1:1.3.dfsg+really1.3.1-1+b1
