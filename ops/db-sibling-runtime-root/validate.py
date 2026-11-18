@@ -22,18 +22,49 @@ PRESERVED = {
 STOCK_ONLY = ("libxml2", "libgssapi-krb5-2", "libkrb5-3", "libldap2")
 
 
-def parse_packages(text):
+def parse_reference_packages(text):
     result = {}
     for line in text.splitlines():
         fields = line.split("\t")
         if len(fields) != 2 or not all(fields):
-            raise ValueError("invalid package inventory")
+            raise ValueError("invalid reference package inventory")
+        if not re.fullmatch(r"[a-z0-9][a-z0-9+.-]*(?::[a-z0-9][a-z0-9-]*)?", fields[0]):
+            raise ValueError("invalid package name")
         name = fields[0].split(":", 1)[0]
         if name in result:
-            raise ValueError("duplicate package")
+            raise ValueError("duplicate reference package")
         result[name] = fields[1]
     if not result:
-        raise ValueError("empty package inventory")
+        raise ValueError("empty reference package inventory")
+    return result
+
+
+def parse_live_packages(text):
+    result = {}
+    seen = set()
+    for line in text.splitlines():
+        fields = line.split("\t")
+        if len(fields) != 3 or not fields[0] or not fields[2]:
+            raise ValueError("invalid live package inventory")
+        if not re.fullmatch(r"[a-z0-9][a-z0-9+.-]*(?::[a-z0-9][a-z0-9-]*)?", fields[0]):
+            raise ValueError("invalid package name")
+        name = fields[0].split(":", 1)[0]
+        if name in seen:
+            raise ValueError("duplicate live package")
+        seen.add(name)
+        status = fields[2].split()
+        if len(status) != 3:
+            raise ValueError("invalid dpkg status")
+        wanted, error, state = status
+        if wanted not in {"unknown", "install", "hold", "deinstall", "purge"} or error != "ok":
+            raise ValueError("invalid or broken dpkg status")
+        if state in {"not-installed", "config-files"}:
+            continue
+        if state != "installed" or wanted not in {"install", "hold"} or not fields[1]:
+            raise ValueError("package is not fully installed")
+        result[name] = fields[1]
+    if not result:
+        raise ValueError("empty installed package inventory")
     return result
 
 
@@ -103,15 +134,11 @@ def main(directory):
         images.append(value[0])
     validate_image_metadata(*images)
     validate_packages(
+        parse_reference_packages(read("upstream-packages.txt")),
         *(
-            parse_packages(read(name))
-            for name in (
-                "upstream-packages.txt",
-                "base-packages.txt",
-                "stock-packages.txt",
-                "candidate-packages.txt",
-            )
-        )
+            parse_live_packages(read(f"{profile}-packages.txt"))
+            for profile in ("base", "stock", "candidate")
+        ),
     )
     validate_libraries(
         *(

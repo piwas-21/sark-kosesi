@@ -567,7 +567,9 @@ checks registry identities, package inventory against the upstream root manifest
 and the actual stock image. A scoped, signed Debian snapshot supplies exactly
 three pinned ICU and locale packages, and the resulting package inventory must
 otherwise match the original root. The original util-linux packages remain.
-The workflow records full installed-package lists, loader caches, OCI image
+The workflow records raw package names, versions and dpkg status; only fully
+installed packages count toward closure, and partial or broken states fail.
+It also records loader caches, OCI image
 metadata, matching libc bytes and a small locale comparison, with positive and
 negative controls for selected stock-only packages and libraries. Trust inputs,
 source pins and snapshot provenance are in `ops/db-sibling-runtime-root/`.

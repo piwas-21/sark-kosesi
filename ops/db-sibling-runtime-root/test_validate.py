@@ -6,7 +6,8 @@ import unittest
 from identity import ROOT_CONFIG, SHARED_LAYER, STOCK_CONFIG, validate_manifests
 from validate import (
     parse_libraries,
-    parse_packages,
+    parse_live_packages,
+    parse_reference_packages,
     validate_image_metadata,
     validate_libraries,
     validate_packages,
@@ -85,16 +86,64 @@ class ClosureControls(unittest.TestCase):
         with self.assertRaises(ValueError):
             validate_libraries(self.essential, self.essential | self.icu, self.essential | self.icu)
 
-    def test_parsers_reject_invalid_and_empty(self):
-        self.assertEqual(parse_packages("libc6:amd64\t2\n"), {"libc6": "2"})
+    def test_reference_and_live_parsers_are_distinct(self):
+        self.assertEqual(parse_reference_packages("libc6:amd64\t2\n"), {"libc6": "2"})
+        self.assertEqual(
+            parse_live_packages("libc6:amd64\t2\tinstall ok installed\n"), {"libc6": "2"}
+        )
         self.assertEqual(
             parse_libraries(" libz.so.1 (libc6,x86-64) => /lib/libz.so.1\n"), {"libz.so.1"}
         )
-        for text in ("", "bad", "libc6\t2\nlibc6:amd64\t2\n"):
+        for text in ("", "bad", "libc6\t2\nlibc6:amd64\t2\n", "libc6\t2\tinstall ok installed\n"):
             with self.assertRaises(ValueError):
-                parse_packages(text)
+                parse_reference_packages(text)
+        for text in (
+            "",
+            "libc6\t2\n",
+            "libc6\t2\tinstall ok installed\nlibc6:amd64\t2\tdeinstall ok config-files\n",
+        ):
+            with self.assertRaises(ValueError):
+                parse_live_packages(text)
         with self.assertRaises(ValueError):
             parse_libraries("libz.so.1 => not found")
+
+    def test_config_only_is_not_counted_as_package_presence(self):
+        def inventory(packages, residual):
+            return "".join(
+                f"{name}\t{version}\t{'deinstall ok config-files' if name == residual else 'install ok installed'}\n"
+                for name, version in packages.items()
+            )
+
+        stock = parse_live_packages(inventory(self.stock, "libxml2"))
+        self.assertNotIn("libxml2", stock)
+        self.assertEqual({**stock, "libxml2": "1"}, self.stock)
+        with self.assertRaises(ValueError):
+            validate_packages(self.base, self.base, stock, self.candidate)
+        candidate = parse_live_packages(inventory(self.candidate, "locales"))
+        self.assertNotIn("locales", candidate)
+        self.assertEqual({**candidate, "locales": "2.41-12+deb13u4"}, self.candidate)
+        with self.assertRaises(ValueError):
+            validate_packages(self.base, self.base, self.stock, candidate)
+
+    def test_partial_broken_and_invalid_states_fail_closed(self):
+        for status in (
+            "install ok half-installed",
+            "install ok half-configured",
+            "install ok unpacked",
+            "install ok triggers-awaited",
+            "install ok triggers-pending",
+            "install reinstreq installed",
+            "bogus ok installed",
+            "install ok unknown",
+            "installed",
+            "deinstall ok installed",
+        ):
+            with self.subTest(status=status), self.assertRaises(ValueError):
+                parse_live_packages(f"libc6\t2\tinstall ok installed\nlibxml2\t1\t{status}\n")
+        self.assertEqual(
+            parse_live_packages("libc6\t2\thold ok installed\nold\t\tunknown ok not-installed\n"),
+            {"libc6": "2"},
+        )
 
 
 if __name__ == "__main__":

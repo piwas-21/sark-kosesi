@@ -2,7 +2,7 @@
 # Invoked inside an owned, network-disabled image.
 set -eu
 case "$1" in
-  packages) dpkg-query -W -f='${binary:Package}\t${Version}\n' | LC_ALL=C sort ;;
+  packages) dpkg-query -W -f='${binary:Package}\t${Version}\t${Status}\n' ;;
   loader) ldconfig -p ;;
   libc) sha256sum /lib/x86_64-linux-gnu/libc.so.6 | cut -d ' ' -f 1 ;;
   locale)
