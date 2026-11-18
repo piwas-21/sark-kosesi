@@ -7,6 +7,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "passive-preview"))
 from evidence import (
     SCOPE,
+    EvidenceError,
     validate_alerts,
     validate_anonymous,
     validate_messages,
@@ -51,6 +52,63 @@ class PassiveEvidenceTest(unittest.TestCase):
         ):
             with self.subTest(variant=variant), self.assertRaises(ValueError):
                 validate_anonymous(variant)
+
+    def test_zap_status_line_without_reason_and_malformed_controls(self):
+        good = [message(host, path, marker) for (host, path), marker in SCOPE.items()]
+        expected = {key: "synthetic" for key in SCOPE}
+        no_reason = [{**item, "responseHeader": "HTTP/1.1 200\r\n"} for item in good]
+        self.assertEqual(validate_messages(no_reason, expected), 3)
+        anonymous = [
+            {
+                **item,
+                "requestHeader": item["requestHeader"].split("\r\n")[0] + "\r\n",
+                "responseHeader": "HTTP/1.1 401\r\n",
+            }
+            for item in good
+        ]
+        validate_anonymous(anonymous)
+        for line in (
+            "HTTP/1.1 4010",
+            "HTTP/1.1 401x",
+            "HTTP/1.0 401",
+            "HTTP/1.1 200",
+            "HTTP/1.1  401",
+        ):
+            with self.subTest(line=line), self.assertRaises(EvidenceError):
+                validate_anonymous([{**anonymous[0], "responseHeader": line}, *anonymous[1:]])
+
+    def test_auth_is_single_exact_value_with_case_insensitive_name(self):
+        good = [message(host, path, marker) for (host, path), marker in SCOPE.items()]
+        expected = {key: "synthetic" for key in SCOPE}
+        good[0]["requestHeader"] = good[0]["requestHeader"].replace(
+            "Authorization:", "aUtHoRiZaTiOn:"
+        )
+        self.assertEqual(validate_messages(good, expected), 3)
+        for value in (
+            "aUtHoRiZaTiOn: changed",
+            "aUtHoRiZaTiOn: synthetic\r\nAuthorization: synthetic",
+        ):
+            bad = [
+                {
+                    **good[0],
+                    "requestHeader": good[0]["requestHeader"].replace(
+                        "aUtHoRiZaTiOn: synthetic", value
+                    ),
+                },
+                *good[1:],
+            ]
+            with self.subTest(value=value), self.assertRaises(EvidenceError):
+                validate_messages(bad, expected)
+
+    def test_diagnostics_do_not_include_untrusted_values(self):
+        host, path = next(iter(SCOPE))
+        bad = message(host, path, "sensitive body", 403)
+        with self.assertRaises(EvidenceError) as raised:
+            validate_messages([bad], {key: "synthetic" for key in SCOPE})
+        self.assertEqual(str(raised.exception), "bucket=response_status scope=1 status=403")
+        with self.assertRaises(EvidenceError) as raised:
+            validate_messages([{**bad, "requestHeader": "GET http://private-secret/ HTTP/1.1"}], {})
+        self.assertEqual(str(raised.exception), "bucket=target scope=0 status=other")
 
     def test_rules_must_be_enabled_and_not_weakened(self):
         rule = {"enabled": "true", "alertThreshold": "DEFAULT"}

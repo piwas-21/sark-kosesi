@@ -10,6 +10,7 @@ from http.server import BaseHTTPRequestHandler, HTTPServer
 
 from evidence import (
     SCOPE,
+    EvidenceError,
     validate_alerts,
     validate_anonymous,
     validate_messages,
@@ -143,9 +144,10 @@ def main():
         worker.join()
     reset()
     PHASE = "anonymous-control"
-    for host, path in SCOPE:
-        if request(f"http://{host}{path}") != 401:
-            raise ValueError("Anonymous protected target did not reject")
+    for index, (host, path) in enumerate(SCOPE, 1):
+        status = request(f"http://{host}{path}")
+        if status != 401:
+            raise EvidenceError("request_status", index, status)
     drained()
     validate_anonymous(history())
     basic = base64.b64encode(f"preview:{TOKEN}".encode()).decode()
@@ -157,10 +159,11 @@ def main():
     reset()
     reject_history(history(), expected_auth)
     PHASE = "authenticated-assessment"
-    for host, path in SCOPE:
+    for index, (host, path) in enumerate(SCOPE, 1):
         auth = expected_auth[(host, path)]
-        if request(f"http://{host}{path}", auth) != 200:
-            raise ValueError("Authenticated target did not respond successfully")
+        status = request(f"http://{host}{path}", auth)
+        if status != 200:
+            raise EvidenceError("request_status", index, status)
     drained()
     observed = validate_messages(history(), expected_auth)
     findings = alerts()
@@ -201,6 +204,9 @@ def main():
 if __name__ == "__main__":
     try:
         main()
+    except EvidenceError as exc:
+        print(f"Passive preview assessment failed at {PHASE} ({exc})")
+        raise SystemExit(1) from None
     except Exception as exc:
         # No message, URL, header, body, path, credential or raw scanner data is printed.
         print(f"Passive preview assessment failed at {PHASE} ({type(exc).__name__})")
