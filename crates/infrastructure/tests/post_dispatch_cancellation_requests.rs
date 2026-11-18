@@ -1759,16 +1759,45 @@ async fn combined_cancellation_and_packing_requires_both_grants_and_validates_ea
     };
     use commerce_infrastructure::{
         checkout_cancellations::{
-            InspectionError, PackingEvidence, inspect_cancellation_packing as inspect,
+            CancellationPackingEvidence, InspectionError, PackingEvidence,
+            inspect_cancellation_packing,
         },
         order_stock::settle,
         packing_custody::{self, Action, Component, Request, Units},
         payment_attempts::{identities::resolve, recognition::recognize},
     };
-    let (store, time, session, csrf, order) = payment::accepted(&pool).await;
+    // The actual composed reader remains under test; pin it so repeated calls
+    // and lock-race joins do not embed its full future in the fixture future.
+    fn inspect<'a>(
+        pool: &'a PgPool,
+        token: &'a commerce_infrastructure::staff_access::SessionToken,
+        clock: &'a dyn commerce_application::request_context::Clock,
+        order: &'a str,
+    ) -> std::pin::Pin<
+        Box<
+            impl std::future::Future<
+                Output = Result<Option<CancellationPackingEvidence>, InspectionError>,
+            > + 'a,
+        >,
+    > {
+        Box::pin(inspect_cancellation_packing(pool, token, clock, order))
+    }
+    let (store, time, session, csrf, order) = Box::pin(payment::accepted(&pool)).await;
     let key = GuestCredential::from_session(&session).expect("guest");
-    let reviewer = inspection_staff(&pool, "combined-reviewer", 81, "cancellation.review").await;
-    let warehouse = inspection_staff(&pool, "combined-warehouse", 82, "warehouse.manage").await;
+    let reviewer = Box::pin(inspection_staff(
+        &pool,
+        "combined-reviewer",
+        81,
+        "cancellation.review",
+    ))
+    .await;
+    let warehouse = Box::pin(inspection_staff(
+        &pool,
+        "combined-warehouse",
+        82,
+        "warehouse.manage",
+    ))
+    .await;
     let id = &order.identity.id;
     assert!(matches!(
         inspect(&pool, &reviewer, time.as_ref(), id).await,
@@ -1787,22 +1816,28 @@ async fn combined_cancellation_and_packing_requires_both_grants_and_validates_ea
             .expect("no request"),
         None
     );
-    let prepared = prepare_attempt(
+    let prepared = Box::pin(prepare_attempt(
         &store,
         &key,
         &csrf,
         "combined-pay",
         &payment::intent(&order),
         &payment::config(),
-    )
+    ))
     .await
     .expect("prepared");
     let frozen = prepared.frozen.snapshot();
     let attempt = &frozen.binding.id;
     let ids = payment::Ids(AtomicU64::new(200_000));
-    start_dispatch(&pool, time.as_ref(), &ids, attempt, &payment::config())
-        .await
-        .expect("dispatch");
+    Box::pin(start_dispatch(
+        &pool,
+        time.as_ref(),
+        &ids,
+        attempt,
+        &payment::config(),
+    ))
+    .await
+    .expect("dispatch");
     // The empty view and a concurrent pending request serialize on the attempt.
     let mut blocker = pool.begin().await.expect("attempt blocker");
     sqlx::query("SELECT id FROM payment_attempts WHERE id=$1 FOR UPDATE")
@@ -1811,7 +1846,7 @@ async fn combined_cancellation_and_packing_requires_both_grants_and_validates_ea
         .await
         .expect("hold attempt");
     let view = inspect(&pool, &reviewer, time.as_ref(), id);
-    let request = async {
+    let request = Box::pin(async {
         tokio::time::timeout(std::time::Duration::from_millis(900), async {
             loop {
                 let waiting: bool = sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM pg_stat_activity WHERE datname=current_database() AND wait_event_type='Lock' AND query LIKE '%SELECT id FROM payment_attempts WHERE id=$1 FOR UPDATE%')").fetch_one(&pool).await.expect("view wait");
@@ -1819,11 +1854,17 @@ async fn combined_cancellation_and_packing_requires_both_grants_and_validates_ea
                 tokio::time::sleep(std::time::Duration::from_millis(5)).await;
             }
         }).await.expect("view queued first");
-        request_after_dispatch(&store, &key, &csrf, "combined-request", id)
-            .await
-            .expect("pending intent")
-    };
-    let release = async {
+        Box::pin(request_after_dispatch(
+            &store,
+            &key,
+            &csrf,
+            "combined-request",
+            id,
+        ))
+        .await
+        .expect("pending intent")
+    });
+    let release = Box::pin(async {
         tokio::time::timeout(std::time::Duration::from_millis(900), async {
             loop {
                 let waiting: bool = sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM pg_stat_activity WHERE datname=current_database() AND wait_event_type='Lock' AND query LIKE '%pending cancellation attempt%')").fetch_one(&pool).await.expect("request wait");
@@ -1832,10 +1873,10 @@ async fn combined_cancellation_and_packing_requires_both_grants_and_validates_ea
             }
         }).await.expect("request queued after view");
         blocker.rollback().await.expect("release attempt");
-    };
+    });
     let (prior_view, _, ()) = tokio::join!(view, request, release);
     assert_eq!(prior_view.expect("serialized absent view"), None);
-    let before = footprint(&pool).await;
+    let before = Box::pin(footprint(&pool)).await;
     let pending = inspect(&pool, &reviewer, time.as_ref(), id)
         .await
         .expect("inspection")
@@ -1843,7 +1884,7 @@ async fn combined_cancellation_and_packing_requires_both_grants_and_validates_ea
     assert_eq!(pending.request.order_id, *id);
     assert_eq!(pending.request.requested_at, 1500);
     assert_eq!(pending.packing, PackingEvidence::Unavailable);
-    assert_eq!(before, footprint(&pool).await);
+    assert_eq!(before, Box::pin(footprint(&pool)).await);
 
     // Sole synthetic provider observation in the disposable fixture, with native
     // constraints and real resolution, recognition, allocation and packing.
@@ -1880,15 +1921,21 @@ async fn combined_cancellation_and_packing_requires_both_grants_and_validates_ea
         .bind(id).bind(serde_json::json!({"schema_version":1,"order_id":id,"attempt_id":attempt,"observation_id":observation.id}))
         .execute(&mut *tx).await.expect("observation event");
     tx.commit().await.expect("reciprocal observation");
-    resolve(&pool, time.as_ref(), &ids, attempt, "combined-resolution")
-        .await
-        .expect("identity");
+    Box::pin(resolve(
+        &pool,
+        time.as_ref(),
+        &ids,
+        attempt,
+        "combined-resolution",
+    ))
+    .await
+    .expect("identity");
     time.0.store(1501, Ordering::SeqCst);
-    recognize(&pool, time.as_ref(), &ids, attempt)
+    Box::pin(recognize(&pool, time.as_ref(), &ids, attempt))
         .await
         .expect("recognition");
     time.0.store(1502, Ordering::SeqCst);
-    settle(&pool, time.as_ref(), &ids, id)
+    Box::pin(settle(&pool, time.as_ref(), &ids, id))
         .await
         .expect("allocation");
     for earlier in [1500, 1501] {
@@ -1923,16 +1970,16 @@ async fn combined_cancellation_and_packing_requires_both_grants_and_validates_ea
         .execute(&mut *tx).await.expect("later observation event");
     tx.commit().await.expect("reciprocal later observation");
     time.0.store(1503, Ordering::SeqCst);
-    resolve(
+    Box::pin(resolve(
         &pool,
         time.as_ref(),
         &ids,
         attempt,
         "combined-later-resolution",
-    )
+    ))
     .await
     .expect("later identity");
-    recognize(&pool, time.as_ref(), &ids, attempt)
+    Box::pin(recognize(&pool, time.as_ref(), &ids, attempt))
         .await
         .expect("later recognition");
     time.0.store(1502, Ordering::SeqCst);
@@ -1958,7 +2005,7 @@ async fn combined_cancellation_and_packing_requires_both_grants_and_validates_ea
             quantity: 2,
         },
     ]];
-    let packed = packing_custody::record(
+    let packed = Box::pin(packing_custody::record(
         &pool,
         &reviewer,
         time.as_ref(),
@@ -1972,10 +2019,10 @@ async fn combined_cancellation_and_packing_requires_both_grants_and_validates_ea
                 packages: &packages,
             },
         },
-    )
+    ))
     .await
     .expect("packing assertion");
-    let before = footprint(&pool).await;
+    let before = Box::pin(footprint(&pool)).await;
     let events_before: i64 = sqlx::query_scalar("SELECT count(*) FROM commerce_outbox")
         .fetch_one(&pool)
         .await
@@ -2005,7 +2052,7 @@ async fn combined_cancellation_and_packing_requires_both_grants_and_validates_ea
         }
         PackingEvidence::Unavailable => panic!("validated packing must be available"),
     }
-    assert_eq!(before, footprint(&pool).await);
+    assert_eq!(before, Box::pin(footprint(&pool)).await);
     let events_after: i64 = sqlx::query_scalar("SELECT count(*) FROM commerce_outbox")
         .fetch_one(&pool)
         .await
@@ -2020,7 +2067,7 @@ async fn combined_cancellation_and_packing_requires_both_grants_and_validates_ea
         .await
         .expect("hold history");
     let view = inspect(&pool, &reviewer, time.as_ref(), id);
-    let revoke_grant = async {
+    let revoke_grant = Box::pin(async {
         tokio::time::timeout(std::time::Duration::from_millis(900), async {
             loop {
                 let waiting: bool = sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM pg_stat_activity WHERE datname=current_database() AND wait_event_type='Lock' AND query LIKE '%packing_custody_history_exact%')").fetch_one(&pool).await.expect("view wait");
@@ -2030,8 +2077,8 @@ async fn combined_cancellation_and_packing_requires_both_grants_and_validates_ea
         }).await.expect("actual history wait");
         sqlx::query("DELETE FROM staff_capabilities WHERE staff_id='combined-reviewer' AND capability='warehouse.manage' /* combined-grant-delete */")
             .execute(&pool).await.expect("grant removal after view")
-    };
-    let release = async {
+    });
+    let release = Box::pin(async {
         tokio::time::timeout(std::time::Duration::from_millis(900), async {
             loop {
                 let waiting: bool = sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM pg_stat_activity WHERE datname=current_database() AND wait_event_type='Lock' AND query LIKE '%combined-grant-delete%')").fetch_one(&pool).await.expect("grant wait");
@@ -2040,7 +2087,7 @@ async fn combined_cancellation_and_packing_requires_both_grants_and_validates_ea
             }
         }).await.expect("grant locked until view completes");
         blocker.rollback().await.expect("release history");
-    };
+    });
     let (held_view, removed, ()) = tokio::join!(view, revoke_grant, release);
     assert!(held_view.expect("held view").is_some());
     assert_eq!(removed.rows_affected(), 1);
@@ -2060,7 +2107,7 @@ async fn combined_cancellation_and_packing_requires_both_grants_and_validates_ea
         .await
         .expect("hold attempt");
     let view = inspect(&pool, &reviewer, time.as_ref(), id);
-    let release = async {
+    let release = Box::pin(async {
         tokio::time::timeout(std::time::Duration::from_millis(900), async {
             loop {
                 let waiting: bool = sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM pg_stat_activity WHERE datname=current_database() AND wait_event_type='Lock' AND query LIKE '%SELECT id FROM payment_attempts WHERE id=$1 FOR UPDATE%')").fetch_one(&pool).await.expect("attempt wait");
@@ -2070,7 +2117,7 @@ async fn combined_cancellation_and_packing_requires_both_grants_and_validates_ea
         }).await.expect("actual attempt wait");
         time.0.store(2301, Ordering::SeqCst);
         blocker.rollback().await.expect("release attempt");
-    };
+    });
     let (expired, ()) = tokio::join!(view, release);
     assert!(matches!(expired, Err(InspectionError::Denied)));
     time.0.store(1503, Ordering::SeqCst);
@@ -2080,7 +2127,7 @@ async fn combined_cancellation_and_packing_requires_both_grants_and_validates_ea
             .expect("fresh authority")
             .is_some()
     );
-    assert_eq!(before, footprint(&pool).await);
+    assert_eq!(before, Box::pin(footprint(&pool)).await);
     pool.execute("ALTER TABLE commerce_outbox DISABLE TRIGGER USER; UPDATE commerce_outbox SET payload='{}' WHERE kind='order.packing_custody_recorded.v1'; ALTER TABLE commerce_outbox ENABLE TRIGGER USER").await.expect("damage fixture event");
     assert!(matches!(
         inspect(&pool, &reviewer, time.as_ref(), id).await,
@@ -2123,7 +2170,7 @@ async fn combined_cancellation_and_packing_requires_both_grants_and_validates_ea
         .await
         .expect("history lock");
     let view = inspect(&pool, &reviewer, time.as_ref(), id);
-    let write = async {
+    let write = Box::pin(async {
         tokio::time::timeout(std::time::Duration::from_millis(900), async {
             loop {
                 let waiting: bool = sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM pg_stat_activity WHERE datname=current_database() AND wait_event_type='Lock' AND query LIKE '%packing_custody_history_exact%')").fetch_one(&pool).await.expect("view wait");
@@ -2131,7 +2178,7 @@ async fn combined_cancellation_and_packing_requires_both_grants_and_validates_ea
                 tokio::time::sleep(std::time::Duration::from_millis(5)).await;
             }
         }).await.expect("view owns original attempt");
-        packing_custody::record(
+        Box::pin(packing_custody::record(
             &pool,
             &reviewer,
             time.as_ref(),
@@ -2145,11 +2192,11 @@ async fn combined_cancellation_and_packing_requires_both_grants_and_validates_ea
                     packages: &packages,
                 },
             },
-        )
+        ))
         .await
         .expect("subsequent packing assertion")
-    };
-    let release = async {
+    });
+    let release = Box::pin(async {
         tokio::time::timeout(std::time::Duration::from_millis(900), async {
             loop {
                 let waiting: bool = sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM pg_stat_activity WHERE datname=current_database() AND wait_event_type='Lock' AND query LIKE '%SELECT id FROM payment_attempts WHERE id=$1 FOR UPDATE%')").fetch_one(&pool).await.expect("packing wait");
@@ -2158,7 +2205,7 @@ async fn combined_cancellation_and_packing_requires_both_grants_and_validates_ea
             }
         }).await.expect("writer waits on attempt");
         blocker.rollback().await.expect("release history");
-    };
+    });
     let (snapshot, next, ()) = tokio::join!(view, write, release);
     assert!(!next.replayed);
     assert!(
@@ -2167,7 +2214,7 @@ async fn combined_cancellation_and_packing_requires_both_grants_and_validates_ea
     assert!(
         matches!(inspect(&pool, &reviewer, time.as_ref(), id).await.expect("later view").expect("request").packing, PackingEvidence::Validated(value) if value.history.len()==2)
     );
-    packing_custody::record(
+    Box::pin(packing_custody::record(
         &pool,
         &reviewer,
         time.as_ref(),
@@ -2180,7 +2227,7 @@ async fn combined_cancellation_and_packing_requires_both_grants_and_validates_ea
                 target_id: &packed.record.id,
             },
         },
-    )
+    ))
     .await
     .expect("release assertion");
     let after_release = inspect(&pool, &reviewer, time.as_ref(), id)

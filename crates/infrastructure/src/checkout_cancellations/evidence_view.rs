@@ -47,21 +47,28 @@ pub async fn inspect_cancellation_packing(
         .await
         .map_err(inspection::staff)?;
     let result = async {
+        // Keep the two deep, sequential validators out of the caller's future.
+        // Both retain the same transaction and attempt claim across the await.
         let Some((request, attempt)) =
-            inspection::inspect_bound_locked(&mut access.tx, order).await?
+            Box::pin(inspection::inspect_bound_locked(&mut access.tx, order)).await?
         else {
             return Ok(None);
         };
-        let (packing, source_at) =
-            match packing_custody::inspect_locked(&mut access.tx, order, &attempt).await {
-                Ok(value) => (
-                    PackingEvidence::Validated(value.inspection),
-                    Some(value.source_at),
-                ),
-                Err(packing_custody::Error::Unavailable) => (PackingEvidence::Unavailable, None),
-                Err(packing_custody::Error::Database) => return Err(InspectionError::Database),
-                Err(_) => return Err(InspectionError::InvalidStoredData),
-            };
+        let (packing, source_at) = match Box::pin(packing_custody::inspect_locked(
+            &mut access.tx,
+            order,
+            &attempt,
+        ))
+        .await
+        {
+            Ok(value) => (
+                PackingEvidence::Validated(value.inspection),
+                Some(value.source_at),
+            ),
+            Err(packing_custody::Error::Unavailable) => (PackingEvidence::Unavailable, None),
+            Err(packing_custody::Error::Database) => return Err(InspectionError::Database),
+            Err(_) => return Err(InspectionError::InvalidStoredData),
+        };
         Ok(Some((
             CancellationPackingEvidence { request, packing },
             source_at,
