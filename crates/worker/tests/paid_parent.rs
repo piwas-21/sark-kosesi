@@ -123,7 +123,7 @@ async fn database_snapshot(pool: &PgPool) -> Vec<(String, String, Vec<String>)> 
         // PostgreSQL's format(%I) quotes each catalog-derived identifier separately.
         let query =
             format!("SELECT row_to_json(snapshot_row)::text FROM {identifier} AS snapshot_row");
-        let mut rows: Vec<String> = sqlx::query_scalar(&query)
+        let mut rows: Vec<String> = sqlx::query_scalar(sqlx::AssertSqlSafe(query))
             .fetch_all(&mut *tx)
             .await
             .unwrap_or_else(|_| panic!("snapshot base table failed"));
