@@ -172,18 +172,30 @@ def run_to_file(command, output, maximum=64 * 1024 * 1024):
         resource.setrlimit(resource.RLIMIT_FSIZE, (maximum, maximum))
         resource.setrlimit(resource.RLIMIT_CPU, (60, 60))
 
+    phase = {"readelf": "ELF inspection", "dpkg-deb": "package extraction"}.get(
+        command[0], "tool execution"
+    )
+    failure = None
     with output.open("xb") as dst, tempfile.TemporaryFile(dir=output.parent) as errors:
-        result = subprocess.run(
-            command,
-            stdout=dst,
-            stderr=errors,
-            check=False,
-            timeout=90,
-            preexec_fn=limits,
-            env={**os.environ, "LC_ALL": "C"},
-        )
-        errors.seek(0)
-        error = errors.read(4097)
+        try:
+            result = subprocess.run(
+                command,
+                stdout=dst,
+                stderr=errors,
+                check=False,
+                timeout=90,
+                preexec_fn=limits,
+                env={**os.environ, "LC_ALL": "C"},
+            )
+        except subprocess.TimeoutExpired:
+            failure = f"{phase} timed out"
+        except OSError:
+            failure = f"{phase} could not start"
+        if failure is None:
+            errors.seek(0)
+            error = errors.read(4097)
+    if failure is not None:
+        raise ValueError(failure) from None
     if result.returncode or error or not output.stat().st_size:
         raise ValueError(tool_diagnostic(command[0], result.returncode, error))
 

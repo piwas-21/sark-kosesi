@@ -6,6 +6,7 @@ import lzma
 import struct
 import subprocess
 import tempfile
+import traceback
 import unittest
 import zlib
 from pathlib import Path
@@ -203,6 +204,44 @@ class Controls(unittest.TestCase):
         with patch.object(evidence.subprocess, "run", side_effect=warning_run):
             with self.assertRaisesRegex(ValueError, r"Warning: <path>: bad note"):
                 evidence.run_to_file(["readelf", "-n", "/private/file"], self.root / "warning")
+
+    def test_timeout_and_launch_errors_do_not_expose_exception_details(self):
+        for suffix, command, error, expected in (
+            (
+                "timeout",
+                ["readelf", "/private/SECRET_ARG"],
+                subprocess.TimeoutExpired(
+                    ["readelf", "/private/SECRET_ARG"],
+                    90,
+                    output=b"SECRET_STDOUT",
+                    stderr=b"SECRET_STDERR",
+                ),
+                "ELF inspection timed out",
+            ),
+            (
+                "launch",
+                ["dpkg-deb", "/private/SECRET_ARG"],
+                OSError(2, "SECRET_ERROR", "/private/SECRET_PATH"),
+                "package extraction could not start",
+            ),
+            (
+                "unknown",
+                ["/private/SECRET_TOOL", "SECRET_ARG"],
+                OSError(2, "SECRET_ERROR", "/private/SECRET_PATH"),
+                "tool execution could not start",
+            ),
+        ):
+            with (
+                self.subTest(suffix=suffix),
+                patch.object(evidence.subprocess, "run", side_effect=error),
+            ):
+                with self.assertRaises(ValueError) as caught:
+                    evidence.run_to_file(command, self.root / suffix)
+                self.assertEqual(str(caught.exception), expected)
+                self.assertIsNone(caught.exception.__context__)
+                rendered = "".join(traceback.format_exception(caught.exception))
+                self.assertNotIn("SECRET", rendered)
+                self.assertNotIn("/private/", rendered)
 
 
 if __name__ == "__main__":
