@@ -643,6 +643,9 @@ and wrong-owner volumes, SCRAM success and wrong-password rejection, then
 stops with SIGINT, recreates the container on the same volume and verifies a
 synthetic row. Inspection checks identity, isolation and clean exit. Only the
 labelled disposable resources are removed; no existing volume is mounted.
+Lifecycle status and checksums are completed in private runner scratch before
+the evidence directory is published atomically; a publication failure fails the
+workflow and cannot expose a partial successful result.
 
 This tests a pre-initialized cluster contract, not the stock image entrypoint:
 automatic initialization, environment-based user/database creation, init
