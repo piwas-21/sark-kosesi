@@ -967,7 +967,8 @@ acceptance. The one-candidate inbox exercises empty, cursor traversal, inserts
 behind a cursor, damaged candidate custody and an actual attempt wait with MFA
 expiry; no scan claims complete orphan-event discovery. For the combined exact-order evidence view, require both
 grants and recent MFA; test a missing packing source separately from a validated
-empty history. Revalidate recorded and released packing, damaged and repaired
+empty history. Reject a final clock earlier than the selected recognition or
+allocation, including a recognition newer than the allocation. Revalidate recorded and released packing, damaged and repaired
 request or packing events, and an actual attempt wait with expiry. Hold the view
 at the packing reader and verify grant removal and a competing packing write wait
 until its snapshot completes. Confirm inspection produces no financial, stock,

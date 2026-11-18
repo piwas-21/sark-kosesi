@@ -44,7 +44,9 @@ pub async fn inspect(
         crate::order_stock::source::claim_attempt(&mut access.tx, &attempt)
             .await
             .map_err(|_| Error::Database)?;
-        inspect_locked(&mut access.tx, order_id, &attempt).await
+        inspect_locked(&mut access.tx, order_id, &attempt)
+            .await
+            .map(|validated| validated.inspection)
     }
     .await;
     // All outcomes after a lock wait, including errors, cross the same fence.
@@ -55,12 +57,18 @@ pub async fn inspect(
     result
 }
 
+/// The source watermark is private to transaction-scoped consumers.
+pub(crate) struct ValidatedInspection {
+    pub inspection: Inspection,
+    pub source_at: i64,
+}
+
 /// Reuse the complete validator only under the caller's original attempt claim.
 pub(crate) async fn inspect_locked(
     tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
     order_id: &str,
     attempt: &str,
-) -> Result<Inspection, Error> {
+) -> Result<ValidatedInspection, Error> {
     let history = store::history(tx, order_id).await?;
     // An existing assertion binds its historical received recognition. An
     // empty history has no such proof and requires current source evidence.
@@ -68,6 +76,7 @@ pub(crate) async fn inspect_locked(
     let source = shipment_planning::source(tx, order_id, attempt, historical)
         .await
         .map_err(source)?;
+    let source_at = source.recognition_at.max(source.allocation_at);
     let (active, _) = model::validate(&source, &history)?;
     // Validation preserves one occupancy entry per ordered line in the same order.
     let lines = source
@@ -97,5 +106,8 @@ pub(crate) async fn inspect_locked(
             recorded_at: record.recorded_at,
         })
         .collect();
-    Ok(Inspection { lines, history })
+    Ok(ValidatedInspection {
+        inspection: Inspection { lines, history },
+        source_at,
+    })
 }

@@ -52,20 +52,28 @@ pub async fn inspect_cancellation_packing(
         else {
             return Ok(None);
         };
-        let packing = match packing_custody::inspect_locked(&mut access.tx, order, &attempt).await {
-            Ok(value) => PackingEvidence::Validated(value),
-            Err(packing_custody::Error::Unavailable) => PackingEvidence::Unavailable,
-            Err(packing_custody::Error::Database) => return Err(InspectionError::Database),
-            Err(_) => return Err(InspectionError::InvalidStoredData),
-        };
-        Ok(Some(CancellationPackingEvidence { request, packing }))
+        let (packing, source_at) =
+            match packing_custody::inspect_locked(&mut access.tx, order, &attempt).await {
+                Ok(value) => (
+                    PackingEvidence::Validated(value.inspection),
+                    Some(value.source_at),
+                ),
+                Err(packing_custody::Error::Unavailable) => (PackingEvidence::Unavailable, None),
+                Err(packing_custody::Error::Database) => return Err(InspectionError::Database),
+                Err(_) => return Err(InspectionError::InvalidStoredData),
+            };
+        Ok(Some((
+            CancellationPackingEvidence { request, packing },
+            source_at,
+        )))
     }
     .await;
     // Fence success, absence and all source failures after every held-row wait.
     let at = access.authorized_at(&observed).map_err(inspection::staff)?;
     if result.as_ref().is_ok_and(|row| {
-        row.as_ref().is_some_and(|value| {
+        row.as_ref().is_some_and(|(value, source_at)| {
             at < value.request.requested_at
+                || source_at.is_some_and(|source_at| at < source_at)
                 || match &value.packing {
                     PackingEvidence::Validated(packing) => packing
                         .history
@@ -78,5 +86,5 @@ pub async fn inspect_cancellation_packing(
         return Err(InspectionError::ClockUnavailable);
     }
     drop(access);
-    result
+    result.map(|row| row.map(|(value, _)| value))
 }

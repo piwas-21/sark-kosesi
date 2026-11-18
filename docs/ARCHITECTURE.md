@@ -1942,8 +1942,9 @@ request records, not orphan events or disposition state. A separate exact-order
 view holds both existing `cancellation.review` and `warehouse.manage` grants,
 the staff account and session, then the original attempt claim through both
 historical request and complete packing-source validation. Both grants are
-claimed in that order, and authority and time are checked again after waits.
-Missing usable packing source is explicitly unavailable; corrupt custody fails
+claimed in that order, and authority and time are checked again after waits. The
+combined view fences the selected recognition, allocation and latest assertion
+timestamps even when the validated history is empty. Missing usable packing source is explicitly unavailable; corrupt custody fails
 closed. The validated result contains only the recorded assertions, not physical
 possession, unshipped quantities, a hold or a disposition.
 

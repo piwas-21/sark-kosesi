@@ -1883,18 +1883,66 @@ async fn combined_cancellation_and_packing_requires_both_grants_and_validates_ea
     resolve(&pool, time.as_ref(), &ids, attempt, "combined-resolution")
         .await
         .expect("identity");
+    time.0.store(1501, Ordering::SeqCst);
     recognize(&pool, time.as_ref(), &ids, attempt)
         .await
         .expect("recognition");
+    time.0.store(1502, Ordering::SeqCst);
     settle(&pool, time.as_ref(), &ids, id)
         .await
         .expect("allocation");
+    for earlier in [1500, 1501] {
+        time.0.store(earlier, Ordering::SeqCst);
+        assert!(matches!(
+            inspect(&pool, &reviewer, time.as_ref(), id).await,
+            Err(InspectionError::ClockUnavailable)
+        ));
+    }
+    time.0.store(1502, Ordering::SeqCst);
     let empty = inspect(&pool, &reviewer, time.as_ref(), id)
         .await
         .expect("validated empty")
         .expect("request");
     assert!(
         matches!(empty.packing, PackingEvidence::Validated(ref value) if value.history.is_empty())
+    );
+    // A later paid recognition can be newer than an already committed
+    // allocation. The selected recognition timestamp remains part of the fence.
+    let mut later = observation.clone();
+    later.id = "cccccccccccccccccccccccccccccccc".into();
+    later.effect_key = "combined-later-paid".into();
+    later.revision = 2;
+    later.recorded_at = 1503;
+    let mut tx = pool.begin().await.expect("later fixture transaction");
+    sqlx::query("INSERT INTO payment_observations(id,attempt_id,effect_key,revision,recorded_at,provider_id,credential_fingerprint,status,snapshot) VALUES($1,$2,$3,2,1503,$4,$5,'paid',$6)")
+        .bind(&later.id).bind(attempt).bind(&later.effect_key).bind(&later.intent.payment.id).bind(&later.intent.credential_fingerprint)
+        .bind(serde_json::to_value(&later).expect("synthetic later observation"))
+        .execute(&mut *tx).await.expect("later observation");
+    sqlx::query("INSERT INTO commerce_outbox(id,aggregate_id,kind,payload,created_at) VALUES('dddddddddddddddddddddddddddddddd',$1,'payment.observation_recorded.v1',$2,1503)")
+        .bind(id).bind(serde_json::json!({"schema_version":1,"order_id":id,"attempt_id":attempt,"observation_id":later.id}))
+        .execute(&mut *tx).await.expect("later observation event");
+    tx.commit().await.expect("reciprocal later observation");
+    time.0.store(1503, Ordering::SeqCst);
+    resolve(
+        &pool,
+        time.as_ref(),
+        &ids,
+        attempt,
+        "combined-later-resolution",
+    )
+    .await
+    .expect("later identity");
+    recognize(&pool, time.as_ref(), &ids, attempt)
+        .await
+        .expect("later recognition");
+    time.0.store(1502, Ordering::SeqCst);
+    assert!(matches!(
+        inspect(&pool, &reviewer, time.as_ref(), id).await,
+        Err(InspectionError::ClockUnavailable)
+    ));
+    time.0.store(1503, Ordering::SeqCst);
+    assert!(
+        matches!(inspect(&pool, &reviewer, time.as_ref(), id).await.expect("current source").expect("request").packing, PackingEvidence::Validated(value) if value.history.is_empty())
     );
     let items = [Units {
         sku: "SET-FILLED".into(),
@@ -2025,7 +2073,7 @@ async fn combined_cancellation_and_packing_requires_both_grants_and_validates_ea
     };
     let (expired, ()) = tokio::join!(view, release);
     assert!(matches!(expired, Err(InspectionError::Denied)));
-    time.0.store(1500, Ordering::SeqCst);
+    time.0.store(1503, Ordering::SeqCst);
     assert!(
         inspect(&pool, &reviewer, time.as_ref(), id)
             .await
