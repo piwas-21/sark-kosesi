@@ -90,11 +90,146 @@ fn production_and_malformed_commands_stop_before_database_or_provider() {
     }
 }
 
-// Compare all base-table row snapshots without emitting their values on failure.
-// This catches updates and deletions as well as unexpected insertions.
-async fn database_snapshot(pool: &PgPool) -> Vec<(String, String)> {
-    sqlx::query_as("SELECT c.relname::text,table_to_xml(c.oid::regclass,true,true,'')::text FROM pg_catalog.pg_class c JOIN pg_catalog.pg_namespace n ON n.oid=c.relnamespace WHERE n.nspname=current_schema() AND c.relkind IN ('r','p') ORDER BY c.relname")
-        .fetch_all(pool).await.expect("isolated base-table row snapshots")
+// Compare complete row multisets, including NULLs and duplicates, without printing
+// them. One read-only repeatable snapshot covers discovery and every table read.
+async fn database_snapshot(pool: &PgPool) -> Vec<(String, String, Vec<String>)> {
+    let mut tx = pool.begin().await.expect("begin snapshot");
+    sqlx::query("SET TRANSACTION ISOLATION LEVEL REPEATABLE READ READ ONLY")
+        .execute(&mut *tx)
+        .await
+        .expect("configure snapshot");
+    for setting in [
+        "SET LOCAL TIME ZONE 'UTC'",
+        "SET LOCAL DateStyle = 'ISO, YMD'",
+        "SET LOCAL IntervalStyle = 'postgres'",
+        "SET LOCAL extra_float_digits = 3",
+        "SET LOCAL bytea_output = 'hex'",
+    ] {
+        sqlx::query(setting)
+            .execute(&mut *tx)
+            .await
+            .expect("configure snapshot serialization");
+    }
+    let tables: Vec<(String, String, String)> = sqlx::query_as(
+        "SELECT n.nspname::text, c.relname::text, format('%I.%I', n.nspname, c.relname) \
+         FROM pg_catalog.pg_class c JOIN pg_catalog.pg_namespace n ON n.oid = c.relnamespace \
+         WHERE n.nspname = current_schema() AND c.relkind IN ('r', 'p')",
+    )
+    .fetch_all(&mut *tx)
+    .await
+    .expect("discover base tables");
+    let mut snapshot = Vec::with_capacity(tables.len());
+    for (schema, table, identifier) in tables {
+        // PostgreSQL's format(%I) quotes each catalog-derived identifier separately.
+        let query =
+            format!("SELECT row_to_json(snapshot_row)::text FROM {identifier} AS snapshot_row");
+        let mut rows: Vec<String> = sqlx::query_scalar(&query)
+            .fetch_all(&mut *tx)
+            .await
+            .unwrap_or_else(|_| panic!("snapshot base table failed"));
+        rows.sort_unstable();
+        snapshot.push((schema, table, rows));
+    }
+    tx.commit().await.expect("finish snapshot");
+    snapshot.sort_unstable();
+    snapshot
+}
+
+#[sqlx::test(migrator = "MIGRATOR")]
+async fn snapshot_detects_row_changes_and_ignores_physical_order(pool: PgPool) {
+    sqlx::query("CREATE TABLE \"snapshot \"\"controls\" (value text, extra text)")
+        .execute(&pool)
+        .await
+        .expect("create control table");
+    let insert = "INSERT INTO \"snapshot \"\"controls\" (value, extra) VALUES \
+                  ('AB', NULL), ('A-C', 'quoted \"value\"'), \
+                  ('AB', NULL), (NULL, 'null control')";
+    sqlx::query(insert)
+        .execute(&pool)
+        .await
+        .expect("seed controls");
+    let original = database_snapshot(&pool).await;
+    let control = original
+        .iter()
+        .find(|(_, table, _)| table == "snapshot \"controls")
+        .expect("control table captured");
+    let mut expected = vec![
+        r#"{"value":"AB","extra":null}"#.to_owned(),
+        r#"{"value":"A-C","extra":"quoted \"value\""}"#.to_owned(),
+        r#"{"value":"AB","extra":null}"#.to_owned(),
+        r#"{"value":null,"extra":"null control"}"#.to_owned(),
+    ];
+    expected.sort_unstable();
+    assert!(
+        control.2 == expected,
+        "control rows must preserve exact values and duplicates"
+    );
+    assert!(
+        database_snapshot(&pool).await == original,
+        "unchanged rows must match"
+    );
+
+    sqlx::query("TRUNCATE TABLE \"snapshot \"\"controls\"")
+        .execute(&pool)
+        .await
+        .expect("reorder controls");
+    sqlx::query(
+        "INSERT INTO \"snapshot \"\"controls\" (value, extra) VALUES \
+                 (NULL, 'null control'), ('AB', NULL), \
+                 ('A-C', 'quoted \"value\"'), ('AB', NULL)",
+    )
+    .execute(&pool)
+    .await
+    .expect("reinsert controls");
+    assert!(
+        database_snapshot(&pool).await == original,
+        "row order must not matter"
+    );
+
+    sqlx::query("UPDATE \"snapshot \"\"controls\" SET value = 'changed' WHERE value IS NULL")
+        .execute(&pool)
+        .await
+        .expect("update control");
+    assert!(
+        database_snapshot(&pool).await != original,
+        "updates must be detected"
+    );
+    sqlx::query("UPDATE \"snapshot \"\"controls\" SET value = NULL WHERE value = 'changed'")
+        .execute(&pool)
+        .await
+        .expect("restore update");
+    assert!(
+        database_snapshot(&pool).await == original,
+        "restored NULL must match"
+    );
+
+    sqlx::query("INSERT INTO \"snapshot \"\"controls\" VALUES ('AB', NULL)")
+        .execute(&pool)
+        .await
+        .expect("insert duplicate");
+    assert!(
+        database_snapshot(&pool).await != original,
+        "duplicate insertion must be detected"
+    );
+    sqlx::query(
+        "DELETE FROM \"snapshot \"\"controls\" WHERE ctid = \
+                 (SELECT ctid FROM \"snapshot \"\"controls\" WHERE value = 'AB' LIMIT 1)",
+    )
+    .execute(&pool)
+    .await
+    .expect("remove duplicate");
+    assert!(
+        database_snapshot(&pool).await == original,
+        "duplicate count must be restored"
+    );
+    sqlx::query("DELETE FROM \"snapshot \"\"controls\" WHERE value = 'A-C'")
+        .execute(&pool)
+        .await
+        .expect("delete control");
+    assert!(
+        database_snapshot(&pool).await != original,
+        "deletions must be detected"
+    );
 }
 
 #[sqlx::test(migrator = "MIGRATOR")]
