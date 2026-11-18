@@ -33,6 +33,27 @@ function fillZone(label: string, width: string, depth: string, left = "0") {
 }
 
 describe("local room planner", () => {
+  it("runs animation frames asynchronously and cancels a requested frame", async () => {
+    let synchronous = true;
+    let cancelledFrameRan = false;
+    const cancelled = requestAnimationFrame(() => {
+      cancelledFrameRan = true;
+    });
+    cancelAnimationFrame(cancelled);
+    const frame = new Promise<{ synchronous: boolean; timestamp: number }>(
+      (resolve) => {
+        requestAnimationFrame((timestamp) =>
+          resolve({ synchronous, timestamp }),
+        );
+      },
+    );
+    synchronous = false;
+    const result = await frame;
+    expect(result.synchronous).toBe(false);
+    expect(Number.isFinite(result.timestamp)).toBe(true);
+    expect(cancelledFrameRan).toBe(false);
+  });
+
   it("normalizes decimal keyboard input without treating grouping as a number", () => {
     expect(decimal(" ٠٠١٢٫٣ ")).toBe("12.3");
     expect(decimal("۰,۵")).toBe("0.5");
