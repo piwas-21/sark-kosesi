@@ -2163,21 +2163,30 @@ async fn combined_cancellation_and_packing_requires_both_grants_and_validates_ea
             .is_some()
     );
 
-    // A competing real packing write cannot enter between the two evidence reads.
-    let mut blocker = pool.begin().await.expect("hold packing history");
-    blocker
-        .execute("LOCK TABLE packing_custody IN ACCESS EXCLUSIVE MODE")
+    // Stop the reader during packing-source validation, after it holds the
+    // attempt. Unlike packing_custody, the allocation table is not read by the
+    // writer's effect-key lookup before that writer claims the same attempt.
+    let mut blocker = pool.begin().await.expect("hold allocation source");
+    let blocker_pid: i32 = sqlx::query_scalar("SELECT pg_backend_pid()")
+        .fetch_one(&mut *blocker)
         .await
-        .expect("history lock");
+        .expect("blocker identity");
+    blocker
+        .execute("LOCK TABLE order_stock_allocations IN ACCESS EXCLUSIVE MODE")
+        .await
+        .expect("allocation source lock");
+    let (view_pid_tx, view_pid_rx) = tokio::sync::oneshot::channel();
     let view = inspect(&pool, &reviewer, time.as_ref(), id);
     let write = Box::pin(async {
-        tokio::time::timeout(std::time::Duration::from_millis(900), async {
+        let view_pid: i32 = tokio::time::timeout(std::time::Duration::from_millis(900), async {
             loop {
-                let waiting: bool = sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM pg_stat_activity WHERE datname=current_database() AND wait_event_type='Lock' AND query LIKE '%packing_custody_history_exact%')").fetch_one(&pool).await.expect("view wait");
-                if waiting { break; }
+                let waiting: Option<i32> = sqlx::query_scalar("SELECT pid FROM pg_stat_activity WHERE datname=current_database() AND wait_event_type='Lock' AND query LIKE '%packing_custody_history_exact%' AND $1=ANY(pg_blocking_pids(pid))")
+                    .bind(blocker_pid).fetch_optional(&pool).await.expect("view wait");
+                if let Some(pid) = waiting { break pid; }
                 tokio::time::sleep(std::time::Duration::from_millis(5)).await;
             }
-        }).await.expect("view owns original attempt");
+        }).await.expect("view owns original attempt and waits on allocation source");
+        view_pid_tx.send(view_pid).expect("report blocked view");
         Box::pin(packing_custody::record(
             &pool,
             &reviewer,
@@ -2197,22 +2206,40 @@ async fn combined_cancellation_and_packing_requires_both_grants_and_validates_ea
         .expect("subsequent packing assertion")
     });
     let release = Box::pin(async {
+        let view_pid = view_pid_rx.await.expect("view identity");
         tokio::time::timeout(std::time::Duration::from_millis(900), async {
             loop {
-                let waiting: bool = sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM pg_stat_activity WHERE datname=current_database() AND wait_event_type='Lock' AND query LIKE '%SELECT id FROM payment_attempts WHERE id=$1 FOR UPDATE%')").fetch_one(&pool).await.expect("packing wait");
+                let waiting: bool = sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM pg_stat_activity WHERE datname=current_database() AND wait_event_type='Lock' AND query LIKE '%SELECT id FROM payment_attempts WHERE id=$1 FOR UPDATE%' AND $1=ANY(pg_blocking_pids(pid)))")
+                    .bind(view_pid).fetch_one(&pool).await.expect("packing wait");
                 if waiting { break; }
                 tokio::time::sleep(std::time::Duration::from_millis(5)).await;
             }
-        }).await.expect("writer waits on attempt");
-        blocker.rollback().await.expect("release history");
+        }).await.expect("packing writer waits on the view's attempt claim");
+        let inserted: i64 = sqlx::query_scalar(
+            "SELECT count(*) FROM packing_custody WHERE effect_key='combined-second-pack'",
+        )
+        .fetch_one(&pool)
+        .await
+        .expect("no premature packing assertion");
+        assert_eq!(inserted, 0);
+        blocker.rollback().await.expect("release allocation source");
     });
     let (snapshot, next, ()) = tokio::join!(view, write, release);
     assert!(!next.replayed);
+    assert_eq!(next.record.effect_key, "combined-second-pack");
+    let event_exact: bool = sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM packing_custody p JOIN commerce_outbox e ON e.id=p.event_id WHERE p.id=$1 AND p.order_id=$2 AND p.effect_key='combined-second-pack' AND e.aggregate_id=p.order_id AND e.kind='order.packing_custody_recorded.v1' AND e.payload=packing_custody_event(p))")
+        .bind(&next.record.id).bind(id).fetch_one(&pool).await.expect("committed assertion and event");
+    assert!(event_exact);
+    let earlier = snapshot.expect("snapshot").expect("request");
     assert!(
-        matches!(snapshot.expect("snapshot").expect("request").packing, PackingEvidence::Validated(value) if value.history.len()==1)
+        matches!(earlier.packing, PackingEvidence::Validated(value) if value.history.len()==1 && value.history[0].id==packed.record.id)
     );
+    let later = inspect(&pool, &reviewer, time.as_ref(), id)
+        .await
+        .expect("later view")
+        .expect("request");
     assert!(
-        matches!(inspect(&pool, &reviewer, time.as_ref(), id).await.expect("later view").expect("request").packing, PackingEvidence::Validated(value) if value.history.len()==2)
+        matches!(later.packing, PackingEvidence::Validated(value) if value.history.len()==2 && value.history[1].id==next.record.id)
     );
     Box::pin(packing_custody::record(
         &pool,
