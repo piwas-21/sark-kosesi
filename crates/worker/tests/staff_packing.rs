@@ -72,16 +72,21 @@ async fn seed_paid_observation(pool: &PgPool, attempt: &AttemptSnapshot) {
 }
 
 fn inspect(database: &str, order: &str, bearer: &[u8; 32]) -> Output {
-    let mut child = Command::new(env!("CARGO_BIN_EXE_commerce-worker"))
+    let mut command = Command::new(env!("CARGO_BIN_EXE_commerce-worker"));
+    command
         .args(["--inspect-packing", order])
         .env_clear()
         .env("APP_ENV", "test")
         .env("DATABASE_URL", database)
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
-        .stderr(Stdio::piped())
-        .spawn()
-        .expect("packing worker");
+        .stderr(Stdio::piped());
+    // Preserve only the coverage output path when this real CLI test is
+    // instrumented; credentials and all other parent settings stay isolated.
+    if let Some(profile) = std::env::var_os("LLVM_PROFILE_FILE") {
+        command.env("LLVM_PROFILE_FILE", profile);
+    }
+    let mut child = command.spawn().expect("packing worker");
     child
         .stdin
         .take()
