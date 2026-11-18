@@ -23,7 +23,7 @@ class RestoreAdapterTests(unittest.TestCase):
         import copy
 
         # Independent bytewise oracle, not computed using the implementation's sorter.
-        c_order = ["A", "A-1", "A1", "B", "a", "É", "é", "ا", "ب"]
+        c_order = ["A", "A-1", "A-C", "A1", "AB", "B", "a", "É", "é", "ا", "ب"]
         healthy = {
             "default_order": c_order.copy(),
             "c_order": c_order.copy(),
@@ -37,10 +37,7 @@ class RestoreAdapterTests(unittest.TestCase):
         self.assertTrue(result["explicit_c_controls_match"])
         self.assertTrue(result["source_default_order_matches_c"])
         changed = copy.deepcopy(healthy)
-        changed["default_order"][0], changed["default_order"][1] = (
-            changed["default_order"][1],
-            changed["default_order"][0],
-        )
+        changed["default_order"] = ["A", "A-1", "A1", "AB", "A-C", "B", "a", "É", "é", "ا", "ب"]
         changed["default_case"][2:] = ["é", "É"]
         changed["default_equality"][0] = True
         result = lab.compare_collations(healthy, changed)
@@ -55,6 +52,15 @@ class RestoreAdapterTests(unittest.TestCase):
             self.assertFalse(result[key], key)
         self.assertTrue(result["explicit_c_controls_match"])
         self.assertEqual(result["target"], changed)
+        identifiers = {"A-1", "A-C", "A1", "AB", "B"}
+        self.assertEqual(
+            [v for v in result["target"]["default_order"] if v in identifiers],
+            ["A-1", "A1", "AB", "A-C", "B"],
+        )
+        self.assertEqual(
+            [v for v in result["target"]["c_order"] if v in identifiers],
+            ["A-1", "A-C", "A1", "AB", "B"],
+        )
 
         for key, value in (
             ("default_order", []),
@@ -81,7 +87,7 @@ class RestoreAdapterTests(unittest.TestCase):
             lab.compare_collations(None, healthy)
 
     def test_collation_capture_queries_each_database_and_rejects_missing_output(self):
-        expected_order = ["A", "A-1", "A1", "B", "a", "É", "é", "ا", "ب"]
+        expected_order = ["A", "A-1", "A-C", "A1", "AB", "B", "a", "É", "é", "ا", "ب"]
         source = {
             "default_order": expected_order,
             "c_order": expected_order,
@@ -90,7 +96,10 @@ class RestoreAdapterTests(unittest.TestCase):
             "default_equality": [False, False, False, True],
             "c_equality": [False, False, False, True],
         }
-        target = {**source, "default_order": ["a", "A", "A-1", "A1", "B", "É", "é", "ا", "ب"]}
+        target = {
+            **source,
+            "default_order": ["a", "A", "A-1", "A1", "AB", "A-C", "B", "É", "é", "ا", "ب"],
+        }
         wrapper = Path("/owned/client")
         envs = [{"PGDATABASE": "source"}, {"PGDATABASE": "target"}]
         with patch.object(

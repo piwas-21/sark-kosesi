@@ -47,9 +47,9 @@ ISOLATION_CODES = frozenset(
 
 
 # Fixed, public literals only: no application rows or environment-supplied SQL.
-COLLATION_SAMPLES = ("A-1", "A1", "B", "a", "A", "é", "É", "ا", "ب")
+COLLATION_SAMPLES = ("A-1", "A-C", "A1", "AB", "B", "a", "A", "é", "É", "ا", "ب")
 COLLATION_SQL = """WITH samples(value) AS (VALUES
- ('A-1'),('A1'),('B'),('a'),('A'),('é'),('É'),('ا'),('ب'))
+ ('A-1'),('A-C'),('A1'),('AB'),('B'),('a'),('A'),('é'),('É'),('ا'),('ب'))
 SELECT json_build_object(
  'default_order',(SELECT json_agg(value ORDER BY value) FROM samples),
  'c_order',(SELECT json_agg(value ORDER BY value COLLATE "C") FROM samples),
