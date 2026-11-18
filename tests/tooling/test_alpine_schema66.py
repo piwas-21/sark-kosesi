@@ -27,7 +27,7 @@ class FakeSnapshot:
 
     def query(self, sql):
         if "max(version)" in sql:
-            return "78\n"
+            return "79\n"
         raise AssertionError("unexpected query")
 
 
@@ -78,7 +78,7 @@ class Schema66Tests(unittest.TestCase):
 
             def inventory(snapshot):
                 if snapshot.kind == 2:
-                    return {"_sqlx_migrations": (78, "e" * 64)}
+                    return {"_sqlx_migrations": (79, "e" * 64)}
                 if snapshot.kind == 1 and corrupt_target:
                     return {**before, "checkout_orders": (0, "z" * 64)}
                 return before
@@ -121,7 +121,7 @@ class Schema66Tests(unittest.TestCase):
                 lab.run_rehearsal(*arguments)
             report = json.loads((root / "schema66-restore-upgrade.json").read_text())
             self.assertEqual(report["source_migration_count"], 66)
-            self.assertEqual(report["upgraded_migration_max"], 78)
+            self.assertEqual(report["upgraded_migration_max"], 79)
             self.assertTrue(report["legacy_proof_redemption_checked"])
             self.assertEqual(report["candidate_image"], "sha256:" + "c" * 64)
             self.assertFalse((root / "schema66-synthetic-proof").exists())

@@ -1,4 +1,4 @@
-//! Private cancellation before a payment dispatch has started.
+//! Private pre-dispatch cancellation and separate post-dispatch pending intent.
 use crate::{
     checkout_orders::{self, OrderStoreError, check_session, identifier},
     customer_sessions::{CustomerSessionToken, HeldSession},
@@ -6,7 +6,11 @@ use crate::{
 };
 use commerce_domain::media::valid_command_id;
 use sqlx::{Postgres, Transaction};
+mod post_dispatch;
 mod rows;
+pub use post_dispatch::{
+    PendingCancellationReceipt, request_after_dispatch, request_verified_after_dispatch,
+};
 
 #[derive(Debug, PartialEq, Eq)]
 pub struct CancellationReceipt {

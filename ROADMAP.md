@@ -160,6 +160,9 @@ historical proposal under current staff authority. Operator recovery, provider
 reversal reconciliation, reservation disposition and dispatch custody remain open.
 Private exact proposal inspection now validates historical source and event custody
 under current finance authority without contacting the provider or moving funds.
+A separate private owner request after payment dispatch records pending cancellation
+intent against the exact original start. Order, payment, stock and packing state
+remain intact. Operator disposition and customer-facing handling remain open.
 Private promotion drafts and independent exact-revision reviews now persist
 canonical eligibility/discount terms and explicit lifetime budget/redemption limits.
 New drafts and withdrawal block older approvals for new orders. Private guest

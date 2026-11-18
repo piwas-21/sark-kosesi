@@ -309,6 +309,10 @@ full workload bounds and operational acceptance remain separate.
    result grants no payment, cancellation or recovery authority. Missing starts
    remain unavailable and are not proof of provider absence. Both guest and any
    linked customer authority are rechecked after waits and source failures.
+   A separate private owner-authenticated request after dispatch records only pending
+   intent against the original attempt and exact reconciliation event. It can replay
+   under live authority but neither cancels the order nor pauses packing or dispatch.
+   Operator disposition, customer handling and account-only access remain separate.
    Finish post-dispatch disposition, redemption disposition, lifecycle/payment
    transitions and retention before public checkout. Seller and legal facts
    remain required trusted configuration.
