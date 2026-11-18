@@ -951,3 +951,22 @@ the entire executable tree, scan images, validate the official entrypoint or
 exercise an operational rollback. Actual-clone collation and custody checks,
 security disposition and a reviewed operating model remain separate work. The
 workflow publishes no image and makes no deployment or staging change.
+
+## PostgreSQL sibling signed debug evidence
+
+The scoped debug workflow reruns the signed binary-lineage lab and binds its
+same image and exact revision. It verifies the Debian debug snapshot Release
+with the pinned archive keyring, checks the Release's AMD64 index checksum,
+and requires that signed index to match the two exact systemd debug-package
+versions, sizes and candidate digests. It matches their ELF build IDs to the
+selected, image-matched binaries, verifies debug links where present and records
+bounded DWARF compilation-unit names. Debug package digest candidates were
+cross-checked against the [reproducible build manifest](https://tests.reproducible-builds.org/debian/buildinfo/trixie/amd64/systemd_257.13-1~deb13u1_amd64.buildinfo);
+the Debian signed index remains the required authority. Missing, unsigned,
+changed or unsupported inputs fail the lab.
+
+The inventory is limited to represented debug units in those two libraries;
+optimization, inlining, incomplete debug information and other image files are
+outside its proof. It makes no code-absence or advisory-applicability decision,
+does not suppress findings, and does not accept risk or establish release
+readiness. Raw scanner evidence and all existing release gates remain required.
