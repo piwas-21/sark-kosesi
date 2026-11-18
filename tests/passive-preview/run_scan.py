@@ -4,14 +4,19 @@ import base64
 import http.client
 import json
 import os
+import ssl
 import threading
 import time
 from http.server import BaseHTTPRequestHandler, HTTPServer
+from urllib.parse import urlsplit
 
+import tls_fixture
 from evidence import (
     SCOPE,
+    WEB_HOST,
     EvidenceError,
     history_summary,
+    scheme_for,
     validate_alerts,
     validate_anonymous,
     validate_messages,
@@ -20,6 +25,7 @@ from evidence import (
 
 TOKEN = os.environ["PREVIEW_TOKEN"]
 PHASE = "startup"
+TLS_CONTEXT = None
 
 
 def zap(path):
@@ -34,19 +40,94 @@ def zap(path):
         connection.close()
 
 
-def request(target, authorization=None):
-    connection = http.client.HTTPConnection("127.0.0.1", 8080, timeout=15)
+def request(target, authorization=None, context=None):
+    uri = urlsplit(target)
     headers = {"Accept-Encoding": "identity"}
     if authorization:
         headers["Authorization"] = authorization
+    if uri.scheme == "https" and uri.netloc == WEB_HOST:
+        headers["Host"] = WEB_HOST
+        connection = http.client.HTTPSConnection(
+            "127.0.0.1", 8080, timeout=15, context=context or TLS_CONTEXT
+        )
+        connection.set_tunnel("127.0.0.1", 3443, headers={"Host": WEB_HOST})
+        path = uri.path + ("?" + uri.query if uri.query else "")
+    elif uri.scheme == "http" and uri.netloc.startswith("127.0.0.1:"):
+        connection = http.client.HTTPConnection("127.0.0.1", 8080, timeout=15)
+        path = target
+    else:
+        raise ValueError("Unexpected target")
     try:
-        connection.request("GET", target, headers=headers)
+        connection.request("GET", path, headers=headers)
         response = connection.getresponse()
         status = response.status
         response.read(2_000_000)
         return status
     finally:
         connection.close()
+
+
+def scanner_ca():
+    connection = http.client.HTTPConnection("127.0.0.1", 8080, timeout=10)
+    try:
+        connection.request("GET", "/OTHER/network/other/rootCaCert/")
+        response = connection.getresponse()
+        if response.status != 200:
+            raise ValueError("Scanner CA unavailable")
+        pem = response.read(65536).decode("ascii")
+        context = ssl.SSLContext(ssl.PROTOCOL_TLS_CLIENT)
+        context.load_verify_locations(cadata=pem)
+        return context
+    finally:
+        connection.close()
+
+
+def verify_fixture_tls():
+    """Check direct fixture certificate and authenticated header forwarding."""
+    cert = "/tmp/fixture-cert.pem"
+    verified = ssl.SSLContext(ssl.PROTOCOL_TLS_CLIENT)
+    verified.load_verify_locations(cafile=cert)
+    rejected = ssl.create_default_context()
+    path = "/nl/room-planner"
+    basic = base64.b64encode(f"preview:{TOKEN}".encode()).decode()
+
+    def fetch(connection, auth=None):
+        try:
+            headers = {"Host": WEB_HOST, "Accept-Encoding": "identity"}
+            if auth:
+                headers["Authorization"] = "Basic " + basic
+            connection.request("GET", path, headers=headers)
+            response = connection.getresponse()
+            return response.status, dict(response.getheaders()), response.read(2_000_000)
+        finally:
+            connection.close()
+
+    try:
+        fetch(http.client.HTTPSConnection("127.0.0.1", 3443, context=rejected, timeout=5))
+    except ssl.SSLCertVerificationError:
+        pass
+    else:
+        raise ValueError("Untrusted fixture certificate accepted")
+    for auth in (False, True):
+        direct = fetch(http.client.HTTPConnection("127.0.0.1", 3000, timeout=10), auth)
+        secure = fetch(
+            http.client.HTTPSConnection("127.0.0.1", 3443, context=verified, timeout=10), auth
+        )
+        if direct[0] != (200 if auth else 401) or secure[0] != direct[0]:
+            raise ValueError("Fixture forwarding status differs")
+        for key in ("cache-control", "x-robots-tag", "x-content-type-options", "www-authenticate"):
+            a = {k.lower(): v for k, v in direct[1].items()}
+            b = {k.lower(): v for k, v in secure[1].items()}
+            if a.get(key) != b.get(key):
+                raise ValueError("Fixture forwarding header differs")
+        if b.get("x-piwas-preview-revision") != os.environ["ANALYSIS_REVISION"]:
+            raise ValueError("Fixture revision header missing")
+        if auth and not b.get("content-security-policy", "").startswith("default-src"):
+            raise ValueError("Fixture security policy missing")
+        if auth and b"<html" not in secure[2]:
+            raise ValueError("Fixture forwarding content missing")
+        if not auth and direct[2] != secure[2]:
+            raise ValueError("Fixture forwarding content differs")
 
 
 def drained():
@@ -77,7 +158,7 @@ def alerts():
 
 def reject_history(messages, expected_auth):
     try:
-        validate_messages(messages, expected_auth)
+        validate_messages(messages, expected_auth, os.environ["ANALYSIS_REVISION"])
     except ValueError:
         return
     raise ValueError("Negative history control unexpectedly passed")
@@ -103,8 +184,8 @@ class KnownFinding(BaseHTTPRequestHandler):
         pass
 
 
-def main():
-    global PHASE
+def assessment():
+    global PHASE, TLS_CONTEXT
     deadline = time.monotonic() + 90
     while True:
         try:
@@ -120,6 +201,16 @@ def main():
             if time.monotonic() >= deadline:
                 raise ValueError("Scanner did not start") from None
             time.sleep(0.5)
+    TLS_CONTEXT = scanner_ca()
+    try:
+        request(
+            "https://" + WEB_HOST + "/nl/room-planner",
+            context=ssl.SSLContext(ssl.PROTOCOL_TLS_CLIENT),
+        )
+    except ssl.SSLCertVerificationError:
+        pass
+    else:
+        raise ValueError("Untrusted scanner certificate accepted")
     if zap("/JSON/core/action/setMode/?mode=safe").get("Result") != "OK":
         raise ValueError("Cannot select safe mode")
     if zap("/JSON/core/view/mode/").get("mode") != "safe":
@@ -152,7 +243,7 @@ def main():
     reset()
     PHASE = "anonymous-control"
     for index, (host, path) in enumerate(SCOPE, 1):
-        status = request(f"http://{host}{path}")
+        status = request(f"{scheme_for(host)}://{host}{path}")
         if status != 401:
             raise EvidenceError("request_status", index, status)
     drained()
@@ -176,13 +267,15 @@ def main():
     PHASE = "authenticated-assessment"
     for index, (host, path) in enumerate(SCOPE, 1):
         auth = expected_auth[(host, path)]
-        status = request(f"http://{host}{path}", auth)
+        status = request(f"{scheme_for(host)}://{host}{path}", auth)
         if status != 200:
             raise EvidenceError("request_status", index, status)
     drained()
     authenticated_history = history()
     try:
-        observed = validate_messages(authenticated_history, expected_auth)
+        observed = validate_messages(
+            authenticated_history, expected_auth, os.environ["ANALYSIS_REVISION"]
+        )
     except EvidenceError:
         print(
             "Authenticated history categories: "
@@ -216,12 +309,25 @@ def main():
                 "scanner_digest": "sha256:c2d63bbb2d907a5c5257914fb20e26e969c92b25f265def7f89f08203f912882",
                 "scanner_platform": "linux/amd64",
                 "negative_controls": ["empty", "anonymous"],
-                "scope": "isolated-staging-config-loopback-http",
+                "scope": "isolated-staging-config-loopback-tls-web-http-api",
+                "tls_client_trust": "instance-scanner-ca-only",
+                "tls_upstream_trust": "scanner-upstream-not-verified;fixture-verified-separately",
                 "revision": os.environ["ANALYSIS_REVISION"],
             },
             sort_keys=True,
         )
     )
+
+
+def main():
+    server, worker = tls_fixture.start("/tmp/fixture-cert.pem", "/tmp/fixture-key.pem")
+    try:
+        verify_fixture_tls()
+        assessment()
+    finally:
+        server.shutdown()
+        server.server_close()
+        worker.join()
 
 
 if __name__ == "__main__":

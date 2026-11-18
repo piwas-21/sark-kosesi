@@ -8,14 +8,16 @@ import threading
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 import run_scan
-from evidence import SCOPE, EvidenceError
+from evidence import SCOPE, WEB_HOST, EvidenceError
 
 
 class Fixture(BaseHTTPRequestHandler):
     protocol_version = "HTTP/1.1"
 
     def do_GET(self):
-        host = f"127.0.0.1:{self.server.server_port}"
+        host = (
+            WEB_HOST if self.server.server_port == 3000 else f"127.0.0.1:{self.server.server_port}"
+        )
         marker = SCOPE.get((host, self.path))
         token = os.environ["PREVIEW_TOKEN"]
         expected = (
@@ -30,6 +32,11 @@ class Fixture(BaseHTTPRequestHandler):
             "Content-Type", "application/json" if self.server.server_port == 45671 else "text/html"
         )
         self.send_header("X-Content-Type-Options", "nosniff")
+        self.send_header("X-Piwas-Preview-Revision", os.environ["ANALYSIS_REVISION"])
+        self.send_header("Cache-Control", "private, no-store")
+        self.send_header("X-Robots-Tag", "noindex, nofollow")
+        if authorized and self.server.server_port == 3000:
+            self.send_header("Content-Security-Policy", "default-src 'self'")
         self.send_header("Content-Length", str(len(body)))
         if not authorized and self.server.server_port != 45671:
             self.send_header("WWW-Authenticate", 'Basic realm="preview"')

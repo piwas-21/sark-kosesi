@@ -1,15 +1,24 @@
 """Offline controls for scanner evidence, not a substitute for the hosted scan."""
 
+import http.client
+import socket
+import ssl
+import subprocess
 import sys
+import tempfile
+import threading
 import unittest
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "passive-preview"))
+import tls_fixture  # noqa: E402
 from evidence import (
     SCOPE,
     SCOPE_INDEX,
     EvidenceError,
     history_summary,
+    scheme_for,
     validate_alerts,
     validate_anonymous,
     validate_messages,
@@ -21,8 +30,8 @@ def message(host, path, body, status=200):
     return {
         "id": str(SCOPE_INDEX.get((host, path), 999)),
         "type": "1",
-        "requestHeader": f"GET http://{host}{path} HTTP/1.1\r\nAuthorization: synthetic\r\n",
-        "responseHeader": f"HTTP/1.1 {status} OK\r\n",
+        "requestHeader": f"GET {scheme_for(host)}://{host}{path} HTTP/1.1\r\nAuthorization: synthetic\r\n",
+        "responseHeader": f"HTTP/1.1 {status} OK\r\nX-Piwas-Preview-Revision: fixture-revision\r\n",
         "responseBody": body,
     }
 
@@ -31,19 +40,30 @@ class PassiveEvidenceTest(unittest.TestCase):
     def test_complete_history_and_negative_controls(self):
         good = [message(host, path, marker) for (host, path), marker in SCOPE.items()]
         expected = {key: "synthetic" for key in SCOPE}
-        self.assertEqual(validate_messages(good, expected), 3)
+        self.assertEqual(validate_messages(good, expected, "fixture-revision"), 3)
         variants = [[], good[:-1], good + good[:1], [message(*next(iter(SCOPE)), "", 401)]]
         variants += [[{**good[0], "responseBody": ""}, *good[1:]]]
+        variants += [[{**good[0], "responseHeader": "HTTP/1.1 200 OK"}, *good[1:]]]
+        variants += [
+            [
+                {
+                    **good[0],
+                    "responseHeader": good[0]["responseHeader"]
+                    + "X-Piwas-Preview-Revision: fixture-revision\r\n",
+                },
+                *good[1:],
+            ]
+        ]
         variants += [[{**good[0], "requestHeader": "GET http://elsewhere/ HTTP/1.1"}, *good[1:]]]
         for candidate in variants:
             with self.subTest(candidate=candidate), self.assertRaises(ValueError):
-                validate_messages(candidate, expected)
+                validate_messages(candidate, expected, "fixture-revision")
 
     def test_anonymous_history_must_record_each_denial(self):
         anonymous = [
             {
                 **message(host, path, "", 401),
-                "requestHeader": f"GET http://{host}{path} HTTP/1.1\r\n",
+                "requestHeader": f"GET {scheme_for(host)}://{host}{path} HTTP/1.1\r\n",
             }
             for host, path in SCOPE
         ]
@@ -60,8 +80,14 @@ class PassiveEvidenceTest(unittest.TestCase):
     def test_zap_status_line_without_reason_and_malformed_controls(self):
         good = [message(host, path, marker) for (host, path), marker in SCOPE.items()]
         expected = {key: "synthetic" for key in SCOPE}
-        no_reason = [{**item, "responseHeader": "HTTP/1.1 200\r\n"} for item in good]
-        self.assertEqual(validate_messages(no_reason, expected), 3)
+        no_reason = [
+            {
+                **item,
+                "responseHeader": "HTTP/1.1 200\r\nX-Piwas-Preview-Revision: fixture-revision\r\n",
+            }
+            for item in good
+        ]
+        self.assertEqual(validate_messages(no_reason, expected, "fixture-revision"), 3)
         anonymous = [
             {
                 **item,
@@ -87,7 +113,7 @@ class PassiveEvidenceTest(unittest.TestCase):
         good[0]["requestHeader"] = good[0]["requestHeader"].replace(
             "Authorization:", "aUtHoRiZaTiOn:"
         )
-        self.assertEqual(validate_messages(good, expected), 3)
+        self.assertEqual(validate_messages(good, expected, "fixture-revision"), 3)
         for value in (
             "aUtHoRiZaTiOn: changed",
             "aUtHoRiZaTiOn: synthetic\r\nAuthorization: synthetic",
@@ -102,16 +128,20 @@ class PassiveEvidenceTest(unittest.TestCase):
                 *good[1:],
             ]
             with self.subTest(value=value), self.assertRaises(EvidenceError):
-                validate_messages(bad, expected)
+                validate_messages(bad, expected, "fixture-revision")
 
     def test_diagnostics_do_not_include_untrusted_values(self):
         host, path = next(iter(SCOPE))
         bad = message(host, path, "sensitive body", 403)
         with self.assertRaises(EvidenceError) as raised:
-            validate_messages([bad], {key: "synthetic" for key in SCOPE})
+            validate_messages([bad], {key: "synthetic" for key in SCOPE}, "fixture-revision")
         self.assertEqual(str(raised.exception), "bucket=response_status scope=1 status=403")
         with self.assertRaises(EvidenceError) as raised:
-            validate_messages([{**bad, "requestHeader": "GET http://private-secret/ HTTP/1.1"}], {})
+            validate_messages(
+                [{**bad, "requestHeader": "GET http://private-secret/ HTTP/1.1"}],
+                {},
+                "fixture-revision",
+            )
         self.assertEqual(str(raised.exception), "bucket=target scope=0 status=other")
 
     def test_history_categories_are_bounded_and_hide_untrusted_text(self):
@@ -134,9 +164,9 @@ class PassiveEvidenceTest(unittest.TestCase):
         parent = {
             "id": "100",
             "type": "0",
-            "requestHeader": "GET http://127.0.0.1:3000/nl HTTP/1.1",
+            "requestHeader": "GET https://127.0.0.1:3443/nl HTTP/1.1",
         }
-        self.assertEqual(validate_messages([parent, *good], expected), 3)
+        self.assertEqual(validate_messages([parent, *good], expected, "fixture-revision"), 3)
         anonymous = [
             {
                 **item,
@@ -147,7 +177,7 @@ class PassiveEvidenceTest(unittest.TestCase):
         ]
         validate_anonymous([parent, *anonymous])
         with self.assertRaises(EvidenceError):
-            validate_messages([parent, *anonymous], expected)
+            validate_messages([parent, *anonymous], expected, "fixture-revision")
         with self.assertRaises(EvidenceError):
             validate_anonymous([parent])
         for history in (
@@ -166,9 +196,149 @@ class PassiveEvidenceTest(unittest.TestCase):
             ],
         ):
             with self.subTest(history=history), self.assertRaises(EvidenceError):
-                validate_messages(history, expected)
+                validate_messages(history, expected, "fixture-revision")
         with self.assertRaises(EvidenceError):
-            validate_messages([parent] * 100, expected)
+            validate_messages([parent] * 100, expected, "fixture-revision")
+
+    def test_https_scope_and_bounded_connect_metadata(self):
+        good = [message(host, path, marker) for (host, path), marker in SCOPE.items()]
+        expected = {key: "synthetic" for key in SCOPE}
+        connect = {
+            "id": "100",
+            "type": "16",
+            "requestHeader": "CONNECT 127.0.0.1:3443 HTTP/1.1\r\n",
+        }
+        self.assertEqual(validate_messages([connect, *good], expected, "fixture-revision"), 3)
+        connect_10 = {
+            **connect,
+            "requestHeader": connect["requestHeader"].replace("HTTP/1.1", "HTTP/1.0"),
+        }
+        self.assertEqual(validate_messages([connect_10, *good], expected, "fixture-revision"), 3)
+        for variant in (
+            [
+                {
+                    **good[0],
+                    "requestHeader": good[0]["requestHeader"].replace("https://", "http://"),
+                },
+                *good[1:],
+            ],
+            [{**connect, "requestHeader": "CONNECT example.invalid:443 HTTP/1.1"}, *good],
+            [
+                {
+                    **connect,
+                    "requestHeader": connect["requestHeader"] + "Authorization: secret\r\n",
+                },
+                *good,
+            ],
+            [connect, {**connect, "id": "101"}, {**connect, "id": "102"}, *good],
+        ):
+            with self.subTest(variant=variant), self.assertRaises(EvidenceError):
+                validate_messages(variant, expected, "fixture-revision")
+
+    def test_tls_forwarder_validates_certificate_and_preserves_response(self):
+        class Upstream(BaseHTTPRequestHandler):
+            def do_GET(self):
+                assert self.headers.get("Authorization") == "Basic synthetic"
+                body = b"<html>synthetic</html>"
+                self.send_response_only(200)
+                self.send_header("Content-Type", "text/html")
+                self.send_header("Content-Security-Policy", "default-src 'none'")
+                self.send_header("X-Preview-Control", "retained")
+                self.send_header("Connection", "X-Private-Hop")
+                self.send_header("X-Private-Hop", "removed")
+                self.send_header("Content-Length", str(len(body)))
+                self.end_headers()
+                self.wfile.write(body)
+
+            def log_message(self, *args):
+                pass
+
+        upstream = ThreadingHTTPServer(("127.0.0.1", 0), Upstream)
+        upstream_thread = threading.Thread(target=upstream.serve_forever, daemon=True)
+        upstream_thread.start()
+        try:
+            with tempfile.TemporaryDirectory() as directory:
+                cert = str(Path(directory) / "cert.pem")
+                key = str(Path(directory) / "key.pem")
+                subprocess.run(
+                    [
+                        "openssl",
+                        "req",
+                        "-x509",
+                        "-newkey",
+                        "rsa:2048",
+                        "-nodes",
+                        "-days",
+                        "1",
+                        "-subj",
+                        "/CN=127.0.0.1",
+                        "-addext",
+                        "subjectAltName=IP:127.0.0.1",
+                        "-keyout",
+                        key,
+                        "-out",
+                        cert,
+                    ],
+                    check=True,
+                    capture_output=True,
+                )
+                server, worker = tls_fixture.start(
+                    cert, key, port=0, upstream_port=upstream.server_port
+                )
+                try:
+                    port = server.server_port
+                    untrusted = http.client.HTTPSConnection(
+                        "127.0.0.1", port, context=ssl.create_default_context(), timeout=5
+                    )
+                    with self.assertRaises(ssl.SSLCertVerificationError):
+                        untrusted.request("GET", "/nl/room-planner")
+                    untrusted.close()
+                    raw = socket.create_connection(("127.0.0.1", port), timeout=5)
+                    try:
+                        with self.assertRaises(ssl.SSLCertVerificationError):
+                            ssl.create_default_context(cafile=cert).wrap_socket(
+                                raw, server_hostname="wrong.invalid"
+                            )
+                    finally:
+                        raw.close()
+                    conn = http.client.HTTPSConnection(
+                        "127.0.0.1",
+                        port,
+                        context=ssl.create_default_context(cafile=cert),
+                        timeout=5,
+                    )
+                    conn.request(
+                        "GET",
+                        "/nl/room-planner",
+                        headers={"Host": "127.0.0.1:3443", "Authorization": "Basic synthetic"},
+                    )
+                    response = conn.getresponse()
+                    self.assertEqual(response.status, 200)
+                    self.assertEqual(
+                        response.getheader("Content-Security-Policy"), "default-src 'none'"
+                    )
+                    self.assertEqual(response.getheader("X-Preview-Control"), "retained")
+                    self.assertIsNone(response.getheader("Server"))
+                    self.assertIsNone(response.getheader("X-Private-Hop"))
+                    self.assertEqual(response.read(), b"<html>synthetic</html>")
+                    conn.close()
+                    blocked = http.client.HTTPSConnection(
+                        "127.0.0.1",
+                        port,
+                        context=ssl.create_default_context(cafile=cert),
+                        timeout=5,
+                    )
+                    blocked.request("GET", "/not-in-scope", headers={"Host": "127.0.0.1:3443"})
+                    self.assertEqual(blocked.getresponse().status, 404)
+                    blocked.close()
+                finally:
+                    server.shutdown()
+                    server.server_close()
+                    worker.join()
+        finally:
+            upstream.shutdown()
+            upstream.server_close()
+            upstream_thread.join()
 
     def test_rules_must_be_enabled_and_not_weakened(self):
         rule = {"enabled": "true", "alertThreshold": "DEFAULT"}

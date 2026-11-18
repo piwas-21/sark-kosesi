@@ -4,10 +4,22 @@ import re
 from urllib.parse import urlsplit
 
 SCOPE = {
-    ("127.0.0.1:3000", "/nl/collection/isolated-room?variant=SET-COVERS"): "SET-COVERS",
-    ("127.0.0.1:3000", "/nl/room-planner"): "<html",
+    ("127.0.0.1:3443", "/nl/collection/isolated-room?variant=SET-COVERS"): "SET-COVERS",
+    ("127.0.0.1:3443", "/nl/room-planner"): "<html",
     ("127.0.0.1:45671", "/api/published/nl/products/SET-FILLED"): '"sku":"SET-FILLED"',
 }
+WEB_HOST = "127.0.0.1:3443"
+API_HOST = "127.0.0.1:45671"
+
+
+def scheme_for(host):
+    if host == WEB_HOST:
+        return "https"
+    if host == API_HOST:
+        return "http"
+    raise ValueError("Unknown scope")
+
+
 SCOPE_INDEX = {key: index for index, key in enumerate(SCOPE, 1)}
 STATUS = re.compile(r"HTTP/1\.1 ([1-5][0-9]{2})(?: [\x20-\x7e\x80-\xff]*)?\Z")
 SAFE_STATUSES = {200, 401, 403, 404, 500, 502, 503}
@@ -23,6 +35,7 @@ FAILURES = {
     "response_status",
     "content",
     "authorization",
+    "revision",
     "missing_scope",
     "request_status",
     "history_source",
@@ -67,7 +80,7 @@ def message_parts(message, seen):
         raise EvidenceError("target") from None
     path = uri.path + ("?" + uri.query if uri.query else "")
     key = (uri.netloc, path)
-    if uri.scheme != "http" or key not in SCOPE or uri.fragment:
+    if key not in SCOPE or uri.scheme != scheme_for(key[0]) or uri.fragment:
         raise EvidenceError("target")
     scope = SCOPE_INDEX[key]
     if key in seen:
@@ -135,6 +148,7 @@ def proxied_messages(messages):
     if len(messages) >= 100:
         raise EvidenceError("history_count")
     proxied, ids = [], set()
+    connects = 0
     for message in messages:
         if not isinstance(message, dict):
             raise EvidenceError("message_type")
@@ -151,6 +165,18 @@ def proxied_messages(messages):
         if kind == "1":  # HistoryReference.TYPE_PROXIED
             proxied.append(message)
             continue
+        if kind == "16":  # Optional local CONNECT transport metadata, never evidence.
+            connects += 1
+            raw = message.get("requestHeader")
+            lines = raw.splitlines() if isinstance(raw, str) else []
+            if (
+                connects > 2
+                or not lines
+                or lines[0] not in (f"CONNECT {WEB_HOST} HTTP/1.0", f"CONNECT {WEB_HOST} HTTP/1.1")
+                or any(line.lower().startswith("authorization:") for line in lines[1:])
+            ):
+                raise EvidenceError("history_source")
+            continue
         if kind != "0":  # Only TYPE_TEMPORARY site-tree parents are permitted.
             raise EvidenceError("history_source")
         raw = message.get("requestHeader")
@@ -163,7 +189,12 @@ def proxied_messages(messages):
             uri = urlsplit(parts[1])
         except ValueError:
             raise EvidenceError("history_source") from None
-        if uri.scheme != "http" or uri.query or uri.fragment:
+        if (
+            uri.netloc not in (WEB_HOST, API_HOST)
+            or uri.scheme != scheme_for(uri.netloc)
+            or uri.query
+            or uri.fragment
+        ):
             raise EvidenceError("history_source")
         parent = uri.path.rstrip("/")
         if not any(
@@ -178,7 +209,7 @@ def proxied_messages(messages):
     return proxied
 
 
-def validate_messages(messages, expected_auth):
+def validate_messages(messages, expected_auth, revision):
     """Require exact authenticated responses in scanner history, not client-side claims."""
     messages = proxied_messages(messages)
     seen = set()
@@ -190,6 +221,16 @@ def validate_messages(messages, expected_auth):
             raise EvidenceError("content", scope, status)
         if auth != [expected_auth[key]]:
             raise EvidenceError("authorization", scope, status)
+        if key[0] == WEB_HOST:
+            headers = message["responseHeader"].splitlines()[1:]
+            revisions = [
+                value.strip(" \t")
+                for line in headers
+                for name, sep, value in [line.partition(":")]
+                if sep and name.lower() == "x-piwas-preview-revision"
+            ]
+            if revisions != [revision]:
+                raise EvidenceError("revision", scope, status)
         seen.add(key)
     if seen != set(SCOPE):
         raise EvidenceError("missing_scope")

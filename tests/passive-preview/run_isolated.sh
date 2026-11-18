@@ -28,7 +28,19 @@ cleanup() {
   docker image rm "$seed_image" "$api_image" "$web_image" >/dev/null 2>&1 || true
   rm -rf -- "$DOCKER_CONFIG"
 }
-trap cleanup EXIT
+scratch=$(mktemp -d)
+cleanup_all() { rm -rf -- "$scratch"; cleanup; }
+trap cleanup_all EXIT
+prepare_certificate() {
+  local name=$1
+  openssl req -x509 -newkey rsa:2048 -nodes -days 1 -subj '/CN=127.0.0.1' \
+    -addext 'subjectAltName=IP:127.0.0.1' -keyout "$scratch/key.pem" \
+    -out "$scratch/cert.pem" >/dev/null 2>&1
+  docker cp "$scratch/key.pem" "$name:/tmp/fixture-key.pem"
+  docker cp "$scratch/cert.pem" "$name:/tmp/fixture-cert.pem"
+  docker exec --user 0 "$name" chown 1000:1000 /tmp/fixture-key.pem /tmp/fixture-cert.pem
+  rm -f -- "$scratch/key.pem" "$scratch/cert.pem"
+}
 
 # Build and pull before creating the internal-only runtime network.
 docker pull --platform linux/amd64 "$zap_image" >/dev/null
@@ -39,6 +51,7 @@ docker run -d --platform linux/amd64 --name "$preflight" --network none \
   --mount "type=bind,src=$PWD/tests/passive-preview,dst=/assessment,readonly" \
   --entrypoint /zap/zap.sh "$zap_image" -daemon -host 127.0.0.1 -port 8080 \
   -config api.disablekey=true -config pscans.maxBodySizeInBytes=0 >/dev/null
+prepare_certificate "$preflight"
 docker exec "$preflight" python3 /assessment/preflight.py
 docker rm -fv "$preflight" >/dev/null
 docker pull "$postgres_image" >/dev/null
@@ -82,9 +95,10 @@ docker run -d --platform linux/amd64 --name "$scanner" --network "container:$web
   --mount "type=bind,src=$PWD/tests/passive-preview,dst=/assessment,readonly" \
   --entrypoint /zap/zap.sh "$zap_image" -daemon -host 127.0.0.1 -port 8080 \
   -config api.disablekey=true -config pscans.maxBodySizeInBytes=0 >/dev/null
+prepare_certificate "$scanner"
 mkdir -p .local/evidence
 report=$(mktemp)
-trap 'rm -f "$report"; cleanup' EXIT
+trap 'rm -f "$report"; cleanup_all' EXIT
 if ! docker exec "$scanner" python3 /assessment/run_scan.py >"$report"; then
   cat "$report"
   echo 'Passive scanner or control failed; no assessment evidence retained.'
