@@ -13,6 +13,7 @@ check = importlib.util.module_from_spec(SPEC)
 SPEC.loader.exec_module(check)
 
 IMAGE = "sha256:" + "a" * 64
+REVISION = "c" * 40
 
 
 def manifest():
@@ -22,7 +23,7 @@ def manifest():
         "source_archive": "https://ftp.postgresql.org/pub/source/v18.7/postgresql-18.7.tar.bz2",
         "composed_image_id": IMAGE,
         "source_build_image_id": "sha256:" + "b" * 64,
-        "source_revision": "c" * 40,
+        "source_revision": REVISION,
         "file_sha256": {path: "d" * 64 for path in check.PATHS},
     }
 
@@ -92,6 +93,8 @@ class SourceAdvisoryTest(unittest.TestCase):
                     str(source),
                     "--image-id",
                     IMAGE,
+                    "--revision",
+                    REVISION,
                     "--output-dir",
                     str(output),
                 ]
@@ -123,6 +126,8 @@ class SourceAdvisoryTest(unittest.TestCase):
                 str(source),
                 "--image-id",
                 IMAGE,
+                "--revision",
+                REVISION,
                 "--output-dir",
                 str(output),
             ]
@@ -133,10 +138,26 @@ class SourceAdvisoryTest(unittest.TestCase):
                 self.assertEqual(check.main(), 1)
             self.assertFalse(output.exists())
 
+    def test_publication_collision_and_second_write_failure_leave_no_evidence(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            output = root / "evidence"
+            output.mkdir()
+            with self.assertRaises(OSError):
+                check.publish_evidence(output, b"raw", {"status": "success"})
+            self.assertEqual(list(output.iterdir()), [])
+            self.assertEqual(list(root.iterdir()), [output])
+            output.rmdir()
+            with patch.object(Path, "write_text", side_effect=OSError("second write failed")):
+                with self.assertRaises(OSError):
+                    check.publish_evidence(output, b"raw", {"status": "success"})
+            self.assertFalse(output.exists())
+            self.assertEqual(list(root.iterdir()), [])
+
     def test_manifest_binding_rejects_wrong_image_and_identity(self):
         valid = manifest()
         raw = json.dumps(valid).encode()
-        self.assertEqual(check.validate_manifest(raw, IMAGE), valid)
+        self.assertEqual(check.validate_manifest(raw, IMAGE, REVISION), valid)
         for key, bad in [
             ("postgresql_version", "18.6"),
             ("source_archive_sha256", "0" * 64),
@@ -148,12 +169,20 @@ class SourceAdvisoryTest(unittest.TestCase):
             altered = copy.deepcopy(valid)
             altered[key] = bad
             with self.subTest(key=key), self.assertRaises(ValueError):
-                check.validate_manifest(json.dumps(altered).encode(), IMAGE)
+                check.validate_manifest(json.dumps(altered).encode(), IMAGE, REVISION)
         with self.assertRaises(ValueError):
-            check.validate_manifest(raw, "sha256:" + "e" * 64)
+            check.validate_manifest(raw, "sha256:" + "e" * 64, REVISION)
+        with self.assertRaises(ValueError):
+            check.validate_manifest(raw, IMAGE, "d" * 40)
+        with self.assertRaises(ValueError):
+            check.validate_manifest(raw, IMAGE, "invalid")
+        numeric = manifest()
+        numeric["source_revision"] = int("1" * 40)
+        with self.assertRaises(ValueError):
+            check.validate_manifest(json.dumps(numeric).encode(), IMAGE, "1" * 40)
         with self.assertRaises(ValueError):
             check.validate_manifest(
-                b'{"postgresql_version":"18.7","postgresql_version":"18.7"}', IMAGE
+                b'{"postgresql_version":"18.7","postgresql_version":"18.7"}', IMAGE, REVISION
             )
 
 

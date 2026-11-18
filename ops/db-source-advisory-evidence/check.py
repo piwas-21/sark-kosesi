@@ -2,10 +2,13 @@
 """Capture a bounded PostgreSQL project advisory assessment for a source manifest."""
 
 import argparse
+import ctypes
 import hashlib
 import json
+import os
 import re
 import sys
+import tempfile
 from datetime import UTC, datetime
 from html.parser import HTMLParser
 from pathlib import Path
@@ -33,9 +36,13 @@ def unique_pairs(pairs):
     return result
 
 
-def validate_manifest(raw, image_id):
-    if len(raw) > MAX_MANIFEST or not IMAGE.fullmatch(image_id):
-        raise ValueError("invalid manifest size or expected image identity")
+def validate_manifest(raw, image_id, revision):
+    if (
+        len(raw) > MAX_MANIFEST
+        or not IMAGE.fullmatch(image_id)
+        or not re.fullmatch(r"[0-9a-f]{40}", revision)
+    ):
+        raise ValueError("invalid manifest size, image identity or expected revision")
     value = json.loads(raw, object_pairs_hook=unique_pairs)
     if not isinstance(value, dict):
         raise ValueError("manifest is not an object")
@@ -47,7 +54,7 @@ def validate_manifest(raw, image_id):
         != "https://ftp.postgresql.org/pub/source/v18.7/postgresql-18.7.tar.bz2"
         or value.get("composed_image_id") != image_id
         or not IMAGE.fullmatch(str(value.get("source_build_image_id", "")))
-        or not re.fullmatch(r"[0-9a-f]{40}", str(value.get("source_revision", "")))
+        or value.get("source_revision") != revision
         or not isinstance(files, dict)
         or set(files) != set(PATHS)
         or any(not isinstance(v, str) or not HASH.fullmatch(v) for v in files.values())
@@ -215,16 +222,59 @@ def fetch():
         return raw
 
 
+def publish_evidence(output, raw, evidence):
+    # A no-replace rename both publishes the complete directory atomically and
+    # refuses an existing destination, including one created concurrently.
+    libc = ctypes.CDLL(None, use_errno=True)
+    if sys.platform == "darwin":
+        rename = getattr(libc, "renamex_np", None)
+        if rename is None:
+            raise ValueError("atomic no-replace rename is unavailable")
+        rename.argtypes = [ctypes.c_char_p, ctypes.c_char_p, ctypes.c_uint]
+
+        def move(source, target):
+            return rename(os.fsencode(source), os.fsencode(target), 0x00000004)
+
+    elif sys.platform.startswith("linux"):
+        rename = getattr(libc, "renameat2", None)
+        if rename is None:
+            raise ValueError("atomic no-replace rename is unavailable")
+        rename.argtypes = [
+            ctypes.c_int,
+            ctypes.c_char_p,
+            ctypes.c_int,
+            ctypes.c_char_p,
+            ctypes.c_uint,
+        ]
+
+        def move(source, target):
+            return rename(-100, os.fsencode(source), -100, os.fsencode(target), 1)
+
+    else:
+        raise ValueError("atomic no-replace directory rename is unavailable on this platform")
+    rename.restype = ctypes.c_int
+    with tempfile.TemporaryDirectory(prefix=f".{output.name}.", dir=output.parent) as temporary:
+        staged = Path(temporary)
+        (staged / "advisory.html").write_bytes(raw)
+        (staged / "assessment.json").write_text(
+            json.dumps(evidence, indent=2, sort_keys=True) + "\n"
+        )
+        if move(staged, output) != 0:
+            code = ctypes.get_errno()
+            raise OSError(code, os.strerror(code), str(output))
+
+
 def main():
     cli = argparse.ArgumentParser(description=__doc__)
     cli.add_argument("--manifest", type=Path, required=True)
     cli.add_argument("--image-id", required=True)
+    cli.add_argument("--revision", required=True, help="expected 40-character source revision")
     cli.add_argument("--output-dir", type=Path, required=True, help="new directory for evidence")
     args = cli.parse_args()
     try:
         with args.manifest.open("rb") as source:
             manifest_raw = source.read(MAX_MANIFEST + 1)
-        manifest = validate_manifest(manifest_raw, args.image_id)
+        manifest = validate_manifest(manifest_raw, args.image_id, args.revision)
         raw = fetch()
         captured_at = datetime.now(UTC).isoformat(timespec="seconds")
         records = parse_page(raw)
@@ -246,11 +296,7 @@ def main():
             "records": records,
             "scope": "Published PostgreSQL project version-18 table only; source manifest is same-run evidence, not independent attestation. Does not assess other dependencies, undisclosed issues, deployment, or release readiness.",
         }
-        args.output_dir.mkdir(parents=False, exist_ok=False)
-        (args.output_dir / "advisory.html").write_bytes(raw)
-        (args.output_dir / "assessment.json").write_text(
-            json.dumps(evidence, indent=2, sort_keys=True) + "\n"
-        )
+        publish_evidence(args.output_dir, raw, evidence)
         print(f"{status}: {len(records)} advisory rows; evidence in {args.output_dir}")
         return 0 if status == "no_listed_affected_rows" else 1
     except (ValueError, OSError, UnicodeError, HTTPError, URLError) as error:
