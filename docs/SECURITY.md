@@ -863,3 +863,27 @@ Complete trusted source limits at ingress, neutral responses, enumeration
 and timing tests, and measured overload budgets before wiring public routes.
 The per-target cap can temporarily restrict an account when someone else
 submits its address. Treat that as an abuse case in ingress acceptance.
+
+### Isolated passive preview assessment
+
+The separately triggered `Isolated preview passive assessment` workflow builds
+this revision's staging images, starts the actual Next and API processes and an
+isolated synthetic PostgreSQL seed on a Docker internal network, and proxies
+three literal authenticated GETs through ZAP. It neither spiders nor sends
+active attack requests. ZAP's [passive scanner](https://www.zaproxy.org/docs/api/)
+processes proxied messages; the workflow waits for its queue, requires recorded
+200 responses containing the expected synthetic web/API data, and fails on any
+high-severity alert or an unrecognized severity. ZAP's severity scale has no
+separate critical category. A missing-header positive control and empty and
+anonymous history negative controls must pass. The scanner image is pinned by
+digest; ZAP is Apache-2.0 with its third-party notices in its
+[legal notice](https://github.com/zaproxy/zaproxy/blob/main/LEGALNOTICE.md).
+Only a sanitized summary is retained, never raw history, headers or bodies.
+
+This is HTTP within an internal network, with an HTTPS reserved canonical name;
+it does not exercise TLS ingress, deployed infrastructure, browser hydration,
+checkout, mutations, authorization roles, external services or real data. The
+seed runs in test mode before the services start in staging mode. It is not a
+production or staging deployment acceptance, and a passing passive scan is not
+proof of absence of vulnerabilities. Actual release-candidate authenticated
+dynamic assessment and manual threat review remain required.

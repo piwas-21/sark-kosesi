@@ -428,3 +428,8 @@ history and per-SKU recorded occupancy without granting shipment authority.
 The local/test worker exposes this inspection to authorized warehouse staff
 through bounded non-terminal session input and a private JSON report. Staff
 session issuance, physical handover and operational acceptance remain open.
+
+The isolated staging-config passive preview workflow is a source-level P6
+rehearsal pending its first successful exact-revision hosted execution and review.
+Actual ingress, browser-driven authenticated security assessment and manual
+threat review remain P6 acceptance work; production stays disabled.
