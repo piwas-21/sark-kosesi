@@ -31,8 +31,10 @@ Private purported handover evidence submission requires an unseeded
 `handover.record` grant, recent MFA and explicit staff confirmation. The command
 hashes bounded opaque bytes without storing or logging them and binds the resulting
 fingerprint to an exact active whole packing assertion under the attempt claim.
-The database validates parent and event custody, but relies on the trusted caller
-for the byte-to-hash binding; a digest is not proof of issuer or contents. Release
+The parent must be committed and its release must use a separate transaction;
+final clock checks cover observed evidence and release timestamps. Native paths use
+explicit schema binding. The database validates parent and event custody, but
+relies on the trusted caller for the byte-to-hash binding; a digest is not proof of issuer or contents. Release
 remains independent. Historical inspection and same-actor exact replay require
 current authority and remain available after release. No provider call, customer
 exposure, financial, stock or fulfilment action follows. Document storage, retention,

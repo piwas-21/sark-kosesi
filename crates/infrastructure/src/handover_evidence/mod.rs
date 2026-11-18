@@ -101,9 +101,18 @@ pub async fn submit(
     let mut access = lock_staff(pool, token, &observed, Capability::HandoverRecord)
         .await
         .map_err(staff)?;
-    let result = command::execute(&mut access, &observed, ids, &request, &digest).await;
-    access.check_time(&observed).map_err(staff)?;
-    let receipt = result?;
+    let result = async {
+        sqlx::query("SET LOCAL search_path=pg_catalog,public,pg_temp")
+            .execute(&mut *access.tx)
+            .await?;
+        command::execute(&mut access, &observed, ids, &request, &digest).await
+    }
+    .await;
+    let now = access.authorized_at(&observed).map_err(staff)?;
+    let (receipt, observed_through) = result?;
+    if now < observed_through {
+        return Err(Error::ClockUnavailable);
+    }
     access.commit(&observed).await.map_err(staff)?;
     Ok(receipt)
 }
@@ -122,10 +131,20 @@ pub async fn inspect(
     let mut access = lock_staff(pool, token, &observed, Capability::HandoverRecord)
         .await
         .map_err(staff)?;
-    let result = command::inspect(&mut access, order_id).await;
-    access.check_time(&observed).map_err(staff)?;
+    let result = async {
+        sqlx::query("SET LOCAL search_path=pg_catalog,public,pg_temp")
+            .execute(&mut *access.tx)
+            .await?;
+        command::inspect(&mut access, order_id).await
+    }
+    .await;
+    let now = access.authorized_at(&observed).map_err(staff)?;
+    let (entries, observed_through) = result?;
+    if now < observed_through {
+        return Err(Error::ClockUnavailable);
+    }
     drop(access);
-    result
+    Ok(entries)
 }
 
 #[cfg(test)]

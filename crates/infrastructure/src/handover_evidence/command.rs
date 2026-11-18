@@ -45,7 +45,7 @@ pub(super) async fn execute(
     ids: &dyn Identifiers,
     req: &Request<'_>,
     digest: &str,
-) -> Result<Receipt, Error> {
+) -> Result<(Receipt, i64), Error> {
     store::lock_key(&mut access.tx, req.effect_key).await?;
     let existing = store::lookup(&mut access.tx, req.effect_key).await?;
     if existing
@@ -61,6 +61,12 @@ pub(super) async fn execute(
     access.check_time(clock).map_err(staff)?;
     let history = store::history(&mut access.tx, req.order_id).await?;
     let packs = basis(access, req.order_id, &attempt, req.packing_id).await?;
+    let observed_through = history
+        .iter()
+        .map(|r| r.recorded_at)
+        .chain(packs.iter().map(|p| p.recorded_at))
+        .max()
+        .unwrap_or(0);
     if let Some(old) = history.iter().find(|r| r.effect_key == req.effect_key) {
         if old.actor_id != access.actor
             || old.packing_id != req.packing_id
@@ -68,10 +74,13 @@ pub(super) async fn execute(
         {
             return Err(Error::Conflict);
         }
-        return Ok(Receipt {
-            submission: old.clone(),
-            replayed: true,
-        });
+        return Ok((
+            Receipt {
+                submission: old.clone(),
+                replayed: true,
+            },
+            observed_through,
+        ));
     }
     if packs
         .iter()
@@ -93,7 +102,7 @@ pub(super) async fn execute(
         .iter()
         .find(|p| p.id == req.packing_id)
         .ok_or(Error::InvalidStoredData)?;
-    if at < parent.recorded_at || history.last().is_some_and(|r| at < r.recorded_at) {
+    if at < parent.recorded_at || at < observed_through {
         return Err(Error::ClockUnavailable);
     }
     let submission = Submission {
@@ -113,25 +122,31 @@ pub(super) async fn execute(
     if written.last() != Some(&submission) {
         return Err(Error::InvalidStoredData);
     }
-    Ok(Receipt {
-        submission,
-        replayed: false,
-    })
+    Ok((
+        Receipt {
+            submission,
+            replayed: false,
+        },
+        at.max(observed_through),
+    ))
 }
 
 pub(super) async fn inspect(
     access: &mut StaffTransaction,
     order: &str,
-) -> Result<Vec<(Submission, bool)>, Error> {
+) -> Result<(Vec<(Submission, bool)>, i64), Error> {
     let attempt = claim(access, order).await?;
     let submissions = store::history(&mut access.tx, order).await?;
+    let mut observed_through = submissions.iter().map(|s| s.recorded_at).max().unwrap_or(0);
     let mut result = Vec::with_capacity(submissions.len());
     for submission in submissions {
         let packs = basis(access, order, &attempt, &submission.packing_id).await?;
+        observed_through =
+            observed_through.max(packs.iter().map(|p| p.recorded_at).max().unwrap_or(0));
         let released = packs.iter().any(|p| {
             p.action == "released" && p.target_id.as_deref() == Some(&submission.packing_id)
         });
         result.push((submission, released));
     }
-    Ok(result)
+    Ok((result, observed_through))
 }

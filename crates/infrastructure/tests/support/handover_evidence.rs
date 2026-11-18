@@ -3,6 +3,7 @@ use crate::{
     MIGRATOR, mollie::tests::order_stock_cases::fixture, order_stock::settle, packing_custody,
 };
 use sqlx::Executor;
+use std::sync::atomic::Ordering;
 
 async fn setup(pool: &PgPool) {
     pool.execute("INSERT INTO staff_accounts VALUES('evidence-staff',true),('no-evidence',true),('second-evidence',true); INSERT INTO staff_capabilities VALUES('evidence-staff','warehouse.manage'),('evidence-staff','handover.record'),('no-evidence','warehouse.manage'),('second-evidence','handover.record')")
@@ -15,6 +16,16 @@ async fn setup(pool: &PgPool) {
         sqlx::query("INSERT INTO staff_sessions(token_hash,staff_id,created_at,expires_at,mfa_verified_at) VALUES($1,$2,1000,8000,1450)")
             .bind(token(byte).digest().as_slice()).bind(actor).execute(pool).await.expect("session");
     }
+}
+async fn wait_for_attempt_claim(pool: &PgPool, blocker_pid: i32) {
+    tokio::time::timeout(std::time::Duration::from_millis(800), async {
+        loop {
+            let waiting: bool = sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM pg_catalog.pg_stat_activity a WHERE a.datname=pg_catalog.current_database() AND a.wait_event_type='Lock' AND $1=ANY(pg_catalog.pg_blocking_pids(a.pid)) AND a.query LIKE 'SELECT id FROM payment_attempts WHERE id=%')")
+                .bind(blocker_pid).fetch_one(pool).await.expect("attempt waiter probe");
+            if waiting { break; }
+            tokio::time::sleep(std::time::Duration::from_millis(5)).await;
+        }
+    }).await.expect("worker reached the held attempt claim");
 }
 fn token(byte: u8) -> SessionToken {
     SessionToken::from_bytes([byte; 32])
@@ -70,6 +81,28 @@ async fn submission_is_historical_and_never_blocks_release(pool: PgPool) {
     .expect("pack");
     let parent = &packed.record.id;
     let before = fixture::footprint(&pool).await;
+    // A grant alone does not replace a valid current MFA session.
+    for (mfa, revoked) in [
+        (None, None),
+        (Some(1501_i64), None),
+        (Some(1450_i64), Some(1500_i64)),
+    ] {
+        sqlx::query("UPDATE public.staff_sessions SET mfa_verified_at=$1, revoked_at=$2 WHERE staff_id='second-evidence'")
+            .bind(mfa).bind(revoked).execute(&pool).await.expect("session state");
+        assert!(matches!(
+            submit(
+                &pool,
+                &token(73),
+                f.time.as_ref(),
+                f.ids.as_ref(),
+                request(order, parent, "invalid-session", b"abc")
+            )
+            .await,
+            Err(Error::Denied)
+        ));
+    }
+    sqlx::query("UPDATE public.staff_sessions SET mfa_verified_at=1450, revoked_at=NULL WHERE staff_id='second-evidence'")
+        .execute(&pool).await.expect("restore session");
     assert!(matches!(
         submit(
             &pool,
@@ -106,6 +139,47 @@ async fn submission_is_historical_and_never_blocks_release(pool: PgPool) {
         "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad"
     );
     assert!(!first.replayed);
+    // MFA remains valid: a clock before the recorded evidence must still fail closed.
+    f.time.0.store(1499, Ordering::SeqCst);
+    assert!(matches!(
+        submit(
+            &pool,
+            &token(71),
+            f.time.as_ref(),
+            f.ids.as_ref(),
+            request(order, parent, "first", b"abc")
+        )
+        .await,
+        Err(Error::ClockUnavailable)
+    ));
+    assert!(matches!(
+        inspect(&pool, &token(71), f.time.as_ref(), order).await,
+        Err(Error::ClockUnavailable)
+    ));
+    assert!(matches!(
+        submit(
+            &pool,
+            &token(71),
+            f.time.as_ref(),
+            f.ids.as_ref(),
+            request(order, parent, "rewind-new", b"other")
+        )
+        .await,
+        Err(Error::ClockUnavailable)
+    ));
+    f.time.0.store(1500, Ordering::SeqCst);
+    assert!(
+        submit(
+            &pool,
+            &token(71),
+            f.time.as_ref(),
+            f.ids.as_ref(),
+            request(order, parent, "first", b"abc")
+        )
+        .await
+        .expect("exact evidence time")
+        .replayed
+    );
     assert!(matches!(
         submit(
             &pool,
@@ -194,6 +268,11 @@ async fn submission_is_historical_and_never_blocks_release(pool: PgPool) {
         parent.clone(),
         order.clone(),
     );
+    let blocker_pid: i32 = sqlx::query_scalar("SELECT pg_catalog.pg_backend_pid()")
+        .fetch_one(&mut *evidence_tx)
+        .await
+        .expect("evidence backend");
+    f.time.0.store(1600, Ordering::SeqCst);
     let waiter = tokio::spawn(async move {
         packing_custody::record(
             &p,
@@ -211,12 +290,30 @@ async fn submission_is_historical_and_never_blocks_release(pool: PgPool) {
         )
         .await
     });
-    tokio::task::yield_now().await;
+    wait_for_attempt_claim(&pool, blocker_pid).await;
     evidence_tx.commit().await.expect("evidence wins");
     waiter
         .await
         .expect("release task")
         .expect("release remains permitted");
+    // Release is timestamped at 1600; rewinding must not reveal its presence.
+    f.time.0.store(1500, Ordering::SeqCst);
+    assert!(matches!(
+        inspect(&pool, &token(71), f.time.as_ref(), order).await,
+        Err(Error::ClockUnavailable)
+    ));
+    assert!(matches!(
+        submit(
+            &pool,
+            &token(71),
+            f.time.as_ref(),
+            f.ids.as_ref(),
+            request(order, parent, "first", b"abc")
+        )
+        .await,
+        Err(Error::ClockUnavailable)
+    ));
+    f.time.0.store(1600, Ordering::SeqCst);
     let replay = submit(
         &pool,
         &token(71),
@@ -301,6 +398,83 @@ async fn release_wins_the_attempt_claim_before_submission(pool: PgPool) {
     release.target_id = Some(packed.id.clone());
     release.units = sqlx::types::Json(Vec::new());
     release.packages = sqlx::types::Json(Vec::new());
+    // The two writes must never share a transaction, even after an early flush.
+    let mut candidate = Submission {
+        id: "dddddddddddddddddddddddddddddddd".into(),
+        order_id: order.clone(),
+        attempt_id: packed.attempt_id.clone(),
+        packing_id: packed.id.clone(),
+        actor_id: "evidence-staff".into(),
+        effect_key: "rolled-key".into(),
+        generation: 1,
+        evidence_sha256: "c".repeat(64),
+        recorded_at: packed.recorded_at,
+        event_id: "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee".into(),
+    };
+    let mut same = pool.begin().await.expect("submission first");
+    store::insert(&mut same, &candidate)
+        .await
+        .expect("early evidence flush");
+    assert!(
+        packing_custody::store::insert(&mut same, &release)
+            .await
+            .is_err()
+    );
+    same.rollback().await.expect("roll back both");
+    let mut same = pool.begin().await.expect("release first");
+    packing_custody::store::insert(&mut same, &release)
+        .await
+        .expect("early release flush");
+    assert!(store::insert(&mut same, &candidate).await.is_err());
+    same.rollback().await.expect("roll back both");
+    let mut retry = pool.begin().await.expect("retry after rollback");
+    store::insert(&mut retry, &candidate)
+        .await
+        .expect("same key remains reusable after rollback");
+    retry.rollback().await.expect("roll back retry");
+
+    // Expiry occurs while the attempt is observably locked, before any write.
+    let mut blocker = pool.begin().await.expect("MFA blocker");
+    sqlx::query("SELECT id FROM payment_attempts WHERE id=$1 FOR UPDATE")
+        .bind(&packed.attempt_id)
+        .execute(&mut *blocker)
+        .await
+        .expect("hold attempt");
+    let blocker_pid: i32 = sqlx::query_scalar("SELECT pg_catalog.pg_backend_pid()")
+        .fetch_one(&mut *blocker)
+        .await
+        .expect("blocker backend");
+    let (p, t, ids, parent, o) = (
+        pool.clone(),
+        f.time.clone(),
+        f.ids.clone(),
+        packed.id.clone(),
+        order.clone(),
+    );
+    let expired = tokio::spawn(async move {
+        submit(
+            &p,
+            &token(71),
+            t.as_ref(),
+            ids.as_ref(),
+            request(&o, &parent, "expired-wait", b"source"),
+        )
+        .await
+    });
+    wait_for_attempt_claim(&pool, blocker_pid).await;
+    f.time.0.store(2351, Ordering::SeqCst);
+    blocker.commit().await.expect("release blocker");
+    assert!(matches!(expired.await.expect("task"), Err(Error::Denied)));
+    f.time.0.store(1500, Ordering::SeqCst);
+    let count: i64 = sqlx::query_scalar(
+        "SELECT count(*) FROM public.handover_evidence_submissions WHERE order_id=$1",
+    )
+    .bind(&order)
+    .fetch_one(&pool)
+    .await
+    .expect("count");
+    assert_eq!(count, 0);
+
     let mut tx = pool.begin().await.expect("transaction");
     packing_custody::store::insert(&mut tx, &release)
         .await
@@ -312,6 +486,10 @@ async fn release_wins_the_attempt_claim_before_submission(pool: PgPool) {
         packed.id.clone(),
         order.clone(),
     );
+    let blocker_pid: i32 = sqlx::query_scalar("SELECT pg_catalog.pg_backend_pid()")
+        .fetch_one(&mut *tx)
+        .await
+        .expect("release backend");
     let waiter = tokio::spawn(async move {
         submit(
             &p,
@@ -322,14 +500,98 @@ async fn release_wins_the_attempt_claim_before_submission(pool: PgPool) {
         )
         .await
     });
-    tokio::task::yield_now().await;
+    wait_for_attempt_claim(&pool, blocker_pid).await;
     tx.commit().await.expect("release wins");
     assert!(matches!(waiter.await.expect("task"), Err(Error::Conflict)));
     let count: i64 =
         sqlx::query_scalar("SELECT count(*) FROM handover_evidence_submissions WHERE order_id=$1")
-            .bind(order)
+            .bind(&order)
             .fetch_one(&pool)
             .await
             .expect("count");
     assert_eq!(count, 0);
+    // A newly inserted parent remains inadmissible in its own transaction even
+    // after packing's deferred event check has been forced and sealed.
+    let mut new_pack = packed.clone();
+    new_pack.id = "11111111111111111111111111111111".into();
+    new_pack.event_id = "22222222222222222222222222222222".into();
+    new_pack.effect_key = "new-pack".into();
+    new_pack.generation = 3;
+    candidate.packing_id = new_pack.id.clone();
+    let mut new_parent = pool.begin().await.expect("new parent transaction");
+    packing_custody::store::insert(&mut new_parent, &new_pack)
+        .await
+        .expect("flush new pack");
+    assert!(store::insert(&mut new_parent, &candidate).await.is_err());
+    new_parent.rollback().await.expect("roll back new parent");
+    let mut committed_parent = pool.begin().await.expect("committed parent transaction");
+    packing_custody::store::insert(&mut committed_parent, &new_pack)
+        .await
+        .expect("pack again");
+    committed_parent.commit().await.expect("parent committed");
+    let mut accepted = pool.begin().await.expect("later transaction");
+    store::insert(&mut accepted, &candidate)
+        .await
+        .expect("later evidence is accepted");
+    accepted.commit().await.expect("evidence committed");
+    assert!(matches!(
+        submit(
+            &pool,
+            &token(71),
+            f.time.as_ref(),
+            f.ids.as_ref(),
+            request(&order, &new_pack.id, "too-large", &vec![0; MAX_BYTES + 1])
+        )
+        .await,
+        Err(Error::InvalidRequest)
+    ));
+    let mut unconfirmed = request(&order, &new_pack.id, "unconfirmed", b"one");
+    unconfirmed.confirmed = false;
+    assert!(matches!(
+        submit(
+            &pool,
+            &token(71),
+            f.time.as_ref(),
+            f.ids.as_ref(),
+            unconfirmed
+        )
+        .await,
+        Err(Error::InvalidRequest)
+    ));
+    for index in 0..3 {
+        let key = format!("more-{index}");
+        let bytes = if index == 0 {
+            vec![7; MAX_BYTES]
+        } else {
+            format!("source-{index}").into_bytes()
+        };
+        submit(
+            &pool,
+            &token(71),
+            f.time.as_ref(),
+            f.ids.as_ref(),
+            request(&order, &new_pack.id, &key, &bytes),
+        )
+        .await
+        .expect("within parent bound");
+    }
+    assert!(matches!(
+        submit(
+            &pool,
+            &token(71),
+            f.time.as_ref(),
+            f.ids.as_ref(),
+            request(&order, &new_pack.id, "fifth", b"fifth")
+        )
+        .await,
+        Err(Error::Conflict)
+    ));
+    let count: i64 = sqlx::query_scalar(
+        "SELECT count(*) FROM public.handover_evidence_submissions WHERE packing_id=$1",
+    )
+    .bind(&new_pack.id)
+    .fetch_one(&pool)
+    .await
+    .expect("bounded count");
+    assert_eq!(count, 4);
 }

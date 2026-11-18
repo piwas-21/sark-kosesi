@@ -796,7 +796,9 @@ fingerprint of 1 byte to 1 MiB of opaque purported handover evidence. The bytes
 are not retained. Under the same attempt claim, submission requires one exact
 active whole packing record, validates its historical source and complete packing
 history, and atomically appends an immutable record and reciprocal event. The
-journal allows four different fingerprints per parent and 64 per order. An exact
+parent must already be committed, and a release cannot share the submission
+transaction, including after an early constraint flush. A final clock fence covers
+recorded evidence and visible release times. The journal allows four different fingerprints per parent and 64 per order. An exact
 actor- and effect-bound replay requires fresh authority but survives a later
 packing release. The normal release remains available; inspection reports its
 presence alongside the original submission. Neither the fingerprint nor the

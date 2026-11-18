@@ -1,17 +1,17 @@
 -- Private, non-operative fingerprints of bytes submitted against whole packing assertions.
 -- Explicitly assigned read-only capability; no staff or grant is seeded.
-ALTER TABLE staff_capabilities DROP CONSTRAINT staff_capabilities_capability_check;
-ALTER TABLE staff_capabilities ADD CONSTRAINT staff_capabilities_capability_check CHECK(capability IN
+ALTER TABLE public.staff_capabilities DROP CONSTRAINT staff_capabilities_capability_check;
+ALTER TABLE public.staff_capabilities ADD CONSTRAINT staff_capabilities_capability_check CHECK(capability IN
  ('catalogue.manage','catalogue.review','warehouse.manage','market.manage','market.review',
   'promotion.manage','promotion.review','payment.reconcile','stock.review','stock.recover',
   'refund.prepare','refund.execution.prepare','reversal.review','cancellation.review','handover.record'));
 
-CREATE TABLE handover_evidence_submissions (
+CREATE TABLE public.handover_evidence_submissions (
  id text PRIMARY KEY CHECK(id ~ '^[a-f0-9]{32}$'),
- order_id text NOT NULL REFERENCES checkout_orders(id),
- attempt_id text NOT NULL REFERENCES payment_dispatch_starts(attempt_id),
- packing_id text NOT NULL REFERENCES packing_custody(id),
- actor_id text NOT NULL REFERENCES staff_accounts(id),
+ order_id text NOT NULL REFERENCES public.checkout_orders(id),
+ attempt_id text NOT NULL REFERENCES public.payment_dispatch_starts(attempt_id),
+ packing_id text NOT NULL REFERENCES public.packing_custody(id),
+ actor_id text NOT NULL REFERENCES public.staff_accounts(id),
  effect_key text NOT NULL UNIQUE CHECK(effect_key ~ '^[a-zA-Z0-9-]{1,128}$'),
  generation smallint NOT NULL CHECK(generation BETWEEN 1 AND 64),
  evidence_sha256 text NOT NULL CHECK(evidence_sha256 ~ '^[a-f0-9]{64}$'),
@@ -20,66 +20,81 @@ CREATE TABLE handover_evidence_submissions (
  transaction_id xid8 NOT NULL,
  UNIQUE(order_id,generation), UNIQUE(packing_id,evidence_sha256)
 );
-CREATE INDEX handover_evidence_order ON handover_evidence_submissions(order_id,generation);
-CREATE INDEX commerce_outbox_handover_evidence_order ON commerce_outbox(aggregate_id)
+CREATE INDEX handover_evidence_order ON public.handover_evidence_submissions(order_id,generation);
+CREATE INDEX commerce_outbox_handover_evidence_order ON public.commerce_outbox(aggregate_id)
  WHERE kind='order.handover_evidence_submitted.v1';
-CREATE FUNCTION handover_evidence_digest(r handover_evidence_submissions) RETURNS text LANGUAGE sql IMMUTABLE STRICT AS $$
- SELECT encode(sha256(convert_to(jsonb_build_object('id',r.id,'order_id',r.order_id,
+CREATE FUNCTION public.handover_evidence_digest(r public.handover_evidence_submissions) RETURNS text LANGUAGE sql IMMUTABLE STRICT SET search_path=pg_catalog,public,pg_temp AS $$
+ SELECT pg_catalog.encode(pg_catalog.sha256(pg_catalog.convert_to(pg_catalog.jsonb_build_object('id',r.id,'order_id',r.order_id,
   'attempt_id',r.attempt_id,'packing_id',r.packing_id,'actor_id',r.actor_id,'effect_key',r.effect_key,
   'generation',r.generation,'evidence_sha256',r.evidence_sha256,'recorded_at',r.recorded_at,'event_id',r.event_id)::text,'UTF8')),'hex')
 $$;
-CREATE FUNCTION handover_evidence_event(r handover_evidence_submissions) RETURNS jsonb LANGUAGE sql IMMUTABLE STRICT AS $$
- SELECT jsonb_build_object('schema_version',1,'order_id',r.order_id,'submission_id',r.id,'submission_sha256',handover_evidence_digest(r))
+CREATE FUNCTION public.handover_evidence_event(r public.handover_evidence_submissions) RETURNS jsonb LANGUAGE sql IMMUTABLE STRICT SET search_path=pg_catalog,public,pg_temp AS $$
+ SELECT pg_catalog.jsonb_build_object('schema_version',1,'order_id',r.order_id,'submission_id',r.id,'submission_sha256',public.handover_evidence_digest(r))
 $$;
-CREATE FUNCTION handover_evidence_history_exact(wanted text) RETURNS boolean LANGUAGE plpgsql VOLATILE AS $$
-DECLARE r handover_evidence_submissions%ROWTYPE; n integer:=0; prior_at bigint:=0; events integer;
+CREATE FUNCTION public.handover_evidence_history_exact(wanted text) RETURNS boolean LANGUAGE plpgsql VOLATILE SET search_path=pg_catalog,public,pg_temp AS $$
+DECLARE r public.handover_evidence_submissions%ROWTYPE; n integer:=0; prior_at bigint:=0; events integer;
 BEGIN
- IF NOT packing_custody_history_exact(wanted) THEN RETURN false; END IF;
- FOR r IN SELECT * FROM handover_evidence_submissions WHERE order_id=wanted ORDER BY generation LIMIT 65 LOOP
+ IF NOT public.packing_custody_history_exact(wanted) THEN RETURN false; END IF;
+ FOR r IN SELECT * FROM public.handover_evidence_submissions WHERE order_id=wanted ORDER BY generation LIMIT 65 LOOP
   n:=n+1;
   IF n>64 OR r.generation<>n OR r.recorded_at<prior_at OR r.transaction_id IS NULL
-   OR NOT EXISTS(SELECT 1 FROM packing_custody p WHERE p.id=r.packing_id AND p.action='packed'
-      AND p.order_id=r.order_id AND p.attempt_id=r.attempt_id AND p.recorded_at<=r.recorded_at)
-   OR (SELECT count(*) FROM handover_evidence_submissions WHERE packing_id=r.packing_id)>4
-   OR NOT EXISTS(SELECT 1 FROM commerce_outbox e WHERE e.id=r.event_id AND e.aggregate_id=r.order_id
+   OR NOT EXISTS(SELECT 1 FROM public.packing_custody p WHERE p.id=r.packing_id AND p.action='packed'
+      AND p.order_id=r.order_id AND p.attempt_id=r.attempt_id AND p.recorded_at<=r.recorded_at AND p.transaction_id IS DISTINCT FROM r.transaction_id)
+   OR EXISTS(SELECT 1 FROM public.packing_custody rel WHERE rel.target_id=r.packing_id
+      AND rel.action='released' AND rel.transaction_id=r.transaction_id)
+   OR (SELECT count(*) FROM public.handover_evidence_submissions WHERE packing_id=r.packing_id)>4
+   OR NOT EXISTS(SELECT 1 FROM public.commerce_outbox e WHERE e.id=r.event_id AND e.aggregate_id=r.order_id
       AND e.kind='order.handover_evidence_submitted.v1' AND e.created_at=r.recorded_at
-      AND e.payload=handover_evidence_event(r)) THEN RETURN false; END IF;
+      AND e.payload=public.handover_evidence_event(r)) THEN RETURN false; END IF;
   prior_at:=r.recorded_at;
  END LOOP;
- SELECT count(*) INTO events FROM (SELECT 1 FROM commerce_outbox WHERE aggregate_id=wanted
+ SELECT count(*) INTO events FROM (SELECT 1 FROM public.commerce_outbox WHERE aggregate_id=wanted
   AND kind='order.handover_evidence_submitted.v1' LIMIT 65) q;
  RETURN n=events;
 EXCEPTION WHEN check_violation OR invalid_text_representation OR numeric_value_out_of_range THEN RETURN false;
 END $$;
-CREATE FUNCTION guard_handover_evidence() RETURNS trigger LANGUAGE plpgsql AS $$
-DECLARE prior handover_evidence_submissions%ROWTYPE;
+CREATE FUNCTION public.guard_handover_evidence() RETURNS trigger LANGUAGE plpgsql SET search_path=pg_catalog,public,pg_temp AS $$
+DECLARE prior public.handover_evidence_submissions%ROWTYPE;
 BEGIN
  IF TG_OP<>'INSERT' THEN RAISE EXCEPTION 'Evidence is immutable' USING ERRCODE='23514'; END IF;
- IF current_setting('transaction_isolation')<>'read committed' THEN RAISE EXCEPTION 'Evidence requires read committed' USING ERRCODE='23514'; END IF;
- PERFORM 1 FROM payment_attempts WHERE id=NEW.attempt_id FOR UPDATE;
- IF NOT FOUND OR NOT packing_custody_history_exact(NEW.order_id) OR NOT EXISTS(
-  SELECT 1 FROM packing_custody p WHERE p.id=NEW.packing_id AND p.order_id=NEW.order_id
+ IF pg_catalog.current_setting('transaction_isolation')<>'read committed' THEN RAISE EXCEPTION 'Evidence requires read committed' USING ERRCODE='23514'; END IF;
+ PERFORM 1 FROM public.payment_attempts WHERE id=NEW.attempt_id FOR UPDATE;
+ IF NOT FOUND OR NOT public.packing_custody_history_exact(NEW.order_id) OR NOT EXISTS(
+  SELECT 1 FROM public.packing_custody p WHERE p.id=NEW.packing_id AND p.order_id=NEW.order_id
    AND p.attempt_id=NEW.attempt_id AND p.action='packed' AND p.recorded_at<=NEW.recorded_at
-   AND NOT EXISTS(SELECT 1 FROM packing_custody r WHERE r.target_id=p.id AND r.action='released')) THEN
+   AND p.transaction_id IS DISTINCT FROM pg_catalog.pg_current_xact_id()
+   AND NOT EXISTS(SELECT 1 FROM public.packing_custody r WHERE r.target_id=p.id AND r.action='released')) THEN
   RAISE EXCEPTION 'Evidence requires active exact packing parent' USING ERRCODE='23514'; END IF;
- SELECT * INTO prior FROM handover_evidence_submissions WHERE order_id=NEW.order_id ORDER BY generation DESC LIMIT 1;
+ SELECT * INTO prior FROM public.handover_evidence_submissions WHERE order_id=NEW.order_id ORDER BY generation DESC LIMIT 1;
  IF (prior.id IS NULL AND NEW.generation<>1) OR (prior.id IS NOT NULL AND
-  (NEW.generation<>prior.generation+1 OR NEW.recorded_at<prior.recorded_at OR prior.transaction_id=pg_current_xact_id()))
-  OR (SELECT count(*) FROM handover_evidence_submissions WHERE packing_id=NEW.packing_id)>=4 THEN
+  (NEW.generation<>prior.generation+1 OR NEW.recorded_at<prior.recorded_at OR prior.transaction_id=pg_catalog.pg_current_xact_id()))
+  OR (SELECT count(*) FROM public.handover_evidence_submissions WHERE packing_id=NEW.packing_id)>=4 THEN
   RAISE EXCEPTION 'Evidence history bounds or chronology' USING ERRCODE='23514'; END IF;
- NEW.transaction_id:=pg_current_xact_id();
+ NEW.transaction_id:=pg_catalog.pg_current_xact_id();
  RETURN NEW;
 END $$;
-CREATE TRIGGER guard_handover_evidence BEFORE INSERT OR UPDATE OR DELETE ON handover_evidence_submissions
- FOR EACH ROW EXECUTE FUNCTION guard_handover_evidence();
-CREATE FUNCTION require_complete_handover_evidence() RETURNS trigger LANGUAGE plpgsql AS $$
+CREATE TRIGGER guard_handover_evidence BEFORE INSERT OR UPDATE OR DELETE ON public.handover_evidence_submissions
+ FOR EACH ROW EXECUTE FUNCTION public.guard_handover_evidence();
+CREATE FUNCTION public.require_complete_handover_evidence() RETURNS trigger LANGUAGE plpgsql SET search_path=pg_catalog,public,pg_temp AS $$
 BEGIN
- IF NEW.transaction_id IS DISTINCT FROM pg_current_xact_id() OR NOT handover_evidence_history_exact(NEW.order_id) THEN
+ IF NEW.transaction_id IS DISTINCT FROM pg_catalog.pg_current_xact_id() OR NOT public.handover_evidence_history_exact(NEW.order_id) THEN
   RAISE EXCEPTION 'Evidence requires complete reciprocal history' USING ERRCODE='23514'; END IF;
  RETURN NULL;
 END $$;
-CREATE CONSTRAINT TRIGGER require_complete_handover_evidence AFTER INSERT ON handover_evidence_submissions
- DEFERRABLE INITIALLY DEFERRED FOR EACH ROW EXECUTE FUNCTION require_complete_handover_evidence();
+CREATE CONSTRAINT TRIGGER require_complete_handover_evidence AFTER INSERT ON public.handover_evidence_submissions
+ DEFERRABLE INITIALLY DEFERRED FOR EACH ROW EXECUTE FUNCTION public.require_complete_handover_evidence();
+-- A subsequent committed release is allowed, but the same transaction may not
+-- both submit evidence and release its parent, even after early constraint flush.
+CREATE FUNCTION public.guard_handover_evidence_release() RETURNS trigger LANGUAGE plpgsql
+ SET search_path=pg_catalog,public,pg_temp AS $$
+BEGIN
+ IF NEW.action='released' AND EXISTS(SELECT 1 FROM public.handover_evidence_submissions s
+  WHERE s.packing_id=NEW.target_id AND s.transaction_id=pg_catalog.pg_current_xact_id()) THEN
+  RAISE EXCEPTION 'Evidence and parent release require separate transactions' USING ERRCODE='23514'; END IF;
+ RETURN NEW;
+END $$;
+CREATE TRIGGER aa_handover_evidence_release BEFORE INSERT ON public.packing_custody
+ FOR EACH ROW EXECUTE FUNCTION public.guard_handover_evidence_release();
 DROP INDEX commerce_outbox_original_order_kind;
 CREATE UNIQUE INDEX commerce_outbox_original_order_kind ON commerce_outbox(aggregate_id,kind)
  WHERE kind NOT IN ('payment.observation_recorded.v1','payment.search_page_recorded.v1',
@@ -95,7 +110,8 @@ ALTER TABLE public.commerce_outbox ADD CONSTRAINT commerce_outbox_kind_check CHE
   'payment.reversal_observed.v1','payment.reversal_page_recorded.v1','order.refund_execution_proposed.v1',
   'payment.paid_parent_totals_observed.v1','order.packing_custody_recorded.v1','order.handover_evidence_submitted.v1'));
 
-CREATE OR REPLACE FUNCTION guard_commerce_outbox() RETURNS trigger LANGUAGE plpgsql AS $$
+CREATE OR REPLACE FUNCTION public.guard_commerce_outbox() RETURNS trigger LANGUAGE plpgsql
+ SET search_path=pg_catalog,public,pg_temp AS $$
 DECLARE recognition payment_recognitions%ROWTYPE; settlement order_stock_settlements%ROWTYPE;
  allocation late_stock_allocations%ROWTYPE; review late_stock_review_cases%ROWTYPE; decision late_stock_dispositions%ROWTYPE;
  reservation refund_reservations%ROWTYPE; proposal refund_execution_proposals%ROWTYPE; reversal payment_reversal_observations%ROWTYPE;
@@ -252,9 +268,9 @@ BEGIN
     AND NEW.payload=public.checkout_post_dispatch_request_event(r)) THEN
    RAISE EXCEPTION 'Pending cancellation event requires same-transaction request' USING ERRCODE='23514'; END IF;
  ELSIF NEW.kind='order.handover_evidence_submitted.v1' THEN
-  IF NOT EXISTS(SELECT 1 FROM handover_evidence_submissions s WHERE s.event_id=NEW.id
+  IF NOT EXISTS(SELECT 1 FROM public.handover_evidence_submissions s WHERE s.event_id=NEW.id
    AND s.order_id=NEW.aggregate_id AND s.recorded_at=NEW.created_at
-   AND s.transaction_id=pg_current_xact_id() AND NEW.payload=handover_evidence_event(s)) THEN
+   AND s.transaction_id=pg_catalog.pg_current_xact_id() AND NEW.payload=public.handover_evidence_event(s)) THEN
    RAISE EXCEPTION 'Evidence event requires same-transaction submission' USING ERRCODE='23514'; END IF;
  ELSE RAISE EXCEPTION 'Unknown commerce event kind' USING ERRCODE='23514';
  END IF;
