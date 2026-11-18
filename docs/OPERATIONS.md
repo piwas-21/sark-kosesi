@@ -601,7 +601,9 @@ SCRAM verifier, and requires specific rejection diagnostics for a wrong CA,
 wrong hostname, disabled TLS and wrong password. A valid connection is checked
 after every negative. Certificate keys, credentials and raw diagnostics stay in
 runner scratch or container tmpfs; the retained artifact contains only fixed
-status lines, image and public-certificate hashes, and evidence checksums.
+status lines, image and public-certificate hashes, evidence checksums, and
+bounded public prerequisite build logs and statuses. TLS raw diagnostics are
+not included.
 
 This lab tests the named synthetic connection only. It does not establish a
 production PKI, certificate renewal, staging endpoint behavior, provider or

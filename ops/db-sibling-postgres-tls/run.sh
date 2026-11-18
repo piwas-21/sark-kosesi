@@ -28,7 +28,11 @@ cleanup() {
   exit "$rc"
 }
 trap cleanup EXIT
-COMPOSE_REVISION="$TLS_REVISION" bash ops/db-sibling-postgres/run.sh > "$scratch/composition.log" 2>&1
+# The public prerequisite build needs its ordinary readable build-context files.
+# Its subprocess cannot change this shell's restrictive TLS-secret umask.
+# shellcheck source=ops/db-sibling-postgres-tls/prerequisite.sh
+source ops/db-sibling-postgres-tls/prerequisite.sh
+run_composition ops/db-sibling-postgres/run.sh "$scratch/composition.log" "$out"
 for name in db-sibling-postgres-evidence db-sibling-root-evidence db-source-feature-evidence; do
   grep -Fxq 'stage=complete outcome=success' "$RUNNER_TEMP/$name/status.txt"
   (cd "$RUNNER_TEMP/$name" && sha256sum -c SHA256SUMS >/dev/null)
