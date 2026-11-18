@@ -10,6 +10,9 @@ import tarfile
 from pathlib import Path
 
 MAX_SIZE = 2 * 1024 * 1024 * 1024
+MAX_MEMBER_SIZE = 1024 * 1024 * 1024
+MAX_LOGICAL_SIZE = 2 * 1024 * 1024 * 1024
+MAX_METADATA_SIZE = 1024 * 1024
 MAX_ENTRIES = 200000
 MAX_MATCHES = 4096
 IMAGE = re.compile(r"sha256:[0-9a-f]{64}")
@@ -21,6 +24,32 @@ PATTERNS = {
     ),
     "archive_tar": re.compile(r"(?:^|/)archive/(?:tar(?:[.]pm|/|$))", re.I),
 }
+
+
+class BoundedTarInfo(tarfile.TarInfo):
+    """Reject sparse processing and oversized metadata before tarfile reads it."""
+
+    def _proc_sparse(self, archive):
+        raise ValueError("sparse archive metadata is unsupported")
+
+    def _proc_gnusparse_00(self, member, headers):
+        raise ValueError("sparse archive metadata is unsupported")
+
+    def _proc_gnusparse_01(self, member, headers):
+        raise ValueError("sparse archive metadata is unsupported")
+
+    def _proc_gnusparse_10(self, member, headers, archive):
+        raise ValueError("sparse archive metadata is unsupported")
+
+    def _proc_pax(self, archive):
+        if not 0 <= self.size <= MAX_METADATA_SIZE:
+            raise ValueError("oversized archive metadata")
+        return super()._proc_pax(archive)
+
+    def _proc_gnulong(self, archive):
+        if not 0 <= self.size <= MAX_METADATA_SIZE:
+            raise ValueError("oversized archive metadata")
+        return super()._proc_gnulong(archive)
 
 
 def validate_container(metadata, image):
@@ -49,6 +78,47 @@ def check_name(name):
     return posixpath.normpath(name)
 
 
+def validate_member(member, total, archive_size):
+    allowed_types = {
+        tarfile.REGTYPE,
+        tarfile.AREGTYPE,
+        tarfile.DIRTYPE,
+        tarfile.SYMTYPE,
+        tarfile.LNKTYPE,
+        tarfile.FIFOTYPE,
+        tarfile.CHRTYPE,
+        tarfile.BLKTYPE,
+    }
+    if (
+        member.type not in allowed_types
+        or member.sparse is not None
+        or any(
+            "sparse" in key.casefold()
+            or key == "SCHILY.realsize"
+            or (key == "SCHILY.filetype" and value.casefold() == "sparse")
+            for key, value in member.pax_headers.items()
+        )
+    ):
+        raise ValueError("sparse or unsupported archive member")
+    size = member.size
+    if (
+        not isinstance(size, int)
+        or isinstance(size, bool)
+        or size < 0
+        or size > MAX_MEMBER_SIZE
+        or (member.type not in (tarfile.REGTYPE, tarfile.AREGTYPE) and size != 0)
+        or total + size > MAX_LOGICAL_SIZE
+    ):
+        raise ValueError("archive logical size exceeds bounds")
+    if (
+        not isinstance(member.offset_data, int)
+        or member.offset_data < 0
+        or member.offset_data + ((size + 511) // 512) * 512 + 1024 > archive_size
+    ):
+        raise ValueError("archive member extends past end marker")
+    return total + size
+
+
 def inspect(path, image, revision, before, after):
     if not REVISION.fullmatch(revision):
         raise ValueError("invalid revision")
@@ -64,12 +134,16 @@ def inspect(path, image, revision, before, after):
     matches = {name: [] for name in PATTERNS}
     seen = set()
     count = 0
+    logical_size = 0
     with path.open("rb") as stream:
-        with tarfile.open(fileobj=stream, mode="r:", errorlevel=2) as archive:
+        with tarfile.open(
+            fileobj=stream, mode="r:", errorlevel=2, tarinfo=BoundedTarInfo
+        ) as archive:
             for member in archive:
                 count += 1
                 if count > MAX_ENTRIES:
                     raise ValueError("too many archive entries")
+                logical_size = validate_member(member, logical_size, size)
                 name = check_name(member.name)
                 if name in seen:
                     raise ValueError("duplicate archive path")
@@ -127,6 +201,7 @@ def inspect(path, image, revision, before, after):
         "export_sha256": hasher.hexdigest(),
         "export_bytes": size,
         "entry_count": count,
+        "logical_bytes": logical_size,
         "matches": matches,
         "scope": "Names and link targets in one daemon-exported, unmounted filesystem. No execution, byte-signature or embedded-copy analysis; not proof of component absence or vulnerability disposition.",
     }

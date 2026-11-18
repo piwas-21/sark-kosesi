@@ -8,6 +8,7 @@ import tempfile
 import unittest
 from copy import deepcopy
 from pathlib import Path
+from unittest.mock import MagicMock, patch
 
 spec = importlib.util.spec_from_file_location(
     "inspection", Path(__file__).with_name("inspect_rootfs.py")
@@ -95,9 +96,87 @@ class InspectionControls(unittest.TestCase):
         result = self.inspect()
         self.assertEqual(result["matches"], {"systemd_home": [], "archive_tar": []})
 
+    def test_regular_size_accounting_and_sparse_metadata_fail(self):
+        member = tarfile.TarInfo("regular")
+        member.size = 7
+        member.offset_data = 512
+        self.assertEqual(inspection.validate_member(member, 4, 4096), 11)
+        for kind in (
+            "gnu_type",
+            "unsupported_type",
+            "sparse_map",
+            "pax_sparse",
+            "pax_realsize",
+            "pax_filetype",
+        ):
+            with self.subTest(kind=kind):
+                fake = tarfile.TarInfo("synthetic")
+                fake.size = 7
+                fake.offset_data = 512
+                if kind == "gnu_type":
+                    fake.type = tarfile.GNUTYPE_SPARSE
+                elif kind == "unsupported_type":
+                    fake.type = b"Z"
+                elif kind == "sparse_map":
+                    fake.sparse = [(0, 1)]
+                elif kind == "pax_sparse":
+                    fake.pax_headers = {"GNU.sparse.size": "7"}
+                elif kind == "pax_realsize":
+                    fake.pax_headers = {"SCHILY.realsize": "7"}
+                else:
+                    fake.pax_headers = {"SCHILY.filetype": "sparse"}
+                with self.assertRaises(ValueError):
+                    inspection.validate_member(fake, 0, 4096)
+
+    def test_member_and_cumulative_bounds_before_content_read(self):
+        member = tarfile.TarInfo("synthetic")
+        member.size = inspection.MAX_MEMBER_SIZE + 1
+        member.offset_data = 512
+        fake_archive = MagicMock()
+        fake_archive.__enter__.return_value = fake_archive
+        fake_archive.__iter__.return_value = iter([member])
+        with patch.object(inspection.tarfile, "open", return_value=fake_archive):
+            with self.assertRaises(ValueError):
+                self.inspect()
+        fake_archive.extractfile.assert_not_called()
+        member.size = 7
+        with self.assertRaises(ValueError):
+            inspection.validate_member(member, inspection.MAX_LOGICAL_SIZE - 6, 4096)
+        with self.assertRaises(ValueError):
+            inspection.validate_member(member, 0, 1024)
+
+    def test_sparse_and_large_metadata_rejected_before_parser_reads(self):
+        member = inspection.BoundedTarInfo("synthetic")
+        archive = MagicMock()
+        for method, args in (
+            (member._proc_sparse, (archive,)),
+            (member._proc_gnusparse_00, (None, {})),
+            (member._proc_gnusparse_01, (None, {})),
+            (member._proc_gnusparse_10, (None, {}, archive)),
+        ):
+            with self.subTest(method=method.__name__), self.assertRaises(ValueError):
+                method(*args)
+        member.size = inspection.MAX_METADATA_SIZE + 1
+        for method in (member._proc_pax, member._proc_gnulong):
+            with self.subTest(method=method.__name__), self.assertRaises(ValueError):
+                method(archive)
+        archive.fileobj.read.assert_not_called()
+
     def test_truncated_and_malformed_fail(self):
         raw = self.path.read_bytes()
-        for value in (raw[:512], raw[:1024], raw[:2048], b"x" * 10240, raw[:-1], raw + b"x" * 512):
+        with tarfile.open(self.path, "r:") as archive:
+            list(archive)
+            end = archive.offset
+        for value in (
+            raw[:512],
+            raw[:1024],
+            raw[:2048],
+            b"x" * 10240,
+            raw[:-1],
+            raw + b"x" * 512,
+            raw[:end] + b"\0" * 512,
+            raw[:end] + b"\0" * 512 + b"x" + b"\0" * 511,
+        ):
             self.path.write_bytes(value)
             with self.subTest(size=len(value)), self.assertRaises((ValueError, tarfile.TarError)):
                 self.inspect()
