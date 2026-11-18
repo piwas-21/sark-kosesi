@@ -289,3 +289,29 @@ async fn staff_authority_is_required_and_absent_review_is_read_only(pool: PgPool
     assert!(!text(&result).contains(&database));
     assert!(!text(&empty).contains(&database));
 }
+
+#[test]
+fn packing_uses_the_bounded_staff_input_and_rejects_extra_arguments() {
+    let mut invalid = base_command();
+    invalid.args(["--inspect-packing", JOB, "synthetic-extra-secret"]);
+    let rejected = output(invalid, b"");
+    assert!(!rejected.status.success());
+    assert!(text(&rejected).contains("unsupported worker command"));
+    assert!(!text(&rejected).contains("synthetic-extra-secret"));
+
+    for (environment, input, expected) in [
+        ("staging", b"".as_slice(), "production is disabled"),
+        ("production", b"".as_slice(), "production is disabled"),
+        ("test", &BEARER[..31], "staff review input unavailable"),
+        ("test", &BEARER[..], "DATABASE_URL required"),
+    ] {
+        let mut cmd = base_command();
+        cmd.args(["--inspect-packing", JOB])
+            .env("APP_ENV", environment);
+        let rejected = output(cmd, input);
+        assert!(!rejected.status.success());
+        assert!(rejected.stdout.is_empty());
+        assert!(text(&rejected).contains(expected));
+        assert!(!text(&rejected).contains("synthetic-staff-token"));
+    }
+}

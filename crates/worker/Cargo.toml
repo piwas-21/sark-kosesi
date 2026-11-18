@@ -11,7 +11,9 @@ workspace = true
 
 [dependencies]
 commerce-application.workspace = true
+commerce-domain.workspace = true
 commerce-infrastructure.workspace = true
+serde_json.workspace = true
 sqlx.workspace = true
 tokio.workspace = true
 tracing.workspace = true
@@ -19,9 +21,7 @@ tracing-subscriber.workspace = true
 zeroize.workspace = true
 
 [dev-dependencies]
-commerce-domain.workspace = true
 # Shared synthetic checkout and catalogue fixtures used by the CLI integration test.
 image.workspace = true
-serde_json.workspace = true
 sha2.workspace = true
 tower-sessions.workspace = true

@@ -449,6 +449,18 @@ This is a live scan; restart without a cursor to find earlier changes. It cannot
 retry, fetch from the provider, resolve the stop or authorize financial effects.
 Staff sessions and production operator access are not installed by this command.
 
+## Private packing inspection
+
+In an isolated local/test environment, `commerce-worker --inspect-packing
+<order-id>` validates the order's recorded packing assertions. `DATABASE_URL`
+points to the isolated database. The command requires a current `warehouse.manage`
+staff session with recent MFA. Supply exactly 32 raw session bytes followed by EOF
+on non-terminal stdin within five seconds. Keep the credential out of arguments
+and logs. The command returns one JSON object on stdout with `kind` set to
+`packing_assertions`, per-SKU counts in `lines` and recorded actions in `history`.
+Store this output as private order evidence. Assertion counts do not establish
+which units have shipped or whether dispatch is permitted.
+
 ## Private callback supervision
 
 `cargo run --locked -p commerce-worker -- --reconcile-callbacks` runs one bounded
