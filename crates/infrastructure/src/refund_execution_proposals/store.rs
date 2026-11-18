@@ -64,6 +64,23 @@ pub(super) async fn lookup(
     Ok(sqlx::query_as("SELECT left(id,33) id,left(order_id,33) order_id,left(attempt_id,33) attempt_id,left(reservation_id,33) reservation_id,left(recognition_id,33) recognition_id,through_observation,left(actor_id,129) actor_id,left(reason,241) reason,proposed_at,CASE WHEN octet_length(allocation::text)<=16384 THEN allocation END allocation FROM refund_execution_proposals WHERE effect_key=$1 AND ($2::text IS NULL OR id=$2)")
         .bind(key).bind(id).fetch_optional(&mut **tx).await?)
 }
+pub(super) async fn attempt_for_id(
+    tx: &mut Tx<'_>,
+    id: &str,
+) -> Result<Option<String>, ProposalError> {
+    Ok(
+        sqlx::query_scalar(
+            "SELECT left(attempt_id,33) FROM refund_execution_proposals WHERE id=$1",
+        )
+        .bind(id)
+        .fetch_optional(&mut **tx)
+        .await?,
+    )
+}
+pub(super) async fn by_id(tx: &mut Tx<'_>, id: &str) -> Result<Option<Row>, ProposalError> {
+    Ok(sqlx::query_as("SELECT left(id,33) id,left(order_id,33) order_id,left(attempt_id,33) attempt_id,left(reservation_id,33) reservation_id,left(recognition_id,33) recognition_id,through_observation,left(actor_id,129) actor_id,left(reason,241) reason,proposed_at,CASE WHEN octet_length(allocation::text)<=16384 THEN allocation END allocation FROM refund_execution_proposals WHERE id=$1")
+        .bind(id).fetch_optional(&mut **tx).await?)
+}
 pub(super) async fn validate(tx: &mut Tx<'_>, id: &str) -> Result<(), ProposalError> {
     let valid: bool = sqlx::query_scalar("SELECT COALESCE((SELECT refund_execution_proposal_source(p,false) AND EXISTS(SELECT 1 FROM commerce_outbox e WHERE e.id=p.event_id AND e.aggregate_id=p.order_id AND e.kind='order.refund_execution_proposed.v1' AND e.created_at=p.proposed_at AND e.payload=refund_execution_proposal_event(p)) FROM refund_execution_proposals p WHERE p.id=$1),false)")
         .bind(id).fetch_one(&mut **tx).await?;

@@ -460,6 +460,9 @@ full workload bounds and operational acceptance remain separate.
    allocation, original profile-scoped payment and current received recognition
    with its observation watermark. Exact authorized retries return history. This
    proposal supplies no net balance or permission to contact the provider.
+   A private exact-ID inspection revalidates its historical source and event under
+   current staff authority and the original attempt claim; it has no provider or
+   financial effects. Reconciliation and reservation disposition remain open.
    Private test-key exact-item refund and chargeback GETs now require a matched
    paid original and retain minimal bounded observations only. A separate
    paid-parent test-profile GET commits its exact received source before I/O and
@@ -532,6 +535,9 @@ complete shipment/handover lifecycle, reversal disposition and physical evidence
 An authenticated private inspection reconstructs recorded active packing and
 unasserted units from complete custody history without changing that authority
 boundary. It does not establish remaining unshipped stock or payment eligibility.
+The local/test worker exposes this inspection with bounded non-terminal staff
+session input and one closed JSON report. Staff session issuance and physical
+handover remain separate work.
 
 Trusted whole-basket reservation primitives now provide immutable manifests,
 exact fresh child bindings and aggregated component claims in one transaction.

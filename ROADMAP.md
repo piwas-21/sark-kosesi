@@ -158,9 +158,11 @@ shipping amounts and binds the current received recognition, observation waterma
 and original payment under its frozen test profile. Exact retries return the
 historical proposal under current staff authority. Operator recovery, provider
 reversal reconciliation, reservation disposition and dispatch custody remain open.
+Private exact proposal inspection now validates historical source and event custody
+under current finance authority without contacting the provider or moving funds.
 A separate private owner request after payment dispatch records pending cancellation
-intent against the exact original start. It changes no order, payment, stock or
-packing state; operator disposition and customer-facing handling remain open.
+intent against the exact original start. Order, payment, stock and packing state
+remain intact. Operator disposition and customer-facing handling remain open.
 Private promotion drafts and independent exact-revision reviews now persist
 canonical eligibility/discount terms and explicit lifetime budget/redemption limits.
 New drafts and withdrawal block older approvals for new orders. Private guest
@@ -411,3 +413,6 @@ contents or dispatch authority. Complete shipment handover and delivery custody,
 reversal/refund disposition and physical fulfilment evidence separately.
 Authenticated warehouse inspection can read the bounded validated assertion
 history and per-SKU recorded occupancy without granting shipment authority.
+The local/test worker exposes this inspection to authorized warehouse staff
+through bounded non-terminal session input and a private JSON report. Staff
+session issuance, physical handover and operational acceptance remain open.

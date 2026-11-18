@@ -570,6 +570,10 @@ and grant through commit and recheck staff time after waits. An exact historical
 retry remains actor-bound and requires live authority. The outbox carries
 only the order, proposal and digest; keep reasons, payment/profile IDs and raw
 SQL errors out of diagnostics. No credentials or provider dispatch are installed.
+Exact proposal inspection uses the same unseeded grant and recent MFA, claims the
+original payment attempt and revalidates historical source and reciprocal event.
+It returns a bounded allocation without the reason or provider identifiers and
+rechecks staff time after waits; inspection grants no financial authority.
 
 ## Private provider reversal observation custody
 
