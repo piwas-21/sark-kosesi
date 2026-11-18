@@ -960,7 +960,9 @@ with the pinned archive keyring, checks the Release's AMD64 index checksum,
 and requires that signed index to match the two exact systemd debug-package
 versions, sizes and candidate digests. It matches their ELF build IDs to the
 selected, image-matched binaries, verifies debug links where present and records
-bounded DWARF compilation-unit names. Debug package digest candidates were
+bounded, trimmed `readelf`-rendered DWARF compilation-unit attributes. These
+values may include rendering annotations and are not normalized source paths.
+Debug package digest candidates were
 cross-checked against the [reproducible build manifest](https://tests.reproducible-builds.org/debian/buildinfo/trixie/amd64/systemd_257.13-1~deb13u1_amd64.buildinfo);
 the Debian signed index remains the required authority. Missing, unsigned,
 changed or unsupported inputs fail the lab.

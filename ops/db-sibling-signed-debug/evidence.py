@@ -85,28 +85,52 @@ def check_index(release, index):
         raise ValueError("debug index does not match signed Release")
 
 
-def records(index):
-    found, row, total = {}, {}, 0
-    names = {name + "-dbgsym": item for name, item in LOCK.items()}
-    with lzma.open(index, "rt", encoding="utf-8", errors="strict") as stream:
-        for line in stream:
-            total += len(line.encode())
-            if total > 128 * 1024 * 1024 or len(line) > 1024 * 1024:
+def index_lines(index):
+    decoder = lzma.LZMADecompressor(format=lzma.FORMAT_XZ, memlimit=64 * 1024 * 1024)
+    pending = b""
+    total = 0
+    with index.open("rb") as stream:
+        while not decoder.eof:
+            compressed = stream.read(65536) if decoder.needs_input else b""
+            if decoder.needs_input and not compressed:
+                raise ValueError("truncated debug index")
+            decoded = decoder.decompress(compressed, max_length=65536)
+            total += len(decoded)
+            if total > 128 * 1024 * 1024:
                 raise ValueError("debug index too large")
-            if line == "\n":
-                name = row.get("Package")
-                if name in names:
-                    if name in found:
-                        raise ValueError("duplicate debug package")
-                    found[name] = row
-                row = {}
-            elif line[0] not in " \t":
-                key, sep, value = line.rstrip("\n").partition(": ")
-                if not sep or key in row:
-                    raise ValueError("malformed debug index")
-                row[key] = value
-        if row:
-            raise ValueError("unterminated debug index")
+            pending += decoded
+            while b"\n" in pending:
+                end = pending.index(b"\n") + 1
+                if end > 1024 * 1024:
+                    raise ValueError("debug index line too large")
+                yield pending[:end].decode("utf-8", errors="strict")
+                pending = pending[end:]
+            if len(pending) > 1024 * 1024:
+                raise ValueError("debug index line too large")
+        if decoder.unused_data or stream.read(1):
+            raise ValueError("trailing or concatenated debug index")
+    if pending:
+        raise ValueError("unterminated debug index line")
+
+
+def records(index):
+    found, row = {}, {}
+    names = {name + "-dbgsym": item for name, item in LOCK.items()}
+    for line in index_lines(index):
+        if line == "\n":
+            name = row.get("Package")
+            if name in names:
+                if name in found:
+                    raise ValueError("duplicate debug package")
+                found[name] = row
+            row = {}
+        elif line[0] not in " \t":
+            key, sep, value = line.rstrip("\n").partition(": ")
+            if not sep or key in row:
+                raise ValueError("malformed debug index")
+            row[key] = value
+    if row:
+        raise ValueError("unterminated debug index")
     if set(found) != set(names):
         raise ValueError("debug package missing")
     for name, entry in found.items():
@@ -168,8 +192,6 @@ def build_id(text, expected):
 
 
 def debuglink(section, debug_bytes):
-    if not section:
-        return "absent"
     nul = section.find(b"\0")
     if nul < 1:
         raise ValueError("invalid debuglink")
@@ -184,26 +206,39 @@ def debuglink(section, debug_bytes):
     return name
 
 
+def has_debuglink(sections):
+    matches = re.findall(r"(?m)^[ \t]*\[[^\]\n]+\][ \t]+[.]gnu_debuglink[ \t]", sections)
+    if len(matches) > 1:
+        raise ValueError("duplicate debuglink section")
+    return bool(matches)
+
+
 def units(text):
-    blocks = re.split(r"(?m)^\s*Compilation Unit @ offset (?:0x)?[0-9a-f]+:\s*$", text)
+    blocks = re.split(r"(?m)^[ \t]*Compilation Unit @ offset (?:0x)?[0-9a-f]+:[ \t]*$", text)
     if len(blocks) < 2 or len(blocks) > 100001:
         raise ValueError("missing or excessive DWARF units")
     result = []
     for block in blocks[1:]:
-        tags = re.findall(r"(?m)^\s*<0><[0-9a-f]+>: Abbrev Number: \d+ \(DW_TAG_([a-z_]+)\)", block)
+        tags = re.findall(
+            r"(?m)^[ \t]*<0><[0-9a-f]+>: Abbrev Number: \d+ \(DW_TAG_([a-z_]+)\)", block
+        )
         if tags != ["compile_unit"]:
             raise ValueError("unsupported DWARF unit")
-        root = re.split(r"(?m)^\s*<1><[0-9a-f]+>:", block, maxsplit=1)[0]
-        names = re.findall(r"(?m)^\s*<[^>]+>\s+DW_AT_name\s*:\s*(.+)$", root)
+        root = re.split(r"(?m)^[ \t]*<1><[0-9a-f]+>:", block, maxsplit=1)[0]
+        names = re.findall(r"(?m)^[ \t]*<[^>\n]+>[ \t]+DW_AT_name[ \t]*:[ \t]*(.*)$", root)
         if len(names) != 1 or not names[0].strip() or len(names[0]) > 4096:
             raise ValueError("invalid DWARF unit name")
-        directories = re.findall(r"(?m)^\s*<[^>]+>\s+DW_AT_comp_dir\s*:\s*(.+)$", root)
-        if len(directories) > 1 or any(len(value) > 4096 for value in directories):
+        directories = re.findall(
+            r"(?m)^[ \t]*<[^>\n]+>[ \t]+DW_AT_comp_dir[ \t]*:[ \t]*(.*)$", root
+        )
+        if len(directories) > 1 or any(
+            not value.strip() or len(value) > 4096 for value in directories
+        ):
             raise ValueError("invalid DWARF compilation directory")
         result.append(
             {
-                "name": names[0].strip(),
-                "compilation_directory": directories[0].strip() if directories else None,
+                "name_rendered": names[0].strip(),
+                "compilation_directory_rendered": directories[0].strip() if directories else None,
             }
         )
     return result
@@ -268,7 +303,7 @@ def main(root, output, scratch, revision, image):
         sections = scratch / f"{name}-sections.txt"
         run_to_file(["readelf", "-SW", str(elf)], sections)
         link = "absent"
-        if re.search(r"\] \s*[.]gnu_debuglink\s", sections.read_text()):
+        if has_debuglink(sections.read_text()):
             section = scratch / f"{name}-debuglink.bin"
             subprocess.run(
                 ["objcopy", "--dump-section", f".gnu_debuglink={section}", str(elf), "/dev/null"],
@@ -296,7 +331,7 @@ def main(root, output, scratch, revision, image):
         "debug_index_sha256": lineage.digest(index),
         "valid_signers": sorted(signers),
         "libraries": evidence,
-        "scope": "DWARF compilation-unit names only; no exhaustive code-absence, vulnerability applicability, suppression or acceptance claim.",
+        "scope": "Trimmed readelf-rendered DWARF unit attributes; not normalized paths or proof of code absence, vulnerability applicability, suppression or acceptance.",
     }
     (output / "debug-evidence.json").write_text(json.dumps(result, indent=2, sort_keys=True) + "\n")
 

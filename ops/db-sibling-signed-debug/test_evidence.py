@@ -60,6 +60,22 @@ class Controls(unittest.TestCase):
             with self.assertRaises(ValueError):
                 evidence.records(self.index)
 
+    def test_index_stream_bounds_and_completion(self):
+        large = self.full + "Package: unrelated\nDescription: " + "a" * 200000 + "\n\n"
+        self.index.write_bytes(lzma.compress(large.encode()))
+        self.assertEqual(len(evidence.records(self.index)), 2)
+        valid = lzma.compress(self.full.encode())
+        for data in (
+            lzma.compress(b"x" * (1024 * 1024 + 1)),
+            valid[:-1],
+            valid + b"unexpected",
+            valid + lzma.compress(b"\n"),
+            lzma.compress(self.full.encode() + b"\xff\n"),
+        ):
+            self.index.write_bytes(data)
+            with self.assertRaises((ValueError, UnicodeDecodeError, lzma.LZMAError)):
+                evidence.records(self.index)
+
     def test_build_id_and_debuglink_tamper(self):
         ident = next(iter(evidence.LOCK.values()))["build_id"]
         evidence.build_id("  Build ID: " + ident + "\n", ident)
@@ -74,8 +90,12 @@ class Controls(unittest.TestCase):
         name = b"test.debug\0"
         section = name + b"\0" * ((-len(name)) % 4) + struct.pack("<I", zlib.crc32(payload))
         self.assertEqual(evidence.debuglink(section, payload), "test.debug")
-        self.assertEqual(evidence.debuglink(b"", payload), "absent")
+        self.assertFalse(evidence.has_debuglink("  [ 1] .text PROGBITS\n"))
+        self.assertTrue(evidence.has_debuglink("  [ 2] .gnu_debuglink PROGBITS\n"))
+        with self.assertRaises(ValueError):
+            evidence.has_debuglink(" [ 2] .gnu_debuglink PROGBITS\n [ 3] .gnu_debuglink PROGBITS\n")
         for link, data in (
+            (b"", payload),
             (section, b"other"),
             (section[:-1], payload),
             (b"../evil\0\0" + b"\0" * 4, payload),
@@ -91,13 +111,33 @@ class Controls(unittest.TestCase):
         )
         self.assertEqual(
             evidence.units(text),
-            [{"name": "src/fixture.c", "compilation_directory": "/build/fixture"}],
+            [
+                {
+                    "name_rendered": "src/fixture.c",
+                    "compilation_directory_rendered": "/build/fixture",
+                }
+            ],
+        )
+        rendered = text.replace(
+            "src/fixture.c", "(indirect line string, offset: 0x20): src/fixture.c"
+        ).replace("/build/fixture", "(line_strp) (offset: 0x40): /build/fixture")
+        self.assertEqual(
+            evidence.units(rendered),
+            [
+                {
+                    "name_rendered": "(indirect line string, offset: 0x20): src/fixture.c",
+                    "compilation_directory_rendered": "(line_strp) (offset: 0x40): /build/fixture",
+                }
+            ],
         )
         for malformed in (
             "",
             text.replace("DW_AT_name", "DW_AT_other"),
             text.replace("DW_TAG_compile_unit", "DW_TAG_skeleton_unit"),
             text + text.replace("DW_AT_name", "DW_AT_other"),
+            text.replace("src/fixture.c", ""),
+            text.replace("/build/fixture", ""),
+            text.replace("src/fixture.c", "a" * 4097),
         ):
             with self.assertRaises(ValueError):
                 evidence.units(malformed)
