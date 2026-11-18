@@ -62,8 +62,8 @@ async fn saved(
 ) -> Result<Option<Saved>, OrderStoreError> {
     let row: Option<Saved> = sqlx::query_as("SELECT left(r.effect_key,129) AS effect,r.promotion_account_id AS account,left(r.attempt_id,33) AS attempt_id,left(r.dispatch_id,33) AS dispatch_id,r.requested_at,left(r.event_id,33) AS event_id,COALESCE(r.transaction_id=pg_current_xact_id_if_assigned(),false) AS current_transaction,COALESCE(public.checkout_post_dispatch_request_source(r),false) AS source_valid,EXISTS(SELECT 1 FROM public.commerce_outbox e WHERE e.id=r.event_id AND e.aggregate_id=r.order_id AND e.kind='checkout.cancellation_requested.v1' AND e.created_at=r.requested_at AND e.payload=public.checkout_post_dispatch_request_event(r)) AS event_valid FROM public.checkout_post_dispatch_requests r WHERE r.order_id=$1 AND r.basket_id=$2")
         .bind(order).bind(basket).fetch_optional(&mut **tx).await?;
-    if let Some(value) = &row {
-        if value.account != account
+    if let Some(value) = &row
+        && (value.account != account
             || !valid_command_id(&value.effect)
             || !identifier(&value.attempt_id)
             || !identifier(&value.dispatch_id)
@@ -71,10 +71,9 @@ async fn saved(
             || !(0..=commerce_domain::checkout_quotes::MAX_QUOTE_UNIX_SECONDS)
                 .contains(&value.requested_at)
             || !value.source_valid
-            || !value.event_valid
-        {
-            return Err(OrderStoreError::InvalidStoredData);
-        }
+            || !value.event_valid)
+    {
+        return Err(OrderStoreError::InvalidStoredData);
     }
     Ok(row)
 }
