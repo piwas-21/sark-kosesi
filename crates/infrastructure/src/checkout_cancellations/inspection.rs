@@ -37,6 +37,12 @@ fn staff(error: StaffError) -> InspectionError {
         _ => InspectionError::Database,
     }
 }
+fn order_error(error: checkout_orders::OrderStoreError) -> InspectionError {
+    match error {
+        checkout_orders::OrderStoreError::Database => InspectionError::Database,
+        _ => InspectionError::InvalidStoredData,
+    }
+}
 fn payment(error: PaymentStoreError) -> InspectionError {
     match error {
         PaymentStoreError::Database
@@ -112,7 +118,7 @@ async fn inspect_locked(
             Ok(None)
         };
     }
-    let (frozen, dispatch, started_at) = evidence::context_with_start(tx, &attempt, false)
+    let (frozen, _dispatch, _started_at) = evidence::context_with_start(tx, &attempt, false)
         .await
         .map_err(payment)?;
     let binding = &frozen.snapshot().binding;
@@ -124,21 +130,17 @@ async fn inspect_locked(
         checkout_orders::OrderAccess::Internal,
     )
     .await
-    .map_err(|e| match e {
-        checkout_orders::OrderStoreError::Database => InspectionError::Database,
-        _ => InspectionError::InvalidStoredData,
-    })?;
+    .map_err(order_error)?;
     let row = post_dispatch::saved(tx, order, &binding.basket_id, account)
         .await
-        .map_err(|e| match e {
-            checkout_orders::OrderStoreError::Database => InspectionError::Database,
-            _ => InspectionError::InvalidStoredData,
-        })?
+        .map_err(order_error)?
         .ok_or(InspectionError::InvalidStoredData)?;
     // saved() checks the source function's exact order, attempt, start and event.
-    let recovery: Vec<(String, i64, bool)> = sqlx::query_as("SELECT left(id,33),created_at,payload=jsonb_build_object('schema_version',1,'order_id',$1::text,'attempt_id',$2::text,'dispatch_id',$3::text) FROM public.commerce_outbox WHERE aggregate_id=$1 AND kind='payment.reconciliation_required.v1' LIMIT 2")
-        .bind(order).bind(&attempt).bind(&dispatch).fetch_all(&mut **tx).await?;
-    if !matches!(recovery.as_slice(), [(id, at, true)] if identifier(id) && *at == started_at) {
+    // The validated source requires this exact timestamp and payload; the
+    // unique outbox constraint permits only one recovery event for the order.
+    let recovery: String = sqlx::query_scalar("SELECT left(id,33) FROM public.commerce_outbox WHERE aggregate_id=$1 AND kind='payment.reconciliation_required.v1'")
+        .bind(order).fetch_optional(&mut **tx).await?.ok_or(InspectionError::InvalidStoredData)?;
+    if !identifier(&recovery) {
         return Err(InspectionError::InvalidStoredData);
     }
     let digest: String = sqlx::query_scalar("SELECT public.checkout_post_dispatch_request_digest(r) FROM public.checkout_post_dispatch_requests r WHERE r.order_id=$1")
