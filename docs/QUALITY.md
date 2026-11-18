@@ -93,6 +93,14 @@ checks initial readiness, a real locked-table failure and post-release recovery,
 and reports only closed diagnostic categories. It does not retry or establish
 deployed service availability.
 
+The paid-parent worker inspection test compares all current-schema base-table
+row multisets in one read-only repeatable-read snapshot. JSON row text and
+bytewise sorting preserve nulls and duplicate rows without depending on optional
+SQL/XML support. Synthetic controls cover unchanged and reordered rows, updates,
+insertions, deletions, duplicates and safely quoted relation names; failures do
+not print row contents. This oracle covers table rows, not sequence or schema
+changes, and does not establish deployed database compatibility.
+
 `python3 scripts/check_app_coverage.py --report REPORT.lcov --package OWNED_SOURCE_DIRECTORY`
 validates TypeScript LCOV from the actual coverage generator. Invoke it separately for each
 maintained package source directory, and add `--critical SOURCE_FILE` for each
