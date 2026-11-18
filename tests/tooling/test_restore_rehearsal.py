@@ -44,6 +44,37 @@ class RestoreRehearsalSafety(unittest.TestCase):
             with self.assertRaises(ValueError):
                 run_fixture({}, "foreign_fixture")
 
+    def test_stock_custody_requires_one_known_outcome_after_exact_success(self):
+        from types import SimpleNamespace
+
+        summary = b"test result: ok. 1 passed; 0 failed;\n"
+        compatible = b"stock_custody_outcome=compatible\n"
+        incompatible = b"stock_custody_outcome=ordering_incompatible\n"
+        with patch("rehearse_restore.subprocess.run") as run:
+            for marker, outcome in (
+                (compatible, "compatible"),
+                (incompatible, "ordering_incompatible"),
+            ):
+                with self.subTest(outcome=outcome):
+                    run.return_value = SimpleNamespace(returncode=0, stdout=marker + summary)
+                    self.assertEqual(run_fixture({}, "verify_stock_custody"), outcome)
+                    self.assertEqual(
+                        run.call_args.args[0][-3:], ["--ignored", "--exact", "--nocapture"]
+                    )
+            for output in (
+                b"",
+                compatible * 2,
+                compatible + incompatible,
+                b"stock_custody_outcome=other\n",
+            ):
+                with self.subTest(output=output):
+                    run.return_value = SimpleNamespace(returncode=0, stdout=output + summary)
+                    with self.assertRaises(ValueError):
+                        run_fixture({}, "verify_stock_custody")
+            run.return_value = SimpleNamespace(returncode=1, stdout=compatible + summary)
+            with self.assertRaises(RuntimeError):
+                run_fixture({}, "verify_stock_custody")
+
     def test_sequence_inventory_quotes_identifiers_and_preserves_called_state(self):
         class SyntheticSnapshot:
             def query(self, sql):

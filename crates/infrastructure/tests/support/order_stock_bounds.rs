@@ -36,6 +36,35 @@ pub(crate) async fn market(pool: &PgPool, skus: &[String]) {
 
 pub(crate) async fn accepted_lines(pool: &PgPool, skus: &[String]) -> Fixture {
     let (store, time) = quote::store(pool, 1100);
+    let start = NEXT_IDS.fetch_add(10_000, Ordering::SeqCst);
+    accepted_lines_with_store(pool, skus, store, time, start).await
+}
+
+/// Separate deterministic ranges let a second fixture share a disposable database.
+pub(crate) async fn accepted_lines_with_ids(
+    pool: &PgPool,
+    skus: &[String],
+    guest_ids: u64,
+    payment_ids: u64,
+) -> Fixture {
+    let time = Arc::new(quote::Time(AtomicU64::new(1100)));
+    let store = GuestSessionStore::new(
+        pool.clone(),
+        time.clone(),
+        Arc::new(crate::payment_test_fixture::Ids(AtomicU64::new(guest_ids))),
+        commerce_application::guest_access::GuestLimits::default(),
+    )
+    .expect("isolated fixture store");
+    accepted_lines_with_store(pool, skus, store, time, payment_ids).await
+}
+
+async fn accepted_lines_with_store(
+    pool: &PgPool,
+    skus: &[String],
+    store: GuestSessionStore,
+    time: Arc<quote::Time>,
+    payment_ids: u64,
+) -> Fixture {
     let session = tower_sessions::Session::new(None, Arc::new(store.clone()), None);
     let established = ensure_session(&store, &session).await.expect("owned guest");
     let csrf = established.csrf_token().to_owned();
@@ -81,7 +110,7 @@ pub(crate) async fn accepted_lines(pool: &PgPool, skus: &[String]) -> Fixture {
     .snapshot;
     time.0.store(1500, Ordering::SeqCst);
     let ids = Arc::new(crate::payment_test_fixture::Ids(AtomicU64::new(
-        NEXT_IDS.fetch_add(10_000, Ordering::SeqCst),
+        payment_ids,
     )));
     let configuration = config(&credential());
     let frozen = prepare_attempt(

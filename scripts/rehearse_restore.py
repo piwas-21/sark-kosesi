@@ -235,8 +235,14 @@ def require_quiescent_source(snapshot):
 
 
 def run_fixture(env, name):
-    if name not in ("seed_synthetic", "verify_restored_keys"):
+    if name not in (
+        "seed_synthetic",
+        "verify_restored_keys",
+        "seed_stock_custody",
+        "verify_stock_custody",
+    ):
         raise ValueError("Unexpected synthetic fixture")
+    output_options = ["--nocapture"] if name == "verify_stock_custody" else []
     result = subprocess.run(
         [
             "cargo",
@@ -249,6 +255,7 @@ def run_fixture(env, name):
             "--",
             "--ignored",
             "--exact",
+            *output_options,
         ],
         cwd=ROOT,
         env=env,
@@ -258,6 +265,17 @@ def run_fixture(env, name):
     )
     if result.returncode or not re.search(rb"test result: ok\. 1 passed; 0 failed;", result.stdout):
         raise RuntimeError("Synthetic restore fixture command failed")
+    if name == "verify_stock_custody":
+        markers = [
+            line
+            for line in result.stdout.splitlines()
+            if line.startswith(b"stock_custody_outcome=")
+        ]
+        if markers == [b"stock_custody_outcome=compatible"]:
+            return "compatible"
+        if markers == [b"stock_custody_outcome=ordering_incompatible"]:
+            return "ordering_incompatible"
+        raise ValueError("Unexpected synthetic stock custody outcome")
 
 
 def exercise_quiescence_control(snapshot):
