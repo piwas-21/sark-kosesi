@@ -641,6 +641,27 @@ All scanner findings remain open until separately disposed; scanner output is no
 proof of complete vulnerability coverage, deployment, or release readiness.
 The workflow publishes no image and does not connect to staging data.
 
+## PostgreSQL sibling component-presence evidence
+
+The path-scoped component-presence workflow repeats the unfiltered paired scan,
+then creates an unstarted, network-disabled container from that same verified
+composition ID. It requires the container to have no mounts and exports its
+merged filesystem without executing it. A bounded tar inspection reads every
+file and records name and link-target matches for `systemd-homed` and
+`Archive::Tar` indicators, along with the image ID, checkout, export digest and
+scan-evidence hashes. Raw scans and all findings remain in the artifact; the
+filesystem export stays in runner scratch.
+
+The indicators cover common names, including the Debian
+[systemd-homed file inventory](https://packages.debian.org/trixie/armhf/systemd-homed/filelist)
+and the [Debian Perl module file inventory](https://packages.debian.org/trixie/all/perl-modules-5.40/filelist).
+They do not detect renamed, embedded, compressed or generated copies, establish
+reachability, prove a package absent, or resolve a vulnerability finding. The
+archive is a same-run daemon export, not an independent attestation. Docker
+[does not export mounted volume contents](https://docs.docker.com/reference/cli/docker/container/export/),
+so this check fails when mounts or image volumes are present. It does not inspect
+future runtime mounts or change, deploy or accept the image.
+
 ## PostgreSQL sibling lifecycle lab
 
 The path-scoped `PostgreSQL sibling lifecycle lab` rebuilds the composition on
