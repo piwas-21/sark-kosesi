@@ -597,3 +597,178 @@ async fn native_missing_event_and_forged_event_are_rejected_with_healthy_control
     );
     assert!(sqlx::query("UPDATE checkout_post_dispatch_requests SET requested_at=requested_at+1 WHERE order_id=$1").bind(&order.identity.id).execute(&pool).await.is_err());
 }
+
+#[sqlx::test(migrator = "MIGRATOR")]
+async fn damaged_pending_record_fails_closed_and_restored_record_replays(pool: PgPool) {
+    let (store, time, session, csrf, order) = payment::accepted(&pool).await;
+    let key = GuestCredential::from_session(&session).expect("guest");
+    let prepared = prepare_attempt(
+        &store,
+        &key,
+        &csrf,
+        "pay",
+        &payment::intent(&order),
+        &payment::config(),
+    )
+    .await
+    .expect("prepared");
+    start_dispatch(
+        &pool,
+        time.as_ref(),
+        &payment::Ids(AtomicU64::new(10000)),
+        &prepared.frozen.snapshot().binding.id,
+        &payment::config(),
+    )
+    .await
+    .expect("dispatch");
+    assert!(matches!(
+        request_after_dispatch(&store, &key, &csrf, "request", "bad").await,
+        Err(OrderStoreError::InvalidRequest)
+    ));
+    request_after_dispatch(&store, &key, &csrf, "request", &order.identity.id)
+        .await
+        .expect("request");
+    let original: (String, String, String, i64, String) = sqlx::query_as(
+        "SELECT effect_key,attempt_id,dispatch_id,requested_at,event_id FROM checkout_post_dispatch_requests")
+        .fetch_one(&pool).await.expect("original record");
+    // Bypass database guards only inside this disposable database to exercise the reader's
+    // independent validation of damaged persisted custody, restoring each field afterwards.
+    pool.execute("ALTER TABLE checkout_post_dispatch_requests DISABLE TRIGGER ALL; \
+        ALTER TABLE checkout_post_dispatch_requests DROP CONSTRAINT checkout_post_dispatch_requests_effect_key_check; \
+        ALTER TABLE checkout_post_dispatch_requests DROP CONSTRAINT checkout_post_dispatch_requests_requested_at_check; \
+        ALTER TABLE checkout_post_dispatch_requests DROP CONSTRAINT checkout_post_dispatch_requests_event_id_check")
+        .await.expect("isolate corruption");
+    for damage in [
+        "UPDATE checkout_post_dispatch_requests SET promotion_account_id=1",
+        "UPDATE checkout_post_dispatch_requests SET effect_key='bad key'",
+        "UPDATE checkout_post_dispatch_requests SET attempt_id='bad'",
+        "UPDATE checkout_post_dispatch_requests SET dispatch_id='bad'",
+        "UPDATE checkout_post_dispatch_requests SET event_id='bad'",
+        "UPDATE checkout_post_dispatch_requests SET requested_at=-1",
+        "UPDATE checkout_post_dispatch_requests SET dispatch_id='ffffffffffffffffffffffffffffffff'",
+    ] {
+        pool.execute(damage).await.expect("damage field");
+        assert!(
+            matches!(
+                request_after_dispatch(&store, &key, &csrf, "request", &order.identity.id).await,
+                Err(OrderStoreError::InvalidStoredData)
+            ),
+            "failed to reject {damage}"
+        );
+        sqlx::query("UPDATE checkout_post_dispatch_requests SET promotion_account_id=NULL,effect_key=$1,attempt_id=$2,dispatch_id=$3,requested_at=$4,event_id=$5")
+            .bind(&original.0).bind(&original.1).bind(&original.2).bind(original.3).bind(&original.4)
+            .execute(&pool).await.expect("restore original record");
+        assert!(
+            request_after_dispatch(&store, &key, &csrf, "request", &order.identity.id)
+                .await
+                .expect("restored record")
+                .replayed
+        );
+    }
+    pool.execute(
+        "UPDATE checkout_post_dispatch_requests SET order_id='ffffffffffffffffffffffffffffffff'",
+    )
+    .await
+    .expect("detach effect from requested order");
+    assert!(matches!(
+        request_after_dispatch(&store, &key, &csrf, "request", &order.identity.id).await,
+        Err(OrderStoreError::Conflict)
+    ));
+    sqlx::query("UPDATE checkout_post_dispatch_requests SET order_id=$1")
+        .bind(&order.identity.id)
+        .execute(&pool)
+        .await
+        .expect("restore effect owner");
+
+    pool.execute(
+        "ALTER TABLE payment_attempts DISABLE TRIGGER ALL; \
+        ALTER TABLE payment_attempts DROP CONSTRAINT payment_attempts_id_check; \
+        ALTER TABLE payment_attempts DROP CONSTRAINT payment_attempts_key_binding",
+    )
+    .await
+    .expect("isolate attempt corruption");
+    sqlx::query("UPDATE payment_attempts SET id='bad' WHERE id=$1")
+        .bind(&original.1)
+        .execute(&pool)
+        .await
+        .expect("damage attempt id");
+    assert!(matches!(
+        request_after_dispatch(&store, &key, &csrf, "request", &order.identity.id).await,
+        Err(OrderStoreError::InvalidStoredData)
+    ));
+    sqlx::query("UPDATE payment_attempts SET id=$1 WHERE id='bad'")
+        .bind(&original.1)
+        .execute(&pool)
+        .await
+        .expect("restore attempt id");
+    let original_snapshot: serde_json::Value =
+        sqlx::query_scalar("SELECT snapshot FROM payment_attempts WHERE id=$1")
+            .bind(&original.1)
+            .fetch_one(&pool)
+            .await
+            .expect("snapshot");
+    sqlx::query("UPDATE payment_attempts SET snapshot=jsonb_set(snapshot,'{binding,id}',to_jsonb('ffffffffffffffffffffffffffffffff'::text)) WHERE id=$1")
+        .bind(&original.1).execute(&pool).await.expect("damage frozen binding");
+    assert!(matches!(
+        request_after_dispatch(&store, &key, &csrf, "request", &order.identity.id).await,
+        Err(OrderStoreError::InvalidStoredData)
+    ));
+    sqlx::query("UPDATE payment_attempts SET snapshot=$2 WHERE id=$1")
+        .bind(&original.1)
+        .bind(original_snapshot)
+        .execute(&pool)
+        .await
+        .expect("restore frozen binding");
+    assert!(
+        request_after_dispatch(&store, &key, &csrf, "request", &order.identity.id)
+            .await
+            .expect("restored custody")
+            .replayed
+    );
+}
+
+#[sqlx::test(migrator = "MIGRATOR")]
+async fn clock_before_dispatch_or_saved_request_fails_closed(pool: PgPool) {
+    let (store, time, session, csrf, order) = payment::accepted(&pool).await;
+    let key = GuestCredential::from_session(&session).expect("guest");
+    let prepared = prepare_attempt(
+        &store,
+        &key,
+        &csrf,
+        "pay",
+        &payment::intent(&order),
+        &payment::config(),
+    )
+    .await
+    .expect("prepared");
+    start_dispatch(
+        &pool,
+        time.as_ref(),
+        &payment::Ids(AtomicU64::new(10000)),
+        &prepared.frozen.snapshot().binding.id,
+        &payment::config(),
+    )
+    .await
+    .expect("dispatch");
+    time.0.store(1499, Ordering::SeqCst);
+    assert!(matches!(
+        request_after_dispatch(&store, &key, &csrf, "request", &order.identity.id).await,
+        Err(OrderStoreError::ClockUnavailable)
+    ));
+    time.0.store(1510, Ordering::SeqCst);
+    request_after_dispatch(&store, &key, &csrf, "request", &order.identity.id)
+        .await
+        .expect("request");
+    time.0.store(1509, Ordering::SeqCst);
+    assert!(matches!(
+        request_after_dispatch(&store, &key, &csrf, "request", &order.identity.id).await,
+        Err(OrderStoreError::ClockUnavailable)
+    ));
+    time.0.store(1510, Ordering::SeqCst);
+    assert!(
+        request_after_dispatch(&store, &key, &csrf, "request", &order.identity.id)
+            .await
+            .expect("replay")
+            .replayed
+    );
+}

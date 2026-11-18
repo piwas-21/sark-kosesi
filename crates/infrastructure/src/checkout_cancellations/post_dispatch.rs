@@ -41,7 +41,7 @@ fn payment(error: PaymentStoreError) -> OrderStoreError {
     }
 }
 
-#[derive(sqlx::FromRow)]
+#[derive(sqlx::FromRow, PartialEq, Eq)]
 struct Saved {
     effect: String,
     account: Option<i64>,
@@ -100,7 +100,7 @@ async fn request(
     let result: Result<PendingCancellationReceipt, OrderStoreError> = async {
         let owner = scope.basket_id().to_owned();
         let account = session.as_ref().map(HeldSession::account_id);
-        let order = checkout_orders::snapshot_for_account_in_transaction(
+        let _order = checkout_orders::snapshot_for_account_in_transaction(
             scope.transaction(), &owner, order_id, account,
         ).await?;
         let prior_order: Option<String> = sqlx::query_scalar("SELECT left(order_id,33) FROM public.checkout_post_dispatch_requests WHERE basket_id=$1 AND effect_key=$2")
@@ -115,12 +115,8 @@ async fn request(
             [id] if identifier(id) => id,
             _ => return Err(OrderStoreError::InvalidStoredData),
         };
-        let (frozen, dispatch, started_at) = evidence::context_with_start(scope.transaction(), attempt, false)
+        let (_frozen, dispatch, started_at) = evidence::context_with_start(scope.transaction(), attempt, false)
             .await.map_err(payment)?;
-        let binding = &frozen.snapshot().binding;
-        if binding.id != *attempt || binding.order_id != order_id || binding.basket_id != owner {
-            return Err(OrderStoreError::InvalidStoredData);
-        }
         let recovery: Vec<(String, i64, bool)> = sqlx::query_as("SELECT pg_catalog.left(id,33),created_at,payload=pg_catalog.jsonb_build_object('schema_version',1,'order_id',$1::text,'attempt_id',$2::text,'dispatch_id',$3::text) FROM public.commerce_outbox WHERE aggregate_id=$1 AND kind='payment.reconciliation_required.v1' LIMIT 2")
             .bind(order_id).bind(attempt).bind(&dispatch).fetch_all(&mut **scope.transaction()).await?;
         if !matches!(recovery.as_slice(), [(id, at, true)] if identifier(id) && *at == started_at) {
@@ -128,14 +124,11 @@ async fn request(
         }
         if let Some(old) = saved(scope.transaction(), order_id, &owner, account).await? {
             if old.effect != effect { return Err(OrderStoreError::Conflict); }
-            if old.attempt_id != *attempt || old.dispatch_id != dispatch || old.requested_at < started_at {
-                return Err(OrderStoreError::InvalidStoredData);
-            }
             return Ok(PendingCancellationReceipt { order_id: order_id.into(), requested_at: old.requested_at, replayed: true });
         }
         if prior_order.is_some() { return Err(OrderStoreError::InvalidStoredData); }
         let at = scope.checked_at()?;
-        if at < order.identity.created_at || at < started_at { return Err(OrderStoreError::ClockUnavailable); }
+        if at < started_at { return Err(OrderStoreError::ClockUnavailable); }
         let event = scope.new_id()?;
         sqlx::query("INSERT INTO public.checkout_post_dispatch_requests(order_id,basket_id,effect_key,promotion_account_id,attempt_id,dispatch_id,requested_at,event_id) VALUES($1,$2,$3,$4,$5,$6,$7,$8)")
             .bind(order_id).bind(&owner).bind(effect).bind(account).bind(attempt).bind(&dispatch).bind(at).bind(&event)
@@ -145,8 +138,9 @@ async fn request(
         sqlx::query("SET CONSTRAINTS require_checkout_post_dispatch_request IMMEDIATE")
             .execute(&mut **scope.transaction()).await?;
         let written = saved(scope.transaction(), order_id, &owner, account).await?.ok_or(OrderStoreError::InvalidStoredData)?;
-        if written.effect != effect || written.attempt_id != *attempt || written.dispatch_id != dispatch
-            || written.requested_at != at || written.event_id != event || !written.current_transaction {
+        if written != (Saved { effect: effect.into(), account, attempt_id: attempt.clone(),
+            dispatch_id: dispatch, requested_at: at, event_id: event, current_transaction: true,
+            source_valid: true, event_valid: true }) {
             return Err(OrderStoreError::InvalidStoredData);
         }
         Ok(PendingCancellationReceipt { order_id: order_id.into(), requested_at: at, replayed: false })
