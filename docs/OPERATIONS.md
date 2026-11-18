@@ -573,15 +573,39 @@ package-manager output is not retained or printed. Treat those records as
 review evidence, not independent attestation by themselves.
 
 The path-scoped PostgreSQL zlib candidate workflow runs the script on a
-throwaway Linux runner when its candidate files change in a PR. It uses only
-synthetic rows, no external network for either database container, an actual
-compressed custom-format dump/restore and a rejected invalid-archive control.
+throwaway Linux runner when its candidate files change in a PR. It dumps
+synthetic rows from the pinned Debian base and restores a compressed
+custom-format archive on the candidate. Both database containers run without
+external networks, and the lab checks an invalid archive rejection.
 It scans the pinned base and built candidate using the same fresh vulnerability
 database, retains both raw reports, and checks the target zlib package and
 finding delta. Success establishes only the checks actually recorded. Review
 image and package provenance, other vulnerabilities, restore and rollback,
 operational configuration and exact-revision release gates separately. The
 workflow does not update staging, activate production or accept any risk.
+
+## Combined Debian candidate comparison
+
+The hosted Debian candidate workflow builds the same pinned PostgreSQL base
+with the authenticated zlib package and the independently rebuilt Gosu 1.20
+executable. The builder checks the baseline Debian PostgreSQL uid, gid and
+supplementary groups, the non-root privilege denial, and the oversized group
+control. The combined build verifies both binary builds and uses the original
+zlib Dockerfile, then adds the exact Gosu binary as one layer. The saved image
+check verifies the base layer lineage and preserved runtime metadata.
+
+One fresh Trivy database is used for both stock and combined image scans. The
+comparison checks exact image metadata, package versions and positive finding
+controls for the targeted zlib and Gosu advisories. Raw inventories and every
+finding delta stay in the artifact. Release review still requires separate
+disposition of residual or new findings.
+
+An isolated base-to-candidate restore must preserve default and explicit C
+collation probes, the synthetic stock receipt read and idempotent replay,
+table and sequence state, and preparation of a schema-66 copy for migration to
+the current revision. The fixture includes restore and rollback controls. Actual
+staging data, security disposition and operational rollback still need review
+on a separate isolated copy before an image switch.
 
 ## Optional PostgreSQL Gosu rebuild experiment
 

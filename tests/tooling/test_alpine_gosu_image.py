@@ -59,18 +59,25 @@ class CandidateImageTests(unittest.TestCase):
         malformed_gzip=False,
         nonregular_base=False,
         duplicate_base=False,
+        debian=False,
+        zlib_layer=False,
+        corrupt_zlib=False,
     ):
         layer = archive(self.entries if entries is None else entries)
         candidate = json.loads(json.dumps(self.stock))
+        apt_layer = archive([("usr/lib/zlib", b"synthetic package", 0o644, 0, tarfile.REGTYPE)])
+        layers = ["base-0.tar", "base-1.tar"]
+        if zlib_layer:
+            layers.append("zlib.tar")
+            candidate["rootfs"]["diff_ids"].append(sha(apt_layer))
+        layers.append("new.tar")
         candidate["rootfs"]["diff_ids"].append("sha256:" + "b" * 64 if wrong_diff else sha(layer))
         if changed_config:
             candidate["config"]["Entrypoint"] = ["other"]
         candidate_raw = json.dumps(candidate).encode()
         stock_raw = json.dumps(self.stock).encode()
         candidate_id = "sha256:" + "c" * 64 if wrong_candidate else sha(candidate_raw)
-        manifest = json.dumps(
-            [{"Config": "config.json", "Layers": ["base-0.tar", "base-1.tar", "new.tar"]}]
-        ).encode()
+        manifest = json.dumps([{"Config": "config.json", "Layers": layers}]).encode()
         outer_entries = [
             ("manifest.json", manifest, 0o644, 0, tarfile.REGTYPE),
             ("config.json", candidate_raw, 0o644, 0, tarfile.REGTYPE),
@@ -88,6 +95,9 @@ class CandidateImageTests(unittest.TestCase):
             if duplicate_base and index == 1:
                 outer_entries.append((f"base-{index}.tar", base, 0o644, 0, kind))
         outer_entries.append(("base.tar", base, 0o644, 0, tarfile.REGTYPE))
+        if zlib_layer:
+            apt = b"changed package layer" if corrupt_zlib else apt_layer
+            outer_entries.append(("zlib.tar", apt, 0o644, 0, tarfile.REGTYPE))
         outer_entries.append(
             ("new.tar", gzip.compress(layer) if compressed else layer, 0o644, 0, tarfile.REGTYPE)
         )
@@ -97,9 +107,21 @@ class CandidateImageTests(unittest.TestCase):
             path.write_bytes(data)
             with (
                 patch.object(check, "STOCK_CONFIG", sha(stock_raw)),
+                patch.object(check, "DEBIAN_CONFIG", sha(stock_raw)),
                 patch.object(check, "GOSU_SHA256", hashlib.sha256(self.binary).hexdigest()),
             ):
-                return check.inspect(path, stock_raw, candidate_id)
+                return check.inspect(path, stock_raw, candidate_id, debian=debian)
+
+    def test_debian_requires_an_exact_extra_package_layer(self):
+        _, result = self.evaluate(debian=True, zlib_layer=True)
+        self.assertEqual(result["verified_stock_layers"], 2)
+        for args in (
+            {"debian": True},
+            {"debian": True, "zlib_layer": True, "corrupt_zlib": True},
+            {"zlib_layer": True},
+        ):
+            with self.subTest(args=args), self.assertRaises(ValueError):
+                self.evaluate(**args)
 
     def test_exact_single_gosu_layer_is_accepted(self):
         raw, result = self.evaluate()

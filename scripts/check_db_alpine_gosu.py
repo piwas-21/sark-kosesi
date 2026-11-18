@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Compare paired full-image Alpine scans; validate consistency, not capture provenance."""
+"""Compare paired full-image PostgreSQL scans and validate report consistency."""
 
 import hashlib
 import json
@@ -8,6 +8,10 @@ import sys
 from collections import Counter, defaultdict
 from datetime import UTC, datetime
 from pathlib import Path
+
+from compare_db_zlib_scan import BASE_CONFIG as DEBIAN_CONFIG
+from compare_db_zlib_scan import BASE_ZLIB, CANDIDATE_ZLIB, FINDINGS, POSITIVE_FINDING
+from compare_db_zlib_scan import inspect as inspect_zlib
 
 BASE_CONFIG = "sha256:0f6c51e48b3458e87ab43692e49c9dafc72ffe0a0dbde3fd8cdb6ab92d5c025e"
 DIGEST = re.compile(r"sha256:[0-9a-f]{64}\Z")
@@ -61,7 +65,16 @@ def timestamp(value):
         raise ValueError("invalid timestamp") from None
 
 
-def inspect(report, config_raw, config, image_id, gosu_version, allow_unversioned_main=False):
+def inspect(
+    report,
+    config_raw,
+    config,
+    image_id,
+    gosu_version,
+    allow_unversioned_main=False,
+    *,
+    family="alpine",
+):
     require(
         "sha256:" + hashlib.sha256(config_raw).hexdigest() == image_id, "config digest mismatch"
     )
@@ -100,9 +113,9 @@ def inspect(report, config_raw, config, image_id, gosu_version, allow_unversione
     )
     require(
         isinstance(os_info, dict)
-        and os_info.get("Family") == "alpine"
+        and os_info.get("Family") == family
         and bounded(os_info.get("Name")),
-        "invalid Alpine OS identity",
+        "invalid scanner OS identity",
     )
     targets = report.get("Results")
     require(isinstance(targets, list) and bool(targets), "missing scan targets")
@@ -143,7 +156,7 @@ def inspect(report, config_raw, config, image_id, gosu_version, allow_unversione
             "invalid package inventory",
         )
         if target["Class"] == "os-pkgs":
-            require(target["Type"] == "alpine", "unexpected OS package type")
+            require(target["Type"] == family, "unexpected OS package type")
             os_targets += 1
         if target["Class"] == "lang-pkgs" and target["Target"].lstrip("/") == "usr/local/bin/gosu":
             require(target["Type"] == "gobinary", "unexpected Gosu target type")
@@ -172,7 +185,7 @@ def inspect(report, config_raw, config, image_id, gosu_version, allow_unversione
                     "finding": finding,
                 }
             )
-    require(os_targets == 1 and len(gosu) == 1, "missing or duplicate Alpine or Gosu target")
+    require(os_targets == 1 and len(gosu) == 1, "missing or duplicate OS or Gosu target")
     return rows, gosu[0], os_info["Name"]
 
 
@@ -245,11 +258,15 @@ def compare(
     candidate_id,
     database,
     now=None,
+    *,
+    debian=False,
 ):
+    stock_id = DEBIAN_CONFIG if debian else BASE_CONFIG
+    family = "debian" if debian else "alpine"
     require(
         isinstance(candidate_id, str)
         and DIGEST.fullmatch(candidate_id)
-        and candidate_id != BASE_CONFIG,
+        and candidate_id != stock_id,
         "invalid candidate image ID",
     )
     require(
@@ -267,7 +284,9 @@ def compare(
         ),
         "stale or future vulnerability database or scan",
     )
-    before, stock_gosu, stock_os = inspect(stock, stock_raw, stock_config, BASE_CONFIG, "v1.24.6")
+    before, stock_gosu, stock_os = inspect(
+        stock, stock_raw, stock_config, stock_id, "v1.24.6", family=family
+    )
     after, candidate_gosu, candidate_os = inspect(
         candidate,
         candidate_raw,
@@ -275,9 +294,10 @@ def compare(
         candidate_id,
         "v1.27.4",
         allow_unversioned_main=True,
+        family=family,
     )
     validate_candidate_modules(candidate_gosu)
-    require(stock_os == candidate_os, "Alpine OS version mismatch")
+    require(stock_os == candidate_os, "OS version mismatch")
     require(
         any(
             f["VulnerabilityID"] == "CVE-2025-68121"
@@ -288,6 +308,31 @@ def compare(
         ),
         "baseline lacks expected positive Gosu finding",
     )
+    if debian:
+        _, before_zlib_high = inspect_zlib(stock, stock_id, BASE_ZLIB)
+        after_zlib, _ = inspect_zlib(candidate, candidate_id, CANDIDATE_ZLIB)
+        other_packages = [
+            Counter(
+                (p["Name"], p["Version"])
+                for target in report["Results"]
+                if target["Class"] == "os-pkgs"
+                for p in target["Packages"]
+                if p["Name"] != "zlib1g"
+            )
+            for report in (stock, candidate)
+        ]
+        require(other_packages[0] == other_packages[1], "unexpected Debian package change")
+        require(
+            POSITIVE_FINDING in before_zlib_high, "baseline lacks expected positive zlib finding"
+        )
+        require(not FINDINGS & after_zlib, "candidate still reports targeted zlib finding")
+        require(
+            not any(
+                finding["VulnerabilityID"] == "CVE-2025-68121" and finding["PkgName"] == "stdlib"
+                for finding in candidate_gosu.get("Vulnerabilities", [])
+            ),
+            "candidate still reports targeted Gosu finding",
+        )
     removed, added = difference(before, after), difference(after, before)
     old_groups, new_groups = defaultdict(list), defaultdict(list)
     for row in removed:
@@ -304,7 +349,7 @@ def compare(
         return {severity: result[severity] for severity in SEVERITIES}
 
     return {
-        "stock_image_id": BASE_CONFIG,
+        "stock_image_id": stock_id,
         "candidate_image_id": candidate_id,
         "stock_gosu_stdlib": "v1.24.6",
         "candidate_gosu_stdlib": "v1.27.4",
@@ -325,9 +370,13 @@ def compare(
 
 
 def main():
-    if len(sys.argv) != 3:
+    args = sys.argv[1:]
+    debian = args[:1] == ["--debian"]
+    if debian:
+        args = args[1:]
+    if len(args) != 2:
         raise ValueError("expected EVIDENCE_DIR CANDIDATE_CONFIG_SHA256")
-    directory = Path(sys.argv[1])
+    directory = Path(args[0])
     _, stock = read_document(directory / "stock-report.json")
     _, candidate = read_document(directory / "candidate-report.json")
     stock_raw, stock_config = read_document(directory / "stock-config.json")
@@ -342,8 +391,9 @@ def main():
                 stock_config,
                 candidate_raw,
                 candidate_config,
-                sys.argv[2],
+                args[1],
                 database,
+                debian=debian,
             ),
             indent=2,
         )
@@ -354,5 +404,5 @@ if __name__ == "__main__":
     try:
         main()
     except (OSError, ValueError, TypeError, KeyError, RecursionError) as error:
-        print(f"Alpine Gosu scan comparison failed: {error}", file=sys.stderr)
+        print(f"PostgreSQL Gosu scan comparison failed: {error}", file=sys.stderr)
         sys.exit(1)

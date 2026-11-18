@@ -183,6 +183,16 @@ class CompareZlibScanTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "positive findings"):
             self.compare()
 
+    def test_baseline_reports_only_findings_actually_present(self):
+        self.base["Results"][0]["Vulnerabilities"] = [
+            finding
+            for finding in self.base["Results"][0]["Vulnerabilities"]
+            if finding["VulnerabilityID"] == compare.POSITIVE_FINDING
+        ]
+        self.assertEqual(
+            self.compare()["targeted_cves_reported_before"], [compare.POSITIVE_FINDING]
+        )
+
     def test_candidate_still_reporting_target_fails(self):
         self.candidate["Results"][0]["Vulnerabilities"] = copy.deepcopy(
             self.base["Results"][0]["Vulnerabilities"]

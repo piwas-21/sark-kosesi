@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Restore project synthetic data into the exact hosted Alpine Gosu candidate."""
+"""Restore project synthetic data into an exact hosted PostgreSQL candidate."""
 
 import hashlib
 import json
@@ -149,6 +149,75 @@ def stock_custody_evidence(source, target, collations):
     }
 
 
+def require_matching_locales(locales):
+    """Validate and compare the six fields returned from pg_database."""
+    if not isinstance(locales, list) or len(locales) != 2:
+        raise ValueError("Invalid database locale metadata")
+    for locale in locales:
+        if (
+            not isinstance(locale, list)
+            or len(locale) != 6
+            or locale[0] != "UTF8"
+            or locale[1] not in ("c", "i", "b")
+            or any(not isinstance(locale[index], str) or not locale[index] for index in (3, 4))
+            or any(
+                value is not None and (not isinstance(value, str) or not value)
+                for value in (locale[2], locale[5])
+            )
+        ):
+            raise ValueError("Invalid database locale metadata")
+    if locales[0] != locales[1]:
+        raise ValueError("Database locale metadata mismatch")
+
+
+def require_debian_compatibility(locales, collations, custody):
+    """Fail closed on malformed or differing synthetic database observations."""
+    require_matching_locales(locales)
+    # Revalidate raw observations instead of trusting a caller-supplied match flag.
+    if not isinstance(collations, dict) or "source" not in collations or "target" not in collations:
+        raise ValueError("Invalid collation comparison")
+    compared = compare_collations(collations["source"], collations["target"])
+    if not all(
+        compared[key]
+        for key in (
+            "default_order_matches",
+            "default_case_matches",
+            "default_equality_matches",
+            "explicit_c_controls_match",
+        )
+    ):
+        raise ValueError("Database collation probe mismatch")
+    if not isinstance(custody, dict) or any(
+        not isinstance(custody.get(side), dict) or custody[side].get("outcome") != "compatible"
+        for side in ("source", "target")
+    ):
+        raise ValueError("Stock custody replay incompatible")
+
+
+def profile_paths(profile):
+    if profile == "alpine":
+        return "db-alpine-gosu-scratch", "db-alpine-gosu-evidence"
+    if profile == "debian":
+        return "db-debian-candidate-scratch", "db-debian-candidate-evidence"
+    raise ValueError("Invalid restore profile")
+
+
+def validate_identities(identities, profile):
+    profile_paths(profile)
+    target = "999" if profile == "debian" else "70"
+    if identities != [["999", "999"], [target, target]]:
+        raise ValueError("Unexpected postgres UID or GID")
+
+
+def parse_arguments(args):
+    profile = "alpine"
+    if args and args[0] == "--debian":
+        profile, args = "debian", args[1:]
+    if len(args) != 4 or any(arg.startswith("--") for arg in args):
+        raise ValueError("Expected image, revision, scratch and evidence")
+    return profile, args
+
+
 class Progress:
     """Only fixed stage and failure codes may leave the private lab."""
 
@@ -218,14 +287,15 @@ def client():
     os.execvp("docker", [*args, container, "psql", *sys.argv[1:]])
 
 
-def validate_context(candidate, revision, scratch, evidence):
+def validate_context(candidate, revision, scratch, evidence, profile="alpine"):
     if (
         os.environ.get("GITHUB_ACTIONS") != "true"
         or os.environ.get("RUNNER_ENVIRONMENT") != "github-hosted"
     ):
         raise ValueError("GitHub-hosted runner required")
     temp = Path(os.environ["RUNNER_TEMP"]).resolve(strict=True)
-    if scratch != temp / "db-alpine-gosu-scratch" or evidence != temp / "db-alpine-gosu-evidence":
+    scratch_name, evidence_name = profile_paths(profile)
+    if scratch != temp / scratch_name or evidence != temp / evidence_name:
         raise ValueError("Unexpected hosted directories")
     if not re.fullmatch(r"sha256:[0-9a-f]{64}", candidate) or candidate == BASE_ID:
         raise ValueError("Invalid candidate image identity")
@@ -354,18 +424,19 @@ def cleanup_resources(container_names, network, marker):
     return not failed
 
 
-def main(candidate, revision, scratch, evidence, progress=None):
+def main(candidate, revision, scratch, evidence, progress=None, profile="alpine"):
     progress = progress or Progress()
     progress.enter("context")
+    _, evidence_name = profile_paths(profile)
     if (
         os.environ.get("GITHUB_ACTIONS") == "true"
         and os.environ.get("RUNNER_ENVIRONMENT") == "github-hosted"
         and "RUNNER_TEMP" in os.environ
-        and evidence == Path(os.environ["RUNNER_TEMP"]).resolve() / "db-alpine-gosu-evidence"
+        and evidence == Path(os.environ["RUNNER_TEMP"]).resolve() / evidence_name
         and evidence.is_dir()
     ):
         progress.directory = evidence
-    validate_context(candidate, revision, scratch, evidence)
+    validate_context(candidate, revision, scratch, evidence, profile)
     progress.enter("image_inspection")
     if (
         run("docker", "image", "inspect", candidate, "--format", "{{.Id}}").stdout.strip()
@@ -541,6 +612,8 @@ def main(candidate, revision, scratch, evidence, progress=None):
             progress.enter("candidate_metadata")
             locale_sql = "SELECT json_build_array(pg_encoding_to_char(encoding),datlocprovider,datlocale,datcollate,datctype,datcollversion)::text FROM pg_database WHERE datname=current_database()"
             locales = [json.loads(psql(wrapper, env, locale_sql)) for env in envs]
+            if profile == "debian":
+                require_matching_locales(locales)
             if any(locale[0] != "UTF8" for locale in locales):
                 raise ValueError("Unexpected database encoding")
             progress.enter("collation_probe")
@@ -550,6 +623,8 @@ def main(candidate, revision, scratch, evidence, progress=None):
             custody_evidence = stock_custody_evidence(
                 source_custody, target_custody, collation_evidence
             )
+            if profile == "debian":
+                require_debian_compatibility(locales, collation_evidence, custody_evidence)
             with Snapshot(wrapper, envs[1]) as checked_target:
                 if (
                     inventory(checked_target) != before
@@ -576,8 +651,7 @@ def main(candidate, revision, scratch, evidence, progress=None):
                 ]
                 for container in containers
             ]
-            if identities != [["999", "999"], ["70", "70"]]:
-                raise ValueError("Unexpected postgres UID or GID")
+            validate_identities(identities, profile)
             if (
                 psql(
                     wrapper,
@@ -667,6 +741,8 @@ def main(candidate, revision, scratch, evidence, progress=None):
                 "changed_content_detected": True,
                 "changed_sequence_detected": True,
             }
+            if profile == "debian":
+                report["profile"] = profile
         progress.enter("write_evidence")
         (evidence / "app-restore.json").write_text(json.dumps(report, indent=2) + "\n")
         try:
@@ -706,15 +782,16 @@ def main(candidate, revision, scratch, evidence, progress=None):
 
 if __name__ == "__main__":
     progress = Progress()
+    profile = "debian" if sys.argv[1:2] == ["--debian"] else "alpine"
     try:
-        if len(sys.argv) != 5:
-            raise ValueError("Expected image, revision, scratch and evidence")
+        profile, args = parse_arguments(sys.argv[1:])
         main(
-            sys.argv[1],
-            sys.argv[2],
-            Path(sys.argv[3]).resolve(strict=True),
-            Path(sys.argv[4]).resolve(strict=True),
+            args[0],
+            args[1],
+            Path(args[2]).resolve(strict=True),
+            Path(args[3]).resolve(strict=True),
             progress,
+            profile,
         )
         progress.write()
     except (
@@ -730,6 +807,7 @@ if __name__ == "__main__":
             progress.write(error)
         except OSError:
             pass
+        label = "Debian candidate" if profile == "debian" else "Alpine Gosu"
         raise SystemExit(
-            f"Synthetic Alpine Gosu restore failed: stage={result['stage']} code={result['code']}"
+            f"Synthetic {label} restore failed: stage={result['stage']} code={result['code']}"
         ) from None
