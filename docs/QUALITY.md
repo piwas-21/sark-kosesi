@@ -240,6 +240,16 @@ Target WCAG 2.2 AA. Automated checks require zero serious/critical violations an
 
 Budgets are in `config/performance-budgets.json`: field p75 LCP <=2.5s, INP <=200ms, CLS <=0.1; lab median of three controlled runs Lighthouse >=90, LCP <=2.5s, TBT <=200ms; initial first-party JS <=170KiB gzip, mobile LCP image <=250KiB, fonts <=150KiB, total <=750KiB. Test home/product/cart/checkout/account and planner-open separately. Lazy-load room tools and nonessential motion; responsive images with dimensions, self-host subset fonts and cache-safe SSR. Never score the unoptimized specimen as production.
 
+The private preview production-build lab includes `/nl/room-planner` as its own
+page in the three-run median and payload evidence. After measuring the initial
+resources, it enters synthetic measurements and checks both a fit and a changed
+conflict. The same interaction must fail against the served page with JavaScript
+disabled. Resource sizes are gzip estimates from authenticated re-fetches, not
+wire-transfer measurements. This does not measure interaction latency or field
+Core Web Vitals, and does not replace production-topology, native-device,
+physical-fit or actual catalogue acceptance. Cart, checkout and account remain
+separate acceptance work.
+
 At 25 concurrent users for 10 minutes plus a 50-request burst, catalogue p95 <=300ms and quote p95 <=500ms excluding separately reported provider time, errors <=1%; no overselling, leaked resources or unbounded queue growth. Record hardware, DB size, seed, cache state and exact SHA. Resource caps and profiling matter more than language claims. P6 captures lab evidence; post-launch field data validates real-user performance separately.
 
 The isolated catalogue k6 exercise measures reads. A separate local quote
