@@ -368,6 +368,11 @@ when bound, customer-session authority through the attempt claim and event write
 The detached receipt is pending intent only; it neither changes cancellation nor
 authorizes provider, financial, stock, packing or physical fulfilment effects.
 Legacy NULL start transaction provenance is preserved without inference.
+Private inspection requires the separate unseeded `cancellation.review` grant,
+a held live staff session and recent MFA. It claims the original attempt,
+validates historical request and reciprocal event custody and rechecks staff
+authority after waits, including on absence and source failure. Its minimal
+result grants no disposition, provider, financial, stock or packing authority.
 
 Private cancellation uses the same guest and account authority as the order.
 Cancellation and admission share a basket claim; cancellation and dispatch share

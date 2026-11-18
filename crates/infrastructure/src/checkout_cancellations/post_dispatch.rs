@@ -42,19 +42,19 @@ fn payment(error: PaymentStoreError) -> OrderStoreError {
 }
 
 #[derive(sqlx::FromRow, PartialEq, Eq)]
-struct Saved {
+pub(super) struct Saved {
     effect: String,
     account: Option<i64>,
     attempt_id: String,
     dispatch_id: String,
-    requested_at: i64,
+    pub(super) requested_at: i64,
     event_id: String,
     current_transaction: bool,
     source_valid: bool,
     event_valid: bool,
 }
 
-async fn saved(
+pub(super) async fn saved(
     tx: &mut Transaction<'_, Postgres>,
     order: &str,
     basket: &str,

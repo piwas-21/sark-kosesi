@@ -6,8 +6,10 @@ use crate::{
 };
 use commerce_domain::media::valid_command_id;
 use sqlx::{Postgres, Transaction};
+mod inspection;
 mod post_dispatch;
 mod rows;
+pub use inspection::{CancellationInspection, InspectionError, inspect_post_dispatch_request};
 pub use post_dispatch::{
     PendingCancellationReceipt, request_after_dispatch, request_verified_after_dispatch,
 };

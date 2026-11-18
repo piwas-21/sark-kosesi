@@ -1927,7 +1927,11 @@ authority. Modern starts must originate in a different database transaction; NUL
 legacy provenance remains unknown, not invented. The pending request is neither a
 cancellation nor permission to stop packing, release stock, issue refunds or
 contact a provider. A future operator disposition and fulfilment interlock are
-required; no public or test route is added.
+required; no public or test route is added. A separate exact-order inspection
+holds an unseeded `cancellation.review` grant, staff session and recent MFA,
+claims the original attempt and revalidates the frozen order, dispatch and
+reciprocal event. It returns a minimal historical request digest and timestamp;
+it neither establishes current fulfilment status nor grants disposition authority.
 
 Seller policy is a required trusted server argument with explicit identity, tax
 registration choice, document versions/digests, locale, evidence and validity.

@@ -232,6 +232,18 @@ async fn detached_event_fails_closed_and_legacy_dispatch_shape_remains_supported
         .await
         .expect("legacy dispatch accepted");
     assert!(!created.replayed);
+    let reviewer = inspection_staff(&pool, "legacy-inspector", 46, "cancellation.review").await;
+    assert!(
+        commerce_infrastructure::checkout_cancellations::inspect_post_dispatch_request(
+            &pool,
+            &reviewer,
+            time.as_ref(),
+            &order.identity.id
+        )
+        .await
+        .expect("legacy inspection")
+        .is_some()
+    );
     let event: serde_json::Value = sqlx::query_scalar("SELECT to_jsonb(e) FROM commerce_outbox e WHERE e.kind='checkout.cancellation_requested.v1'").fetch_one(&pool).await.expect("event");
     pool.execute("ALTER TABLE commerce_outbox DISABLE TRIGGER USER")
         .await
@@ -472,6 +484,19 @@ async fn account_bound_request_requires_both_live_authorities_and_rechecks_after
         .replayed
     );
     assert_eq!(footprint(&pool).await, before);
+    time.0.store(1500, Ordering::SeqCst);
+    let reviewer = inspection_staff(&pool, "account-inspector", 47, "cancellation.review").await;
+    assert!(
+        commerce_infrastructure::checkout_cancellations::inspect_post_dispatch_request(
+            &pool,
+            &reviewer,
+            time.as_ref(),
+            &order.identity.id
+        )
+        .await
+        .expect("account-bound historical inspection")
+        .is_some()
+    );
 }
 
 #[sqlx::test(migrator = "MIGRATOR")]
@@ -804,5 +829,368 @@ async fn clock_before_dispatch_or_saved_request_fails_closed(pool: PgPool) {
             .await
             .expect("replay")
             .replayed
+    );
+}
+
+async fn inspection_staff(
+    pool: &PgPool,
+    id: &str,
+    byte: u8,
+    capability: &str,
+) -> commerce_infrastructure::staff_access::SessionToken {
+    use commerce_infrastructure::staff_access::SessionToken;
+    let token = SessionToken::from_bytes([byte; 32]);
+    sqlx::query("INSERT INTO staff_accounts(id,enabled) VALUES($1,true)")
+        .bind(id)
+        .execute(pool)
+        .await
+        .expect("staff");
+    sqlx::query("INSERT INTO staff_capabilities VALUES($1,$2)")
+        .bind(id)
+        .bind(capability)
+        .execute(pool)
+        .await
+        .expect("capability");
+    sqlx::query("INSERT INTO staff_sessions VALUES($1,$2,1000,4000,1400,NULL)")
+        .bind(token.digest().as_slice())
+        .bind(id)
+        .execute(pool)
+        .await
+        .expect("session");
+    token
+}
+
+#[sqlx::test(migrator = "MIGRATOR")]
+async fn staff_inspection_requires_live_dedicated_authority_and_exact_historical_custody(
+    pool: PgPool,
+) {
+    use commerce_infrastructure::checkout_cancellations::{
+        InspectionError, inspect_post_dispatch_request as inspect,
+    };
+    let (store, time, session, csrf, order) = payment::accepted(&pool).await;
+    let key = GuestCredential::from_session(&session).expect("guest");
+    let reviewer = inspection_staff(&pool, "cancel-reviewer", 41, "cancellation.review").await;
+    let other = inspection_staff(&pool, "other-reviewer", 42, "stock.review").await;
+    let id = &order.identity.id;
+    assert!(matches!(
+        inspect(&pool, &reviewer, time.as_ref(), "bad").await,
+        Err(InspectionError::InvalidRequest)
+    ));
+    assert_eq!(
+        inspect(&pool, &reviewer, time.as_ref(), id)
+            .await
+            .expect("absent before dispatch"),
+        None
+    );
+    assert!(matches!(
+        inspect(&pool, &other, time.as_ref(), id).await,
+        Err(InspectionError::Denied)
+    ));
+    let prepared = prepare_attempt(
+        &store,
+        &key,
+        &csrf,
+        "pay",
+        &payment::intent(&order),
+        &payment::config(),
+    )
+    .await
+    .expect("prepare");
+    let attempt = &prepared.frozen.snapshot().binding.id;
+    assert_eq!(
+        inspect(&pool, &reviewer, time.as_ref(), id)
+            .await
+            .expect("absent with attempt"),
+        None
+    );
+    start_dispatch(
+        &pool,
+        time.as_ref(),
+        &payment::Ids(AtomicU64::new(10000)),
+        attempt,
+        &payment::config(),
+    )
+    .await
+    .expect("dispatch");
+    assert_eq!(
+        inspect(&pool, &reviewer, time.as_ref(), id)
+            .await
+            .expect("absent after dispatch"),
+        None
+    );
+    request_after_dispatch(&store, &key, &csrf, "request", id)
+        .await
+        .expect("pending request");
+    let before = footprint(&pool).await;
+    let result = inspect(&pool, &reviewer, time.as_ref(), id)
+        .await
+        .expect("inspection")
+        .expect("exists");
+    let digest: String = sqlx::query_scalar("SELECT checkout_post_dispatch_request_digest(r) FROM checkout_post_dispatch_requests r WHERE order_id=$1").bind(id).fetch_one(&pool).await.expect("digest");
+    assert_eq!(
+        (
+            &result.order_id,
+            result.requested_at,
+            &result.request_digest
+        ),
+        (id, 1500, &digest)
+    );
+    assert_eq!(footprint(&pool).await, before);
+    time.0.store(1499, Ordering::SeqCst);
+    assert!(matches!(
+        inspect(&pool, &reviewer, time.as_ref(), id).await,
+        Err(InspectionError::ClockUnavailable)
+    ));
+    time.0.store(1500, Ordering::SeqCst);
+    sqlx::query("UPDATE staff_sessions SET mfa_verified_at=NULL WHERE token_hash=$1")
+        .bind(reviewer.digest().as_slice())
+        .execute(&pool)
+        .await
+        .expect("clear MFA");
+    assert!(matches!(
+        inspect(&pool, &reviewer, time.as_ref(), id).await,
+        Err(InspectionError::Denied)
+    ));
+    sqlx::query(
+        "UPDATE staff_sessions SET mfa_verified_at=1400,revoked_at=1500 WHERE token_hash=$1",
+    )
+    .bind(reviewer.digest().as_slice())
+    .execute(&pool)
+    .await
+    .expect("revoke");
+    assert!(matches!(
+        inspect(&pool, &reviewer, time.as_ref(), id).await,
+        Err(InspectionError::Denied)
+    ));
+    sqlx::query("UPDATE staff_sessions SET revoked_at=NULL WHERE token_hash=$1")
+        .bind(reviewer.digest().as_slice())
+        .execute(&pool)
+        .await
+        .expect("restore session");
+    sqlx::query("UPDATE staff_accounts SET enabled=false WHERE id='cancel-reviewer'")
+        .execute(&pool)
+        .await
+        .expect("disable staff");
+    assert!(matches!(
+        inspect(&pool, &reviewer, time.as_ref(), id).await,
+        Err(InspectionError::Denied)
+    ));
+    sqlx::query("UPDATE staff_accounts SET enabled=true WHERE id='cancel-reviewer'")
+        .execute(&pool)
+        .await
+        .expect("restore staff");
+    sqlx::query("UPDATE staff_sessions SET mfa_verified_at=1501 WHERE token_hash=$1")
+        .bind(reviewer.digest().as_slice())
+        .execute(&pool)
+        .await
+        .expect("future MFA");
+    assert!(matches!(
+        inspect(&pool, &reviewer, time.as_ref(), id).await,
+        Err(InspectionError::Denied)
+    ));
+    sqlx::query("UPDATE staff_sessions SET mfa_verified_at=1400 WHERE token_hash=$1")
+        .bind(reviewer.digest().as_slice())
+        .execute(&pool)
+        .await
+        .expect("restore MFA");
+    time.0.store(2301, Ordering::SeqCst);
+    assert!(matches!(
+        inspect(&pool, &reviewer, time.as_ref(), id).await,
+        Err(InspectionError::Denied)
+    ));
+    time.0.store(1500, Ordering::SeqCst);
+    let event: serde_json::Value = sqlx::query_scalar("SELECT to_jsonb(e) FROM commerce_outbox e WHERE e.kind='checkout.cancellation_requested.v1'").fetch_one(&pool).await.expect("event");
+    pool.execute("ALTER TABLE commerce_outbox DISABLE TRIGGER USER; DELETE FROM commerce_outbox WHERE kind='checkout.cancellation_requested.v1'").await.expect("detach event");
+    assert!(matches!(
+        inspect(&pool, &reviewer, time.as_ref(), id).await,
+        Err(InspectionError::InvalidStoredData)
+    ));
+    sqlx::query(
+        "INSERT INTO commerce_outbox SELECT (jsonb_populate_record(NULL::commerce_outbox,$1)).*",
+    )
+    .bind(&event)
+    .execute(&pool)
+    .await
+    .expect("restore event");
+    pool.execute("ALTER TABLE commerce_outbox ENABLE TRIGGER USER")
+        .await
+        .expect("restore guard");
+    assert_eq!(
+        inspect(&pool, &reviewer, time.as_ref(), id)
+            .await
+            .expect("restored"),
+        Some(result)
+    );
+    assert_eq!(footprint(&pool).await, before);
+}
+
+#[sqlx::test(migrator = "MIGRATOR")]
+async fn staff_inspection_rechecks_authority_after_real_attempt_wait(pool: PgPool) {
+    use commerce_infrastructure::checkout_cancellations::{
+        InspectionError, inspect_post_dispatch_request as inspect,
+    };
+    let (store, time, session, csrf, order) = payment::accepted(&pool).await;
+    let key = GuestCredential::from_session(&session).expect("guest");
+    let reviewer = inspection_staff(&pool, "cancel-wait", 43, "cancellation.review").await;
+    let prepared = prepare_attempt(
+        &store,
+        &key,
+        &csrf,
+        "pay",
+        &payment::intent(&order),
+        &payment::config(),
+    )
+    .await
+    .expect("prepare");
+    let attempt = &prepared.frozen.snapshot().binding.id;
+    start_dispatch(
+        &pool,
+        time.as_ref(),
+        &payment::Ids(AtomicU64::new(10000)),
+        attempt,
+        &payment::config(),
+    )
+    .await
+    .expect("dispatch");
+    request_after_dispatch(&store, &key, &csrf, "request", &order.identity.id)
+        .await
+        .expect("pending request");
+    let mut blocker = pool.begin().await.expect("blocker");
+    sqlx::query("SELECT id FROM payment_attempts WHERE id=$1 FOR UPDATE")
+        .bind(attempt)
+        .execute(&mut *blocker)
+        .await
+        .expect("attempt lock");
+    let operation = inspect(&pool, &reviewer, time.as_ref(), &order.identity.id);
+    let release = async {
+        tokio::time::timeout(std::time::Duration::from_millis(900), async {
+            loop {
+                let waiting: bool = sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM pg_stat_activity WHERE datname=current_database() AND wait_event_type='Lock' AND query LIKE '%SELECT id FROM payment_attempts WHERE id=$1 FOR UPDATE%')").fetch_one(&pool).await.expect("wait observation");
+                if waiting { break; }
+                tokio::time::sleep(std::time::Duration::from_millis(5)).await;
+            }
+        }).await.expect("actual wait");
+        time.0.store(2301, Ordering::SeqCst);
+        blocker.rollback().await.expect("release");
+    };
+    let (result, ()) = tokio::join!(operation, release);
+    assert!(matches!(result, Err(InspectionError::Denied)));
+    time.0.store(1500, Ordering::SeqCst);
+    assert!(
+        inspect(&pool, &reviewer, time.as_ref(), &order.identity.id)
+            .await
+            .expect("fresh authority")
+            .is_some()
+    );
+}
+
+#[sqlx::test(migrator = "MIGRATOR")]
+async fn staff_inspection_rejects_orphan_and_damaged_frozen_source_then_accepts_repairs(
+    pool: PgPool,
+) {
+    use commerce_infrastructure::checkout_cancellations::{
+        InspectionError, inspect_post_dispatch_request as inspect,
+    };
+    let (store, time, session, csrf, order) = payment::accepted(&pool).await;
+    let key = GuestCredential::from_session(&session).expect("guest");
+    let reviewer = inspection_staff(&pool, "cancel-damage", 44, "cancellation.review").await;
+    let prepared = prepare_attempt(
+        &store,
+        &key,
+        &csrf,
+        "pay",
+        &payment::intent(&order),
+        &payment::config(),
+    )
+    .await
+    .expect("prepare");
+    let attempt = &prepared.frozen.snapshot().binding.id;
+    start_dispatch(
+        &pool,
+        time.as_ref(),
+        &payment::Ids(AtomicU64::new(10000)),
+        attempt,
+        &payment::config(),
+    )
+    .await
+    .expect("dispatch");
+    request_after_dispatch(&store, &key, &csrf, "request", &order.identity.id)
+        .await
+        .expect("pending request");
+    let healthy = inspect(&pool, &reviewer, time.as_ref(), &order.identity.id)
+        .await
+        .expect("healthy")
+        .expect("present");
+    let row: serde_json::Value =
+        sqlx::query_scalar("SELECT to_jsonb(r) FROM checkout_post_dispatch_requests r")
+            .fetch_one(&pool)
+            .await
+            .expect("request row");
+    pool.execute("ALTER TABLE checkout_post_dispatch_requests DISABLE TRIGGER USER; DELETE FROM checkout_post_dispatch_requests").await.expect("detach request");
+    assert!(matches!(
+        inspect(&pool, &reviewer, time.as_ref(), &order.identity.id).await,
+        Err(InspectionError::InvalidStoredData)
+    ));
+    sqlx::query("INSERT INTO checkout_post_dispatch_requests SELECT (jsonb_populate_record(NULL::checkout_post_dispatch_requests,$1)).*").bind(&row).execute(&pool).await.expect("restore request");
+    pool.execute("ALTER TABLE checkout_post_dispatch_requests ENABLE TRIGGER USER")
+        .await
+        .expect("guard");
+    assert_eq!(
+        inspect(&pool, &reviewer, time.as_ref(), &order.identity.id)
+            .await
+            .expect("restored"),
+        Some(healthy)
+    );
+    let original: serde_json::Value =
+        sqlx::query_scalar("SELECT snapshot FROM payment_attempts WHERE id=$1")
+            .bind(attempt)
+            .fetch_one(&pool)
+            .await
+            .expect("frozen snapshot");
+    pool.execute("ALTER TABLE payment_attempts DISABLE TRIGGER USER")
+        .await
+        .expect("allow isolated damage");
+    sqlx::query("UPDATE payment_attempts SET snapshot=jsonb_set(snapshot,'{binding,id}',to_jsonb('ffffffffffffffffffffffffffffffff'::text)) WHERE id=$1").bind(attempt).execute(&pool).await.expect("damage snapshot");
+    assert!(matches!(
+        inspect(&pool, &reviewer, time.as_ref(), &order.identity.id).await,
+        Err(InspectionError::InvalidStoredData)
+    ));
+    sqlx::query("UPDATE payment_attempts SET snapshot=$2 WHERE id=$1")
+        .bind(attempt)
+        .bind(original)
+        .execute(&pool)
+        .await
+        .expect("restore snapshot");
+    pool.execute("ALTER TABLE payment_attempts ENABLE TRIGGER USER")
+        .await
+        .expect("restore guard");
+    assert!(
+        inspect(&pool, &reviewer, time.as_ref(), &order.identity.id)
+            .await
+            .expect("healthy again")
+            .is_some()
+    );
+    let recovery: String = sqlx::query_scalar(
+        "SELECT id FROM commerce_outbox WHERE kind='payment.reconciliation_required.v1'",
+    )
+    .fetch_one(&pool)
+    .await
+    .expect("recovery");
+    pool.execute("ALTER TABLE commerce_outbox DISABLE TRIGGER USER; ALTER TABLE commerce_outbox DROP CONSTRAINT commerce_outbox_id_check; UPDATE commerce_outbox SET id='bad' WHERE kind='payment.reconciliation_required.v1'").await.expect("damage recovery id");
+    assert!(matches!(
+        inspect(&pool, &reviewer, time.as_ref(), &order.identity.id).await,
+        Err(InspectionError::InvalidStoredData)
+    ));
+    sqlx::query("UPDATE commerce_outbox SET id=$1 WHERE kind='payment.reconciliation_required.v1'")
+        .bind(recovery)
+        .execute(&pool)
+        .await
+        .expect("restore recovery");
+    pool.execute("ALTER TABLE commerce_outbox ADD CONSTRAINT commerce_outbox_id_check CHECK(id ~ '^[a-f0-9]{32}$'); ALTER TABLE commerce_outbox ENABLE TRIGGER USER").await.expect("restore guard");
+    assert!(
+        inspect(&pool, &reviewer, time.as_ref(), &order.identity.id)
+            .await
+            .expect("healthy final")
+            .is_some()
     );
 }
