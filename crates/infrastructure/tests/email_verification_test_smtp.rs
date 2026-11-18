@@ -147,7 +147,7 @@ fn proof(message: &str) -> VerificationToken {
         .expect("proof");
     assert_eq!(encoded.len(), 64);
     let mut bytes = [0; 32];
-    for (i, chunk) in encoded.as_bytes().chunks_exact(2).enumerate() {
+    for (i, chunk) in encoded.as_bytes().as_chunks::<2>().0.iter().enumerate() {
         let hex = std::str::from_utf8(chunk).expect("hex");
         bytes[i] = u8::from_str_radix(hex, 16).expect("hex byte");
     }
