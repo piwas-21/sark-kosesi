@@ -1375,7 +1375,9 @@ of authenticated loopback GETs: the collection, planner and published-product
 API. Scanner history must contain the expected synthetic content, and the queue
 must finish; missing-header, empty-history and unauthorized controls prevent a
 blind or empty scan from passing. A network-disabled scanner preflight exercises synthetic Basic and bearer
-responses before the application images are built. High alerts and unknown
+responses before the application images are built. Evidence requires ZAP proxied
+history; only temporary site-tree ancestors are permitted alongside it. ZAP safe
+mode is selected and verified. High alerts and unknown
 severities fail without suppression. The summary contains counts and rule IDs only. See the security
 scope and limitations in [SECURITY.md](SECURITY.md#isolated-passive-preview-assessment).
 Hosted success must be checked on the exact revision; offline evidence tests do

@@ -7,6 +7,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "passive-preview"))
 from evidence import (
     SCOPE,
+    SCOPE_INDEX,
     EvidenceError,
     history_summary,
     validate_alerts,
@@ -18,6 +19,8 @@ from evidence import (
 
 def message(host, path, body, status=200):
     return {
+        "id": str(SCOPE_INDEX.get((host, path), 999)),
+        "type": "1",
         "requestHeader": f"GET http://{host}{path} HTTP/1.1\r\nAuthorization: synthetic\r\n",
         "responseHeader": f"HTTP/1.1 {status} OK\r\n",
         "responseBody": body,
@@ -120,9 +123,52 @@ class PassiveEvidenceTest(unittest.TestCase):
         self.assertEqual(result["scope1"], "10plus")
         self.assertEqual(result["other_target"], "10plus")
         self.assertEqual(result["type_zap_user"], "10plus")
+        self.assertEqual(history_summary([{**proxied, "type": "0"}])["type_temporary"], "1")
         self.assertNotIn("secret", str(result))
         self.assertNotIn("private", str(result))
         self.assertEqual(history_summary(None), {"shape": "invalid"})
+
+    def test_temporary_parents_never_replace_or_forge_proxied_evidence(self):
+        good = [message(host, path, marker) for (host, path), marker in SCOPE.items()]
+        expected = {key: "synthetic" for key in SCOPE}
+        parent = {
+            "id": "100",
+            "type": "0",
+            "requestHeader": "GET http://127.0.0.1:3000/nl HTTP/1.1",
+        }
+        self.assertEqual(validate_messages([parent, *good], expected), 3)
+        anonymous = [
+            {
+                **item,
+                "requestHeader": item["requestHeader"].split("\r\n")[0] + "\r\n",
+                "responseHeader": "HTTP/1.1 401",
+            }
+            for item in good
+        ]
+        validate_anonymous([parent, *anonymous])
+        with self.assertRaises(EvidenceError):
+            validate_messages([parent, *anonymous], expected)
+        with self.assertRaises(EvidenceError):
+            validate_anonymous([parent])
+        for history in (
+            [parent],
+            [parent, *good[:-1]],
+            [parent, *good, good[0]],
+            [{**good[0], "type": "0"}, *good[1:]],
+            [{**parent, "type": "2"}, *good],
+            [{**parent, "type": "3"}, *good],
+            [{**parent, "type": "14"}, *good],
+            [{**parent, "type": "99"}, *good],
+            [{**parent, "requestHeader": "GET http://external.invalid/ HTTP/1.1"}, *good],
+            [
+                *good,
+                {**good[0], "id": "101", "requestHeader": "GET http://other.invalid/ HTTP/1.1"},
+            ],
+        ):
+            with self.subTest(history=history), self.assertRaises(EvidenceError):
+                validate_messages(history, expected)
+        with self.assertRaises(EvidenceError):
+            validate_messages([parent] * 100, expected)
 
     def test_rules_must_be_enabled_and_not_weakened(self):
         rule = {"enabled": "true", "alertThreshold": "DEFAULT"}

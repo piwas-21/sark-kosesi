@@ -84,6 +84,8 @@ def reject_history(messages, expected_auth):
 
 
 def reset():
+    if zap("/JSON/core/view/mode/").get("mode") != "safe":
+        raise ValueError("Safe mode not confirmed")
     if zap("/JSON/core/action/newSession/?name=&overwrite=true").get("Result") != "OK":
         raise ValueError("Scanner session reset failed")
     if history() != [] or alerts() != []:
@@ -118,6 +120,10 @@ def main():
             if time.monotonic() >= deadline:
                 raise ValueError("Scanner did not start") from None
             time.sleep(0.5)
+    if zap("/JSON/core/action/setMode/?mode=safe").get("Result") != "OK":
+        raise ValueError("Cannot select safe mode")
+    if zap("/JSON/core/view/mode/").get("mode") != "safe":
+        raise ValueError("Safe mode not confirmed")
     if zap("/JSON/pscan/action/setEnabled/?enabled=true").get("Result") != "OK":
         raise ValueError("Cannot enable passive scanning")
     if zap("/JSON/pscan/action/enableAllScanners/").get("Result") != "OK":

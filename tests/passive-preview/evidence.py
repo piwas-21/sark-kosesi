@@ -25,6 +25,8 @@ FAILURES = {
     "authorization",
     "missing_scope",
     "request_status",
+    "history_source",
+    "history_id",
 }
 
 
@@ -91,6 +93,7 @@ def history_summary(messages):
             "other_target",
             "malformed_target",
             "type_proxied",
+            "type_temporary",
             "type_zap_user",
             "type_other",
             "status_401",
@@ -106,7 +109,11 @@ def history_summary(messages):
             continue
         kind = item.get("type")
         kind = kind if isinstance(kind, str) else ""
-        counts[{"1": "type_proxied", "15": "type_zap_user"}.get(kind, "type_other")] += 1
+        counts[
+            {"0": "type_temporary", "1": "type_proxied", "15": "type_zap_user"}.get(
+                kind, "type_other"
+            )
+        ] += 1
         try:
             key, scope, status, _ = message_parts(item, set())
             counts[f"scope{scope}"] += 1
@@ -120,10 +127,60 @@ def history_summary(messages):
     }
 
 
-def validate_messages(messages, expected_auth):
-    """Require exact authenticated responses in scanner history, not client-side claims."""
+def proxied_messages(messages):
+    """Permit ZAP's temporary site-tree parents, never use them as scan evidence."""
     if not isinstance(messages, list):
         raise EvidenceError("history_type")
+    # Core API pagination is capped at 100; an exact cap could hide further records.
+    if len(messages) >= 100:
+        raise EvidenceError("history_count")
+    proxied, ids = [], set()
+    for message in messages:
+        if not isinstance(message, dict):
+            raise EvidenceError("message_type")
+        identity = message.get("id")
+        if (
+            not isinstance(identity, str)
+            or not identity.isascii()
+            or not identity.isdigit()
+            or identity in ids
+        ):
+            raise EvidenceError("history_id")
+        ids.add(identity)
+        kind = message.get("type")
+        if kind == "1":  # HistoryReference.TYPE_PROXIED
+            proxied.append(message)
+            continue
+        if kind != "0":  # Only TYPE_TEMPORARY site-tree parents are permitted.
+            raise EvidenceError("history_source")
+        raw = message.get("requestHeader")
+        if not isinstance(raw, str) or not raw.splitlines():
+            raise EvidenceError("history_source")
+        parts = raw.splitlines()[0].split()
+        if len(parts) != 3 or parts[0] != "GET" or parts[2] != "HTTP/1.1":
+            raise EvidenceError("history_source")
+        try:
+            uri = urlsplit(parts[1])
+        except ValueError:
+            raise EvidenceError("history_source") from None
+        if uri.scheme != "http" or uri.query or uri.fragment:
+            raise EvidenceError("history_source")
+        parent = uri.path.rstrip("/")
+        if not any(
+            uri.netloc == host
+            and (
+                path.partition("?")[0].startswith(parent + "/")
+                or ("?" in path and parent == path.partition("?")[0])
+            )
+            for host, path in SCOPE
+        ):
+            raise EvidenceError("history_source")
+    return proxied
+
+
+def validate_messages(messages, expected_auth):
+    """Require exact authenticated responses in scanner history, not client-side claims."""
+    messages = proxied_messages(messages)
     seen = set()
     for message in messages:
         key, scope, status, auth = message_parts(message, seen)
@@ -140,8 +197,7 @@ def validate_messages(messages, expected_auth):
 
 
 def validate_anonymous(messages):
-    if not isinstance(messages, list):
-        raise EvidenceError("history_type")
+    messages = proxied_messages(messages)
     if len(messages) != len(SCOPE):
         raise EvidenceError("history_count")
     seen = set()
