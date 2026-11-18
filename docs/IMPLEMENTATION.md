@@ -605,6 +605,32 @@ the same transaction validates the proof and applies the owned change. A hidden
 SKU remains cancellable. The route is disabled unless explicitly enabled in test
 mode and does not provide public browser access or send notifications.
 
+## P4 staff identity and operator access
+
+Staff authority currently starts at the persisted-session consumer described above;
+installation has no staff authority, and no staff enrollment, verified MFA ceremony
+or session issuer exists. The customer verification, password and session paths
+serve customer identities and do not supply staff authority. The recent-MFA guard
+consumes persisted authority; self-revocation only relinquishes the supplied
+session. Neither proves that a staff login or recovery ceremony occurred.
+
+Implement the reviewed staff bootstrap, identity and factor enrollment, admitted
+login, session issuance/rotation and capability delegation as a coherent trust
+chain. Source may land in stages; an incomplete stage must not grant authority.
+Preserve exact actor and target binding, one-use and expiry semantics,
+revocation and final clock checks through waits; record redacted audit and recovery
+evidence. A failed or uncertain operation must not create duplicate authority.
+Keep the existing session lifetime and MFA freshness constraints until an approved
+change replaces them. The detailed acceptance and negative-test contract is in
+[security](SECURITY.md#staff-identity-acceptance-boundary).
+
+The owner and security reviewer still need to decide first-administrator bootstrap,
+identity and factor verification, grant delegation, credential recovery and
+operator procedures. These decisions do not authorize a live account, grant,
+provider, secret or deployment. Complete isolated source and concurrency tests,
+independent security review, and the separately evidenced ingress, delivery and
+operator acceptance before enabling staff access.
+
 ## P4 email verification foundation
 
 Private SQLx custody issues a random challenge for a narrowly normalized mailbox
