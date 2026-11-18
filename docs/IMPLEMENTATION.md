@@ -545,6 +545,11 @@ assertion release with bounded non-terminal staff session input and closed JSON
 reports. Exact release retries retain their original receipt; they establish no
 physical unpacking or restock. Staff session issuance and physical handover remain
 separate work.
+A private recent-MFA submission records a fingerprint of bounded operator-supplied
+opaque purported handover evidence against one exact active whole packing record.
+Releases remain allowed, and authorized exact replay and inspection retain the
+historical association. This is no physical or carrier verification. Evidence
+retention, operator access, correction, real handover and delivery remain open.
 
 Trusted whole-basket reservation primitives now provide immutable manifests,
 exact fresh child bindings and aggregated component claims in one transaction.

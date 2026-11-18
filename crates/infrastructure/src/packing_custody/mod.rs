@@ -1,8 +1,8 @@
 //! Private staff packing assertions. No stock, physical shipment or provider effect.
 mod command;
 mod inspection;
-mod model;
-mod store;
+pub(crate) mod model;
+pub(crate) mod store;
 use crate::{
     shipment_planning::{self, PlanningError},
     staff_access::{SessionToken, StaffError, lock_staff},

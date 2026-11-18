@@ -791,6 +791,20 @@ lost response is recovered by the same actor and exact effect key and target.
 An order-scoped partial outbox index supports the reverse event check, including
 malformed or orphan events, without trusting their payload to select the order.
 
+A separate unseeded `handover.record` capability records a staff-confirmed SHA-256
+fingerprint of 1 byte to 1 MiB of opaque purported handover evidence. The bytes
+are not retained. Under the same attempt claim, submission requires one exact
+active whole packing record, validates its historical source and complete packing
+history, and atomically appends an immutable record and reciprocal event. The
+journal allows four different fingerprints per parent and 64 per order. An exact
+actor- and effect-bound replay requires fresh authority but survives a later
+packing release. The normal release remains available; inspection reports its
+presence alongside the original submission. Neither the fingerprint nor the
+staff assertion authenticates the source, content or physical handover, and no
+shipment, payment, stock, carrier or customer transition follows. Recording after
+release is rejected; this is a filing constraint rather than a physical conclusion.
+The private caller and database writer are trusted to hash the supplied bytes.
+
 An authenticated warehouse inspection holds the same attempt claim while it
 validates the complete packing history and immutable allocation. It reports the
 ordered, actively asserted and not asserted whole units per SKU, and bounded

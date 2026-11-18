@@ -433,6 +433,10 @@ The local/test worker exposes this inspection and confirmed assertion release
 to authorized warehouse staff through bounded non-terminal session input and
 private JSON reports. A release is not proof of unpacking or restocking. Staff
 session issuance, physical handover and operational acceptance remain open.
+A private evidence journal records bounded opaque-byte fingerprints against an
+active whole packing assertion without blocking its later release. A staff claim
+and digest do not verify carrier or physical handover. Evidence retention,
+correction, actual handover, delivery and fulfilment policies remain open.
 
 The isolated staging-config passive preview workflow is a bounded P6 rehearsal.
 Evidence must bind the exact revision, synthetic fixture, authenticated scope and
