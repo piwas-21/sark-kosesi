@@ -999,6 +999,9 @@ For the in-process opening path, test that only the new committed claimant gets
 one callback, the exact synthetic envelope authenticates, and replay, invalid
 ciphertext or a challenge consumed or expired before opening cannot emit a
 bearer. Check that the callback executes after the challenge lock is released.
+For consumption queued behind a start, observe the exact database lock wait and
+hold the fresh opening until consumption commits; a queued waiter alone does not
+prove which transaction will acquire the challenge next.
 Synthetic opening evidence does not establish message delivery.
 
 ### Private password credential custody
