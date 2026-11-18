@@ -956,6 +956,11 @@ or incomplete events with a complete transaction, and check that the source
 cannot change after early constraint evaluation. Verify that the operation does
 not change reserved amounts, stock or payment state. Proposal modules use the
 existing 95% native line and branch thresholds for critical financial code.
+For exact inspection, exercise a different authorized staff account, missing
+authority, invalid and absent identifiers, detached and restored events, damaged
+attempt identifiers, changed or missing rows after a payment-claim wait, and MFA
+expiry during that wait. Verify unchanged stock and proposal events in healthy
+reads and ensure diagnostic formatting redacts the allocation and reason.
 
 ### Private paid-parent reversal totals
 
