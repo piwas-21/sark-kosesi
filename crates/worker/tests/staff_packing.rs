@@ -197,17 +197,14 @@ async fn packing_cli_returns_exact_assertions_only_to_warehouse_staff(pool: PgPo
         payload.path(),
         "--confirm",
     ];
+    let database = pool.connect_options().to_url_lossy().to_string();
     let before_record = footprint(&pool).await;
     for invalid in [
         json!({"units":[{"sku":"NOT-ORDERED","units":1}],"packages":[[{"code":"SEAT-COVER","quantity":2},{"code":"SEAT-FOAM","quantity":2}]]}),
         json!({"units":[{"sku":"SET-FILLED","units":1}],"packages":[[{"code":"SEAT-COVER","quantity":1},{"code":"SEAT-FOAM","quantity":2}]]}),
     ] {
         payload.write(&invalid);
-        let rejected = run(
-            &pool.connect_options().to_url_lossy().to_string(),
-            &record_args,
-            &packer,
-        );
+        let rejected = run(&database, &record_args, &packer);
         assert!(!rejected.status.success());
         assert!(rejected.stdout.is_empty());
         assert!(
@@ -218,7 +215,6 @@ async fn packing_cli_returns_exact_assertions_only_to_warehouse_staff(pool: PgPo
         assert_eq!(before_record, footprint(&pool).await);
     }
     payload.write(&valid);
-    let database = pool.connect_options().to_url_lossy().to_string();
     let denied = run(&database, &record_args, &observer);
     assert!(!denied.status.success());
     assert!(denied.stdout.is_empty());
