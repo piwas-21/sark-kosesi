@@ -1932,6 +1932,10 @@ holds an unseeded `cancellation.review` grant, staff session and recent MFA,
 claims the original attempt and revalidates the frozen order, dispatch and
 reciprocal event. It returns a minimal historical request digest and timestamp;
 it neither establishes current fulfilment status nor grants disposition authority.
+A private one-candidate inbox scans stored request order IDs with explicit `C`
+keyset ordering, then applies that same exact inspection and final authority
+fence. The live cursor requires refresh for earlier inserts. Discovery scans
+request records, not orphan events or disposition state.
 
 Seller policy is a required trusted server argument with explicit identity, tax
 registration choice, document versions/digests, locale, evidence and validity.
