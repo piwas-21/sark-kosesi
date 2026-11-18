@@ -275,7 +275,9 @@ The catalogue keeps its rights-checked rendition route. Verify these boundaries
 in the exported image before deployment.
 
 The isolated synthetic quote workload supports the P6 API latency and effect
-checks. Exact container and staging performance, recovery, merchant facts,
+checks. The private production-build lab includes the planner route and checks
+its hydrated fit/conflict interaction against a static-shell negative control.
+Exact container and staging performance, recovery, merchant facts,
 provider and fulfilment acceptance remain production release work.
 
 The optional Linux decoder separates image processing from the API and
