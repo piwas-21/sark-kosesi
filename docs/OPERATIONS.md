@@ -603,7 +603,8 @@ after every negative. Certificate keys, credentials and raw diagnostics stay in
 runner scratch or container tmpfs; the retained artifact contains only fixed
 status lines, image and public-certificate hashes, evidence checksums, and
 bounded public prerequisite build logs and statuses. TLS raw diagnostics are
-not included.
+not included. The lab publishes the evidence directory after writing all
+checksums, so an incomplete publication cannot report success.
 
 This lab tests the named synthetic connection only. It does not establish a
 production PKI, certificate renewal, staging endpoint behavior, provider or

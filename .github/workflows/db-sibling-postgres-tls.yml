@@ -27,6 +27,7 @@ jobs:
         run: |
           bash ops/db-sibling-postgres-tls/test_diagnostics.sh
           bash ops/db-sibling-postgres-tls/test_prerequisite.sh
+          bash ops/db-sibling-postgres-tls/test_publish.sh
       - name: Run synthetic isolated TLS checks
         env:
           TLS_REVISION: ${{ github.event.pull_request.head.sha || github.sha }}

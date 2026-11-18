@@ -9,22 +9,25 @@ fail() { printf 'sibling TLS lab: %s\n' "$1" >&2; exit 1; }
 unset DOCKER_CONTEXT DOCKER_TLS_VERIFY DOCKER_CERT_PATH
 export DOCKER_HOST=unix:///var/run/docker.sock
 umask 077
-out="$RUNNER_TEMP/db-sibling-tls-evidence"
+published="$RUNNER_TEMP/db-sibling-tls-evidence"
 scratch="$RUNNER_TEMP/db-sibling-tls-scratch"
-mkdir "$out" "$scratch" "$scratch/docker-config" "$scratch/private"
+out="$scratch/evidence"
+mkdir "$scratch" "$scratch/docker-config" "$scratch/private" "$out"
 export DOCKER_CONFIG="$scratch/docker-config"
 private="$scratch/private"
 container_id=''
 stage=composition
+# shellcheck source=ops/db-sibling-postgres-tls/publish.sh
+source ops/db-sibling-postgres-tls/publish.sh
 cleanup() {
   rc=$?
+  trap - EXIT
   clean=success
   if [[ -n "$container_id" ]] && ! docker rm -f -v "$container_id" >/dev/null 2>&1; then rc=1; clean=failed; fi
   if ! rm -rf "$private"; then rc=1; clean=failed; fi
   if [[ -e "$private" ]]; then rc=1; clean=failed; fi
   if [[ "$rc" == 0 ]]; then printf 'stage=complete outcome=success cleanup=%s\n' "$clean" > "$out/status.txt"; else printf 'stage=%s outcome=failed exit=%s cleanup=%s\n' "$stage" "$rc" "$clean" > "$out/status.txt"; fi
-  (cd "$out" && find . -type f ! -name SHA256SUMS -print0 | LC_ALL=C sort -z | xargs -0 sha256sum > "$scratch/SHA256SUMS")
-  mv "$scratch/SHA256SUMS" "$out/SHA256SUMS"
+  publish_tls_evidence "$out" "$published" || rc=1
   exit "$rc"
 }
 trap cleanup EXIT
