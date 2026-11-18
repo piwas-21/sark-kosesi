@@ -7,7 +7,8 @@ from pathlib import Path
 from unittest.mock import patch
 
 SPEC = importlib.util.spec_from_file_location(
-    "advisory_check", Path(__file__).with_name("check.py")
+    "advisory_check",
+    Path(__file__).resolve().parents[2] / "ops/db-source-advisory-evidence/check.py",
 )
 check = importlib.util.module_from_spec(SPEC)
 SPEC.loader.exec_module(check)
