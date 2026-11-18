@@ -1,4 +1,8 @@
-import { describe, expect, it } from "vitest";
+import {
+  describe,
+  expect,
+  it,
+} from "../../../tests/application/unit-runtime.mjs";
 import { assessRoomFit } from "../../room-fit/src/index";
 import {
   decodeRoomDraft,

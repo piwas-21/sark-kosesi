@@ -324,7 +324,7 @@ def check_coverage_commands(scripts):
     expected = {
         "test:coverage:stable": "mkdir -p coverage && python3 scripts/coverage_fsync.py stable",
         "test:coverage:nightly": "mkdir -p coverage && python3 scripts/coverage_fsync.py nightly",
-        "test:coverage:typescript": "mkdir -p coverage && vitest run --coverage",
+        "test:coverage:typescript": "mkdir -p coverage && node tests/application/run-unit.mjs --coverage",
         "test:coverage": "npm run test:coverage:stable && npm run test:coverage:nightly && npm run test:coverage:typescript && python3 scripts/check_coverage_reports.py",
     }
     if any(scripts.get(name) != command for name, command in expected.items()):
@@ -426,7 +426,7 @@ class ApplicationWorkflow(unittest.TestCase):
                 bin_dir = root / "bin"
                 bin_dir.mkdir()
                 # Stand-ins reject missing output directories before any actual build or test.
-                for command in ("cargo", "python3", "vitest"):
+                for command in ("cargo", "python3", "node"):
                     executable = bin_dir / command
                     executable.write_text("#!/bin/sh\ntest -d coverage || exit 47\n")
                     executable.chmod(0o755)

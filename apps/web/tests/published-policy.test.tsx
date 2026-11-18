@@ -1,4 +1,4 @@
-import { it, expect } from "vitest";
+import { it, expect } from "../../../tests/application/unit-runtime.mjs";
 import {
   decodePublishedProduct,
   decodePublishedCatalogue,
