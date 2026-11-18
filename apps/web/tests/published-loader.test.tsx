@@ -1,5 +1,4 @@
-import { it, expect, vi } from "vitest";
-vi.mock("server-only", () => ({}));
+import { it, expect, vi } from "../../../tests/application/unit-runtime.mjs";
 import {
   publishedPage,
   publishedProduct,

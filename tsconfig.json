@@ -1,7 +1,7 @@
 {
   "extends": "./apps/web/tsconfig.json",
   "compilerOptions": {
-    "types": ["node", "vitest/globals", "@testing-library/jest-dom/vitest"]
+    "types": ["node"]
   },
   "include": [
     "apps/web/src/**/*.ts",
@@ -9,7 +9,7 @@
     "apps/web/tests/**/*.tsx",
     "packages/**/*.ts",
     "packages/**/*.tsx",
-    "tests/application/setup.ts",
-    "vitest.config.mts"
+    "tests/application/unit-bootstrap.mts",
+    "tests/application/unit-runtime.d.mts"
   ]
 }

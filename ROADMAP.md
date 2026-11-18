@@ -158,6 +158,8 @@ shipping amounts and binds the current received recognition, observation waterma
 and original payment under its frozen test profile. Exact retries return the
 historical proposal under current staff authority. Operator recovery, provider
 reversal reconciliation, reservation disposition and dispatch custody remain open.
+Private exact proposal inspection now validates historical source and event custody
+under current finance authority without contacting the provider or moving funds.
 Private promotion drafts and independent exact-revision reviews now persist
 canonical eligibility/discount terms and explicit lifetime budget/redemption limits.
 New drafts and withdrawal block older approvals for new orders. Private guest

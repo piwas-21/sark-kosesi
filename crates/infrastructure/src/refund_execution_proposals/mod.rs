@@ -9,7 +9,9 @@ use commerce_application::{
     staff_access::Capability,
 };
 use sqlx::PgPool;
+mod inspection;
 mod store;
+pub use inspection::{ProposalInspection, inspect};
 
 pub struct ProposalRequest<'a> {
     pub order_id: &'a str,

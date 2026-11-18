@@ -1,5 +1,9 @@
 import { fireEvent, render, screen, within } from "@testing-library/react";
-import { describe, expect, it } from "vitest";
+import {
+  describe,
+  expect,
+  it,
+} from "../../../tests/application/unit-runtime.mjs";
 import { plannerCopy } from "../src/components/room-planner/copy";
 import { decimal } from "../src/components/room-planner/draft";
 import { RoomPlanner } from "../src/components/room-planner/planner";
