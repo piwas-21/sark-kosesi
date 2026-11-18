@@ -131,9 +131,10 @@ function branch details by location and require both to match every LCOV branch
 identity and hit count. These details must account for at least the native
 summary's total and covered directions. Native coverage thresholds use the
 original summaries.
-If a coverage producer fails after writing reports, CI preserves available raw
-reports under separate revision-bound diagnostics artifacts. Sonar only consumes
-the coverage artifact published after successful aggregate validation.
+If Clippy or a coverage producer fails after writing reports, CI preserves
+available raw reports under separate revision-bound diagnostics artifacts.
+Sonar only consumes the coverage artifact published after successful aggregate
+validation.
 The native validator requires every owned source and populated counters, with
 85% lines / 80% instrumented branches per package and 95% for money, inventory
 domain/stock/hold adapter modules and preview authorization. The match-only hold
