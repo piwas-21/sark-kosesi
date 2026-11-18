@@ -317,7 +317,10 @@ full workload bounds and operational acceptance remain separate.
    capability and recent MFA, revalidates the historical request and dispatch
    under the original attempt claim, and grants no disposition authority. A
    private one-candidate cursor discovers recorded requests under the same grant;
-   refresh is needed for insertions preceding the cursor.
+   refresh is needed for insertions preceding the cursor. A separate exact-order
+   view holds both cancellation-review and warehouse grants, claims the same
+   original attempt and revalidates packing assertions. Missing source remains
+   unavailable rather than proof of an empty or unshipped order.
    Finish post-dispatch disposition, redemption disposition, lifecycle/payment
    transitions and retention before public checkout. Seller and legal facts
    remain required trusted configuration.

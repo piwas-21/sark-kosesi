@@ -1745,3 +1745,410 @@ async fn cancellation_inbox_fences_authority_after_real_attempt_wait(pool: PgPoo
             .is_some()
     );
 }
+
+#[sqlx::test(migrator = "MIGRATOR")]
+async fn combined_cancellation_and_packing_requires_both_grants_and_validates_each_source(
+    pool: PgPool,
+) {
+    use commerce_domain::{
+        Currency,
+        payment_attempts::{
+            PaymentStatus, ProviderPayment,
+            observations::{ObservationIntent, ObservationSnapshot},
+        },
+    };
+    use commerce_infrastructure::{
+        checkout_cancellations::{
+            InspectionError, PackingEvidence, inspect_cancellation_packing as inspect,
+        },
+        order_stock::settle,
+        packing_custody::{self, Action, Component, Request, Units},
+        payment_attempts::{identities::resolve, recognition::recognize},
+    };
+    let (store, time, session, csrf, order) = payment::accepted(&pool).await;
+    let key = GuestCredential::from_session(&session).expect("guest");
+    let reviewer = inspection_staff(&pool, "combined-reviewer", 81, "cancellation.review").await;
+    let warehouse = inspection_staff(&pool, "combined-warehouse", 82, "warehouse.manage").await;
+    let id = &order.identity.id;
+    assert!(matches!(
+        inspect(&pool, &reviewer, time.as_ref(), id).await,
+        Err(InspectionError::Denied)
+    ));
+    assert!(matches!(
+        inspect(&pool, &warehouse, time.as_ref(), id).await,
+        Err(InspectionError::Denied)
+    ));
+    pool.execute("INSERT INTO staff_capabilities VALUES('combined-reviewer','warehouse.manage')")
+        .await
+        .expect("second isolated grant");
+    assert_eq!(
+        inspect(&pool, &reviewer, time.as_ref(), id)
+            .await
+            .expect("no request"),
+        None
+    );
+    let prepared = prepare_attempt(
+        &store,
+        &key,
+        &csrf,
+        "combined-pay",
+        &payment::intent(&order),
+        &payment::config(),
+    )
+    .await
+    .expect("prepared");
+    let frozen = prepared.frozen.snapshot();
+    let attempt = &frozen.binding.id;
+    let ids = payment::Ids(AtomicU64::new(200_000));
+    start_dispatch(&pool, time.as_ref(), &ids, attempt, &payment::config())
+        .await
+        .expect("dispatch");
+    // The empty view and a concurrent pending request serialize on the attempt.
+    let mut blocker = pool.begin().await.expect("attempt blocker");
+    sqlx::query("SELECT id FROM payment_attempts WHERE id=$1 FOR UPDATE")
+        .bind(attempt)
+        .execute(&mut *blocker)
+        .await
+        .expect("hold attempt");
+    let view = inspect(&pool, &reviewer, time.as_ref(), id);
+    let request = async {
+        tokio::time::timeout(std::time::Duration::from_millis(900), async {
+            loop {
+                let waiting: bool = sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM pg_stat_activity WHERE datname=current_database() AND wait_event_type='Lock' AND query LIKE '%SELECT id FROM payment_attempts WHERE id=$1 FOR UPDATE%')").fetch_one(&pool).await.expect("view wait");
+                if waiting { break; }
+                tokio::time::sleep(std::time::Duration::from_millis(5)).await;
+            }
+        }).await.expect("view queued first");
+        request_after_dispatch(&store, &key, &csrf, "combined-request", id)
+            .await
+            .expect("pending intent")
+    };
+    let release = async {
+        tokio::time::timeout(std::time::Duration::from_millis(900), async {
+            loop {
+                let waiting: bool = sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM pg_stat_activity WHERE datname=current_database() AND wait_event_type='Lock' AND query LIKE '%pending cancellation attempt%')").fetch_one(&pool).await.expect("request wait");
+                if waiting { break; }
+                tokio::time::sleep(std::time::Duration::from_millis(5)).await;
+            }
+        }).await.expect("request queued after view");
+        blocker.rollback().await.expect("release attempt");
+    };
+    let (prior_view, _, ()) = tokio::join!(view, request, release);
+    assert_eq!(prior_view.expect("serialized absent view"), None);
+    let before = footprint(&pool).await;
+    let pending = inspect(&pool, &reviewer, time.as_ref(), id)
+        .await
+        .expect("inspection")
+        .expect("request");
+    assert_eq!(pending.request.order_id, *id);
+    assert_eq!(pending.request.requested_at, 1500);
+    assert_eq!(pending.packing, PackingEvidence::Unavailable);
+    assert_eq!(before, footprint(&pool).await);
+
+    // Sole synthetic provider observation in the disposable fixture, with native
+    // constraints and real resolution, recognition, allocation and packing.
+    let binding = &frozen.binding;
+    let observation = ObservationSnapshot {
+        schema_version: 1,
+        id: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa".into(),
+        attempt_id: attempt.clone(),
+        effect_key: "combined-paid-observation".into(),
+        revision: 1,
+        recorded_at: 1500,
+        intent: ObservationIntent {
+            payment: ProviderPayment {
+                resource: "payment".into(),
+                id: "tr_SyntheticCombinedPayment".into(),
+                profile_id: binding.profile.id.clone(),
+                mode: binding.profile.mode,
+                currency: Currency::EUR,
+                amount_minor: binding.amount_minor,
+                metadata_schema_version: 1,
+                order_id: id.clone(),
+                attempt_id: attempt.clone(),
+                status: PaymentStatus::Paid,
+            },
+            credential_fingerprint: binding.profile.credential_fingerprint.clone(),
+        },
+    };
+    let mut tx = pool.begin().await.expect("fixture transaction");
+    sqlx::query("INSERT INTO payment_observations(id,attempt_id,effect_key,revision,recorded_at,provider_id,credential_fingerprint,status,snapshot) VALUES($1,$2,$3,1,1500,$4,$5,'paid',$6)")
+        .bind(&observation.id).bind(attempt).bind(&observation.effect_key).bind(&observation.intent.payment.id).bind(&observation.intent.credential_fingerprint)
+        .bind(serde_json::to_value(&observation).expect("synthetic observation"))
+        .execute(&mut *tx).await.expect("observation");
+    sqlx::query("INSERT INTO commerce_outbox(id,aggregate_id,kind,payload,created_at) VALUES('bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb',$1,'payment.observation_recorded.v1',$2,1500)")
+        .bind(id).bind(serde_json::json!({"schema_version":1,"order_id":id,"attempt_id":attempt,"observation_id":observation.id}))
+        .execute(&mut *tx).await.expect("observation event");
+    tx.commit().await.expect("reciprocal observation");
+    resolve(&pool, time.as_ref(), &ids, attempt, "combined-resolution")
+        .await
+        .expect("identity");
+    recognize(&pool, time.as_ref(), &ids, attempt)
+        .await
+        .expect("recognition");
+    settle(&pool, time.as_ref(), &ids, id)
+        .await
+        .expect("allocation");
+    let empty = inspect(&pool, &reviewer, time.as_ref(), id)
+        .await
+        .expect("validated empty")
+        .expect("request");
+    assert!(
+        matches!(empty.packing, PackingEvidence::Validated(ref value) if value.history.is_empty())
+    );
+    let items = [Units {
+        sku: "SET-FILLED".into(),
+        units: 1,
+    }];
+    let packages = [vec![
+        Component {
+            code: "SEAT-COVER".into(),
+            quantity: 2,
+        },
+        Component {
+            code: "SEAT-FOAM".into(),
+            quantity: 2,
+        },
+    ]];
+    let packed = packing_custody::record(
+        &pool,
+        &reviewer,
+        time.as_ref(),
+        &ids,
+        Request {
+            order_id: id,
+            effect_key: "combined-pack",
+            confirmed: true,
+            action: Action::Packed {
+                units: &items,
+                packages: &packages,
+            },
+        },
+    )
+    .await
+    .expect("packing assertion");
+    let before = footprint(&pool).await;
+    let events_before: i64 = sqlx::query_scalar("SELECT count(*) FROM commerce_outbox")
+        .fetch_one(&pool)
+        .await
+        .expect("event count");
+    let combined = inspect(&pool, &reviewer, time.as_ref(), id)
+        .await
+        .expect("combined")
+        .expect("request");
+    assert_eq!(combined.request, pending.request);
+    match combined.packing {
+        PackingEvidence::Validated(value) => {
+            assert_eq!(value.history.len(), 1);
+            assert_eq!(value.history[0].id, packed.record.id);
+            assert_eq!(
+                value
+                    .lines
+                    .iter()
+                    .map(|line| (
+                        &*line.sku,
+                        line.ordered,
+                        line.active_asserted,
+                        line.not_asserted
+                    ))
+                    .collect::<Vec<_>>(),
+                vec![("SET-FILLED", 3, 1, 2)]
+            );
+        }
+        PackingEvidence::Unavailable => panic!("validated packing must be available"),
+    }
+    assert_eq!(before, footprint(&pool).await);
+    let events_after: i64 = sqlx::query_scalar("SELECT count(*) FROM commerce_outbox")
+        .fetch_one(&pool)
+        .await
+        .expect("unchanged event count");
+    assert_eq!(events_before, events_after);
+
+    // Hold packing history after the view owns the attempt and both grant rows.
+    // A concurrent grant removal must wait until that complete view has returned.
+    let mut blocker = pool.begin().await.expect("history blocker");
+    blocker
+        .execute("LOCK TABLE packing_custody IN ACCESS EXCLUSIVE MODE")
+        .await
+        .expect("hold history");
+    let view = inspect(&pool, &reviewer, time.as_ref(), id);
+    let revoke_grant = async {
+        tokio::time::timeout(std::time::Duration::from_millis(900), async {
+            loop {
+                let waiting: bool = sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM pg_stat_activity WHERE datname=current_database() AND wait_event_type='Lock' AND query LIKE '%packing_custody_history_exact%')").fetch_one(&pool).await.expect("view wait");
+                if waiting { break; }
+                tokio::time::sleep(std::time::Duration::from_millis(5)).await;
+            }
+        }).await.expect("actual history wait");
+        sqlx::query("DELETE FROM staff_capabilities WHERE staff_id='combined-reviewer' AND capability='warehouse.manage' /* combined-grant-delete */")
+            .execute(&pool).await.expect("grant removal after view")
+    };
+    let release = async {
+        tokio::time::timeout(std::time::Duration::from_millis(900), async {
+            loop {
+                let waiting: bool = sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM pg_stat_activity WHERE datname=current_database() AND wait_event_type='Lock' AND query LIKE '%combined-grant-delete%')").fetch_one(&pool).await.expect("grant wait");
+                if waiting { break; }
+                tokio::time::sleep(std::time::Duration::from_millis(5)).await;
+            }
+        }).await.expect("grant locked until view completes");
+        blocker.rollback().await.expect("release history");
+    };
+    let (held_view, removed, ()) = tokio::join!(view, revoke_grant, release);
+    assert!(held_view.expect("held view").is_some());
+    assert_eq!(removed.rows_affected(), 1);
+    assert!(matches!(
+        inspect(&pool, &reviewer, time.as_ref(), id).await,
+        Err(InspectionError::Denied)
+    ));
+    pool.execute("INSERT INTO staff_capabilities VALUES('combined-reviewer','warehouse.manage')")
+        .await
+        .expect("restore grant");
+
+    // Time is checked again after a real wait for the original attempt claim.
+    let mut blocker = pool.begin().await.expect("attempt blocker");
+    sqlx::query("SELECT id FROM payment_attempts WHERE id=$1 FOR UPDATE")
+        .bind(attempt)
+        .execute(&mut *blocker)
+        .await
+        .expect("hold attempt");
+    let view = inspect(&pool, &reviewer, time.as_ref(), id);
+    let release = async {
+        tokio::time::timeout(std::time::Duration::from_millis(900), async {
+            loop {
+                let waiting: bool = sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM pg_stat_activity WHERE datname=current_database() AND wait_event_type='Lock' AND query LIKE '%SELECT id FROM payment_attempts WHERE id=$1 FOR UPDATE%')").fetch_one(&pool).await.expect("attempt wait");
+                if waiting { break; }
+                tokio::time::sleep(std::time::Duration::from_millis(5)).await;
+            }
+        }).await.expect("actual attempt wait");
+        time.0.store(2301, Ordering::SeqCst);
+        blocker.rollback().await.expect("release attempt");
+    };
+    let (expired, ()) = tokio::join!(view, release);
+    assert!(matches!(expired, Err(InspectionError::Denied)));
+    time.0.store(1500, Ordering::SeqCst);
+    assert!(
+        inspect(&pool, &reviewer, time.as_ref(), id)
+            .await
+            .expect("fresh authority")
+            .is_some()
+    );
+    assert_eq!(before, footprint(&pool).await);
+    pool.execute("ALTER TABLE commerce_outbox DISABLE TRIGGER USER; UPDATE commerce_outbox SET payload='{}' WHERE kind='order.packing_custody_recorded.v1'; ALTER TABLE commerce_outbox ENABLE TRIGGER USER").await.expect("damage fixture event");
+    assert!(matches!(
+        inspect(&pool, &reviewer, time.as_ref(), id).await,
+        Err(InspectionError::InvalidStoredData)
+    ));
+    pool.execute("ALTER TABLE commerce_outbox DISABLE TRIGGER USER; UPDATE commerce_outbox e SET payload=packing_custody_event(p) FROM packing_custody p WHERE p.event_id=e.id AND e.kind='order.packing_custody_recorded.v1'; ALTER TABLE commerce_outbox ENABLE TRIGGER USER").await.expect("restore fixture event");
+    assert!(
+        inspect(&pool, &reviewer, time.as_ref(), id)
+            .await
+            .expect("repaired")
+            .is_some()
+    );
+    let event: serde_json::Value = sqlx::query_scalar("SELECT to_jsonb(e) FROM commerce_outbox e WHERE e.kind='checkout.cancellation_requested.v1'").fetch_one(&pool).await.expect("pending event");
+    pool.execute("ALTER TABLE commerce_outbox DISABLE TRIGGER USER; DELETE FROM commerce_outbox WHERE kind='checkout.cancellation_requested.v1'").await.expect("detach request event");
+    assert!(matches!(
+        inspect(&pool, &reviewer, time.as_ref(), id).await,
+        Err(InspectionError::InvalidStoredData)
+    ));
+    sqlx::query(
+        "INSERT INTO commerce_outbox SELECT (jsonb_populate_record(NULL::commerce_outbox,$1)).*",
+    )
+    .bind(&event)
+    .execute(&pool)
+    .await
+    .expect("restore request event");
+    pool.execute("ALTER TABLE commerce_outbox ENABLE TRIGGER USER")
+        .await
+        .expect("restore guard");
+    assert!(
+        inspect(&pool, &reviewer, time.as_ref(), id)
+            .await
+            .expect("restored request")
+            .is_some()
+    );
+
+    // A competing real packing write cannot enter between the two evidence reads.
+    let mut blocker = pool.begin().await.expect("hold packing history");
+    blocker
+        .execute("LOCK TABLE packing_custody IN ACCESS EXCLUSIVE MODE")
+        .await
+        .expect("history lock");
+    let view = inspect(&pool, &reviewer, time.as_ref(), id);
+    let write = async {
+        tokio::time::timeout(std::time::Duration::from_millis(900), async {
+            loop {
+                let waiting: bool = sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM pg_stat_activity WHERE datname=current_database() AND wait_event_type='Lock' AND query LIKE '%packing_custody_history_exact%')").fetch_one(&pool).await.expect("view wait");
+                if waiting { break; }
+                tokio::time::sleep(std::time::Duration::from_millis(5)).await;
+            }
+        }).await.expect("view owns original attempt");
+        packing_custody::record(
+            &pool,
+            &reviewer,
+            time.as_ref(),
+            &ids,
+            Request {
+                order_id: id,
+                effect_key: "combined-second-pack",
+                confirmed: true,
+                action: Action::Packed {
+                    units: &items,
+                    packages: &packages,
+                },
+            },
+        )
+        .await
+        .expect("subsequent packing assertion")
+    };
+    let release = async {
+        tokio::time::timeout(std::time::Duration::from_millis(900), async {
+            loop {
+                let waiting: bool = sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM pg_stat_activity WHERE datname=current_database() AND wait_event_type='Lock' AND query LIKE '%SELECT id FROM payment_attempts WHERE id=$1 FOR UPDATE%')").fetch_one(&pool).await.expect("packing wait");
+                if waiting { break; }
+                tokio::time::sleep(std::time::Duration::from_millis(5)).await;
+            }
+        }).await.expect("writer waits on attempt");
+        blocker.rollback().await.expect("release history");
+    };
+    let (snapshot, next, ()) = tokio::join!(view, write, release);
+    assert!(!next.replayed);
+    assert!(
+        matches!(snapshot.expect("snapshot").expect("request").packing, PackingEvidence::Validated(value) if value.history.len()==1)
+    );
+    assert!(
+        matches!(inspect(&pool, &reviewer, time.as_ref(), id).await.expect("later view").expect("request").packing, PackingEvidence::Validated(value) if value.history.len()==2)
+    );
+    packing_custody::record(
+        &pool,
+        &reviewer,
+        time.as_ref(),
+        &ids,
+        Request {
+            order_id: id,
+            effect_key: "combined-release",
+            confirmed: true,
+            action: Action::Released {
+                target_id: &packed.record.id,
+            },
+        },
+    )
+    .await
+    .expect("release assertion");
+    let after_release = inspect(&pool, &reviewer, time.as_ref(), id)
+        .await
+        .expect("released view")
+        .expect("request");
+    assert!(
+        matches!(after_release.packing, PackingEvidence::Validated(value) if value.history.len()==3 && value.lines[0].active_asserted==1 && value.lines[0].not_asserted==2)
+    );
+    sqlx::query("UPDATE staff_sessions SET revoked_at=1500 WHERE token_hash=$1")
+        .bind(reviewer.digest().as_slice())
+        .execute(&pool)
+        .await
+        .expect("revoke");
+    assert!(matches!(
+        inspect(&pool, &reviewer, time.as_ref(), id).await,
+        Err(InspectionError::Denied)
+    ));
+}

@@ -382,7 +382,11 @@ result grants no disposition, provider, financial, stock or packing authority.
 The same held staff authority protects a one-candidate live inbox over stored
 request records; every candidate receives the exact historical validation and
 final time fence. Refresh to include earlier inserts. The scan is not a complete
-orphan-event audit and does not report disposition or fulfilment state.
+orphan-event audit and does not report disposition or fulfilment state. A separate
+exact-order evidence view holds both the review and warehouse grants under one
+staff session and the original attempt through both validations. Missing packing
+source remains unavailable, and damaged source fails closed; the returned
+assertions grant no hold, dispatch or disposition authority.
 
 Private cancellation uses the same guest and account authority as the order.
 Cancellation and admission share a basket claim; cancellation and dispatch share

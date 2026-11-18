@@ -429,6 +429,9 @@ contents or dispatch authority. Complete shipment handover and delivery custody,
 reversal/refund disposition and physical fulfilment evidence separately.
 Authenticated warehouse inspection can read the bounded validated assertion
 history and per-SKU recorded occupancy without granting shipment authority.
+A private exact-order cancellation review now joins the pending request to
+recorded packing assertions under one attempt claim and both existing staff
+grants. Missing source evidence is reported as unavailable.
 The local/test worker exposes this inspection and confirmed assertion release
 to authorized warehouse staff through bounded non-terminal session input and
 private JSON reports. A release is not proof of unpacking or restocking. Staff

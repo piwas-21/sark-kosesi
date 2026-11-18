@@ -965,7 +965,13 @@ actual attempt-lock wait, and include account-bound and legacy-start controls.
 Inspection does not change the underlying state or prove customer or provider
 acceptance. The one-candidate inbox exercises empty, cursor traversal, inserts
 behind a cursor, damaged candidate custody and an actual attempt wait with MFA
-expiry; no scan claims complete orphan-event discovery.
+expiry; no scan claims complete orphan-event discovery. For the combined exact-order evidence view, require both
+grants and recent MFA; test a missing packing source separately from a validated
+empty history. Revalidate recorded and released packing, damaged and repaired
+request or packing events, and an actual attempt wait with expiry. Hold the view
+at the packing reader and verify grant removal and a competing packing write wait
+until its snapshot completes. Confirm inspection produces no financial, stock,
+packing, provider or event effects.
 
 ### Private refund reservations
 

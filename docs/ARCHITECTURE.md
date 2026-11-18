@@ -1938,7 +1938,14 @@ it neither establishes current fulfilment status nor grants disposition authorit
 A private one-candidate inbox scans stored request order IDs with explicit `C`
 keyset ordering, then applies that same exact inspection and final authority
 fence. The live cursor requires refresh for earlier inserts. Discovery scans
-request records, not orphan events or disposition state.
+request records, not orphan events or disposition state. A separate exact-order
+view holds both existing `cancellation.review` and `warehouse.manage` grants,
+the staff account and session, then the original attempt claim through both
+historical request and complete packing-source validation. Both grants are
+claimed in that order, and authority and time are checked again after waits.
+Missing usable packing source is explicitly unavailable; corrupt custody fails
+closed. The validated result contains only the recorded assertions, not physical
+possession, unshipped quantities, a hold or a disposition.
 
 Seller policy is a required trusted server argument with explicit identity, tax
 registration choice, document versions/digests, locale, evidence and validity.
