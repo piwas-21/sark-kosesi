@@ -16,5 +16,7 @@ Its [Release file](https://snapshot.debian.org/archive/debian/20261118T000000Z/d
 records index SHA-256 `7778d3e3f303b7ddb8ce0fe7c8d57473a076c6bf2e8f241f75421d2396352498`,
 which matched the streamed index during preparation. APT verifies the snapshot
 with the pinned root's Debian keyring. Expiration checking is disabled only
-for the dated snapshot; package and index signatures remain required. All
-installed package changes are checked against the explicit three-package lock.
+for the dated snapshot. APT requires a valid Release or InRelease signature
+and verifies index and package checksums through that signed metadata; it does
+not verify individual package signatures. All installed package changes are
+checked against the explicit three-package lock.
