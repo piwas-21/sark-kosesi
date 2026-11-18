@@ -101,6 +101,40 @@ class RestoreRehearsalSafety(unittest.TestCase):
         self.assertEqual(output.getvalue(), "restore_fixture: invocation_failed_after_preflight\n")
         self.assertNotIn(secret, str(error.exception) + output.getvalue())
 
+    def test_fixture_phase_timeouts_and_launch_errors_are_redacted(self):
+        from types import SimpleNamespace
+
+        secret = "synthetic-database-credential"
+        built = SimpleNamespace(returncode=0)
+        for preflight, kind, expected in (
+            (True, "timeout", "build_preflight_timeout"),
+            (True, "launch", "build_preflight_launch"),
+            (False, "timeout", "invocation_timeout_after_preflight"),
+            (False, "launch", "invocation_launch_after_preflight"),
+        ):
+            with self.subTest(preflight=preflight, kind=kind):
+                problem = (
+                    subprocess.TimeoutExpired(secret, 1, output=secret, stderr=secret)
+                    if kind == "timeout"
+                    else OSError(secret)
+                )
+                side_effect = [problem] if preflight else [built, problem]
+                output = io.StringIO()
+                expected_type = subprocess.TimeoutExpired if kind == "timeout" else OSError
+                with patch("rehearse_restore.subprocess.run", side_effect=side_effect) as run:
+                    with (
+                        contextlib.redirect_stderr(output),
+                        self.assertRaises(expected_type) as error,
+                    ):
+                        run_fixture({"SECRET": secret}, "seed_synthetic")
+                self.assertEqual(run.call_count, 1 if preflight else 2)
+                self.assertEqual(output.getvalue(), f"restore_fixture: {expected}\n")
+                self.assertNotIn(secret, output.getvalue() + str(error.exception))
+                self.assertIsNone(error.exception.__context__)
+                if kind == "timeout":
+                    self.assertIsNone(error.exception.stdout)
+                    self.assertIsNone(error.exception.stderr)
+
     def test_real_fixture_process_keeps_both_streams_private(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)

@@ -877,8 +877,8 @@ the overall workflow succeeds only when both checks succeed. The restore status
 artifact reports fixed stage/invariant codes, elapsed time and cleanup outcome;
 it does not include database credentials, exception text or process output.
 A separate Cargo `--no-run` preflight checks whether the selected library test
-target builds. Its stdout and stderr are discarded; a fixed build-preflight or
-later-invocation failure code appears in the job log. A failed preflight does not
+target builds. Its stdout and stderr are discarded; fixed build-preflight or
+later-invocation failure, timeout and launch codes appear in the job log. A failed preflight does not
 identify the cause, and a later invocation failure does not prove the fixture
 started. The exact fixture and its success checks remain required. The retained
 restore status continues to use the existing fixed stage and operation code.

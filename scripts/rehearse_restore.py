@@ -234,6 +234,27 @@ def require_quiescent_source(snapshot):
         raise OtherSourceClients("Synthetic source has another database client")
 
 
+def _run_fixture_phase(command, env, *, preflight):
+    options = (
+        {"stdout": subprocess.DEVNULL, "stderr": subprocess.DEVNULL}
+        if preflight
+        else {"capture_output": True}
+    )
+    try:
+        return subprocess.run(command, cwd=ROOT, env=env, timeout=1200, check=False, **options)
+    except subprocess.TimeoutExpired:
+        failure = "timeout"
+    except OSError:
+        failure = "launch"
+    # Raise after leaving the exception handler so raw captured output and
+    # operating-system exception details cannot be chained to the fixed result.
+    code = f"build_preflight_{failure}" if preflight else f"invocation_{failure}_after_preflight"
+    print(f"restore_fixture: {code}", file=sys.stderr)
+    if failure == "timeout":
+        raise subprocess.TimeoutExpired("synthetic restore fixture", 1200)
+    raise OSError("Synthetic restore fixture launch failed")
+
+
 def run_fixture(env, name):
     if name not in (
         "seed_synthetic",
@@ -244,20 +265,16 @@ def run_fixture(env, name):
         raise ValueError("Unexpected synthetic fixture")
     # A separate build preflight yields a fixed phase signal without publishing
     # Cargo diagnostics or treating a later invocation failure as a test failure.
-    build = subprocess.run(
+    build = _run_fixture_phase(
         ["cargo", "test", "--locked", "-p", "commerce-infrastructure", "--lib", "--no-run"],
-        cwd=ROOT,
-        env=env,
-        stdout=subprocess.DEVNULL,
-        stderr=subprocess.DEVNULL,
-        timeout=1200,
-        check=False,
+        env,
+        preflight=True,
     )
     if build.returncode:
         print("restore_fixture: build_preflight_failed", file=sys.stderr)
         raise RuntimeError("Synthetic restore fixture build preflight failed")
     output_options = ["--nocapture"] if name == "verify_stock_custody" else []
-    result = subprocess.run(
+    result = _run_fixture_phase(
         [
             "cargo",
             "test",
@@ -271,11 +288,8 @@ def run_fixture(env, name):
             "--exact",
             *output_options,
         ],
-        cwd=ROOT,
-        env=env,
-        capture_output=True,
-        timeout=1200,
-        check=False,
+        env,
+        preflight=False,
     )
     if result.returncode or not re.search(rb"test result: ok\. 1 passed; 0 failed;", result.stdout):
         print("restore_fixture: invocation_failed_after_preflight", file=sys.stderr)
