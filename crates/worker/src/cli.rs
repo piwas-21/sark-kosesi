@@ -1,5 +1,5 @@
 //! Strict worker command and batch configuration parsing.
-use crate::{reversal_items, reversal_pages};
+use crate::{paid_parent, reversal_items, reversal_pages};
 use commerce_infrastructure::payment_attempts::reversal_item_supervision::inbox::Cursor;
 
 #[derive(PartialEq, Eq)]
