@@ -71,6 +71,40 @@ async fn pending_request_requires_prior_dispatch_and_exact_owner_replays_without
     pool.execute("ALTER TABLE commerce_outbox DISABLE TRIGGER USER")
         .await
         .expect("isolate recovery damage");
+    // Bypass this disposable database's constraints to verify the reader rejects
+    // a malformed recovery identifier and timestamp even with its payload intact.
+    pool.execute("ALTER TABLE commerce_outbox DROP CONSTRAINT commerce_outbox_id_check")
+        .await
+        .expect("isolate recovery identifier damage");
+    pool.execute(
+        "UPDATE commerce_outbox SET id='bad' WHERE kind='payment.reconciliation_required.v1'",
+    )
+    .await
+    .expect("damage recovery identifier");
+    assert!(matches!(
+        request_after_dispatch(&store, &key, &csrf, "request", &order.identity.id).await,
+        Err(OrderStoreError::InvalidStoredData)
+    ));
+    sqlx::query("UPDATE commerce_outbox SET id=$1 WHERE kind='payment.reconciliation_required.v1'")
+        .bind(recovery["id"].as_str().expect("original identifier"))
+        .execute(&pool)
+        .await
+        .expect("restore recovery identifier");
+    pool.execute("ALTER TABLE commerce_outbox ADD CONSTRAINT commerce_outbox_id_check CHECK (id ~ '^[a-f0-9]{32}$')")
+        .await.expect("restore recovery identifier constraint");
+    pool.execute("UPDATE commerce_outbox SET created_at=created_at+1 WHERE kind='payment.reconciliation_required.v1'")
+        .await.expect("damage recovery timestamp");
+    assert!(matches!(
+        request_after_dispatch(&store, &key, &csrf, "request", &order.identity.id).await,
+        Err(OrderStoreError::InvalidStoredData)
+    ));
+    sqlx::query(
+        "UPDATE commerce_outbox SET created_at=$1 WHERE kind='payment.reconciliation_required.v1'",
+    )
+    .bind(recovery["created_at"].as_i64().expect("original timestamp"))
+    .execute(&pool)
+    .await
+    .expect("restore recovery timestamp");
     pool.execute("DELETE FROM commerce_outbox WHERE kind='payment.reconciliation_required.v1'")
         .await
         .expect("detach recovery event");
