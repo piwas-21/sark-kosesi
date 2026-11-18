@@ -1,6 +1,5 @@
 //! Explicitly invoked local SMTP rehearsal for one reserved synthetic identity.
 //! This is not a production mail sender or a provider integration.
-use std::fmt::Write;
 use std::net::{IpAddr, Ipv4Addr, Ipv6Addr, SocketAddr};
 use std::time::Duration;
 
@@ -53,9 +52,7 @@ pub async fn deliver(
     let Some(opened) = opening::open(pool, verifier, &observed, key).await? else {
         return Ok(opening::OpenOutcome::AlreadyStarted);
     };
-    if opened.identity.as_str() != RECIPIENT {
-        return Err(VerificationError::Unavailable);
-    }
+    require_synthetic_recipient(&opened.identity)?;
     let result = send(endpoint, &opened.bearer).await?;
     let opening::FreshOpening {
         identity,
@@ -65,6 +62,23 @@ pub async fn deliver(
     drop((identity, bearer));
     outcome::record(pool, &permit, key, &observed, result).await?;
     Ok(opening::OpenOutcome::Opened)
+}
+
+fn require_synthetic_recipient(identity: &str) -> Result<(), VerificationError> {
+    if identity != RECIPIENT {
+        return Err(VerificationError::Unavailable);
+    }
+    Ok(())
+}
+
+fn append_proof_hex(message: &mut String, bearer: &[u8; 32]) {
+    const HEX: [char; 16] = [
+        '0', '1', '2', '3', '4', '5', '6', '7', '8', '9', 'a', 'b', 'c', 'd', 'e', 'f',
+    ];
+    for byte in bearer {
+        message.push(HEX[usize::from(byte >> 4)]);
+        message.push(HEX[usize::from(byte & 15)]);
+    }
 }
 
 async fn send(
@@ -85,9 +99,7 @@ async fn send(
     let mut message = Zeroizing::new(String::from(
         "From: sender@example.test\r\nTo: verify@example.test\r\nSubject: Synthetic verification\r\nContent-Type: text/plain; charset=us-ascii\r\n\r\nproof=",
     ));
-    for byte in bearer {
-        write!(&mut *message, "{byte:02x}").map_err(|_| VerificationError::Unavailable)?;
-    }
+    append_proof_hex(&mut message, bearer);
     message.push_str("\r\n");
     let transport =
         AsyncSmtpTransport::<Tokio1Executor>::builder_dangerous(endpoint.0.ip().to_string())
@@ -105,3 +117,7 @@ async fn send(
         _ => outcome::TransportOutcome::Uncertain,
     })
 }
+
+#[cfg(test)]
+#[path = "../../../tests/support/email_verification_test_smtp_unit.rs"]
+mod tests;

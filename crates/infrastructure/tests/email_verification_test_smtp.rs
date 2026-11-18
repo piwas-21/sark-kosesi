@@ -56,6 +56,7 @@ enum Reply {
     Accept,
     AcceptThenStall,
     Reject,
+    TemporaryReject,
     Disconnect,
 }
 
@@ -124,6 +125,11 @@ async fn peer(
             .write_all(b"550 rejected\r\n")
             .await
             .expect("rejected"),
+        Reply::TemporaryReject => stream
+            .get_mut()
+            .write_all(b"450 rejected\r\n")
+            .await
+            .expect("temporarily rejected"),
     }
     if matches!(reply, Reply::AcceptThenStall) {
         tokio::time::sleep(Duration::from_secs(3)).await;
@@ -219,6 +225,7 @@ async fn delivered_message_redeems_and_concurrent_openers_send_once(pool: PgPool
 async fn explicit_rejection_and_missing_reply_never_resend(pool: PgPool) {
     for (reply, expected) in [
         (Reply::Reject, TransportOutcome::ExplicitRejection),
+        (Reply::TemporaryReject, TransportOutcome::ExplicitRejection),
         (Reply::Disconnect, TransportOutcome::Uncertain),
         (Reply::AcceptThenStall, TransportOutcome::Uncertain),
     ] {
@@ -298,5 +305,24 @@ async fn different_mailbox_is_rejected_before_start(pool: PgPool) {
     assert_eq!(
         inspect(&pool, &receipt.verifier).await,
         Ok(DeliveryState::NotStarted)
+    );
+}
+
+#[sqlx::test(migrator = "MIGRATOR")]
+async fn unavailable_database_denies_before_connecting_to_smtp(pool: PgPool) {
+    let (time, key, verifier) = fixture(&pool).await;
+    let listener = TcpListener::bind("127.0.0.1:0").await.expect("listen");
+    let endpoint =
+        LocalTestEndpoint::new(true, listener.local_addr().expect("address")).expect("local");
+    pool.close().await;
+    assert!(
+        deliver(&pool, &verifier, &time, &key, &endpoint)
+            .await
+            .is_err()
+    );
+    assert!(
+        tokio::time::timeout(Duration::from_millis(50), listener.accept())
+            .await
+            .is_err()
     );
 }
