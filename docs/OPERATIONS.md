@@ -461,6 +461,15 @@ and logs. The command returns one JSON object on stdout with `kind` set to
 Store this output as private order evidence. Assertion counts do not establish
 which units have shipped or whether dispatch is permitted.
 
+To relinquish one existing assertion in an isolated local/test environment, run
+`commerce-worker --release-packing <order-id> <packed-record-id> <effect-key> --confirm`
+with the same bounded staff session input. Use a unique effect key for the exact
+intent. The JSON receipt identifies the release and its target, timestamp and
+whether it was replayed. If output is lost, retry the same effect key, target and
+staff identity; a changed intent or actor conflicts. This records a release of an
+assertion only; it does not establish physical unpacking, restock or permission
+to dispatch. Staff session issuance and production operator access remain absent.
+
 ## Private callback supervision
 
 `cargo run --locked -p commerce-worker -- --reconcile-callbacks` runs one bounded

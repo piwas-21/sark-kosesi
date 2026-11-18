@@ -27,6 +27,11 @@ enum Mode {
     InspectReversalItem(String),
     ReviewReversalItem(String),
     InspectPacking(String),
+    ReleasePacking {
+        order: String,
+        target: String,
+        effect: String,
+    },
     ReviewReversalInbox(Option<Cursor>),
     EnrollReversal(reversal_pages::Enrollment),
     InspectReversal(String),
@@ -73,6 +78,19 @@ fn parse_mode(args: &[String]) -> Result<Mode, std::io::Error> {
                 && commerce_domain::order_stock::identifier(order) =>
         {
             Ok(Mode::InspectPacking(order.clone()))
+        }
+        [argument, order, target, effect, confirmation]
+            if argument == "--release-packing"
+                && commerce_domain::order_stock::identifier(order)
+                && commerce_domain::order_stock::identifier(target)
+                && commerce_domain::media::valid_command_id(effect)
+                && confirmation == "--confirm" =>
+        {
+            Ok(Mode::ReleasePacking {
+                order: order.clone(),
+                target: target.clone(),
+                effect: effect.clone(),
+            })
         }
         [argument] if argument == "--review-reversal-inbox" => Ok(Mode::ReviewReversalInbox(None)),
         [argument, timestamp, job] if argument == "--review-reversal-inbox" => {
@@ -134,7 +152,7 @@ async fn main() -> Result<(), std::io::Error> {
     }
     let mode = mode()?;
     let subscriber = tracing_subscriber::fmt().json();
-    if matches!(mode, Mode::InspectPacking(_)) {
+    if matches!(mode, Mode::InspectPacking(_) | Mode::ReleasePacking { .. }) {
         subscriber.with_writer(std::io::stderr).init();
     } else {
         subscriber.init();
@@ -142,7 +160,10 @@ async fn main() -> Result<(), std::io::Error> {
     // Read before any DB or provider configuration; never accept a token argument.
     let staff_token = if matches!(
         mode,
-        Mode::ReviewReversalItem(_) | Mode::ReviewReversalInbox(_) | Mode::InspectPacking(_)
+        Mode::ReviewReversalItem(_)
+            | Mode::ReviewReversalInbox(_)
+            | Mode::InspectPacking(_)
+            | Mode::ReleasePacking { .. }
     ) {
         Some(staff_input::read_token()?)
     } else {
@@ -198,6 +219,15 @@ async fn main() -> Result<(), std::io::Error> {
             let token = staff_token
                 .ok_or_else(|| std::io::Error::other("packing inspection unavailable"))?;
             staff_packing::inspect(&pool, &token, &order).await?
+        }
+        Mode::ReleasePacking {
+            order,
+            target,
+            effect,
+        } => {
+            let token =
+                staff_token.ok_or_else(|| std::io::Error::other("packing release unavailable"))?;
+            staff_packing::release(&pool, &token, &order, &target, &effect).await?
         }
         Mode::EnrollReversal(intent) => reversal_pages::run(&pool, Some(intent)).await?,
         Mode::InspectReversal(id) => reversal_pages::inspect(&pool, &id).await?,
