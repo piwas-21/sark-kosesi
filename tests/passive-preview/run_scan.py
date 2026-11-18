@@ -11,6 +11,7 @@ from http.server import BaseHTTPRequestHandler, HTTPServer
 from evidence import (
     SCOPE,
     EvidenceError,
+    history_summary,
     validate_alerts,
     validate_anonymous,
     validate_messages,
@@ -149,7 +150,15 @@ def main():
         if status != 401:
             raise EvidenceError("request_status", index, status)
     drained()
-    validate_anonymous(history())
+    anonymous_history = history()
+    try:
+        validate_anonymous(anonymous_history)
+    except EvidenceError:
+        print(
+            "Anonymous history categories: "
+            + json.dumps(history_summary(anonymous_history), sort_keys=True)
+        )
+        raise
     basic = base64.b64encode(f"preview:{TOKEN}".encode()).decode()
     expected_auth = {
         (host, path): (f"Bearer {TOKEN}" if host.endswith(":45671") else f"Basic {basic}")
@@ -165,7 +174,15 @@ def main():
         if status != 200:
             raise EvidenceError("request_status", index, status)
     drained()
-    observed = validate_messages(history(), expected_auth)
+    authenticated_history = history()
+    try:
+        observed = validate_messages(authenticated_history, expected_auth)
+    except EvidenceError:
+        print(
+            "Authenticated history categories: "
+            + json.dumps(history_summary(authenticated_history), sort_keys=True)
+        )
+        raise
     findings = alerts()
     try:
         counts = validate_alerts(findings)

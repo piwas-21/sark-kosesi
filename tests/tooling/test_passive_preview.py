@@ -8,6 +8,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "passive-preview"))
 from evidence import (
     SCOPE,
     EvidenceError,
+    history_summary,
     validate_alerts,
     validate_anonymous,
     validate_messages,
@@ -109,6 +110,19 @@ class PassiveEvidenceTest(unittest.TestCase):
         with self.assertRaises(EvidenceError) as raised:
             validate_messages([{**bad, "requestHeader": "GET http://private-secret/ HTTP/1.1"}], {})
         self.assertEqual(str(raised.exception), "bucket=target scope=0 status=other")
+
+    def test_history_categories_are_bounded_and_hide_untrusted_text(self):
+        host, path = next(iter(SCOPE))
+        proxied = {**message(host, path, "private body", 401), "type": "1"}
+        foreign = {**proxied, "requestHeader": "GET http://secret.invalid/ HTTP/1.1", "type": "15"}
+        result = history_summary([proxied, foreign] * 20)
+        self.assertEqual(result["total"], "10plus")
+        self.assertEqual(result["scope1"], "10plus")
+        self.assertEqual(result["other_target"], "10plus")
+        self.assertEqual(result["type_zap_user"], "10plus")
+        self.assertNotIn("secret", str(result))
+        self.assertNotIn("private", str(result))
+        self.assertEqual(history_summary(None), {"shape": "invalid"})
 
     def test_rules_must_be_enabled_and_not_weakened(self):
         rule = {"enabled": "true", "alertThreshold": "DEFAULT"}

@@ -34,6 +34,7 @@ class EvidenceError(ValueError):
     def __init__(self, bucket, scope=0, status=None):
         if bucket not in FAILURES or scope not in (0, 1, 2, 3):
             raise ValueError("Invalid diagnostic")
+        self.bucket = bucket
         safe_status = str(status) if type(status) is int and status in SAFE_STATUSES else "other"
         super().__init__(f"bucket={bucket} scope={scope} status={safe_status}")
 
@@ -75,6 +76,48 @@ def message_parts(message, seen):
         if sep and name.lower() == "authorization":
             auth.append(value.strip(" \t"))
     return key, scope, status_code(response[0], scope), auth
+
+
+def history_summary(messages):
+    """Return bounded fixed categories only, never raw history."""
+    if not isinstance(messages, list):
+        return {"shape": "invalid"}
+    counts = {
+        name: 0
+        for name in (
+            "scope1",
+            "scope2",
+            "scope3",
+            "other_target",
+            "malformed_target",
+            "type_proxied",
+            "type_zap_user",
+            "type_other",
+            "status_401",
+            "status_200",
+            "status_other",
+        )
+    }
+    for item in messages[:100]:
+        if not isinstance(item, dict):
+            counts["malformed_target"] += 1
+            counts["type_other"] += 1
+            counts["status_other"] += 1
+            continue
+        kind = item.get("type")
+        kind = kind if isinstance(kind, str) else ""
+        counts[{"1": "type_proxied", "15": "type_zap_user"}.get(kind, "type_other")] += 1
+        try:
+            key, scope, status, _ = message_parts(item, set())
+            counts[f"scope{scope}"] += 1
+            counts[{401: "status_401", 200: "status_200"}.get(status, "status_other")] += 1
+        except EvidenceError as error:
+            counts["other_target" if error.bucket == "target" else "malformed_target"] += 1
+            counts["status_other"] += 1
+    return {
+        "total": str(len(messages)) if len(messages) < 10 else "10plus",
+        **{key: str(value) if value < 10 else "10plus" for key, value in counts.items()},
+    }
 
 
 def validate_messages(messages, expected_auth):

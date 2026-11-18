@@ -16,13 +16,14 @@ db="$network-db"
 web="$network-web"
 api="$network-api"
 scanner="$network-zap"
+preflight="$network-preflight"
 seed_image="$network-seed"
 api_image="$network-api-image"
 web_image="$network-web-image"
 zap_image='ghcr.io/zaproxy/zaproxy@sha256:c2d63bbb2d907a5c5257914fb20e26e969c92b25f265def7f89f08203f912882'
 postgres_image='postgres:18.7-trixie@sha256:9f4fd4aa918f52ae3d6f3b687f1de90d8f867cd4d520021545a9a50c120eae3b'
 cleanup() {
-  docker rm -fv "$scanner" "$api" "$web" "$db" >/dev/null 2>&1 || true
+  docker rm -fv "$preflight" "$scanner" "$api" "$web" "$db" >/dev/null 2>&1 || true
   docker network rm "$network" >/dev/null 2>&1 || true
   docker image rm "$seed_image" "$api_image" "$web_image" >/dev/null 2>&1 || true
   rm -rf -- "$DOCKER_CONFIG"
@@ -32,6 +33,14 @@ trap cleanup EXIT
 # Build and pull before creating the internal-only runtime network.
 docker pull --platform linux/amd64 "$zap_image" >/dev/null
 [[ $(docker image inspect --format '{{.Os}}/{{.Architecture}}' "$zap_image") == linux/amd64 ]]
+# A pinned-scanner loopback rehearsal detects API/history incompatibilities before builds.
+docker run -d --platform linux/amd64 --name "$preflight" --network none \
+  --env "PREVIEW_TOKEN=$token" --env "ANALYSIS_REVISION=$ANALYSIS_REVISION" \
+  --mount "type=bind,src=$PWD/tests/passive-preview,dst=/assessment,readonly" \
+  --entrypoint /zap/zap.sh "$zap_image" -daemon -host 127.0.0.1 -port 8080 \
+  -config api.disablekey=true -config pscans.maxBodySizeInBytes=0 >/dev/null
+docker exec "$preflight" python3 /assessment/preflight.py
+docker rm -fv "$preflight" >/dev/null
 docker pull "$postgres_image" >/dev/null
 docker build -f tests/passive-preview/Dockerfile.seed -t "$seed_image" .
 docker build -f deploy/staging/Dockerfile --target api --build-arg "SOURCE_REVISION=$ANALYSIS_REVISION" -t "$api_image" .
