@@ -32,8 +32,10 @@ Private purported handover evidence submission requires an unseeded
 hashes bounded opaque bytes without storing or logging them and binds the resulting
 fingerprint to an exact active whole packing assertion under the attempt claim.
 The parent must be committed and its release must use a separate transaction;
-final clock checks cover observed evidence and release timestamps. Native paths use
-explicit schema binding. The database validates parent and event custody, but
+final clock checks cover observed evidence and release timestamps even on
+source-dependent conflicts. A transaction-local advisory seal preserves the
+existing packing release role without granting evidence-table access. Native paths
+use explicit schema binding. The database validates parent and event custody, but
 relies on the trusted caller for the byte-to-hash binding; a digest is not proof of issuer or contents. Release
 remains independent. Historical inspection and same-actor exact replay require
 current authority and remain available after release. No provider call, customer

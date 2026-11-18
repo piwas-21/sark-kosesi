@@ -54,7 +54,7 @@ BEGIN
 EXCEPTION WHEN check_violation OR invalid_text_representation OR numeric_value_out_of_range THEN RETURN false;
 END $$;
 CREATE FUNCTION public.guard_handover_evidence() RETURNS trigger LANGUAGE plpgsql SET search_path=pg_catalog,public,pg_temp AS $$
-DECLARE prior public.handover_evidence_submissions%ROWTYPE;
+DECLARE prior public.handover_evidence_submissions%ROWTYPE; parent_fence integer;
 BEGIN
  IF TG_OP<>'INSERT' THEN RAISE EXCEPTION 'Evidence is immutable' USING ERRCODE='23514'; END IF;
  IF pg_catalog.current_setting('transaction_isolation')<>'read committed' THEN RAISE EXCEPTION 'Evidence requires read committed' USING ERRCODE='23514'; END IF;
@@ -65,6 +65,8 @@ BEGIN
    AND p.transaction_id IS DISTINCT FROM pg_catalog.pg_current_xact_id()
    AND NOT EXISTS(SELECT 1 FROM public.packing_custody r WHERE r.target_id=p.id AND r.action='released')) THEN
   RAISE EXCEPTION 'Evidence requires active exact packing parent' USING ERRCODE='23514'; END IF;
+ SELECT p.fence_key INTO parent_fence FROM public.packing_custody p WHERE p.id=NEW.packing_id;
+ PERFORM pg_catalog.pg_advisory_xact_lock(1936876999, parent_fence);
  SELECT * INTO prior FROM public.handover_evidence_submissions WHERE order_id=NEW.order_id ORDER BY generation DESC LIMIT 1;
  IF (prior.id IS NULL AND NEW.generation<>1) OR (prior.id IS NOT NULL AND
   (NEW.generation<>prior.generation+1 OR NEW.recorded_at<prior.recorded_at OR prior.transaction_id=pg_catalog.pg_current_xact_id()))
@@ -88,8 +90,12 @@ CREATE CONSTRAINT TRIGGER require_complete_handover_evidence AFTER INSERT ON pub
 CREATE FUNCTION public.guard_handover_evidence_release() RETURNS trigger LANGUAGE plpgsql
  SET search_path=pg_catalog,public,pg_temp AS $$
 BEGIN
- IF NEW.action='released' AND EXISTS(SELECT 1 FROM public.handover_evidence_submissions s
-  WHERE s.packing_id=NEW.target_id AND s.transaction_id=pg_catalog.pg_current_xact_id()) THEN
+ IF NEW.action='released' AND EXISTS(
+  SELECT 1 FROM pg_catalog.pg_locks l JOIN public.packing_custody p ON p.id=NEW.target_id
+   WHERE l.locktype='advisory' AND l.pid=pg_catalog.pg_backend_pid() AND l.granted
+    AND l.mode='ExclusiveLock' AND l.classid=1936876999::oid AND l.objsubid=2
+    AND l.objid=p.fence_key::oid AND l.database=(SELECT oid FROM pg_catalog.pg_database
+      WHERE datname=pg_catalog.current_database())) THEN
   RAISE EXCEPTION 'Evidence and parent release require separate transactions' USING ERRCODE='23514'; END IF;
  RETURN NEW;
 END $$;

@@ -798,7 +798,9 @@ active whole packing record, validates its historical source and complete packin
 history, and atomically appends an immutable record and reciprocal event. The
 parent must already be committed, and a release cannot share the submission
 transaction, including after an early constraint flush. A final clock fence covers
-recorded evidence and visible release times. The journal allows four different fingerprints per parent and 64 per order. An exact
+recorded evidence and visible release times, including before source-dependent
+conflict results. The submission transaction holds a parent-specific advisory seal
+so a release writer needs no access to the evidence table. The journal allows four different fingerprints per parent and 64 per order. An exact
 actor- and effect-bound replay requires fresh authority but survives a later
 packing release. The normal release remains available; inspection reports its
 presence alongside the original submission. Neither the fingerprint nor the

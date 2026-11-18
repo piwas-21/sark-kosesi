@@ -17,15 +17,23 @@ async fn setup(pool: &PgPool) {
             .bind(token(byte).digest().as_slice()).bind(actor).execute(pool).await.expect("session");
     }
 }
-async fn wait_for_attempt_claim(pool: &PgPool, blocker_pid: i32) {
+async fn wait_for_lock(pool: &PgPool, blocker_pid: i32, query: &str) {
     tokio::time::timeout(std::time::Duration::from_millis(800), async {
         loop {
-            let waiting: bool = sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM pg_catalog.pg_stat_activity a WHERE a.datname=pg_catalog.current_database() AND a.wait_event_type='Lock' AND $1=ANY(pg_catalog.pg_blocking_pids(a.pid)) AND a.query LIKE 'SELECT id FROM payment_attempts WHERE id=%')")
-                .bind(blocker_pid).fetch_one(pool).await.expect("attempt waiter probe");
+            let waiting: bool = sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM pg_catalog.pg_stat_activity a WHERE a.datname=pg_catalog.current_database() AND a.wait_event_type='Lock' AND $1=ANY(pg_catalog.pg_blocking_pids(a.pid)) AND a.query LIKE $2)")
+                .bind(blocker_pid).bind(query).fetch_one(pool).await.expect("waiter probe");
             if waiting { break; }
             tokio::time::sleep(std::time::Duration::from_millis(5)).await;
         }
-    }).await.expect("worker reached the held attempt claim");
+    }).await.expect("worker reached the held lock");
+}
+async fn wait_for_attempt_claim(pool: &PgPool, blocker_pid: i32) {
+    wait_for_lock(
+        pool,
+        blocker_pid,
+        "SELECT id FROM payment_attempts WHERE id=%",
+    )
+    .await;
 }
 fn token(byte: u8) -> SessionToken {
     SessionToken::from_bytes([byte; 32])
@@ -167,6 +175,43 @@ async fn submission_is_historical_and_never_blocks_release(pool: PgPool) {
         .await,
         Err(Error::ClockUnavailable)
     ));
+    for (target, key, bytes) in [
+        (parent.as_str(), "first", b"different".as_slice()),
+        (parent.as_str(), "duplicate-before", b"abc".as_slice()),
+        (
+            "cccccccccccccccccccccccccccccccc",
+            "first",
+            b"abc".as_slice(),
+        ),
+        (
+            "cccccccccccccccccccccccccccccccc",
+            "new-parent",
+            b"abc".as_slice(),
+        ),
+    ] {
+        assert!(matches!(
+            submit(
+                &pool,
+                &token(71),
+                f.time.as_ref(),
+                f.ids.as_ref(),
+                request(order, target, key, bytes)
+            )
+            .await,
+            Err(Error::ClockUnavailable)
+        ));
+    }
+    assert!(matches!(
+        submit(
+            &pool,
+            &token(71),
+            f.time.as_ref(),
+            f.ids.as_ref(),
+            request("ffffffffffffffffffffffffffffffff", parent, "first", b"abc")
+        )
+        .await,
+        Err(Error::ClockUnavailable)
+    ));
     f.time.0.store(1500, Ordering::SeqCst);
     assert!(
         submit(
@@ -203,6 +248,43 @@ async fn submission_is_historical_and_never_blocks_release(pool: PgPool) {
                 "wrong-parent",
                 b"abc"
             )
+        )
+        .await,
+        Err(Error::Conflict)
+    ));
+    for (target, key, bytes) in [
+        (parent.as_str(), "first", b"different".as_slice()),
+        (parent.as_str(), "duplicate-before", b"abc".as_slice()),
+        (
+            "cccccccccccccccccccccccccccccccc",
+            "first",
+            b"abc".as_slice(),
+        ),
+        (
+            "cccccccccccccccccccccccccccccccc",
+            "new-parent",
+            b"abc".as_slice(),
+        ),
+    ] {
+        assert!(matches!(
+            submit(
+                &pool,
+                &token(71),
+                f.time.as_ref(),
+                f.ids.as_ref(),
+                request(order, target, key, bytes)
+            )
+            .await,
+            Err(Error::Conflict)
+        ));
+    }
+    assert!(matches!(
+        submit(
+            &pool,
+            &token(71),
+            f.time.as_ref(),
+            f.ids.as_ref(),
+            request("ffffffffffffffffffffffffffffffff", parent, "first", b"abc")
         )
         .await,
         Err(Error::Conflict)
@@ -313,7 +395,29 @@ async fn submission_is_historical_and_never_blocks_release(pool: PgPool) {
         .await,
         Err(Error::ClockUnavailable)
     ));
+    assert!(matches!(
+        submit(
+            &pool,
+            &token(71),
+            f.time.as_ref(),
+            f.ids.as_ref(),
+            request(order, parent, "new-after-release", b"new")
+        )
+        .await,
+        Err(Error::ClockUnavailable)
+    ));
     f.time.0.store(1600, Ordering::SeqCst);
+    assert!(matches!(
+        submit(
+            &pool,
+            &token(71),
+            f.time.as_ref(),
+            f.ids.as_ref(),
+            request(order, parent, "new-after-release", b"new")
+        )
+        .await,
+        Err(Error::Conflict)
+    ));
     let replay = submit(
         &pool,
         &token(71),
@@ -534,6 +638,51 @@ async fn release_wins_the_attempt_claim_before_submission(pool: PgPool) {
         .await
         .expect("later evidence is accepted");
     accepted.commit().await.expect("evidence committed");
+    // A simultaneous identical key waits for the original, then replays its exact receipt.
+    let mut concurrent = candidate.clone();
+    concurrent.id = "33333333333333333333333333333333".into();
+    concurrent.event_id = "44444444444444444444444444444444".into();
+    concurrent.effect_key = "same-race".into();
+    concurrent.generation = 2;
+    concurrent.evidence_sha256 = format!("{:x}", Sha256::digest(b"same bytes"));
+    let mut first_tx = pool.begin().await.expect("same-key first transaction");
+    store::lock_key(&mut first_tx, &concurrent.effect_key)
+        .await
+        .expect("same-key claim");
+    store::insert(&mut first_tx, &concurrent)
+        .await
+        .expect("same-key first submission");
+    let blocker_pid: i32 = sqlx::query_scalar("SELECT pg_catalog.pg_backend_pid()")
+        .fetch_one(&mut *first_tx)
+        .await
+        .expect("same-key backend");
+    let (p, t, ids, parent, o) = (
+        pool.clone(),
+        f.time.clone(),
+        f.ids.clone(),
+        new_pack.id.clone(),
+        order.clone(),
+    );
+    let same = tokio::spawn(async move {
+        submit(
+            &p,
+            &token(71),
+            t.as_ref(),
+            ids.as_ref(),
+            request(&o, &parent, "same-race", b"same bytes"),
+        )
+        .await
+    });
+    wait_for_lock(
+        &pool,
+        blocker_pid,
+        "SELECT pg_catalog.pg_advisory_xact_lock%",
+    )
+    .await;
+    first_tx.commit().await.expect("first same-key commit");
+    let same = same.await.expect("same-key task").expect("same-key replay");
+    assert!(same.replayed);
+    assert_eq!(same.submission, concurrent);
     assert!(matches!(
         submit(
             &pool,
@@ -558,7 +707,7 @@ async fn release_wins_the_attempt_claim_before_submission(pool: PgPool) {
         .await,
         Err(Error::InvalidRequest)
     ));
-    for index in 0..3 {
+    for index in 0..2 {
         let key = format!("more-{index}");
         let bytes = if index == 0 {
             vec![7; MAX_BYTES]
@@ -575,6 +724,24 @@ async fn release_wins_the_attempt_claim_before_submission(pool: PgPool) {
         .await
         .expect("within parent bound");
     }
+    let inspected = inspect(&pool, &token(71), f.time.as_ref(), &order)
+        .await
+        .expect("bounded inspection");
+    assert_eq!(inspected.len(), 4);
+    assert!(inspected.iter().all(|(_, released)| !released));
+    f.time.0.store(1499, Ordering::SeqCst);
+    assert!(matches!(
+        submit(
+            &pool,
+            &token(71),
+            f.time.as_ref(),
+            f.ids.as_ref(),
+            request(&order, &new_pack.id, "fifth", b"fifth")
+        )
+        .await,
+        Err(Error::ClockUnavailable)
+    ));
+    f.time.0.store(1500, Ordering::SeqCst);
     assert!(matches!(
         submit(
             &pool,
@@ -594,4 +761,28 @@ async fn release_wins_the_attempt_claim_before_submission(pool: PgPool) {
     .await
     .expect("bounded count");
     assert_eq!(count, 4);
+    // Existing packing writers need no read access to the new evidence table.
+    pool.execute("CREATE ROLE handover_limited_packer NOLOGIN; GRANT USAGE ON SCHEMA public TO handover_limited_packer; GRANT SELECT ON ALL TABLES IN SCHEMA public TO handover_limited_packer; REVOKE SELECT ON public.handover_evidence_submissions FROM handover_limited_packer; GRANT INSERT ON public.packing_custody,public.commerce_outbox TO handover_limited_packer; GRANT UPDATE ON public.payment_attempts TO handover_limited_packer; GRANT USAGE ON SEQUENCE public.packing_custody_fence_key_seq TO handover_limited_packer")
+        .await.expect("isolated baseline packing permissions");
+    let allowed: bool = sqlx::query_scalar("SELECT pg_catalog.has_table_privilege('handover_limited_packer','public.handover_evidence_submissions','SELECT')")
+        .fetch_one(&pool).await.expect("role privileges");
+    assert!(!allowed);
+    let mut limited_release = new_pack.clone();
+    limited_release.id = "55555555555555555555555555555555".into();
+    limited_release.event_id = "66666666666666666666666666666666".into();
+    limited_release.effect_key = "limited-release".into();
+    limited_release.generation = 4;
+    limited_release.action = "released".into();
+    limited_release.target_id = Some(new_pack.id.clone());
+    limited_release.units = sqlx::types::Json(Vec::new());
+    limited_release.packages = sqlx::types::Json(Vec::new());
+    let mut limited = pool.begin().await.expect("restricted packing transaction");
+    sqlx::query("SET LOCAL ROLE handover_limited_packer")
+        .execute(&mut *limited)
+        .await
+        .expect("restricted role");
+    packing_custody::store::insert(&mut limited, &limited_release)
+        .await
+        .expect("restricted writer can release");
+    limited.commit().await.expect("restricted release commits");
 }
