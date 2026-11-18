@@ -662,6 +662,30 @@ archive is a same-run daemon export, not an independent attestation. Docker
 so this check fails when mounts or image volumes are present. It does not inspect
 future runtime mounts or change, deploy or accept the image.
 
+## PostgreSQL sibling signed binary lineage
+
+The path-scoped binary-lineage workflow runs the component-presence experiment
+once and reuses its verified image ID and private root filesystem export. It
+checks the export digest, then uses the pinned Debian-root keyring to verify the
+Trixie snapshot Release signature. The signed Release binds the exact compressed
+package index; that index binds the three exact AMD64 package versions, source
+names, sizes and package SHA-256 values. The workflow retains the Release,
+signature, index, keyring and package archives for review, then compares selected
+shared-library and Perl executable paths, file hashes, modes and symlink targets
+against the same image export without executing the image for this comparison.
+Missing, altered or transformed selected files fail the check.
+
+The snapshot and keyring trust position follows the sibling-root provenance;
+Debian's [archive authentication documentation](https://manpages.debian.org/trixie/apt/apt-secure.8.en.html)
+describes the Release-to-index-to-package chain. The pinned SHA-256 and sizes
+are also published for [libsystemd0](https://packages.debian.org/ca/trixie/amd64/libsystemd0/download),
+[libudev1](https://packages.debian.org/trixie/amd64/libudev1/download) and
+[perl-base](https://packages.debian.org/trixie/amd64/perl-base/download).
+This verifies only selected package payload paths, not every file or the absence
+of renamed or embedded code. It does not establish compiled-code applicability,
+fix a CVE, suppress a scanner row or accept a vulnerability. The retained raw
+scanner output and other release gates remain unchanged.
+
 ## PostgreSQL sibling lifecycle lab
 
 The path-scoped `PostgreSQL sibling lifecycle lab` rebuilds the composition on
