@@ -558,6 +558,29 @@ and image identities, scope and custody; inspect the unfiltered report with the
 offline audit above. A successful capture does not establish deployment, image
 provenance, vulnerability disposition or release readiness.
 
+## PostgreSQL sibling root bootstrap
+
+The path-scoped `PostgreSQL sibling runtime root` workflow builds a disposable
+AMD64 Debian root without PostgreSQL. Its digest-pinned Docker Official Debian
+root shares the pinned stock PostgreSQL image’s first layer; the workflow
+checks registry identities, package inventory against the upstream root manifest,
+and the actual stock image. A scoped, signed Debian snapshot supplies exactly
+three pinned ICU and locale packages, and the resulting package inventory must
+otherwise match the original root. The original util-linux packages remain.
+The workflow records raw package names, versions and dpkg status; only fully
+installed packages count toward closure, and partial or broken states fail.
+It also records loader caches, OCI image
+metadata, matching libc bytes and a small locale comparison, with positive and
+negative controls for selected stock-only packages and libraries. Trust inputs,
+source pins and snapshot provenance are in `ops/db-sibling-runtime-root/`.
+
+This is a bootstrap and closure experiment, not a PostgreSQL runtime or an image
+security scan. It starts no database, provides no deployment entrypoint and does
+not establish PostgreSQL client dependencies, collation equivalence, operational
+readiness or vulnerability disposition. A separate reviewed slice must add the
+verified PostgreSQL install, exercise the runtime and compare unfiltered scans.
+No image is published or deployed by this workflow.
+
 ## Isolated PostgreSQL zlib candidate
 
 `ops/db-zlib-candidate/Dockerfile` and `scripts/test_db_zlib_candidate.sh`
