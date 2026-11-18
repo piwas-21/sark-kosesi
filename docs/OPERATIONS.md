@@ -791,7 +791,10 @@ check SCRAM success and the expected wrong-password diagnosis, stock-to-candidat
 custom archive restore, SQL/XML availability and its specific unsupported-feature
 SQLSTATE, and invalid-archive
 rejection. Retained evidence includes source and image identity, build output,
-fixture results and checksums. Passwords are fixed synthetic values and are
+fixture results and checksums. Fixture files are transferred through the owned
+container processes with size limits and matching SHA-256 checks; status records
+the failed fixture stage without database output. Passwords are fixed synthetic
+values and are
 not included in the evidence.
 
 This is a binary and feature smoke, not a compatible replacement image or a

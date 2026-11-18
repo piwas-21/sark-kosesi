@@ -28,7 +28,6 @@ INSERT INTO feature_fixture VALUES (1, repeat('compressible-', 2000)), (2, 'caf√
 SQL
   pg_dump -Fc -Z gzip:9 -f /tmp/feature-smoke.dump
   [[ -s /tmp/feature-smoke.dump ]]
-  chmod 644 /tmp/feature-smoke.dump
 elif [[ "$role" == target ]]; then
   rc=0
   psql -XAt -v ON_ERROR_STOP=1 -v VERBOSITY=verbose -c "SELECT xmlparse(document '<a/>')" >"$work/xml.out" 2>"$work/xml.err" || rc=$?

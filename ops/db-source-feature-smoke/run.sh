@@ -49,12 +49,19 @@ grep -Eq 'libgssapi[^ ]*[.]' "$out/stock-linkage.txt" || fail 'stock GSS positiv
 bash ops/db-source-feature-smoke/linkage.sh < "$out/candidate-linkage.txt" || fail 'candidate linkage assertion failed'
 docker run --rm --network none --entrypoint cat "$candidate_id" /smoke-build-evidence/build-packages.txt > "$out/build-packages.txt"
 docker run --rm --network none --entrypoint cat "$candidate_id" /smoke-build-evidence/trust-inputs.txt > "$out/trust-inputs.txt"
-stage=fixture
+# shellcheck source=ops/db-source-feature-smoke/transfer.sh
+source ops/db-source-feature-smoke/transfer.sh
+stage=fixture_start
 source_id=$(docker run -d --network none --user postgres --tmpfs /tmp:rw,size=256m --memory 768m --cpus 1 --pids-limit 256 --entrypoint sleep "$base_id" 1800)
 target_id=$(docker run -d --network none --user postgres --tmpfs /tmp:rw,size=256m --memory 768m --cpus 1 --pids-limit 256 --entrypoint sleep "$candidate_id" 1800)
-docker cp ops/db-source-feature-smoke/diagnostics.sh "$source_id:/tmp/diagnostics.sh"
-docker cp ops/db-source-feature-smoke/diagnostics.sh "$target_id:/tmp/diagnostics.sh"
+stage=helper_transfer
+transfer_in "$source_id" /tmp/diagnostics.sh ops/db-source-feature-smoke/diagnostics.sh 16384
+transfer_in "$target_id" /tmp/diagnostics.sh ops/db-source-feature-smoke/diagnostics.sh 16384
+stage=source_fixture
 docker exec -i "$source_id" bash -s -- /usr/lib/postgresql/18/bin source < ops/db-source-feature-smoke/fixture.sh > "$out/source-fixture.txt"
-docker cp "$source_id:/tmp/feature-smoke.dump" "$scratch/feature-smoke.dump"
-docker cp "$scratch/feature-smoke.dump" "$target_id:/tmp/feature-smoke.dump"
+stage=archive_transfer
+transfer_out "$source_id" /tmp/feature-smoke.dump "$scratch/feature-smoke.dump" 1048576
+transfer_in "$target_id" /tmp/feature-smoke.dump "$scratch/feature-smoke.dump" 1048576
+sha256sum "$scratch/feature-smoke.dump" | cut -d " " -f 1 > "$out/archive-sha256.txt"
+stage=target_fixture
 docker exec -i "$target_id" bash -s -- /opt/pg-smoke/bin target < ops/db-source-feature-smoke/fixture.sh > "$out/target-fixture.txt"

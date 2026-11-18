@@ -19,10 +19,11 @@ jobs:
         with:
           ref: ${{ github.event.pull_request.head.sha || github.sha }}
           persist-credentials: false
-      - name: Check linkage and diagnostic controls
+      - name: Check linkage, diagnostic and transfer controls
         run: |
           bash ops/db-source-feature-smoke/test-linkage.sh
           bash ops/db-source-feature-smoke/test-diagnostics.sh
+          bash ops/db-source-feature-smoke/test-transfer.sh
       - name: Build and run isolated PostgreSQL feature smoke
         env:
           SMOKE_REVISION: ${{ github.event.pull_request.head.sha || github.sha }}
