@@ -793,8 +793,8 @@ async fn release_wins_the_attempt_claim_before_submission(pool: PgPool) {
     limited_release.target_id = Some(new_pack.id.clone());
     limited_release.units = sqlx::types::Json(Vec::new());
     limited_release.packages = sqlx::types::Json(Vec::new());
-    let set_role = format!("SET LOCAL ROLE {role}");
-    sqlx::query(&set_role)
+    sqlx::query("SELECT pg_catalog.set_config('role', $1, true)")
+        .bind(&role)
         .execute(&mut *limited)
         .await
         .expect("restricted role");
