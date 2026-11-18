@@ -193,6 +193,23 @@ async fn generation_insert_wait_expiry_or_cancellation_cannot_commit_partial_cla
                 "expired pre-I/O claim never yields a permit"
             );
         }
+        // Dropping an aborted SQLx future schedules rollback; awaiting the task
+        // alone does not prove that PostgreSQL released its job-row claim. Wait
+        // for that exact row lock before the later SKIP LOCKED healthy claim.
+        let mut fence = pool.begin().await.expect("rollback fence transaction");
+        let unlocked: String = tokio::time::timeout(
+            Duration::from_secs(2),
+            sqlx::query_scalar(
+                "SELECT intake_id FROM callback_inbox_jobs WHERE intake_id=$1 FOR UPDATE",
+            )
+            .bind(&id)
+            .fetch_one(&mut *fence),
+        )
+        .await
+        .expect("claim transaction released the job row")
+        .expect("original job exists");
+        assert_eq!(unlocked, id);
+        fence.rollback().await.expect("release rollback fence");
         assert_eq!(counts(&pool).await, (0, 0, 0, 0, 0));
         assert_eq!(
             read_callback_job(&pool, &id)
