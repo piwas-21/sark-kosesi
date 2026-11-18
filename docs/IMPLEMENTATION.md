@@ -627,6 +627,15 @@ envelope cannot be reopened. Results remain historical after expiry or consumpti
 The database records the trusted caller's classification. Provider authentication,
 mailbox receipt and redemption each require their own evidence. A provider,
 retry policy and reconciliation remain separately reviewed work.
+An explicitly enabled test-only adapter can hand the fresh opening to one
+SMTP transaction at a literal loopback address, with a fixed reserved sender and
+recipient. It sends a synthetic ASCII proof, not a browser URL. No task is detached,
+and the database transaction finishes before SMTP. A positive final SMTP result
+records accepted; explicit negative replies record rejection; connection loss or
+timeout records uncertain. A missing outcome stays unknown and no result permits
+reopening or retry. The synthetic recipient is checked before starting and after
+authenticated opening. The local sink and test command provide no real mailbox,
+provider or deployment acceptance. Production delivery remains disabled.
 A private account operation now
 locks and consumes that exact proof and inserts one unique immutable normalized
 identity in the same transaction; the database binds consumption and insertion to

@@ -99,6 +99,12 @@ execute the same worker configuration, verified GET orchestration and redacted
 reporting code. No package version, production dependency or provider-origin
 configuration changes; the existing MIT/Apache-2.0 review applies.
 
+The opt-in, loopback-only verification SMTP rehearsal adds `lettre` 0.11.23
+(MIT) with its SMTP and Tokio features only. Its message-builder feature is
+disabled; the fixture supplies a fixed ASCII message. The direct version is exact,
+and the locked dependency closure must pass the RustSec and licence/source gates.
+The transport has no production configuration, provider credentials or relay.
+
 ## Frontend test runner and coverage
 
 The TypeScript test suite uses the pinned Node test runner with tsx 4.23.15

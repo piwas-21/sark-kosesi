@@ -6,6 +6,9 @@ rust-version.workspace = true
 license.workspace = true
 publish.workspace = true
 
+[features]
+test-verification-smtp = ["dep:lettre"]
+
 [lints]
 workspace = true
 
@@ -32,6 +35,7 @@ url.workspace = true
 reqwest.workspace = true
 rustls.workspace = true
 webpki-roots.workspace = true
+lettre = { workspace = true, optional = true }
 
 # Test-only browser fixture driver; never part of API or worker binaries.
 [[example]]

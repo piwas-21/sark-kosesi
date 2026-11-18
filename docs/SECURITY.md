@@ -663,6 +663,17 @@ Provider authentication, mailbox receipt and redemption each require their own
 evidence. The in-process caller and write role remain trusted. A crash or failed recording
 leaves the start unknown and never permits reopening. Acceptance proves neither
 mailbox receipt nor redemption. No provider or retry is installed.
+An opt-in test feature adds a single local SMTP attempt to the fresh opening. It
+accepts only 127.0.0.1 or ::1, no DNS name, and a nonzero port; both sender and
+recipient are fixed reserved synthetic addresses. A different challenge identity
+is denied before start and checked again after authentication. The callback is
+scoped to the attempt, with no database lock or detached send. The proof is used
+only in a fixed ASCII test message and remains out of diagnostics and outcome
+rows. A final SMTP acceptance is test-sink custody only. A whole-attempt timeout
+can occur after the server accepted DATA, so it remains uncertain; lost recording
+remains unknown. Neither authorizes retry. The source is test-only and cannot be
+configured as a production sender. Provider recovery, endpoint authentication,
+real message content, abuse controls and mailbox acceptance remain release work.
 Anti-enumeration, token transport, mailbox delivery and recovery remain separate
 requirements. Private verified account establishment composes the exact
 challenge consumption and a unique immutable normalized identity in one transaction.
