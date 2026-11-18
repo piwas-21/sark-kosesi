@@ -287,8 +287,13 @@ class PassiveEvidenceTest(unittest.TestCase):
                 )
                 try:
                     port = server.server_port
+                    trusted_context = ssl.SSLContext(ssl.PROTOCOL_TLS_CLIENT)
+                    trusted_context.minimum_version = ssl.TLSVersion.TLSv1_2
+                    trusted_context.load_verify_locations(cafile=cert)
+                    untrusted_context = ssl.SSLContext(ssl.PROTOCOL_TLS_CLIENT)
+                    untrusted_context.minimum_version = ssl.TLSVersion.TLSv1_2
                     untrusted = http.client.HTTPSConnection(
-                        "127.0.0.1", port, context=ssl.create_default_context(), timeout=5
+                        "127.0.0.1", port, context=untrusted_context, timeout=5
                     )
                     with self.assertRaises(ssl.SSLCertVerificationError):
                         untrusted.request("GET", "/nl/room-planner")
@@ -296,15 +301,13 @@ class PassiveEvidenceTest(unittest.TestCase):
                     raw = socket.create_connection(("127.0.0.1", port), timeout=5)
                     try:
                         with self.assertRaises(ssl.SSLCertVerificationError):
-                            ssl.create_default_context(cafile=cert).wrap_socket(
-                                raw, server_hostname="wrong.invalid"
-                            )
+                            trusted_context.wrap_socket(raw, server_hostname="wrong.invalid")
                     finally:
                         raw.close()
                     conn = http.client.HTTPSConnection(
                         "127.0.0.1",
                         port,
-                        context=ssl.create_default_context(cafile=cert),
+                        context=trusted_context,
                         timeout=5,
                     )
                     conn.request(
@@ -325,7 +328,7 @@ class PassiveEvidenceTest(unittest.TestCase):
                     blocked = http.client.HTTPSConnection(
                         "127.0.0.1",
                         port,
-                        context=ssl.create_default_context(cafile=cert),
+                        context=trusted_context,
                         timeout=5,
                     )
                     blocked.request("GET", "/not-in-scope", headers={"Host": "127.0.0.1:3443"})
