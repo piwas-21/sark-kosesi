@@ -6,6 +6,7 @@ use super::{PasswordError, hash};
 
 const DOMAIN: &[u8] = b"piwas:password-blocklist:snapshot:v1\0";
 const MAX_ENTRIES: usize = 1_000_000;
+const MAX_METADATA_BYTES: usize = 240;
 const MAX_WINDOW_SECONDS: i64 = 90 * 24 * 60 * 60;
 const MAX_TIME: i64 = 9_007_199_254_740_991;
 
@@ -45,7 +46,7 @@ impl PasswordBlocklist {
     pub fn new(manifest: BlocklistManifest, expected: [u8; 32]) -> Result<Self, PasswordError> {
         fn text_valid(value: &str) -> bool {
             !value.is_empty()
-                && value.len() <= 240
+                && value.len() <= MAX_METADATA_BYTES
                 && value.trim() == value
                 && !value.chars().any(char::is_control)
         }
@@ -79,14 +80,15 @@ impl PasswordBlocklist {
             Ok(head)
         }
         fn integer(input: &mut &[u8]) -> Result<[u8; 8], PasswordError> {
-            let bytes = take(input, 8)?;
-            Ok([
-                bytes[0], bytes[1], bytes[2], bytes[3], bytes[4], bytes[5], bytes[6], bytes[7],
-            ])
+            let (head, tail) = input
+                .split_first_chunk::<8>()
+                .ok_or(PasswordError::Unavailable)?;
+            *input = tail;
+            Ok(*head)
         }
         fn text(input: &mut &[u8]) -> Result<String, PasswordError> {
             let length = u64::from_be_bytes(integer(input)?);
-            if length == 0 || length > 240 {
+            if length == 0 || length > MAX_METADATA_BYTES as u64 {
                 return Err(PasswordError::Unavailable);
             }
             let length = length as usize; // At most 240 on every supported target.
@@ -110,14 +112,7 @@ impl PasswordBlocklist {
         if count * 32 != input.len() {
             return Err(PasswordError::Unavailable);
         }
-        let digests = input
-            .chunks_exact(32)
-            .map(|entry| {
-                let mut digest = [0; 32];
-                digest.copy_from_slice(entry);
-                digest
-            })
-            .collect();
+        let (digests, _) = input.as_chunks::<32>();
         Self::new(
             BlocklistManifest {
                 version,
@@ -125,7 +120,7 @@ impl PasswordBlocklist {
                 qualification_ref,
                 valid_from,
                 valid_until,
-                digests,
+                digests: digests.to_vec(),
             },
             expected,
         )
