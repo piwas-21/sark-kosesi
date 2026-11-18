@@ -215,10 +215,14 @@ start while that challenge is live. Only a newly committed start can authenticat
 the stored envelope and hand a short-lived bearer to a trusted in-process caller.
 An optional trusted in-process callback can now record a bounded accepted,
 explicitly rejected or uncertain result against that exact start. A start without
-a result remains unknown and cannot reopen. No mail transport is installed.
+a result remains unknown and cannot reopen. No production mail transport is installed.
 Acceptance does not establish mailbox delivery or redemption. Real corpus review,
 coordinated freshness and withdrawal, key and retention operations, message
 delivery, neutral browser responses and measured overload behavior remain P4 work.
+An explicitly enabled local SMTP rehearsal can send a synthetic verification
+proof to a loopback-only test sink and retain its bounded result; its isolated
+integration tests cover sink acceptance, rejection and ambiguity. It provides no
+production sender or mailbox acceptance. Provider policy and recovery remain open.
 An optional loopback test-only verification redemption API consumes a supplied
 proof after preview authentication, exact Origin validation and shared admission.
 It issues no session and remains disabled without explicit test configuration.

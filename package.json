@@ -26,7 +26,7 @@
     "typecheck": "tsc -p tsconfig.json",
     "build": "cargo build --release --workspace --locked && npm run build --workspace @piwas/web",
     "test:unit": "cargo test --locked -p commerce-domain -p commerce-application && python3 scripts/test_money_mutation.py && node tests/application/run-unit.mjs",
-    "test:integration": "python3 scripts/with_postgres.py -- cargo test --workspace --locked",
+    "test:integration": "python3 scripts/with_postgres.py -- cargo test --workspace --locked --features commerce-infrastructure/test-verification-smtp",
     "test:migrations": "python3 scripts/with_postgres.py -- cargo test --locked -p commerce-infrastructure --test postgres -- --exact prior_schema_upgrade_preserves_old_reader_and_data",
     "test:contracts": "python3 scripts/check_contracts.py",
     "test:coverage:stable": "mkdir -p coverage && python3 scripts/coverage_fsync.py stable",

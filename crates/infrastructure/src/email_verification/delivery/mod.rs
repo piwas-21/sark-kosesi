@@ -1,4 +1,4 @@
-//! Private encrypted verification custody; no mail transport or recovery API.
+//! Private encrypted verification custody; no production mail transport or recovery API.
 use super::*;
 use commerce_domain::checkout_quotes::MAX_QUOTE_UNIX_SECONDS;
 use sha2::{Digest, Sha256};
@@ -7,6 +7,8 @@ mod crypto;
 pub mod opening;
 pub mod outcome;
 pub mod start;
+#[cfg(feature = "test-verification-smtp")]
+pub mod test_smtp;
 
 const KEY_DOMAIN: &[u8] = b"piwas:verification-delivery:key-fingerprint:v1\0";
 

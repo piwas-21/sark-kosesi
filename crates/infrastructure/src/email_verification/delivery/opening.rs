@@ -20,8 +20,11 @@ pub async fn claim_and_open(
     accept: impl FnOnce(&str, &[u8; 32]),
 ) -> Result<OpenOutcome, VerificationError> {
     let observed = ObservedClock::new(clock, 0);
-    match open(pool, verifier, &observed, key, accept).await? {
-        Some(((), _)) => Ok(OpenOutcome::Opened),
+    match open(pool, verifier, &observed, key).await? {
+        Some(opened) => {
+            accept(&opened.identity, &opened.bearer);
+            Ok(OpenOutcome::Opened)
+        }
         None => Ok(OpenOutcome::AlreadyStarted),
     }
 }
@@ -36,8 +39,15 @@ pub async fn claim_open_and_record(
     accept: impl FnOnce(&str, &[u8; 32]) -> super::outcome::TransportOutcome,
 ) -> Result<OpenOutcome, VerificationError> {
     let observed = ObservedClock::new(clock, 0);
-    match open(pool, verifier, &observed, key, accept).await? {
-        Some((outcome, permit)) => {
+    match open(pool, verifier, &observed, key).await? {
+        Some(opened) => {
+            let outcome = accept(&opened.identity, &opened.bearer);
+            let FreshOpening {
+                identity,
+                bearer,
+                permit,
+            } = opened;
+            drop((identity, bearer));
             super::outcome::record(pool, &permit, key, &observed, outcome).await?;
             Ok(OpenOutcome::Opened)
         }
@@ -45,13 +55,18 @@ pub async fn claim_open_and_record(
     }
 }
 
-async fn open<T>(
+pub(super) struct FreshOpening {
+    pub(super) identity: Zeroizing<String>,
+    pub(super) bearer: Zeroizing<[u8; 32]>,
+    pub(super) permit: start::Permit,
+}
+
+pub(super) async fn open(
     pool: &PgPool,
     verifier: &[u8; 32],
     observed: &dyn Clock,
     key: &VerificationDeliveryKey,
-    accept: impl FnOnce(&str, &[u8; 32]) -> T,
-) -> Result<Option<(T, start::Permit)>, VerificationError> {
+) -> Result<Option<FreshOpening>, VerificationError> {
     if let start::InternalClaim::New(permit) =
         start::claim_with_permit(pool, verifier, observed, key).await?
     {
@@ -77,13 +92,17 @@ async fn open<T>(
             version: crypto::VERSION,
         };
         let bearer = crypto::open(key, &context, ciphertext)?;
+        let identity = Zeroizing::new(identity.to_owned());
         start::check_live(&source, bounded_now(observed)?)?;
         tx.commit()
             .await
             .map_err(|_| VerificationError::Unavailable)?;
         start::check_live(&source, bounded_now(observed)?)?;
-        let result = accept(identity, &bearer);
-        Ok(Some((result, *permit)))
+        Ok(Some(FreshOpening {
+            identity,
+            bearer,
+            permit: *permit,
+        }))
     } else {
         Ok(None)
     }

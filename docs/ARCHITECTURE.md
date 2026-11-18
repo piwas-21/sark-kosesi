@@ -1995,6 +1995,15 @@ result is unknown and grants no resend authority. The database records the trust
 caller's classification. Provider authentication, mailbox receipt and redemption
 each require their own evidence. No provider transport or retry is installed.
 
+An optional test-only verification adapter consumes a fresh opening within the
+same async operation and sends one fixed synthetic message to a literal loopback
+SMTP endpoint. The challenge identity is checked for the reserved recipient
+before and after authenticated opening. It returns only the existing bounded
+outcome; a timeout, including after DATA acceptance, is uncertain, and a missing
+result remains unknown. It never retries or outlives the invocation. No database
+transaction spans SMTP. This does not establish an authenticated production
+sender, actual mailbox receipt or a browser redemption flow.
+
 A private PostgreSQL operation locks and consumes an exact email challenge while
 inserting a unique immutable customer identity and its verification reference in
 one transaction. A database-assigned transaction ID on the consumption must match
