@@ -1,0 +1,94 @@
+name: Private preview performance
+on:
+  workflow_dispatch:
+  pull_request:
+    branches: [develop]
+    paths:
+      - .github/workflows/planner-performance.yml
+      - tests/application/performance.mjs
+      - tests/application/planner-performance.mjs
+      - tests/application/evidence-name.mjs
+      - tests/application/ports.mjs
+      - tests/application/load.js
+      - tests/application/serve.mjs
+      - tests/fixtures/catalogue.sql
+      - scripts/with_postgres.py
+      - scripts/install_app_tools.py
+      - config/tools.json
+      - config/performance-budgets.json
+      - apps/web/src/components/room-planner/**
+      - apps/web/src/app/**/room-planner/**
+      - packages/room-fit/**
+      - packages/room-draft/**
+      - Cargo.toml
+      - Cargo.lock
+      - rust-toolchain.toml
+      - package.json
+      - package-lock.json
+      - .nvmrc
+      - docs/QUALITY.md
+      - docs/IMPLEMENTATION.md
+permissions: {}
+jobs:
+  performance:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 80
+    permissions:
+      contents: read
+    env:
+      ANALYSIS_REVISION: ${{ github.event.pull_request.head.sha || github.sha }}
+      PLAYWRIGHT_SKIP_BROWSER_GC: 1
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+      - name: Verify checked out revision
+        run: test "$(git rev-parse HEAD)" = "$ANALYSIS_REVISION"
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+      - run: npm ci --ignore-scripts
+      - run: python3 scripts/install_app_tools.py
+      - name: Build release API and production web application
+        run: |
+          cargo build --release --locked --bin commerce-api
+          npm run build --workspace @piwas/web
+      - name: Configure browser dependency downloads
+        run: |
+          test -f /etc/apt/apt-mirrors.txt
+          printf '%s\n' 'https://archive.ubuntu.com/ubuntu' | sudo tee /etc/apt/apt-mirrors.txt > /dev/null
+          printf '%s\n' 'Acquire::Retries "3";' 'Acquire::http::Timeout "30";' 'Acquire::https::Timeout "30";' | sudo tee /etc/apt/apt.conf.d/99-p1-network > /dev/null
+      - run: npx playwright install --with-deps chromium
+        timeout-minutes: 10
+      - id: performance
+        run: npm run test:performance
+      - name: Require complete performance evidence
+        run: |
+          test -s .local/evidence/performance.json
+          test -s .local/evidence/load.json
+          test "$(find .local/evidence -maxdepth 1 -type f -name 'lighthouse-*.json' | wc -l)" -eq 18
+      - name: Retain performance evidence
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+        with:
+          name: preview-performance-${{ env.ANALYSIS_REVISION }}
+          path: |
+            .local/evidence/lighthouse-*.json
+            .local/evidence/performance.json
+            .local/evidence/load.json
+          include-hidden-files: true
+          if-no-files-found: error
+          retention-days: 30
+      - name: Retain partial performance diagnostics on failure
+        if: failure() && steps.performance.outcome == 'failure'
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+        with:
+          name: preview-performance-diagnostics-${{ env.ANALYSIS_REVISION }}
+          path: |
+            .local/evidence/lighthouse-*.json
+            .local/evidence/performance.json
+            .local/evidence/load.json
+          include-hidden-files: true
+          if-no-files-found: warn
+          retention-days: 7

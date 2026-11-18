@@ -250,6 +250,14 @@ Core Web Vitals, and does not replace production-topology, native-device,
 physical-fit or actual catalogue acceptance. Cart, checkout and account remain
 separate acceptance work.
 
+The separately triggered private preview performance workflow checks out the
+exact selected revision, builds the release API and production web application,
+and runs the unchanged lab and catalogue load command with a disposable database.
+It retains only the Lighthouse diagnostics, performance summary and k6 summary;
+partial diagnostics are retained on a test failure. This targeted workflow does
+not replace the required Application or Quality gates. A workflow definition
+alone is not evidence that a hosted run passed.
+
 At 25 concurrent users for 10 minutes plus a 50-request burst, catalogue p95 <=300ms and quote p95 <=500ms excluding separately reported provider time, errors <=1%; no overselling, leaked resources or unbounded queue growth. Record hardware, DB size, seed, cache state and exact SHA. Resource caps and profiling matter more than language claims. P6 captures lab evidence; post-launch field data validates real-user performance separately.
 
 The isolated catalogue k6 exercise measures reads. A separate local quote
