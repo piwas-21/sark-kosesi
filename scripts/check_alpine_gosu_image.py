@@ -11,6 +11,8 @@ import sys
 import tarfile
 from pathlib import Path
 
+from compare_db_zlib_scan import BASE_CONFIG as DEBIAN_CONFIG
+
 STOCK_CONFIG = "sha256:0f6c51e48b3458e87ab43692e49c9dafc72ffe0a0dbde3fd8cdb6ab92d5c025e"
 GOSU_SHA256 = "ad2e645f69d82e23e0b54a208828589ff4a021a343ad5090cd36f2a2ae7aa556"
 LIMIT = 8 * 1024 * 1024
@@ -73,8 +75,10 @@ def verify_layer(tar, name, expected, capture=False):
     return captured.getvalue() if captured is not None else None
 
 
-def inspect(archive_path, stock_raw, candidate_id):
-    if digest(stock_raw) != STOCK_CONFIG or not re.fullmatch(r"sha256:[0-9a-f]{64}", candidate_id):
+def inspect(archive_path, stock_raw, candidate_id, *, debian=False):
+    stock_id = DEBIAN_CONFIG if debian else STOCK_CONFIG
+    additions = 2 if debian else 1
+    if digest(stock_raw) != stock_id or not re.fullmatch(r"sha256:[0-9a-f]{64}", candidate_id):
         raise ValueError("unexpected image identity")
     stock = json.loads(stock_raw)
     with tarfile.open(archive_path, mode="r:") as tar:
@@ -97,10 +101,10 @@ def inspect(archive_path, stock_raw, candidate_id):
         diff = candidate["rootfs"]["diff_ids"]
         if (
             not isinstance(base_diff, list)
-            or diff[:-1] != base_diff
-            or len(diff) != len(base_diff) + 1
+            or diff[:-additions] != base_diff
+            or len(diff) != len(base_diff) + additions
         ):
-            raise ValueError("candidate is not one layer above stock")
+            raise ValueError("unexpected candidate layer lineage")
         if candidate.get("config") != stock.get("config") or not isinstance(
             stock.get("config"), dict
         ):
@@ -140,20 +144,24 @@ def inspect(archive_path, stock_raw, candidate_id):
     if "usr/local/bin/gosu" not in seen:
         raise ValueError("candidate Gosu absent")
     return config_raw, {
-        "stock_config": STOCK_CONFIG,
+        "stock_config": stock_id,
         "candidate_config": candidate_id,
         "verified_stock_layers": len(base_diff),
         "last_diff_id": diff[-1],
         "gosu_sha256": GOSU_SHA256,
-        "meaning": "one verified layer replaces only Gosu; image provenance and security acceptance remain separate",
+        "meaning": "Final layer replaces only Gosu. Package provenance and security acceptance require separate evidence.",
     }
 
 
 def main():
-    if len(sys.argv) != 5:
+    args = sys.argv[1:]
+    debian = args[:1] == ["--debian"]
+    if debian:
+        args = args[1:]
+    if len(args) != 4:
         raise ValueError("expected archive, stock config, candidate ID and evidence directory")
-    archive, stock_path, candidate_id, output = sys.argv[1:]
-    raw, summary = inspect(archive, Path(stock_path).read_bytes(), candidate_id)
+    archive, stock_path, candidate_id, output = args
+    raw, summary = inspect(archive, Path(stock_path).read_bytes(), candidate_id, debian=debian)
     directory = Path(output)
     (directory / "candidate-config.json").write_bytes(raw)
     (directory / "candidate-layer-check.json").write_text(json.dumps(summary, indent=2) + "\n")

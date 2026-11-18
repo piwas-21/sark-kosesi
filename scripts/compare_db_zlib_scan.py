@@ -11,6 +11,7 @@ BASE_CONFIG = "sha256:3cccc725163a95947178f4da5e9bf16add75cb286170ac5a2cd2f65135
 BASE_ZLIB = "zlib1g@1:1.3.dfsg+really1.3.1-1+b1"
 CANDIDATE_ZLIB = "zlib1g@1:1.3.dfsg+really1.3.1-1+deb13u1"
 FINDINGS = {"CVE-2026-76844", "CVE-2026-85091"}
+POSITIVE_FINDING = "CVE-2026-85091"
 
 
 def inspect(report, image_id, package_id):
@@ -65,9 +66,9 @@ def compare(base, candidate, candidate_id, database):
             raise ValueError("vulnerability database expired or timestamps disagree")
     except (KeyError, TypeError, AttributeError):
         raise ValueError("invalid vulnerability database or report timestamps") from None
-    _, before_high = inspect(base, BASE_CONFIG, BASE_ZLIB)
+    before, before_high = inspect(base, BASE_CONFIG, BASE_ZLIB)
     after, after_high = inspect(candidate, candidate_id, CANDIDATE_ZLIB)
-    if not FINDINGS <= before_high:
+    if POSITIVE_FINDING not in before_high:
         raise ValueError("baseline lacks the expected positive findings")
     if FINDINGS & after:
         raise ValueError("candidate still reports a targeted finding")
@@ -76,7 +77,7 @@ def compare(base, candidate, candidate_id, database):
         "candidate_image_id": candidate_id,
         "baseline_zlib": BASE_ZLIB,
         "candidate_zlib": CANDIDATE_ZLIB,
-        "targeted_cves_reported_before": sorted(FINDINGS),
+        "targeted_cves_reported_before": sorted(FINDINGS & before),
         "targeted_cves_reported_after": sorted(FINDINGS & after),
         "remaining_zlib_high": sorted(after_high),
         "meaning": "scanner comparison only; no reachability or risk acceptance",

@@ -104,8 +104,9 @@ class CompareTests(unittest.TestCase):
             "NextUpdate": (now + timedelta(hours=1)).isoformat(),
         }
 
-    def compare(self):
-        with patch.object(check, "BASE_CONFIG", self.stock_id):
+    def compare(self, *, debian=False):
+        key = "DEBIAN_CONFIG" if debian else "BASE_CONFIG"
+        with patch.object(check, key, self.stock_id):
             return check.compare(
                 self.stock,
                 self.candidate,
@@ -115,7 +116,35 @@ class CompareTests(unittest.TestCase):
                 self.candidate_config,
                 self.candidate_id,
                 self.database,
+                debian=debian,
             )
+
+    def test_debian_combination_requires_targeted_findings_and_exact_package_change(self):
+        for report, identity in (
+            (self.stock, check.BASE_ZLIB),
+            (self.candidate, check.CANDIDATE_ZLIB),
+        ):
+            report["Metadata"]["OS"] = {"Family": "debian", "Name": "13.7"}
+            os_target = report["Results"][0]
+            os_target["Type"] = "debian"
+            os_target["Packages"] = [
+                {"Name": "libxml2", "Version": "2.9"},
+                {"Name": "zlib1g", "Version": identity.split("@")[1], "ID": identity},
+            ]
+            os_target["Vulnerabilities"] = [finding("CVE-RESIDUAL", "CRITICAL", "2.9", "libxml2")]
+        zlib_finding = finding("CVE-2026-85091", "HIGH", "1", "zlib1g")
+        self.stock["Results"][0]["Vulnerabilities"].append(zlib_finding)
+        self.assertEqual(self.compare(debian=True)["severity_counts"]["candidate"]["CRITICAL"], 1)
+        for target, key, value in (
+            (self.stock["Results"][0], "Vulnerabilities", []),
+            (self.candidate["Results"][0], "Vulnerabilities", [zlib_finding]),
+            (self.candidate["Results"][1], "Vulnerabilities", [finding("CVE-2025-68121")]),
+            (self.candidate["Results"][0], "Packages", self.stock["Results"][0]["Packages"]),
+            (self.candidate["Results"][0]["Packages"][0], "Version", "unexpected"),
+        ):
+            with self.subTest(key=key, value=value), patch.dict(target, {key: value}):
+                with self.assertRaises(ValueError):
+                    self.compare(debian=True)
 
     def test_all_findings_and_deltas_reported_even_when_high_remains(self):
         self.candidate["Results"][1]["Vulnerabilities"].append(

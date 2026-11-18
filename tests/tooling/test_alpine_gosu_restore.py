@@ -19,6 +19,118 @@ import restore_loopback as loopback
 
 
 class RestoreAdapterTests(unittest.TestCase):
+    def test_debian_profile_requires_matching_metadata_collations_and_replay(self):
+        import copy
+
+        locale = ["UTF8", "c", None, "en_US.utf8", "en_US.utf8", "2.41"]
+        order = ["A", "A-1", "A-C", "A1", "AB", "B", "a", "É", "é", "ا", "ب"]
+        probe = {
+            "default_order": order,
+            "c_order": order,
+            "default_case": ["i", "I", "É", "é"],
+            "c_case": ["i", "I", "É", "é"],
+            "default_equality": [False, False, False, True],
+            "c_equality": [False, False, False, True],
+        }
+        locales = [locale, copy.deepcopy(locale)]
+        collations = lab.compare_collations(probe, copy.deepcopy(probe))
+        custody = lab.stock_custody_evidence("compatible", "compatible", collations)
+        lab.require_debian_compatibility(locales, collations, custody)
+
+        for bad in (
+            None,
+            [],
+            [locale],
+            [locale, None],
+            [locale, []],
+            [locale, ["UTF8", "c", None, "en_US.utf8", "en_US.utf8", "2.40"]],
+            [locale, ["UTF8", "unknown", None, "en_US.utf8", "en_US.utf8", "2.41"]],
+            [locale, ["UTF8", "c", 4, "en_US.utf8", "en_US.utf8", "2.41"]],
+        ):
+            with self.subTest(locales=bad), self.assertRaises(ValueError):
+                lab.require_debian_compatibility(bad, collations, custody)
+
+        for key, value in (
+            ("default_order", ["A", "A-1", "A1", "A-C", "AB", "B", "a", "É", "é", "ا", "ب"]),
+            ("default_case", ["i", "I", "é", "É"]),
+            ("default_equality", [True, False, False, True]),
+            ("c_order", list(reversed(order))),
+        ):
+            with self.subTest(key=key):
+                changed = copy.deepcopy(collations)
+                changed["target"][key] = value
+                # A stale or forged match flag must not mask mismatching observations.
+                changed["default_order_matches"] = True
+                with self.assertRaises(ValueError):
+                    lab.require_debian_compatibility(locales, changed, custody)
+        for bad in (
+            None,
+            {},
+            {"source": {"outcome": "compatible"}},
+            {"source": {"outcome": "compatible"}, "target": {"outcome": "ordering_incompatible"}},
+        ):
+            with self.subTest(custody=bad), self.assertRaises(ValueError):
+                lab.require_debian_compatibility(locales, collations, bad)
+
+    def test_explicit_profile_cli_context_and_database_identities(self):
+        arguments = ["sha256:" + "b" * 64, "a" * 40, "/scratch", "/evidence"]
+        self.assertEqual(lab.parse_arguments(arguments), ("alpine", arguments))
+        self.assertEqual(lab.parse_arguments(["--debian", *arguments]), ("debian", arguments))
+        for bad in (
+            [],
+            ["--debian"],
+            ["--alpine", *arguments],
+            [*arguments, "--debian"],
+            ["--debian", "--debian", *arguments],
+        ):
+            with self.subTest(arguments=bad), self.assertRaises(ValueError):
+                lab.parse_arguments(bad)
+        lab.validate_identities([["999", "999"], ["999", "999"]], "debian")
+        lab.validate_identities([["999", "999"], ["70", "70"]], "alpine")
+        for identities, profile in (
+            ([["999", "999"], ["70", "70"]], "debian"),
+            ([["70", "70"], ["999", "999"]], "debian"),
+            ([["999", "999"], ["999", "999"]], "alpine"),
+            ([["999", "999"], ["999", "999"]], "other"),
+        ):
+            with (
+                self.subTest(identities=identities, profile=profile),
+                self.assertRaises(ValueError),
+            ):
+                lab.validate_identities(identities, profile)
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory).resolve()
+            scratch, evidence = (
+                root / "db-debian-candidate-scratch",
+                root / "db-debian-candidate-evidence",
+            )
+            env = {
+                "RUNNER_TEMP": str(root),
+                "GITHUB_ACTIONS": "true",
+                "RUNNER_ENVIRONMENT": "github-hosted",
+            }
+            with (
+                patch.dict(os.environ, env, clear=True),
+                patch.object(lab, "source_state", return_value=(arguments[1], True)),
+            ):
+                lab.validate_context(arguments[0], arguments[1], scratch, evidence, "debian")
+                for tmp, out, profile in (
+                    (scratch, evidence, "alpine"),
+                    (root / "db-alpine-gosu-scratch", evidence, "debian"),
+                    (scratch, root / "db-alpine-gosu-evidence", "debian"),
+                    (scratch, evidence, "other"),
+                ):
+                    with (
+                        self.subTest(tmp=tmp, out=out, profile=profile),
+                        self.assertRaises(ValueError),
+                    ):
+                        lab.validate_context(arguments[0], arguments[1], tmp, out, profile)
+                with (
+                    patch.dict(os.environ, {"RUNNER_ENVIRONMENT": "self-hosted"}),
+                    self.assertRaises(ValueError),
+                ):
+                    lab.validate_context(arguments[0], arguments[1], scratch, evidence, "debian")
+
     def test_stock_custody_reports_success_and_order_bound_rejection_distinctly(self):
         source_probe = {"default_order": ["AB", "A-C"]}
         target_probe = {"default_order": ["A-C", "AB"]}

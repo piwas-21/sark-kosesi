@@ -1,0 +1,65 @@
+name: PostgreSQL Debian candidate
+on:
+  workflow_dispatch:
+  pull_request:
+    branches: [develop]
+    paths:
+      - .github/workflows/db-debian-candidate.yml
+      - ops/db-zlib-candidate/**
+      - ops/db-gosu-candidate/**
+      - scripts/test_db_zlib_candidate.sh
+      - scripts/test_gosu_candidate.sh
+      - scripts/check_alpine_gosu_image.py
+      - scripts/check_db_alpine_gosu.py
+      - scripts/compare_db_zlib_scan.py
+      - scripts/capture_db_image_scan.py
+      - scripts/rehearse_alpine_gosu_restore.py
+      - scripts/rehearse_alpine_schema66.py
+      - scripts/rehearse_restore.py
+      - scripts/restore_loopback.py
+      - scripts/with_postgres.py
+      - crates/**
+      - Cargo.toml
+      - Cargo.lock
+      - rust-toolchain.toml
+      - migrations/**
+      - tests/tooling/test_db_alpine_gosu.py
+      - tests/tooling/test_alpine_gosu_*.py
+      - tests/tooling/test_compare_db_zlib_scan.py
+      - tests/tooling/test_gosu_candidate.py
+permissions: {}
+jobs:
+  candidate:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 90
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+      - name: Rebuild and check Gosu on pinned Debian
+        env:
+          GOSU_PROFILE: "1.20-debian"
+          GOSU_SOURCE_REVISION: ${{ github.event.pull_request.head.sha || github.sha }}
+          GOSU_EVIDENCE_DIR: ${{ runner.temp }}/db-gosu-evidence
+          GOSU_SCRATCH_DIR: ${{ runner.temp }}/db-gosu-scratch
+        run: bash scripts/test_gosu_candidate.sh
+      - name: Build, scan and rehearse the combined Debian candidate
+        env:
+          ZLIB_PROFILE: debian-gosu
+          ZLIB_SOURCE_REVISION: ${{ github.event.pull_request.head.sha || github.sha }}
+          ZLIB_EVIDENCE_DIR: ${{ runner.temp }}/db-debian-candidate-evidence
+          ZLIB_SCRATCH_DIR: ${{ runner.temp }}/db-debian-candidate-scratch
+        run: bash scripts/test_db_zlib_candidate.sh
+      - name: Retain candidate evidence and failures
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+        with:
+          name: db-debian-candidate-${{ github.event.pull_request.head.sha || github.sha }}
+          path: |
+            ${{ runner.temp }}/db-gosu-evidence/
+            ${{ runner.temp }}/db-debian-candidate-evidence/
+          if-no-files-found: error
+          retention-days: 30

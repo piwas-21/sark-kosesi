@@ -284,9 +284,12 @@ The optional Linux decoder separates image processing from the API and
 PostgreSQL. P7 requires the exact reviewed runtime on staging and measured
 capacity and recovery under cgroup limits before release.
 
-The synthetic Alpine restore lab records default and bytewise collation probes.
-P7 still needs a separately isolated clone validation of the actual database's
-collations, indexes and historical order-sensitive custody before migration.
+The Alpine restore lab observed a collation change that rejected historical
+stock receipt reads and replay in its synthetic fixture. The same-base Debian
+candidate lab evaluates the pinned zlib and Gosu changes together using full
+scans, receipt replay and the schema-66 rehearsal. P7 still needs an isolated
+clone check of the actual database's collations, indexes and historical
+order-sensitive custody, plus security disposition and operational rollback.
 
 Remaining delivery sequence: P0 business inputs in parallel → P2 inventory/catalogue → P3 checkout/payments → P4 customer/admin operations → P5 room planning and content → P6 acceptance → P7 controlled launch. Each phase has explicit exit evidence in the plan.
 

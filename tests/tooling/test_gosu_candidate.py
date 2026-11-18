@@ -159,6 +159,102 @@ def check_workflow(source):
 
 
 class GosuCandidatePolicy(unittest.TestCase):
+    def test_debian_120_profile_fixed_inputs(self):
+        source = (ROOT / "scripts/test_gosu_candidate.sh").read_text()
+        block = re.search(r"(?ms)^source_commit=.*?^esac$", source)
+        self.assertIsNotNone(block)
+        result = subprocess.run(
+            [
+                "bash",
+                "-c",
+                "fail() { exit 42; }\n"
+                + block.group()
+                + '\nprintf "%s|%s|%s|%s|%s|%s|%s|%s" "$profile" "$source_commit" '
+                + '"$source_sha" "$base" "$base_config" "$user_version" '
+                + '"$expected_version" "$dockerfile"',
+            ],
+            env={"GOSU_PROFILE": "1.20-debian"},
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        self.assertEqual(result.returncode, 0)
+        self.assertEqual(
+            result.stdout,
+            "1.20-debian|29b939aa5bd4dc588af765b8248f6e39150d2565|"
+            "2b70da8a5480fafedc16bb1fc91b572f064d03df736cbd91a616af2f1b66ab51|"
+            "mirror.gcr.io/library/postgres@" + POSTGRES_DIGEST + "|"
+            "sha256:3cccc725163a95947178f4da5e9bf16add75cb286170ac5a2cd2f6513534955d|"
+            "v0.4.1|1.20|ops/db-gosu-candidate/Dockerfile",
+        )
+
+    def test_debian_120_identity_and_oversized_controls(self):
+        source = (ROOT / "scripts/test_gosu_candidate.sh").read_text()
+        block = re.search(r"(?ms)^normalize_groups\(\) \{\n.*?(?=^db_id=\$\(docker run)", source)
+        self.assertIsNotNone(block)
+        # Simulate Docker responses to exercise the real shell guards; this does not
+        # prove behavior of an image, which requires the hosted synthetic run.
+        mock = r"""
+fail() { printf '%s\n' "$1" >&2; exit 1; }
+docker() {
+  local args="$*"
+  case "$args" in
+    *--mount*--entrypoint*)
+      if [[ "$args" == *' base postgres id -u'* ]]; then
+        [[ "$MODE" != stock_failure ]] || return 1
+        printf '%s\n' "${STOCK_UID:-999}"
+      else
+        if [[ "$MODE" == candidate_accepts ]]; then printf '999\n'; return 0; fi
+        printf 'bufio.Scanner: token too long\n' >&2; return 1
+      fi ;;
+    *'--user 999:999'*' root id'*) return 1 ;;
+    *'--entrypoint /usr/local/bin/gosu candidate postgres id -u'*) printf '%s\n' "${CANDIDATE_UID:-999}" ;;
+    *'--entrypoint /usr/local/bin/gosu candidate postgres id -g'*) printf '999\n' ;;
+    *'--entrypoint /usr/local/bin/gosu candidate postgres id -G'*) printf '999\n' ;;
+    *'--entrypoint /usr/bin/id base -G postgres'*) printf '999\n' ;;
+    *'--entrypoint /usr/local/bin/gosu candidate --version'*) printf '%s\n' "${CANDIDATE_VERSION:-1.20 (go1.27.4 on linux/amd64; gc)}" ;;
+    *'--entrypoint gosu base --version'*) printf '%s\n' "${STOCK_VERSION:-1.19 (go1.24.6 on linux/amd64; gc)}" ;;
+    *) printf 'unexpected Docker call: %s\n' "$args" >&2; return 1 ;;
+  esac
+}
+profile=1.20-debian image=candidate base=base
+"""
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            for mode, extra in (
+                ("valid", {}),
+                ("stock_failure", {}),
+                ("candidate_accepts", {}),
+                ("wrong_stock_uid", {"STOCK_UID": "70"}),
+                ("wrong_candidate_uid", {"CANDIDATE_UID": "70"}),
+                (
+                    "wrong_candidate_version",
+                    {"CANDIDATE_VERSION": "1.19 (go1.27.4 on linux/amd64; gc)"},
+                ),
+                ("wrong_stock_version", {"STOCK_VERSION": "1.18 (go1.24.6 on linux/amd64; gc)"}),
+                ("wrong_stock_go", {"STOCK_VERSION": "1.19 (go1.25.0 on linux/amd64; gc)"}),
+            ):
+                with self.subTest(mode=mode):
+                    result = subprocess.run(
+                        ["bash", "-c", "set -euo pipefail\n" + mock + block.group()],
+                        env={
+                            "PATH": os.defpath,
+                            "MODE": mode,
+                            "scratch": str(root),
+                            "evidence": str(root),
+                            **extra,
+                        },
+                        capture_output=True,
+                        text=True,
+                        check=False,
+                    )
+                    self.assertEqual(result.returncode == 0, mode == "valid", result.stderr)
+                    if mode == "valid":
+                        self.assertIn(
+                            "stock_oversized_group=accepted_uid_999\n",
+                            (root / "oversized-group-check.txt").read_text(),
+                        )
+
     def test_offline_build_and_digest_controls(self):
         source = (ROOT / "scripts/test_gosu_candidate.sh").read_text()
         check_script(source)

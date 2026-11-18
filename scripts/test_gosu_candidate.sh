@@ -32,6 +32,11 @@ case "$profile" in
     base_config='sha256:0f6c51e48b3458e87ab43692e49c9dafc72ffe0a0dbde3fd8cdb6ab92d5c025e'
     user_version=v0.4.1; expected_version=1.20; dockerfile=ops/db-gosu-candidate/Dockerfile.alpine
     ;;
+  1.20-debian)
+    source_commit=29b939aa5bd4dc588af765b8248f6e39150d2565
+    source_sha=2b70da8a5480fafedc16bb1fc91b572f064d03df736cbd91a616af2f1b66ab51
+    user_version=v0.4.1; expected_version=1.20; dockerfile=ops/db-gosu-candidate/Dockerfile
+    ;;
   *) fail 'unknown fixed candidate profile' ;;
 esac
 image="local/db-gosu-candidate:${GOSU_SOURCE_REVISION}"
@@ -118,7 +123,7 @@ normalize_groups() {
 uid=$(docker run --rm --network none --entrypoint /usr/local/bin/gosu "$image" postgres id -u)
 gid=$(docker run --rm --network none --entrypoint /usr/local/bin/gosu "$image" postgres id -g)
 groups=$(docker run --rm --network none --entrypoint /usr/local/bin/gosu "$image" postgres id -G)
-if [[ "$profile" == 1.19 ]]; then
+if [[ "$profile" == 1.19 || "$profile" == 1.20-debian ]]; then
   base_groups=$(docker run --rm --network none --entrypoint /usr/bin/id "$base" -G postgres)
 else
   base_groups=$(docker run --rm --network none --entrypoint id "$base" -G postgres)
@@ -128,7 +133,7 @@ group_set=$(normalize_groups "$groups") || fail 'invalid candidate group list'
 base_group_set=$(normalize_groups "$base_groups") || fail 'invalid base group list'
 printf 'postgres_uid=%s\npostgres_gid=%s\ncandidate_group_set=%s\nbase_group_set=%s\n' \
   "$uid" "$gid" "$group_set" "$base_group_set" > "$evidence/identity-check.txt"
-if [[ "$profile" == 1.19 ]]; then
+if [[ "$profile" == 1.19 || "$profile" == 1.20-debian ]]; then
   [[ "$uid" == 999 && "$gid" == 999 && "$group_set" == "$base_group_set" ]] || fail 'incorrect postgres identity'
   [[ ",$group_set," != *,0,* && ",$group_set," == *,999,* ]] || fail 'unsafe postgres groups'
   if docker run --rm --network none --user 999:999 --entrypoint /usr/local/bin/gosu "$image" root id > "$scratch/denied.log" 2>&1; then
@@ -140,6 +145,10 @@ else
   if docker run --rm --network none --user 70:70 --entrypoint /usr/local/bin/gosu "$image" root id > "$scratch/denied.log" 2>&1; then
     fail 'nonroot privilege escalation unexpectedly succeeded'
   fi
+fi
+if [[ "$profile" != 1.19 ]]; then
+  candidate_version=$(docker run --rm --network none --entrypoint /usr/local/bin/gosu "$image" --version)
+  [[ "$candidate_version" == '1.20 (go1.27.4 on linux/amd64; gc)' ]] || fail 'unexpected candidate Gosu version'
   stock_version=$(docker run --rm --network none --entrypoint gosu "$base" --version)
   [[ "$stock_version" == '1.19 (go1.24.6 on linux/amd64; gc)' ]] || fail 'unexpected stock Gosu version'
   python3 - "$scratch/oversized-group" <<'PY'
@@ -150,15 +159,19 @@ PY
   stock_uid=$(docker run --rm --network none --read-only --memory 128m --cpus 1 --pids-limit 32 \
     --mount "type=bind,src=$scratch/oversized-group,dst=/etc/group,readonly" \
     --entrypoint gosu "$base" postgres id -u) || fail 'stock oversized group control failed'
-  [[ "$stock_uid" == 70 ]] || fail 'stock oversized group identity mismatch'
+  if [[ "$profile" == 1.20 ]]; then
+    [[ "$stock_uid" == 70 ]] || fail 'stock oversized group identity mismatch'
+  else
+    [[ "$stock_uid" == 999 ]] || fail 'stock oversized group identity mismatch'
+  fi
   if docker run --rm --network none --read-only --memory 128m --cpus 1 --pids-limit 32 \
     --mount "type=bind,src=$scratch/oversized-group,dst=/etc/group,readonly" \
     --entrypoint gosu "$image" postgres id -u > "$scratch/oversized.log" 2>&1; then
     fail 'candidate accepted oversized group line'
   fi
   grep -Fq 'bufio.Scanner: token too long' "$scratch/oversized.log" || fail 'unexpected oversized group failure'
-  printf 'stock_gosu_version=%s\nstock_oversized_group=accepted_uid_70\ncandidate_oversized_group=token_too_long\n' \
-    "$stock_version" > "$evidence/oversized-group-check.txt"
+  printf 'stock_gosu_version=%s\nstock_oversized_group=accepted_uid_%s\ncandidate_oversized_group=token_too_long\n' \
+    "$stock_version" "$stock_uid" > "$evidence/oversized-group-check.txt"
 fi
 db_id=$(docker run --detach --network none --memory 768m --cpus 1 --pids-limit 256 \
   --tmpfs /var/lib/postgresql:rw,size=256m --env POSTGRES_PASSWORD=isolated-synthetic-password "$image")
