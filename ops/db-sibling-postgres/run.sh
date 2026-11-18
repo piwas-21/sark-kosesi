@@ -14,10 +14,11 @@ mkdir "$out" "$scratch" "$scratch/docker-config"
 export DOCKER_CONFIG="$scratch/docker-config"
 source_id=''
 target_id=''
+zlib_proof_id=''
 stage=prerequisites
 cleanup() {
   rc=$?
-  for id in "$source_id" "$target_id"; do
+  for id in "$source_id" "$target_id" "$zlib_proof_id"; do
     if [[ -n "$id" ]]; then docker rm -f -v "$id" >/dev/null || true; fi
   done
   if [[ "$rc" == 0 ]]; then printf 'stage=complete outcome=success\n' > "$out/status.txt"; else printf 'stage=%s outcome=failed exit=%s\n' "$stage" "$rc" > "$out/status.txt"; fi
@@ -36,16 +37,31 @@ root_id=$(docker image inspect "$root_image" --format '{{.Id}}')
 source_image_id=$(docker image inspect "$source_image" --format '{{.Id}}')
 grep -Fxq "candidate=$root_id" "$RUNNER_TEMP/db-sibling-root-evidence/image-ids.txt"
 grep -Fxq "candidate_image_id=$source_image_id" "$RUNNER_TEMP/db-source-feature-evidence/identity.txt"
+stage=zlib_package
+mkdir "$scratch/zlib-context"
+cp ops/db-zlib-candidate/{Dockerfile,sanitize_apt_failure.sh} "$scratch/zlib-context/"
+cp /etc/ssl/certs/ca-certificates.crt "$scratch/zlib-context/ca-certificates.crt"
+test -s "$scratch/zlib-context/ca-certificates.crt"
+zlib_image="local/db-sibling-zlib-source:$COMPOSE_REVISION"
+docker build --platform linux/amd64 -t "$zlib_image" -f "$scratch/zlib-context/Dockerfile" "$scratch/zlib-context" > "$out/zlib-build.log" 2>&1
+zlib_id=$(docker image inspect "$zlib_image" --format '{{.Id}}')
+[[ "$zlib_id" =~ ^sha256:[0-9a-f]{64}$ ]] || fail 'invalid verified package image'
+docker image inspect "$zlib_id" > "$out/zlib-image.json"
+docker image inspect "mirror.gcr.io/library/postgres@sha256:c7fedce47eff6a78cb35dad6b627f0d684107f75ab15c0870e40c093766ba452" > "$out/zlib-stock-image.json"
+zlib_proof_id=$(docker create --network none "$zlib_id")
+docker cp "$zlib_proof_id:/usr/local/share/db-zlib-candidate-evidence" "$out/zlib-package-evidence"
+docker rm -v "$zlib_proof_id" >/dev/null
+zlib_proof_id=''
 stage=build
 mkdir "$scratch/build-context"
 cp ops/db-sibling-postgres/{Dockerfile,packages.lock} "$scratch/build-context/"
 cp /etc/ssl/certs/ca-certificates.crt "$scratch/build-context/ca-certificates.crt"
 test -s "$scratch/build-context/ca-certificates.crt"
 image="local/db-sibling-postgres:$COMPOSE_REVISION"
-docker build --platform linux/amd64 --build-arg "SOURCE_IMAGE=$source_image" --build-arg "SIBLING_IMAGE=$root_image" -t "$image" -f "$scratch/build-context/Dockerfile" "$scratch/build-context" > "$out/build.log" 2>&1
+docker build --platform linux/amd64 --build-arg "SOURCE_IMAGE=$source_image" --build-arg "SIBLING_IMAGE=$root_image" --build-arg "ZLIB_IMAGE=$zlib_image" -t "$image" -f "$scratch/build-context/Dockerfile" "$scratch/build-context" > "$out/build.log" 2>&1
 candidate_id=$(docker image inspect "$image" --format '{{.Id}}')
-[[ "$candidate_id" =~ ^sha256:[0-9a-f]{64}$ && "$candidate_id" != "$root_id" && "$candidate_id" != "$source_image_id" ]] || fail 'invalid composition identity'
-printf 'sibling=%s\nsource=%s\ncomposed=%s\n' "$root_id" "$source_image_id" "$candidate_id" > "$out/image-ids.txt"
+[[ "$candidate_id" =~ ^sha256:[0-9a-f]{64}$ && "$candidate_id" != "$root_id" && "$candidate_id" != "$source_image_id" && "$candidate_id" != "$zlib_id" ]] || fail 'invalid composition identity'
+printf 'sibling=%s\nsource=%s\nzlib_source=%s\ncomposed=%s\n' "$root_id" "$source_image_id" "$zlib_id" "$candidate_id" > "$out/image-ids.txt"
 docker image inspect "$root_id" > "$out/sibling-image.json"
 docker image inspect "$candidate_id" > "$out/composed-image.json"
 cp "$RUNNER_TEMP/db-sibling-root-evidence/candidate-packages.txt" "$out/sibling-packages.txt"
@@ -59,6 +75,9 @@ done
 docker run --rm -i --network none --entrypoint sh "$candidate_id" -s -- packages < ops/db-sibling-runtime-root/probe.sh > "$out/composed-packages.txt"
 docker run --rm -i --network none --entrypoint bash "$candidate_id" -s -- linkage < ops/db-sibling-postgres/inspect.sh > "$out/composed-linkage.txt"
 docker run --rm --network none --entrypoint cat "$candidate_id" /usr/local/share/sibling-postgres-evidence/trust-inputs.txt > "$out/trust-inputs.txt"
+for point in before after; do
+  docker run --rm --network none --entrypoint cat "$candidate_id" "/usr/local/share/sibling-postgres-evidence/zlib-$point.txt" > "$out/zlib-$point.txt"
+done
 docker run --rm --network none --user postgres --entrypoint bash "$candidate_id" -c 'set -eu; test "$(id -u)" = 999; test "$(id -g)" = 999; test ! -w /opt/pg-smoke/bin/postgres'
 stage=fixture_start
 stock='mirror.gcr.io/library/postgres@sha256:c7fedce47eff6a78cb35dad6b627f0d684107f75ab15c0870e40c093766ba452'

@@ -17,3 +17,12 @@ whose Release SHA-256 is
 verifies the signed Release using the pinned root's Debian keyring, then the
 index and package checksums. Expiration checking is disabled only for the
 fixed historical snapshot. Runtime linkage must confirm the actual need.
+
+The final composition layer consumes `zlib1g=1:1.3.dfsg+really1.3.1-1+deb13u1`
+from a same-run build of `ops/db-zlib-candidate/Dockerfile`, which verifies
+Debian security archive signatures and package metadata. The final layer checks
+the original version, package architecture and the already reviewed package
+SHA-256 `8c27c342230503b73dfde629642c3b352e87b554e06d60cf58772f236a305ceb`
+before installing it. The source package file is mounted read-only during the
+installation rather than copied into the final image. The signed archive inputs
+and package evidence are retained in the composition artifact.
