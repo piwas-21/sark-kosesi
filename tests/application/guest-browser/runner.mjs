@@ -133,6 +133,8 @@ let server;
 let browser;
 let crossOrigin;
 let untrustedServer;
+let loseOrderReceipt = false;
+let lostOrderReceipt;
 try {
   const createCertificate = (prefix) =>
     spawnSync(
@@ -191,7 +193,17 @@ try {
             "default-src 'self'; connect-src 'self'; frame-ancestors 'none'",
         });
         response.end(
-          '<!doctype html><html lang="en"><title>Synthetic private browser fixture</title><main>Private test fixture</main></html>',
+          await readFile(new URL("./acceptance.html", import.meta.url)),
+        );
+        return;
+      }
+      if (request.method === "GET" && request.url === "/acceptance.js") {
+        response.writeHead(200, {
+          "content-type": "text/javascript; charset=utf-8",
+          "cache-control": "no-store",
+        });
+        response.end(
+          await readFile(new URL("./acceptance.js", import.meta.url)),
         );
         return;
       }
@@ -234,6 +246,12 @@ try {
         });
         const result = Buffer.from(await upstream.arrayBuffer());
         if (result.includes(token)) return deny(502);
+        if (loseOrderReceipt && request.url === "/api/test/guest/orders") {
+          loseOrderReceipt = false;
+          if (upstream.status !== 200) return deny(502);
+          lostOrderReceipt = JSON.parse(result.toString());
+          return deny(503);
+        }
         const outgoing = {
           "cache-control": "private, no-store",
           "content-type":
@@ -588,13 +606,55 @@ try {
   );
   assert.equal(missingCookie, 401);
   await stranger.close();
-  const first = await call("/api/test/guest/orders", "POST", order, csrf);
-  const again = await call("/api/test/guest/orders", "POST", order, csrf);
-  assert.equal(first.status, 200);
-  assert.equal(first.body.replayed, false);
-  assert.equal(again.body.replayed, true);
-  assert.equal(first.body.id, again.body.id);
-  assert.match(first.body.id, /^[a-f0-9]{32}$/);
+  await page.evaluate(
+    ({ order, csrf }) => window.configureSyntheticAcceptance(order, csrf),
+    { order, csrf },
+  );
+  const orderRequests = () =>
+    outbound.filter(
+      (request) => request.url() === `${origin}/api/test/guest/orders`,
+    );
+  await page.getByRole("button", { name: "Submit synthetic order" }).click();
+  assert.equal(orderRequests().length, 0);
+  assert.equal(
+    await page
+      .locator("#terms")
+      .evaluate((field) => field.validity.valueMissing),
+    true,
+  );
+  await page
+    .getByRole("checkbox", { name: "I accept the synthetic terms" })
+    .check();
+  loseOrderReceipt = true;
+  await page.getByRole("button", { name: "Submit synthetic order" }).click();
+  await page.waitForFunction(
+    () =>
+      document.querySelector("#receipt").textContent ===
+      "Receipt unavailable. Retry the same synthetic order.",
+  );
+  assert.equal(lostOrderReceipt.replayed, false);
+  assert.match(lostOrderReceipt.id, /^[a-f0-9]{32}$/);
+  const retryResponse = page.waitForResponse(
+    (response) => response.url() === `${origin}/api/test/guest/orders`,
+  );
+  await page.getByRole("button", { name: "Submit synthetic order" }).click();
+  const retried = await retryResponse;
+  assert.equal(retried.status(), 200);
+  assert.equal(retried.headers()["cache-control"], "private, no-store");
+  await page.waitForFunction(
+    (id) =>
+      document.querySelector("#receipt").textContent ===
+      `Synthetic order receipt: ${id}`,
+    lostOrderReceipt.id,
+  );
+  assert.equal(
+    await page.getByRole("status").getAttribute("data-replayed"),
+    "true",
+  );
+  assert.equal(orderRequests().length, 2);
+  assert.equal(orderRequests()[0].postData(), orderRequests()[1].postData());
+  assert.deepEqual(JSON.parse(orderRequests()[0].postData()), order);
+  const first = { body: lostOrderReceipt };
   // The proof comes from the real private issuer for the cookie-owned order.
   // Its bearer is captured only by this process and passed in the request body.
   const proof = await issueProof(
@@ -760,7 +820,6 @@ try {
     (await call(cancellationPath, "POST", cancellation, csrf)).body,
     { replayed: true },
   );
-  assert.equal(first.cache, "private, no-store");
   assert.equal(blockedNetwork, false);
   for (const request of outbound) {
     assert(
