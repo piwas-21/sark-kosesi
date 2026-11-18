@@ -581,6 +581,26 @@ readiness or vulnerability disposition. A separate reviewed slice must add the
 verified PostgreSQL install, exercise the runtime and compare unfiltered scans.
 No image is published or deployed by this workflow.
 
+## PostgreSQL sibling composition lab
+
+The path-scoped `PostgreSQL sibling composition lab` rebuilds and validates the
+sibling root and source feature experiments at the same checkout. It installs
+only the snapshot-pinned readline runtime pair and the already-present terminal
+library version, then copies the source experiment’s `/opt/pg-smoke` tree into
+the sibling root. Package delta, file hashes, modes, owners and symlinks are
+compared. The lab inspects executable and module ELF linkages and samples
+libraries actually loaded by synthetic PostgreSQL and psql processes; missing
+or selected prohibited libraries fail. These measurements do not cover every
+possible dynamically loaded extension or operating path.
+
+Network-isolated, non-root disposable clusters exercise SCRAM success and a
+specific wrong-password rejection, a stock-to-composed compressed custom-format
+restore and an invalid archive control. The source tree, exact package versions,
+image identities, fixture outcomes and trust evidence remain in the workflow
+artifact. This is a feasibility test, not a bit-reproducible build, a complete
+entrypoint or lifecycle test, a TLS test, a vulnerability scan, staging clone or
+rollback acceptance. It publishes no image and does not deploy or alter staging.
+
 ## Isolated PostgreSQL zlib candidate
 
 `ops/db-zlib-candidate/Dockerfile` and `scripts/test_db_zlib_candidate.sh`
