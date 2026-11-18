@@ -242,6 +242,20 @@ def run_fixture(env, name):
         "verify_stock_custody",
     ):
         raise ValueError("Unexpected synthetic fixture")
+    # A separate build preflight yields a fixed phase signal without publishing
+    # Cargo diagnostics or treating a later invocation failure as a test failure.
+    build = subprocess.run(
+        ["cargo", "test", "--locked", "-p", "commerce-infrastructure", "--lib", "--no-run"],
+        cwd=ROOT,
+        env=env,
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+        timeout=1200,
+        check=False,
+    )
+    if build.returncode:
+        print("restore_fixture: build_preflight_failed", file=sys.stderr)
+        raise RuntimeError("Synthetic restore fixture build preflight failed")
     output_options = ["--nocapture"] if name == "verify_stock_custody" else []
     result = subprocess.run(
         [
@@ -264,6 +278,7 @@ def run_fixture(env, name):
         check=False,
     )
     if result.returncode or not re.search(rb"test result: ok\. 1 passed; 0 failed;", result.stdout):
+        print("restore_fixture: invocation_failed_after_preflight", file=sys.stderr)
         raise RuntimeError("Synthetic restore fixture command failed")
     if name == "verify_stock_custody":
         markers = [
