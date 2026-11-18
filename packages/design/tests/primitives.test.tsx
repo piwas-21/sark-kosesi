@@ -1,5 +1,5 @@
 import { render, screen } from "@testing-library/react";
-import { it, expect } from "vitest";
+import { it, expect } from "../../../tests/application/unit-runtime.mjs";
 import { Button, Field, Status, CourtyardMark } from "../src/primitives";
 it("renders labelled input, error, disabled action and live status", () => {
   render(

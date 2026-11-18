@@ -1,4 +1,8 @@
-import { describe, it, expect } from "vitest";
+import {
+  describe,
+  it,
+  expect,
+} from "../../../tests/application/unit-runtime.mjs";
 import { decodeCatalogue } from "../src/lib/catalogue";
 import { configuration } from "../src/lib/config";
 import {

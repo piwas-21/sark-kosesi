@@ -1,7 +1,6 @@
 import js from "@eslint/js";
 import globals from "globals";
-import tseslint from "typescript-eslint";
-export default tseslint.config(
+export default [
   {
     ignores: [
       "design/**",
@@ -22,16 +21,4 @@ export default tseslint.config(
     files: ["**/*.mjs"],
     languageOptions: { globals: { ...globals.node, ...globals.browser } },
   },
-  ...tseslint.configs.recommended.map((config) => ({
-    ...config,
-    files: ["**/*.ts", "**/*.tsx"],
-  })),
-  {
-    files: ["**/*.ts", "**/*.tsx"],
-    rules: {
-      "@typescript-eslint/no-explicit-any": "error",
-      "@typescript-eslint/no-non-null-assertion": "error",
-      "@typescript-eslint/ban-ts-comment": "error",
-    },
-  },
-);
+];

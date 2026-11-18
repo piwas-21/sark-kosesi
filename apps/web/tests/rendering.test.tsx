@@ -1,36 +1,10 @@
 import { render, screen, fireEvent, waitFor } from "@testing-library/react";
-import { it, expect, vi } from "vitest";
-import type { ReactNode } from "react";
-const push = vi.hoisted(() => vi.fn());
-vi.mock("next/font/local", () => ({
-  default: () => ({ variable: "fixture-font" }),
-}));
-vi.mock("next/navigation", () => ({
-  useRouter: () => ({ push }),
-  usePathname: () => "/nl/products/courtyard-demo",
-  useSearchParams: () => new URLSearchParams("variant=covers"),
-  notFound: () => {
-    throw new Error("NOT_FOUND");
-  },
-}));
-vi.mock("next/link", () => ({
-  default: ({
-    href,
-    children,
-    ...props
-  }: {
-    href: string;
-    children: ReactNode;
-  }) => (
-    <a href={href} {...props}>
-      {children}
-    </a>
-  ),
-}));
-vi.mock("next/headers", () => ({
-  headers: async () => new Headers({ "x-nonce": "test-nonce" }),
-}));
-vi.mock("server-only", () => ({}));
+import {
+  it,
+  expect,
+  vi,
+  routerPush as push,
+} from "../../../tests/application/unit-runtime.mjs";
 import { Preferences } from "../src/components/preferences";
 import Gallery from "../src/app/[locale]/gallery/page";
 import Admin from "../src/app/[locale]/admin/page";
