@@ -126,6 +126,13 @@ def compare_collations(source, target):
     }
 
 
+def capture_collations(wrapper, envs):
+    if len(envs) != 2:
+        raise ValueError("Two collation probes required")
+    source, target = (json.loads(psql(wrapper, env, COLLATION_SQL)) for env in envs)
+    return compare_collations(source, target)
+
+
 class Progress:
     """Only fixed stage and failure codes may leave the private lab."""
 
@@ -515,8 +522,7 @@ def main(candidate, revision, scratch, evidence, progress=None):
             if any(locale[0] != "UTF8" for locale in locales):
                 raise ValueError("Unexpected database encoding")
             progress.enter("collation_probe")
-            probes = [json.loads(psql(wrapper, env, COLLATION_SQL)) for env in envs]
-            collation_evidence = compare_collations(*probes)
+            collation_evidence = capture_collations(wrapper, envs)
             roles = [
                 psql(
                     wrapper,

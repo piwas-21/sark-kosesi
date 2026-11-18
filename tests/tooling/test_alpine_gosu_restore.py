@@ -22,7 +22,8 @@ class RestoreAdapterTests(unittest.TestCase):
     def test_collation_probe_checks_controls_and_records_mismatch(self):
         import copy
 
-        c_order = sorted(lab.COLLATION_SAMPLES, key=lambda item: item.encode("utf-8"))
+        # Independent bytewise oracle, not computed using the implementation's sorter.
+        c_order = ["A", "A-1", "A1", "B", "a", "É", "é", "ا", "ب"]
         healthy = {
             "default_order": c_order.copy(),
             "c_order": c_order.copy(),
@@ -78,6 +79,36 @@ class RestoreAdapterTests(unittest.TestCase):
             lab.compare_collations(missing, healthy)
         with self.assertRaises(ValueError):
             lab.compare_collations(None, healthy)
+
+    def test_collation_capture_queries_each_database_and_rejects_missing_output(self):
+        expected_order = ["A", "A-1", "A1", "B", "a", "É", "é", "ا", "ب"]
+        source = {
+            "default_order": expected_order,
+            "c_order": expected_order,
+            "default_case": ["i", "I", "É", "é"],
+            "c_case": ["i", "I", "É", "é"],
+            "default_equality": [False, False, False, True],
+            "c_equality": [False, False, False, True],
+        }
+        target = {**source, "default_order": ["a", "A", "A-1", "A1", "B", "É", "é", "ا", "ب"]}
+        wrapper = Path("/owned/client")
+        envs = [{"PGDATABASE": "source"}, {"PGDATABASE": "target"}]
+        with patch.object(
+            lab, "psql", side_effect=[json.dumps(source), json.dumps(target)]
+        ) as query:
+            report = lab.capture_collations(wrapper, envs)
+        self.assertEqual(query.call_count, 2)
+        self.assertEqual(query.call_args_list[0].args, (wrapper, envs[0], lab.COLLATION_SQL))
+        self.assertEqual(query.call_args_list[1].args, (wrapper, envs[1], lab.COLLATION_SQL))
+        self.assertFalse(report["default_order_matches"])
+        self.assertTrue(report["explicit_c_controls_match"])
+        with patch.object(lab, "psql", side_effect=[json.dumps(source), ""]):
+            with self.assertRaises(ValueError):
+                lab.capture_collations(wrapper, envs)
+        with patch.object(lab, "psql") as query:
+            with self.assertRaises(ValueError):
+                lab.capture_collations(wrapper, [envs[0]])
+            query.assert_not_called()
 
     def test_reviewed_private_network_policy_is_exact_and_tamper_evident(self):
         self.assertEqual(
