@@ -68,6 +68,69 @@ impl PasswordBlocklist {
         Ok(Self(manifest))
     }
 
+    /// Decode the canonical integrity preimage with a separately trusted digest.
+    /// This checks shape and integrity, not the source or qualification of the corpus.
+    pub fn from_canonical_bytes(bytes: &[u8], expected: [u8; 32]) -> Result<Self, PasswordError> {
+        fn take<'a>(input: &mut &'a [u8], count: usize) -> Result<&'a [u8], PasswordError> {
+            let (head, tail) = input
+                .split_at_checked(count)
+                .ok_or(PasswordError::Unavailable)?;
+            *input = tail;
+            Ok(head)
+        }
+        fn integer(input: &mut &[u8]) -> Result<[u8; 8], PasswordError> {
+            let bytes = take(input, 8)?;
+            Ok([
+                bytes[0], bytes[1], bytes[2], bytes[3], bytes[4], bytes[5], bytes[6], bytes[7],
+            ])
+        }
+        fn text(input: &mut &[u8]) -> Result<String, PasswordError> {
+            let length = u64::from_be_bytes(integer(input)?);
+            if length == 0 || length > 240 {
+                return Err(PasswordError::Unavailable);
+            }
+            let length = length as usize; // At most 240 on every supported target.
+            let value = std::str::from_utf8(take(input, length)?)
+                .map_err(|_| PasswordError::Unavailable)?;
+            Ok(value.to_owned())
+        }
+        let mut input = bytes
+            .strip_prefix(DOMAIN)
+            .ok_or(PasswordError::Unavailable)?;
+        let version = text(&mut input)?;
+        let provenance = text(&mut input)?;
+        let qualification_ref = text(&mut input)?;
+        let valid_from = i64::from_be_bytes(integer(&mut input)?);
+        let valid_until = i64::from_be_bytes(integer(&mut input)?);
+        let count = u64::from_be_bytes(integer(&mut input)?);
+        if count == 0 || count > MAX_ENTRIES as u64 {
+            return Err(PasswordError::Unavailable);
+        }
+        let count = count as usize; // At most 1,000,000 on every supported target.
+        if count * 32 != input.len() {
+            return Err(PasswordError::Unavailable);
+        }
+        let digests = input
+            .chunks_exact(32)
+            .map(|entry| {
+                let mut digest = [0; 32];
+                digest.copy_from_slice(entry);
+                digest
+            })
+            .collect();
+        Self::new(
+            BlocklistManifest {
+                version,
+                provenance,
+                qualification_ref,
+                valid_from,
+                valid_until,
+                digests,
+            },
+            expected,
+        )
+    }
+
     pub(super) fn require_current(&self, at: i64) -> Result<(), PasswordError> {
         if at < self.0.valid_from || at >= self.0.valid_until {
             return Err(PasswordError::Unavailable);
