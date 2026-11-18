@@ -632,6 +632,25 @@ All scanner findings remain open until separately disposed; scanner output is no
 proof of complete vulnerability coverage, deployment, or release readiness.
 The workflow publishes no image and does not connect to staging data.
 
+## PostgreSQL sibling lifecycle lab
+
+The path-scoped `PostgreSQL sibling lifecycle lab` rebuilds the composition on
+the same disposable AMD64 hosted runner and records its exact image identity.
+It prepares uniquely labelled new volumes, initializes a synthetic cluster as
+UID/GID 999:999 and runs PostgreSQL directly as PID 1 with no network, a
+read-only root and an explicit data directory. It checks failed starts on empty
+and wrong-owner volumes, SCRAM success and wrong-password rejection, then
+stops with SIGINT, recreates the container on the same volume and verifies a
+synthetic row. Inspection checks identity, isolation and clean exit. Only the
+labelled disposable resources are removed; no existing volume is mounted.
+
+This tests a pre-initialized cluster contract, not the stock image entrypoint:
+automatic initialization, environment-based user/database creation, init
+scripts and ownership repair are not provided. A second-volume restore,
+staging-compatible credentials and network, TLS, physical-volume migration,
+backup, rollback, source vulnerability review and production acceptance remain
+separate work. It publishes no image and does not access staging or live data.
+
 ## Isolated PostgreSQL zlib candidate
 
 `ops/db-zlib-candidate/Dockerfile` and `scripts/test_db_zlib_candidate.sh`
