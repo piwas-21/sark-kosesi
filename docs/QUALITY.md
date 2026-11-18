@@ -1091,6 +1091,14 @@ its exact late page, the attempt claim, source-clock boundary, damaged operation
 and event, and mismatched credential. It must preserve the stopped checkpoint,
 redact provider identity and perform no provider request.
 
+### Local/test packing assertion release
+
+Use an isolated database and the worker process to verify confirmed release and
+exact replay create one journal record and event, while changed target, repeated
+release, wrong grant, revoked session and stale MFA fail without further effects.
+Check command bounds, explicit confirmation, local/test restriction, credential
+input and redacted errors. Verify no stock or payment record is added.
+
 ### Private customer sessions
 
 For optional synchronizer custody, use real PostgreSQL to verify exact session

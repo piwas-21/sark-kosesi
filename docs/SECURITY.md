@@ -27,6 +27,12 @@ responsibility. The unseeded capability and missing staff-session issuer do not
 provide production operator access. The review validates existing custody and
 does not retry a provider operation or authorize a financial change.
 
+The local/test packing release command uses the same bounded non-terminal bearer
+input and recent-MFA warehouse guard. It requires explicit confirmation, returns a
+minimal receipt and does not issue credentials, grant dispatch authority or prove
+physical handling. A committed release can precede a failed output; retry its
+exact intent and staff identity with the same effect key.
+
 The RustSec check audits the full lockfile. The PostgreSQL-only SQLx export
 crate removes the unused SQLite dependency affected by
 [RUSTSEC-2026-0459](https://rustsec.org/advisories/RUSTSEC-2026-0459.html).
