@@ -924,6 +924,17 @@ Maintain the maximum-basket and component conservation checks from the
 underlying late-stock path. Tests and private decisions supply no provider,
 shipment or production acceptance evidence.
 
+### Pending post-dispatch cancellation requests
+
+Use isolated PostgreSQL to require the exact owned order, payment attempt,
+previously committed dispatch start and reciprocal recovery event. Exercise guest
+and account/CSRF isolation, same-key concurrency and changed-key conflict,
+pre-dispatch denial, source/event tampering, an actual write wait with expired
+authority, and a healthy restoration. A populated pre-provenance upgrade retains
+NULL start provenance; a modern same-transaction start is rejected. Assert one
+digest-bound pending event and unchanged cancellation, payment, stock, promotion,
+refund and packing state. This does not prove customer or provider acceptance.
+
 ### Private refund reservations
 
 Use real isolated PostgreSQL with an accepted immutable quote and authenticated
