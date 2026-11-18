@@ -163,8 +163,9 @@ under current finance authority without contacting the provider or moving funds.
 A separate private owner request after payment dispatch records pending cancellation
 intent against the exact original start. Order, payment, stock and packing state
 remain intact. Private staff inspection now validates that historical request
-under a dedicated recent-MFA grant. Operator disposition and customer-facing
-handling remain open.
+under a dedicated recent-MFA grant. The same authority can discover one recorded
+request at a time through a live private cursor; refresh to include earlier inserts.
+Operator disposition and customer-facing handling remain open.
 Private promotion drafts and independent exact-revision reviews now persist
 canonical eligibility/discount terms and explicit lifetime budget/redemption limits.
 New drafts and withdrawal block older approvals for new orders. Private guest

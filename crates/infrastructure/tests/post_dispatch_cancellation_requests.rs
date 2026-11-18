@@ -1382,3 +1382,366 @@ async fn inspection_rejects_damaged_attempt_id_and_missing_attempt_with_orphans(
             .is_some()
     );
 }
+
+#[sqlx::test(migrator = "MIGRATOR")]
+async fn cancellation_inbox_scans_one_validated_request_with_live_cursor_and_fresh_authority(
+    pool: PgPool,
+) {
+    use commerce_application::Locale;
+    use commerce_infrastructure::{
+        checkout_cancellations::{InspectionError, next_post_dispatch_request as next},
+        checkout_orders::create_order,
+        checkout_quotes::issue_quote,
+    };
+    struct AdvancingClock(AtomicU64);
+    impl commerce_application::request_context::Clock for AdvancingClock {
+        fn unix_seconds(&self) -> Result<u64, commerce_application::request_context::ContextError> {
+            Ok(self.0.fetch_add(1000, Ordering::SeqCst))
+        }
+    }
+    let (store, time, first_session, first_csrf, first_order) = payment::accepted(&pool).await;
+    let reviewer = inspection_staff(&pool, "inbox-reviewer", 51, "cancellation.review").await;
+    let other = inspection_staff(&pool, "inbox-other", 52, "warehouse.manage").await;
+    assert_eq!(
+        next(&pool, &reviewer, time.as_ref(), None)
+            .await
+            .expect("empty"),
+        None
+    );
+    assert!(matches!(
+        next(
+            &pool,
+            &reviewer,
+            &AdvancingClock(AtomicU64::new(1500)),
+            None
+        )
+        .await,
+        Err(InspectionError::Denied)
+    ));
+
+    assert!(matches!(
+        next(&pool, &other, time.as_ref(), None).await,
+        Err(InspectionError::Denied)
+    ));
+    assert!(matches!(
+        next(&pool, &reviewer, time.as_ref(), Some("bad")).await,
+        Err(InspectionError::InvalidRequest)
+    ));
+    pool.execute("UPDATE stock_balances SET on_hand=100")
+        .await
+        .expect("isolated stock");
+    let mut orders = vec![(first_order, first_session, first_csrf)];
+    for _ in 0..2 {
+        let (session, csrf) = payment::quote::guest(&store).await;
+        let key = GuestCredential::from_session(&session).expect("guest");
+        let quote = issue_quote(
+            &store,
+            &key,
+            &csrf,
+            Locale::Nl,
+            &payment::quote::request("quote"),
+        )
+        .await
+        .expect("quote")
+        .snapshot;
+        let order = create_order(
+            &store,
+            &key,
+            &csrf,
+            "place",
+            &payment::order::intent(&quote.binding.quote_id),
+            &payment::order::seller(),
+        )
+        .await
+        .expect("order")
+        .snapshot;
+        orders.push((order, session, csrf));
+    }
+    orders.sort_by(|a, b| a.0.identity.id.cmp(&b.0.identity.id));
+    let ids = payment::Ids(AtomicU64::new(30000));
+    for index in [1, 2] {
+        let (order, session, csrf) = &orders[index];
+        let key = GuestCredential::from_session(session).expect("guest");
+        let prepared = prepare_attempt(
+            &store,
+            &key,
+            csrf,
+            "pay",
+            &payment::intent(order),
+            &payment::config(),
+        )
+        .await
+        .expect("prepare");
+        start_dispatch(
+            &pool,
+            time.as_ref(),
+            &ids,
+            &prepared.frozen.snapshot().binding.id,
+            &payment::config(),
+        )
+        .await
+        .expect("dispatch");
+        request_after_dispatch(&store, &key, csrf, "request", &order.identity.id)
+            .await
+            .expect("request");
+    }
+    let before = footprint(&pool).await;
+    let first = next(&pool, &reviewer, time.as_ref(), None)
+        .await
+        .expect("first")
+        .expect("candidate");
+    assert_eq!(first.order_id, orders[1].0.identity.id);
+    let second = next(&pool, &reviewer, time.as_ref(), Some(&first.order_id))
+        .await
+        .expect("second")
+        .expect("candidate");
+    assert_eq!(second.order_id, orders[2].0.identity.id);
+    assert_eq!(
+        next(&pool, &reviewer, time.as_ref(), Some(&second.order_id))
+            .await
+            .expect("end"),
+        None
+    );
+    assert_eq!(footprint(&pool).await, before);
+    let (order, session, csrf) = &orders[0];
+    let key = GuestCredential::from_session(session).expect("guest");
+    let prepared = prepare_attempt(
+        &store,
+        &key,
+        csrf,
+        "pay",
+        &payment::intent(order),
+        &payment::config(),
+    )
+    .await
+    .expect("prepare early");
+    start_dispatch(
+        &pool,
+        time.as_ref(),
+        &ids,
+        &prepared.frozen.snapshot().binding.id,
+        &payment::config(),
+    )
+    .await
+    .expect("dispatch early");
+    request_after_dispatch(&store, &key, csrf, "request", &order.identity.id)
+        .await
+        .expect("request early");
+    assert_eq!(
+        next(&pool, &reviewer, time.as_ref(), Some(&second.order_id))
+            .await
+            .expect("still at end"),
+        None
+    );
+    assert_eq!(
+        next(&pool, &reviewer, time.as_ref(), None)
+            .await
+            .expect("refresh")
+            .expect("candidate")
+            .order_id,
+        order.identity.id
+    );
+    let event: serde_json::Value = sqlx::query_scalar("SELECT to_jsonb(e) FROM commerce_outbox e WHERE e.aggregate_id=$1 AND e.kind='checkout.cancellation_requested.v1'")
+        .bind(&order.identity.id).fetch_one(&pool).await.expect("event");
+    pool.execute("ALTER TABLE commerce_outbox DISABLE TRIGGER USER")
+        .await
+        .expect("damage fixture");
+    sqlx::query("DELETE FROM commerce_outbox WHERE id=$1")
+        .bind(event["id"].as_str().expect("id"))
+        .execute(&pool)
+        .await
+        .expect("detach event");
+    assert!(matches!(
+        next(&pool, &reviewer, time.as_ref(), None).await,
+        Err(InspectionError::InvalidStoredData)
+    ));
+    sqlx::query(
+        "INSERT INTO commerce_outbox SELECT (jsonb_populate_record(NULL::commerce_outbox,$1)).*",
+    )
+    .bind(event)
+    .execute(&pool)
+    .await
+    .expect("restore event");
+    pool.execute("ALTER TABLE commerce_outbox ENABLE TRIGGER USER")
+        .await
+        .expect("restore guard");
+    assert_eq!(
+        next(&pool, &reviewer, time.as_ref(), None)
+            .await
+            .expect("repaired")
+            .expect("candidate")
+            .order_id,
+        order.identity.id
+    );
+    // The bounded candidate reader rejects a malformed stored key, even when
+    // database guards are deliberately bypassed in this isolated fixture.
+    pool.execute("ALTER TABLE checkout_post_dispatch_requests DISABLE TRIGGER ALL")
+        .await
+        .expect("damage request key");
+    sqlx::query("UPDATE checkout_post_dispatch_requests SET order_id='bad' WHERE order_id=$1")
+        .bind(&order.identity.id)
+        .execute(&pool)
+        .await
+        .expect("malformed key");
+    assert!(matches!(
+        next(&pool, &reviewer, time.as_ref(), Some(&second.order_id)).await,
+        Err(InspectionError::InvalidStoredData)
+    ));
+    sqlx::query("UPDATE checkout_post_dispatch_requests SET order_id=$1 WHERE order_id='bad'")
+        .bind(&order.identity.id)
+        .execute(&pool)
+        .await
+        .expect("restore key");
+    pool.execute("ALTER TABLE checkout_post_dispatch_requests ENABLE TRIGGER ALL")
+        .await
+        .expect("restore request guards");
+    pool.execute("ALTER TABLE checkout_post_dispatch_requests RENAME TO test_unavailable_requests")
+        .await
+        .expect("isolate database failure");
+    assert!(matches!(
+        next(&pool, &reviewer, time.as_ref(), None).await,
+        Err(InspectionError::Database)
+    ));
+    pool.execute("ALTER TABLE test_unavailable_requests RENAME TO checkout_post_dispatch_requests")
+        .await
+        .expect("restore request table");
+    assert!(
+        next(&pool, &reviewer, time.as_ref(), None)
+            .await
+            .expect("restored custody")
+            .is_some()
+    );
+    let mut tx = pool.begin().await.expect("plan");
+    sqlx::query("SET LOCAL enable_seqscan=off")
+        .execute(&mut *tx)
+        .await
+        .expect("plan policy");
+    let plan: Vec<String> = sqlx::query_scalar("EXPLAIN SELECT order_id FROM checkout_post_dispatch_requests WHERE order_id COLLATE \"C\">$1 COLLATE \"C\" ORDER BY order_id COLLATE \"C\" LIMIT 1")
+        .bind(&first.order_id).fetch_all(&mut *tx).await.expect("plan");
+    assert!(
+        plan.iter()
+            .any(|line| line.contains("checkout_post_dispatch_request_order_c")),
+        "{plan:?}"
+    );
+}
+
+#[sqlx::test(migrator = "MIGRATOR")]
+async fn cancellation_inbox_fences_authority_after_real_attempt_wait(pool: PgPool) {
+    use commerce_infrastructure::checkout_cancellations::{
+        InspectionError, next_post_dispatch_request as next,
+    };
+    let (store, time, session, csrf, order) = payment::accepted(&pool).await;
+    let key = GuestCredential::from_session(&session).expect("guest");
+    let reviewer = inspection_staff(&pool, "inbox-wait", 53, "cancellation.review").await;
+    let prepared = prepare_attempt(
+        &store,
+        &key,
+        &csrf,
+        "pay",
+        &payment::intent(&order),
+        &payment::config(),
+    )
+    .await
+    .expect("prepare");
+    let attempt = &prepared.frozen.snapshot().binding.id;
+    start_dispatch(
+        &pool,
+        time.as_ref(),
+        &payment::Ids(AtomicU64::new(10000)),
+        attempt,
+        &payment::config(),
+    )
+    .await
+    .expect("dispatch");
+    request_after_dispatch(&store, &key, &csrf, "request", &order.identity.id)
+        .await
+        .expect("request");
+    let mut blocker = pool.begin().await.expect("blocker");
+    sqlx::query("SELECT id FROM payment_attempts WHERE id=$1 FOR UPDATE")
+        .bind(attempt)
+        .execute(&mut *blocker)
+        .await
+        .expect("attempt lock");
+    let operation = next(&pool, &reviewer, time.as_ref(), None);
+    let release = async {
+        tokio::time::timeout(std::time::Duration::from_millis(900), async {
+            loop {
+                let waiting: bool = sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM pg_stat_activity WHERE datname=current_database() AND wait_event_type='Lock' AND query LIKE '%SELECT id FROM payment_attempts WHERE id=$1 FOR UPDATE%')").fetch_one(&pool).await.expect("actual wait");
+                if waiting { break; }
+                tokio::time::sleep(std::time::Duration::from_millis(5)).await;
+            }
+        }).await.expect("attempt wait");
+        time.0.store(2301, Ordering::SeqCst);
+        blocker.rollback().await.expect("release");
+    };
+    let (result, ()) = tokio::join!(operation, release);
+    assert!(matches!(result, Err(InspectionError::Denied)));
+    time.0.store(1500, Ordering::SeqCst);
+    assert!(
+        next(&pool, &reviewer, time.as_ref(), None)
+            .await
+            .expect("fresh")
+            .is_some()
+    );
+    // Corruption between selection and the attempt claim is detected after
+    // the wait instead of turning the selected candidate into an empty page.
+    let request: serde_json::Value =
+        sqlx::query_scalar("SELECT to_jsonb(r) FROM checkout_post_dispatch_requests r")
+            .fetch_one(&pool)
+            .await
+            .expect("request");
+    let event: serde_json::Value = sqlx::query_scalar("SELECT to_jsonb(e) FROM commerce_outbox e WHERE e.kind='checkout.cancellation_requested.v1'").fetch_one(&pool).await.expect("event");
+    let mut blocker = pool.begin().await.expect("second blocker");
+    sqlx::query("SELECT id FROM payment_attempts WHERE id=$1 FOR UPDATE")
+        .bind(attempt)
+        .execute(&mut *blocker)
+        .await
+        .expect("attempt lock");
+    let operation = next(&pool, &reviewer, time.as_ref(), None);
+    let damage = async {
+        tokio::time::timeout(std::time::Duration::from_millis(900), async {
+            loop {
+                let waiting: bool = sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM pg_stat_activity WHERE datname=current_database() AND wait_event_type='Lock' AND query LIKE '%SELECT id FROM payment_attempts WHERE id=$1 FOR UPDATE%')").fetch_one(&pool).await.expect("actual wait");
+                if waiting { break; }
+                tokio::time::sleep(std::time::Duration::from_millis(5)).await;
+            }
+        }).await.expect("attempt wait");
+        let mut corrupt = pool.begin().await.expect("isolated damage");
+        sqlx::query("SET LOCAL session_replication_role=replica")
+            .execute(&mut *corrupt)
+            .await
+            .expect("bypass fixture guards");
+        sqlx::query("DELETE FROM checkout_post_dispatch_requests")
+            .execute(&mut *corrupt)
+            .await
+            .expect("detach request");
+        sqlx::query("DELETE FROM commerce_outbox WHERE kind='checkout.cancellation_requested.v1'")
+            .execute(&mut *corrupt)
+            .await
+            .expect("detach event");
+        corrupt.commit().await.expect("commit isolated corruption");
+        blocker.rollback().await.expect("release attempt");
+    };
+    let (result, ()) = tokio::join!(operation, damage);
+    assert!(matches!(result, Err(InspectionError::InvalidStoredData)));
+    let mut repair = pool.begin().await.expect("repair");
+    sqlx::query("SET LOCAL session_replication_role=replica")
+        .execute(&mut *repair)
+        .await
+        .expect("repair fixture guards");
+    sqlx::query("INSERT INTO checkout_post_dispatch_requests SELECT (jsonb_populate_record(NULL::checkout_post_dispatch_requests,$1)).*").bind(request).execute(&mut *repair).await.expect("restore request");
+    sqlx::query(
+        "INSERT INTO commerce_outbox SELECT (jsonb_populate_record(NULL::commerce_outbox,$1)).*",
+    )
+    .bind(event)
+    .execute(&mut *repair)
+    .await
+    .expect("restore event");
+    repair.commit().await.expect("complete repair");
+    assert!(
+        next(&pool, &reviewer, time.as_ref(), None)
+            .await
+            .expect("restored")
+            .is_some()
+    );
+}

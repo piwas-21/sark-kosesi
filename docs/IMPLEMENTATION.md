@@ -315,7 +315,9 @@ full workload bounds and operational acceptance remain separate.
    Operator disposition, customer handling and account-only access remain separate.
    Private exact-order inspection requires the unseeded `cancellation.review`
    capability and recent MFA, revalidates the historical request and dispatch
-   under the original attempt claim, and grants no disposition authority.
+   under the original attempt claim, and grants no disposition authority. A
+   private one-candidate cursor discovers recorded requests under the same grant;
+   refresh is needed for insertions preceding the cursor.
    Finish post-dispatch disposition, redemption disposition, lifecycle/payment
    transitions and retention before public checkout. Seller and legal facts
    remain required trusted configuration.

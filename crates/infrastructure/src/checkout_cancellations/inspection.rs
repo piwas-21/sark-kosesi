@@ -30,7 +30,7 @@ impl From<sqlx::Error> for InspectionError {
         Self::Database
     }
 }
-fn staff(error: StaffError) -> InspectionError {
+pub(super) fn staff(error: StaffError) -> InspectionError {
     match error {
         StaffError::Denied | StaffError::InvalidRequest => InspectionError::Denied,
         StaffError::ClockUnavailable => InspectionError::ClockUnavailable,
@@ -69,7 +69,15 @@ pub async fn inspect_post_dispatch_request(
         .await
         .map_err(staff)?;
     let result = inspect_locked(&mut access.tx, order_id).await;
-    let at = access.authorized_at(&observed).map_err(staff)?;
+    finish(access, &observed, result)
+}
+
+pub(super) fn finish(
+    access: crate::staff_access::StaffTransaction,
+    clock: &dyn Clock,
+    result: Result<Option<CancellationInspection>, InspectionError>,
+) -> Result<Option<CancellationInspection>, InspectionError> {
+    let at = access.authorized_at(clock).map_err(staff)?;
     if result
         .as_ref()
         .is_ok_and(|row| row.as_ref().is_some_and(|value| at < value.requested_at))
@@ -89,7 +97,7 @@ async fn index(
         .bind(order).fetch_one(&mut **tx).await?)
 }
 
-async fn inspect_locked(
+pub(super) async fn inspect_locked(
     tx: &mut Transaction<'_, Postgres>,
     order: &str,
 ) -> Result<Option<CancellationInspection>, InspectionError> {

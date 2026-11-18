@@ -937,7 +937,9 @@ refund and packing state. Staff inspection tests require the dedicated unseeded
 grant and current MFA, exercise missing and damaged reciprocal custody and an
 actual attempt-lock wait, and include account-bound and legacy-start controls.
 Inspection does not change the underlying state or prove customer or provider
-acceptance.
+acceptance. The one-candidate inbox exercises empty, cursor traversal, inserts
+behind a cursor, damaged candidate custody and an actual attempt wait with MFA
+expiry; no scan claims complete orphan-event discovery.
 
 ### Private refund reservations
 
