@@ -46,6 +46,86 @@ ISOLATION_CODES = frozenset(
 )
 
 
+# Fixed, public literals only: no application rows or environment-supplied SQL.
+COLLATION_SAMPLES = ("A-1", "A1", "B", "a", "A", "é", "É", "ا", "ب")
+COLLATION_SQL = """WITH samples(value) AS (VALUES
+ ('A-1'),('A1'),('B'),('a'),('A'),('é'),('É'),('ا'),('ب'))
+SELECT json_build_object(
+ 'default_order',(SELECT json_agg(value ORDER BY value) FROM samples),
+ 'c_order',(SELECT json_agg(value ORDER BY value COLLATE "C") FROM samples),
+ 'default_case',json_build_array(lower('I'),upper('i'),lower('É'),upper('é')),
+ 'c_case',json_build_array(lower('I' COLLATE "C"),upper('i' COLLATE "C"),
+                          lower('É' COLLATE "C"),upper('é' COLLATE "C")),
+ 'default_equality',json_build_array('A'='a','é'='É','A-1'='A1','A1'='A1'),
+ 'c_equality',json_build_array('A' COLLATE "C"='a','é' COLLATE "C"='É',
+                               'A-1' COLLATE "C"='A1','A1' COLLATE "C"='A1')
+)::text"""
+
+
+def validate_collation_probe(probe):
+    """Validate all observations and independently known bytewise controls."""
+    keys = {"default_order", "c_order", "default_case", "c_case", "default_equality", "c_equality"}
+    if not isinstance(probe, dict) or set(probe) != keys:
+        raise ValueError("Invalid collation probe shape")
+    for key in ("default_order", "c_order"):
+        value = probe[key]
+        if (
+            not isinstance(value, list)
+            or len(value) != len(COLLATION_SAMPLES)
+            or not all(isinstance(item, str) for item in value)
+            or set(value) != set(COLLATION_SAMPLES)
+        ):
+            raise ValueError("Invalid collation ordering")
+    if probe["c_order"] != sorted(COLLATION_SAMPLES, key=lambda item: item.encode("utf-8")):
+        raise ValueError("Explicit C ordering control failed")
+    for key in ("default_case", "c_case"):
+        value = probe[key]
+        if (
+            not isinstance(value, list)
+            or len(value) != 4
+            or not all(
+                isinstance(item, str) and 0 < len(item.encode("utf-8")) <= 8 for item in value
+            )
+            or value[:2] != ["i", "I"]
+            or any(item not in ("é", "É") for item in value[2:])
+        ):
+            raise ValueError("Invalid collation case probe")
+    if probe["c_case"] != ["i", "I", "É", "é"]:
+        raise ValueError("Explicit C case control failed")
+    for key in ("default_equality", "c_equality"):
+        value = probe[key]
+        if (
+            not isinstance(value, list)
+            or len(value) != 4
+            or any(type(item) is not bool for item in value)
+            or value[3] is not True
+        ):
+            raise ValueError("Invalid collation equality probe")
+    if probe["c_equality"] != [False, False, False, True]:
+        raise ValueError("Explicit C equality control failed")
+    return probe
+
+
+def compare_collations(source, target):
+    source, target = validate_collation_probe(source), validate_collation_probe(target)
+    if any(source[key] != target[key] for key in ("c_order", "c_case", "c_equality")):
+        raise ValueError("Explicit C control mismatch")
+    return {
+        "source": source,
+        "target": target,
+        "default_order_matches": source["default_order"] == target["default_order"],
+        "default_case_matches": source["default_case"] == target["default_case"],
+        "default_equality_matches": source["default_equality"] == target["default_equality"],
+        "source_default_order_matches_c": source["default_order"] == source["c_order"],
+        "target_default_order_matches_c": target["default_order"] == target["c_order"],
+        "source_default_case_matches_c": source["default_case"] == source["c_case"],
+        "target_default_case_matches_c": target["default_case"] == target["c_case"],
+        "source_default_equality_matches_c": source["default_equality"] == source["c_equality"],
+        "target_default_equality_matches_c": target["default_equality"] == target["c_equality"],
+        "explicit_c_controls_match": True,
+    }
+
+
 class Progress:
     """Only fixed stage and failure codes may leave the private lab."""
 
@@ -434,6 +514,9 @@ def main(candidate, revision, scratch, evidence, progress=None):
             locales = [json.loads(psql(wrapper, env, locale_sql)) for env in envs]
             if any(locale[0] != "UTF8" for locale in locales):
                 raise ValueError("Unexpected database encoding")
+            progress.enter("collation_probe")
+            probes = [json.loads(psql(wrapper, env, COLLATION_SQL)) for env in envs]
+            collation_evidence = compare_collations(*probes)
             roles = [
                 psql(
                     wrapper,
@@ -539,6 +622,7 @@ def main(candidate, revision, scratch, evidence, progress=None):
                 ).hexdigest(),
                 "migration_history_sha256": before["_sqlx_migrations"][1],
                 "locales": locales,
+                "collation_probe": collation_evidence,
                 "roles": roles,
                 "postgres_versions": versions,
                 "postgres_uid_gid": identities,

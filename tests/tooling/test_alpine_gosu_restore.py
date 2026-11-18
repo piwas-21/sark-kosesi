@@ -19,6 +19,66 @@ import restore_loopback as loopback
 
 
 class RestoreAdapterTests(unittest.TestCase):
+    def test_collation_probe_checks_controls_and_records_mismatch(self):
+        import copy
+
+        c_order = sorted(lab.COLLATION_SAMPLES, key=lambda item: item.encode("utf-8"))
+        healthy = {
+            "default_order": c_order.copy(),
+            "c_order": c_order.copy(),
+            "default_case": ["i", "I", "É", "é"],
+            "c_case": ["i", "I", "É", "é"],
+            "default_equality": [False, False, False, True],
+            "c_equality": [False, False, False, True],
+        }
+        result = lab.compare_collations(healthy, copy.deepcopy(healthy))
+        self.assertTrue(result["default_order_matches"])
+        self.assertTrue(result["explicit_c_controls_match"])
+        self.assertTrue(result["source_default_order_matches_c"])
+        changed = copy.deepcopy(healthy)
+        changed["default_order"][0], changed["default_order"][1] = (
+            changed["default_order"][1],
+            changed["default_order"][0],
+        )
+        changed["default_case"][2:] = ["é", "É"]
+        changed["default_equality"][0] = True
+        result = lab.compare_collations(healthy, changed)
+        for key in (
+            "default_order_matches",
+            "default_case_matches",
+            "default_equality_matches",
+            "target_default_order_matches_c",
+            "target_default_case_matches_c",
+            "target_default_equality_matches_c",
+        ):
+            self.assertFalse(result[key], key)
+        self.assertTrue(result["explicit_c_controls_match"])
+        self.assertEqual(result["target"], changed)
+
+        for key, value in (
+            ("default_order", []),
+            ("default_order", ["A"] * len(c_order)),
+            ("c_order", list(reversed(c_order))),
+            ("default_case", ["i", "I", "é"]),
+            ("default_case", ["i", "I", "x" * 9, "é"]),
+            ("default_case", ["i", "I", "x", "é"]),
+            ("c_case", ["i", "I", "é", "É"]),
+            ("default_equality", [False, False, False, 1]),
+            ("default_equality", [False, False, False, False]),
+            ("c_equality", [False, False, False, False]),
+        ):
+            with self.subTest(key=key, value=value):
+                bad = copy.deepcopy(healthy)
+                bad[key] = value
+                with self.assertRaises(ValueError):
+                    lab.compare_collations(healthy, bad)
+        missing = copy.deepcopy(healthy)
+        del missing["default_order"]
+        with self.assertRaises(ValueError):
+            lab.compare_collations(missing, healthy)
+        with self.assertRaises(ValueError):
+            lab.compare_collations(None, healthy)
+
     def test_reviewed_private_network_policy_is_exact_and_tamper_evident(self):
         self.assertEqual(
             {str(network) for network in loopback.private_network_policy()},

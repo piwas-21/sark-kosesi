@@ -661,8 +661,12 @@ sequence comparison are reused. A preserved, quiescent source is checked again
 as a limited rollback control; the candidate is separately changed to prove
 content and sequence differences are detected. Duplicate and invalid-archive
 controls, original/fresh synthetic key checks and database locale metadata are
-recorded. Database clients still run against owned loopback endpoints; no staging
-data, volume, keys or credentials are involved.
+recorded. The report also records fixed synthetic ASCII, hyphenated, accented
+and Arabic literal ordering and case/equality probes under the default and `C`
+collations on each database. It compares each result, validates independent `C`
+controls and reports observed differences without declaring the locales equivalent.
+Database clients still run against owned loopback endpoints; no staging data,
+volume, keys or credentials are involved.
 
 The same containers also host a separate pair of freshly created synthetic
 databases for a populated schema-66 rehearsal. The source receives exactly the
@@ -682,6 +686,11 @@ restore failure. Retained checksums cover available evidence even on failure;
 the overall workflow succeeds only when both checks succeed. The restore status
 artifact reports fixed stage/invariant codes, elapsed time and cleanup outcome;
 it does not include database credentials, exception text or process output.
+
+This small literal sample does not test populated application indexes, historical
+order-sensitive stock receipts or concurrent lock ordering. The actual source and
+candidate collations, versions, restored indexes and representative custody must
+be validated on a separate isolated clone before any migration decision.
 
 This does not prove physical-volume portability, default-locale equivalence,
 all schema definitions, roles and grants, application image startup, a router
