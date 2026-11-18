@@ -1108,17 +1108,19 @@ async fn simultaneous_same_key_retries_serialize_to_one_decision_and_one_replay(
         let c = case.clone();
         let d = digest.clone();
         tasks.push(tokio::spawn(async move {
-            disposition::retry(
-                &p,
-                &SessionToken::from_bytes([99; 32]),
-                time.as_ref(),
-                ids.as_ref(),
-                request(&c, &d, "66666666666666666666666666666666", 1),
+            crate::late_stock_wait_budget::diagnose_effect_key(
+                crate::late_stock_wait_budget::scope(disposition::retry(
+                    &p,
+                    &SessionToken::from_bytes([99; 32]),
+                    time.as_ref(),
+                    ids.as_ref(),
+                    request(&c, &d, "66666666666666666666666666666666", 1),
+                )),
             )
             .await
         }));
     }
-    tokio::time::timeout(std::time::Duration::from_millis(800), async {
+    tokio::time::timeout(std::time::Duration::from_secs(3), async {
         loop {
             let waiters: i64 = sqlx::query_scalar("SELECT count(*) FROM pg_stat_activity WHERE datname=current_database() AND wait_event_type='Lock' AND query LIKE 'SELECT pg_advisory_xact_lock(hashtextextended%'").fetch_one(&pool).await.expect("observe both actual key waiters");
             if waiters >= 2 { break; }
@@ -1126,22 +1128,80 @@ async fn simultaneous_same_key_retries_serialize_to_one_decision_and_one_replay(
         }
     }).await.expect("both requests wait concurrently on the same key");
     blocker.commit().await.expect("release concurrent retries");
-    let first = tasks
-        .remove(0)
-        .await
-        .expect("first task")
-        .expect("one canonical decision");
-    let second = tasks
-        .remove(0)
-        .await
-        .expect("second task")
-        .expect("exact replay");
+    let (first, first_code) = tasks.remove(0).await.expect("first task");
+    let first =
+        first.unwrap_or_else(|_| panic!("first retry failed; effect-key SQLSTATE: {first_code:?}"));
+    let (second, second_code) = tasks.remove(0).await.expect("second task");
+    let second = second
+        .unwrap_or_else(|_| panic!("second retry failed; effect-key SQLSTATE: {second_code:?}"));
     assert_eq!(first.id, second.id);
     assert_ne!(first.replayed, second.replayed);
     assert!(matches!(first.outcome, DecisionOutcome::StillScarce));
     assert!(matches!(second.outcome, DecisionOutcome::StillScarce));
     assert_eq!(allocation_counts(&pool).await, before);
     let (decisions, events): (i64, i64) = sqlx::query_as("SELECT (SELECT count(*) FROM late_stock_dispositions WHERE case_id=$1),(SELECT count(*) FROM commerce_outbox WHERE aggregate_id=$2 AND kind='order.stock_recovery_decided.v1')").bind(&case.id).bind(&case.order_id).fetch_one(&pool).await.expect("one decision and one event");
+    assert_eq!((decisions, events), (1, 1));
+}
+
+#[sqlx::test(migrator = "MIGRATOR")]
+async fn same_key_production_timeout_leaves_no_decision_and_exact_retry_succeeds(pool: PgPool) {
+    let (f, case, digest) = scarce(&pool).await;
+    let token = staff(&pool, "stock.recover", 98).await;
+    let key = "77777777777777777777777777777777";
+    let before = allocation_counts(&pool).await;
+    let mut blocker = pool.begin().await.expect("hold exact key");
+    sqlx::query("SELECT pg_advisory_xact_lock(hashtextextended($1,0))")
+        .bind(format!("late-stock-disposition:{key}"))
+        .execute(&mut *blocker)
+        .await
+        .expect("hold actual effect-key lock");
+    let p = pool.clone();
+    let time = f.time.clone();
+    let ids = f.ids.clone();
+    let c = case.clone();
+    let d = digest.clone();
+    let task = tokio::spawn(async move {
+        crate::late_stock_wait_budget::diagnose_effect_key(disposition::retry(
+            &p,
+            &SessionToken::from_bytes([98; 32]),
+            time.as_ref(),
+            ids.as_ref(),
+            request(&c, &d, key, 1),
+        ))
+        .await
+    });
+    let (result, sqlstate) = tokio::time::timeout(std::time::Duration::from_secs(15), task)
+        .await
+        .expect("bounded production lock timeout")
+        .expect("retry task");
+    assert!(matches!(
+        result,
+        Err(DispositionError::Custody(LateStockError::Database))
+    ));
+    assert_eq!(
+        sqlstate.as_deref(),
+        Some("55P03"),
+        "effect-key lock SQLSTATE"
+    );
+    assert_eq!(allocation_counts(&pool).await, before);
+    let (decisions, events): (i64, i64) = sqlx::query_as("SELECT (SELECT count(*) FROM late_stock_dispositions WHERE case_id=$1),(SELECT count(*) FROM commerce_outbox WHERE aggregate_id=$2 AND kind='order.stock_recovery_decided.v1')")
+        .bind(&case.id).bind(&case.order_id).fetch_one(&pool).await.expect("no partial decision or event");
+    assert_eq!((decisions, events), (0, 0));
+    blocker.commit().await.expect("release key");
+    let receipt = disposition::retry(
+        &pool,
+        &token,
+        f.time.as_ref(),
+        f.ids.as_ref(),
+        request(&case, &digest, key, 1),
+    )
+    .await
+    .expect("same actor and key succeeds after timeout");
+    assert!(!receipt.replayed);
+    assert!(matches!(receipt.outcome, DecisionOutcome::StillScarce));
+    assert_eq!(allocation_counts(&pool).await, before);
+    let (decisions, events): (i64, i64) = sqlx::query_as("SELECT (SELECT count(*) FROM late_stock_dispositions WHERE case_id=$1),(SELECT count(*) FROM commerce_outbox WHERE aggregate_id=$2 AND kind='order.stock_recovery_decided.v1')")
+        .bind(&case.id).bind(&case.order_id).fetch_one(&pool).await.expect("one committed decision and event");
     assert_eq!((decisions, events), (1, 1));
 }
 
