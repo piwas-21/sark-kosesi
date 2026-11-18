@@ -50,7 +50,7 @@ class Schema66Tests(unittest.TestCase):
             with self.assertRaises(ValueError):
                 lab.run_fixture({}, "unrelated")
 
-    def exercise(self, corrupt_target=False):
+    def exercise(self, corrupt_target=False, profile=None):
         FakeSnapshot.counter = 0
         calls = []
         before = {
@@ -72,7 +72,9 @@ class Schema66Tests(unittest.TestCase):
             root = Path(directory)
 
             def fixture(env, name):
-                calls.append((name, env["RESTORE_FIXTURE_DATABASE_URL"]))
+                calls.append(
+                    (name, env["RESTORE_FIXTURE_DATABASE_URL"], env["RESTORE_FIXTURE_PROFILE"])
+                )
                 if name == "restore_schema66_seed":
                     (root / "schema66-synthetic-proof").write_bytes(b"x" * 32)
 
@@ -118,7 +120,10 @@ class Schema66Tests(unittest.TestCase):
                     self.assertNotIn("restore_schema66_upgrade", [item[0] for item in calls])
                     self.assertFalse((root / "schema66-restore-upgrade.json").exists())
                     return
-                lab.run_rehearsal(*arguments)
+                if profile is None:
+                    lab.run_rehearsal(*arguments)
+                else:
+                    lab.run_rehearsal(*arguments, profile=profile)
             report = json.loads((root / "schema66-restore-upgrade.json").read_text())
             self.assertEqual(report["source_migration_count"], 66)
             self.assertEqual(report["upgraded_migration_max"], 81)
@@ -128,6 +133,7 @@ class Schema66Tests(unittest.TestCase):
             fixture_calls = [item for item in calls if item[0].startswith("restore_schema66_")]
             self.assertIn("127.0.0.1:1234/", fixture_calls[0][1])
             self.assertIn("127.0.0.1:1235/", fixture_calls[1][1])
+            self.assertEqual([item[2] for item in fixture_calls], [profile or "alpine"] * 2)
             dump = next(item for item in calls if item[0] == "archive" and "pg_dump" in item[1])
             self.assertIn("--snapshot", dump[1])
             restore = next(
@@ -137,6 +143,29 @@ class Schema66Tests(unittest.TestCase):
 
     def test_restore_then_upgrade_uses_distinct_owned_databases(self):
         self.exercise()
+
+    def test_debian_profile_is_passed_to_both_fixture_invocations(self):
+        self.exercise(profile="debian")
+
+    def test_unknown_profile_is_rejected_before_database_creation(self):
+        with patch.object(lab, "psql") as psql:
+            for profile in ("", "Debian", "../debian", "db-debian-candidate-scratch", None):
+                with self.subTest(profile=profile), self.assertRaises(ValueError):
+                    lab.run_rehearsal(
+                        None,
+                        [],
+                        [],
+                        {},
+                        [],
+                        "",
+                        Path("/tmp"),
+                        Path("/tmp"),
+                        "",
+                        "",
+                        None,
+                        profile=profile,
+                    )
+            psql.assert_not_called()
 
     def test_corrupted_restore_never_runs_migrations(self):
         self.exercise(corrupt_target=True)

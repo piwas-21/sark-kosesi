@@ -68,7 +68,11 @@ def run_rehearsal(
     candidate_id,
     revision,
     progress,
+    *,
+    profile="alpine",
 ):
+    if profile not in ("alpine", "debian"):
+        raise ValueError("Invalid schema-66 restore profile")
     if (
         len(base_envs) != 2
         or len(urls) != 2
@@ -98,6 +102,7 @@ def run_rehearsal(
         **client_env,
         "RESTORE_FIXTURE_DATABASE_NAME": database,
         "RESTORE_FIXTURE_MARKER": marker,
+        "RESTORE_FIXTURE_PROFILE": profile,
     }
     proof_path = scratch / "schema66-synthetic-proof"
     progress.enter("schema66_database_create")

@@ -758,6 +758,7 @@ def main(candidate, revision, scratch, evidence, progress=None, profile="alpine"
                 candidate,
                 revision,
                 progress,
+                profile=profile,
             )
         finally:
             (scratch / "schema66-synthetic-proof").unlink(missing_ok=True)

@@ -1415,6 +1415,35 @@ async fn guest_link_open_waits_for_competing_order_link_after_committed_start(po
 
 // These two ignored tests are invoked only by the owned hosted restore adapter.
 // The proof bearer is synthetic and stays in a mode-0600 runner scratch file.
+fn restore_schema66_scratch_name(profile: &str) -> Option<&'static str> {
+    match profile {
+        "alpine" => Some("db-alpine-gosu-scratch"),
+        "debian" => Some("db-debian-candidate-scratch"),
+        _ => None,
+    }
+}
+
+#[test]
+fn schema66_scratch_profile_is_strictly_allowlisted() {
+    assert_eq!(
+        restore_schema66_scratch_name("alpine"),
+        Some("db-alpine-gosu-scratch")
+    );
+    assert_eq!(
+        restore_schema66_scratch_name("debian"),
+        Some("db-debian-candidate-scratch")
+    );
+    for invalid in [
+        "",
+        "Debian",
+        "../debian",
+        "db-debian-candidate-scratch",
+        "other",
+    ] {
+        assert_eq!(restore_schema66_scratch_name(invalid), None);
+    }
+}
+
 fn restore_schema66_proof_path() -> std::path::PathBuf {
     assert_eq!(
         std::env::var("GITHUB_ACTIONS").ok().as_deref(),
@@ -1425,7 +1454,9 @@ fn restore_schema66_proof_path() -> std::path::PathBuf {
         Some("github-hosted")
     );
     let temp = std::path::PathBuf::from(std::env::var_os("RUNNER_TEMP").expect("runner temp"));
-    let scratch = temp.join("db-alpine-gosu-scratch");
+    let profile = std::env::var("RESTORE_FIXTURE_PROFILE").expect("restore profile");
+    let scratch =
+        temp.join(restore_schema66_scratch_name(&profile).expect("approved restore profile"));
     assert_eq!(scratch.canonicalize().expect("owned scratch"), scratch);
     scratch.join("schema66-synthetic-proof")
 }
