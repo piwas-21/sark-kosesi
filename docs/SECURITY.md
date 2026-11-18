@@ -363,6 +363,12 @@ issuance reject account-bound custody. Private verified payment preparation and
 history require both the retained order account and current guest ownership.
 Native insertion binds the attempt to the quote account. The account association
 stays in the private relational record.
+A separate post-dispatch pending request retains the original guest/CSRF and,
+when bound, customer-session authority through the attempt claim and event write.
+The detached receipt is pending intent only; it neither changes cancellation nor
+authorizes provider, financial, stock, packing or physical fulfilment effects.
+Legacy NULL start transaction provenance is preserved without inference.
+
 Private cancellation uses the same guest and account authority as the order.
 Cancellation and admission share a basket claim; cancellation and dispatch share
 an attempt claim and reject a conflicting durable effect after waiting. Both

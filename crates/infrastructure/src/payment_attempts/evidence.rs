@@ -30,7 +30,7 @@ pub(crate) async fn context(
     Ok((frozen, started_at))
 }
 
-pub(super) async fn context_with_start(
+pub(crate) async fn context_with_start(
     tx: &mut Transaction<'_, Postgres>,
     id: &str,
     claim: bool,

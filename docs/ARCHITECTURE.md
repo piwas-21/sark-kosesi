@@ -1918,6 +1918,17 @@ their original meaning. Existing stock expiry handles the reservation, and the
 original redemption remains part of lifetime usage. A durable dispatch start
 requires separate reconciliation and disposition.
 
+A distinct pending-cancellation request accepts a held owner guest and CSRF, plus
+the bound account session where required. It serializes the original payment
+attempt and validates the frozen attempt, exact dispatch start and reciprocal
+reconciliation event. A one-per-order immutable request and digest-bound minimal
+outbox event commit together; exact effect replay revalidates history under fresh
+authority. Modern starts must originate in a different database transaction; NULL
+legacy provenance remains unknown, not invented. The pending request is neither a
+cancellation nor permission to stop packing, release stock, issue refunds or
+contact a provider. A future operator disposition and fulfilment interlock are
+required; no public or test route is added.
+
 Seller policy is a required trusted server argument with explicit identity, tax
 registration choice, document versions/digests, locale, evidence and validity.
 Nothing installs or infers real seller/legal facts. Email validation checks bounded
