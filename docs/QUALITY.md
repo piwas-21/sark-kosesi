@@ -1367,3 +1367,19 @@ It rejects absent or malformed observations and exercises fixed positive and
 negative bytewise controls. Different observations are recorded, not suppressed
 or treated as proof of application compatibility. Focused tooling tests exercise
 both matching and deliberately different observations and damaged controls.
+
+The isolated preview passive workflow is a separately triggered CI rehearsal.
+It builds the actual staging-configured web/API and uses a disposable seeded
+PostgreSQL database on a Docker internal network. ZAP receives only a fixed set
+of authenticated loopback GETs over synthetic TLS for web and HTTP for the API:
+the collection, planner and published-product API. Scanner history must contain the expected synthetic content, and the queue
+must finish; missing-header, empty-history and unauthorized controls prevent a
+blind or empty scan from passing. A network-disabled scanner preflight exercises
+synthetic Basic and bearer responses before the application images are built.
+Evidence requires ZAP proxied history; only temporary site-tree ancestors and
+bounded local CONNECT metadata are permitted alongside it. ZAP safe mode is
+selected and verified. High alerts and unknown severities fail without
+suppression. The summary contains counts and rule IDs only. See the security
+scope and limitations in [SECURITY.md](SECURITY.md#isolated-passive-preview-assessment).
+Hosted success must be checked on the exact revision; offline evidence tests do
+not prove scanner execution or deployed behavior.
