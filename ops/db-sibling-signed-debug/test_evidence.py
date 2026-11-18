@@ -4,10 +4,12 @@
 import importlib.util
 import lzma
 import struct
+import subprocess
 import tempfile
 import unittest
 import zlib
 from pathlib import Path
+from unittest.mock import patch
 
 spec = importlib.util.spec_from_file_location("evidence", Path(__file__).with_name("evidence.py"))
 evidence = importlib.util.module_from_spec(spec)
@@ -105,7 +107,8 @@ class Controls(unittest.TestCase):
 
     def test_dwarf_units_need_root_and_name(self):
         text = (
-            "  Compilation Unit @ offset 0:\n <0><c>: Abbrev Number: 1 (DW_TAG_compile_unit)\n"
+            "  Compilation Unit @ offset 0:\n   Version: 5\n   Unit Type: DW_UT_compile (1)\n"
+            " <0><c>: Abbrev Number: 1 (DW_TAG_compile_unit)\n"
             "    <d> DW_AT_name : src/fixture.c\n"
             "    <e> DW_AT_comp_dir : /build/fixture\n <1><12>: Abbrev Number: 0\n"
         )
@@ -113,6 +116,7 @@ class Controls(unittest.TestCase):
             evidence.units(text),
             [
                 {
+                    "kind": "compile_unit",
                     "name_rendered": "src/fixture.c",
                     "compilation_directory_rendered": "/build/fixture",
                 }
@@ -125,6 +129,7 @@ class Controls(unittest.TestCase):
             evidence.units(rendered),
             [
                 {
+                    "kind": "compile_unit",
                     "name_rendered": "(indirect line string, offset: 0x20): src/fixture.c",
                     "compilation_directory_rendered": "(line_strp) (offset: 0x40): /build/fixture",
                 }
@@ -134,6 +139,8 @@ class Controls(unittest.TestCase):
             "",
             text.replace("DW_AT_name", "DW_AT_other"),
             text.replace("DW_TAG_compile_unit", "DW_TAG_skeleton_unit"),
+            text.replace("Version: 5", "Version: unknown"),
+            text.replace("DW_UT_compile", "DW_UT_unknown"),
             text + text.replace("DW_AT_name", "DW_AT_other"),
             text.replace("src/fixture.c", ""),
             text.replace("/build/fixture", ""),
@@ -141,6 +148,61 @@ class Controls(unittest.TestCase):
         ):
             with self.assertRaises(ValueError):
                 evidence.units(malformed)
+
+    def test_partial_units_are_distinct_and_require_named_compilation_units(self):
+        # Shape from GNU readelf 2.47 on the authenticated #217 debug package.
+        partial = (
+            "  Compilation Unit @ offset 0:\n   Version: 5\n   Unit Type:     DW_UT_partial (3)\n"
+            " <0><c>: Abbrev Number: 38 (DW_TAG_partial_unit)\n"
+            "    <11>   DW_AT_comp_dir    : (line_strp) (offset: 0): ./obj-x86_64-linux-gnu\n"
+            " <1><15>: Abbrev Number: 0\n"
+        )
+        compile_unit = (
+            "  Compilation Unit @ offset 0x29:\n   Version: 5\n   Unit Type:     DW_UT_compile (1)\n"
+            " <0><35>: Abbrev Number: 1 (DW_TAG_compile_unit)\n"
+            "    <36> DW_AT_name : (line_strp) (offset: 0x20): src/fixture.c\n"
+            " <1><3e>: Abbrev Number: 0\n"
+        )
+        entries = evidence.units(partial + compile_unit)
+        self.assertEqual([entry["kind"] for entry in entries], ["partial_unit", "compile_unit"])
+        self.assertIsNone(entries[0]["name_rendered"])
+        self.assertEqual(entries[1]["name_rendered"], "(line_strp) (offset: 0x20): src/fixture.c")
+        for invalid in (
+            partial,
+            partial.replace("DW_UT_partial", "DW_UT_compile") + compile_unit,
+            partial.replace("DW_TAG_partial_unit", "DW_TAG_skeleton_unit") + compile_unit,
+            partial + compile_unit.replace("DW_AT_name", "DW_AT_other"),
+        ):
+            with self.assertRaises(ValueError):
+                evidence.units(invalid)
+
+    def test_public_readelf_diagnostic_is_filtered_bounded_and_still_fails(self):
+        error = b"readelf: Error: /home/runner/private/fixture.elf: malformed note\nother secret\n"
+
+        def fake_run(command, **kwargs):
+            kwargs["stdout"].write(b"some output\n")
+            kwargs["stderr"].write(error)
+            return subprocess.CompletedProcess(command, 1)
+
+        with patch.object(evidence.subprocess, "run", side_effect=fake_run):
+            with self.assertRaises(ValueError) as caught:
+                evidence.run_to_file(["readelf", "-n", "/private/fixture.elf"], self.root / "note")
+        message = str(caught.exception)
+        self.assertIn("readelf: Error: <path>: malformed note", message)
+        self.assertNotIn("/home/runner", message)
+        self.assertNotIn("other secret", message)
+        self.assertNotIn("secret", evidence.tool_diagnostic("dpkg-deb", 1, error))
+        self.assertNotIn("malformed", evidence.tool_diagnostic("readelf", 1, error * 100))
+        self.assertIn("exit 1", evidence.tool_diagnostic("readelf", 1, b""))
+
+        def warning_run(command, **kwargs):
+            kwargs["stdout"].write(b"some output\n")
+            kwargs["stderr"].write(b"readelf: Warning: /private/file: bad note\n")
+            return subprocess.CompletedProcess(command, 0)
+
+        with patch.object(evidence.subprocess, "run", side_effect=warning_run):
+            with self.assertRaisesRegex(ValueError, r"Warning: <path>: bad note"):
+                evidence.run_to_file(["readelf", "-n", "/private/file"], self.root / "warning")
 
 
 if __name__ == "__main__":

@@ -962,10 +962,16 @@ versions, sizes and candidate digests. It matches their ELF build IDs to the
 selected, image-matched binaries, verifies debug links where present and records
 bounded, trimmed `readelf`-rendered DWARF compilation-unit attributes. These
 values may include rendering annotations and are not normalized source paths.
+Partial units are retained and counted separately from named compilation
+units. The lab requires at least one named compilation unit per library and
+rejects unsupported or inconsistent unit types.
 Debug package digest candidates were
 cross-checked against the [reproducible build manifest](https://tests.reproducible-builds.org/debian/buildinfo/trixie/amd64/systemd_257.13-1~deb13u1_amd64.buildinfo);
 the Debian signed index remains the required authority. Missing, unsigned,
 changed or unsupported inputs fail the lab.
+If `readelf` fails or reports a warning, the lab fails and emits a bounded,
+path-filtered diagnostic from its authenticated public input; it never treats
+the warning as successful evidence.
 
 The inventory is limited to represented debug units in those two libraries;
 optimization, inlining, incomplete debug information and other image files are

@@ -11,6 +11,7 @@ import struct
 import subprocess
 import sys
 import tarfile
+import tempfile
 import urllib.parse
 import urllib.request
 import zlib
@@ -171,18 +172,38 @@ def run_to_file(command, output, maximum=64 * 1024 * 1024):
         resource.setrlimit(resource.RLIMIT_FSIZE, (maximum, maximum))
         resource.setrlimit(resource.RLIMIT_CPU, (60, 60))
 
-    with output.open("xb") as dst:
+    with output.open("xb") as dst, tempfile.TemporaryFile(dir=output.parent) as errors:
         result = subprocess.run(
             command,
             stdout=dst,
-            stderr=subprocess.PIPE,
-            check=True,
+            stderr=errors,
+            check=False,
             timeout=90,
             preexec_fn=limits,
             env={**os.environ, "LC_ALL": "C"},
         )
-    if result.stderr or not output.stat().st_size:
-        raise ValueError("tool produced errors or empty output")
+        errors.seek(0)
+        error = errors.read(4097)
+    if result.returncode or error or not output.stat().st_size:
+        raise ValueError(tool_diagnostic(command[0], result.returncode, error))
+
+
+def tool_diagnostic(tool, code, error):
+    # Only readelf processes the authenticated public ELF/debug bytes. Do not
+    # echo other tool output, arbitrary stderr lines, or runner filesystem paths.
+    prefix = f"{tool} failed or emitted stderr (exit {code})"
+    if tool != "readelf" or len(error) > 4096:
+        return prefix
+    lines = []
+    for line in error.decode("utf-8", errors="replace").splitlines():
+        if not re.match(r"^readelf: (?:Error|Warning): ", line):
+            continue
+        line = re.sub(r"/[^\s:'\"<>]+", "<path>", line)
+        line = re.sub(r"[^ -~]", "?", line)
+        lines.append(line[:200])
+        if len(lines) == 3:
+            break
+    return prefix + (": " + " | ".join(lines) if lines else "")
 
 
 def build_id(text, expected):
@@ -222,11 +243,28 @@ def units(text):
         tags = re.findall(
             r"(?m)^[ \t]*<0><[0-9a-f]+>: Abbrev Number: \d+ \(DW_TAG_([a-z_]+)\)", block
         )
-        if tags != ["compile_unit"]:
+        if len(tags) != 1 or tags[0] not in ("compile_unit", "partial_unit"):
             raise ValueError("unsupported DWARF unit")
+        kind = tags[0]
         root = re.split(r"(?m)^[ \t]*<1><[0-9a-f]+>:", block, maxsplit=1)[0]
+        types = re.findall(r"(?m)^[ \t]*Unit Type:[ \t]*DW_UT_([a-z_]+)\b", root)
+        type_headers = re.findall(r"(?m)^[ \t]*Unit Type:[^\n]*$", root)
+        versions = re.findall(r"(?m)^[ \t]*Version:[ \t]*(\d+)[ \t]*$", root)
+        if (
+            len(type_headers) != len(types)
+            or len(types) > 1
+            or (types and types[0] != kind.removesuffix("_unit"))
+            or len(versions) != 1
+            or versions[0] not in {"2", "3", "4", "5"}
+            or (versions == ["5"] and not types)
+        ):
+            raise ValueError("DWARF unit type mismatch")
         names = re.findall(r"(?m)^[ \t]*<[^>\n]+>[ \t]+DW_AT_name[ \t]*:[ \t]*(.*)$", root)
-        if len(names) != 1 or not names[0].strip() or len(names[0]) > 4096:
+        if (
+            len(names) > 1
+            or (kind == "compile_unit" and len(names) != 1)
+            or any(not name.strip() or len(name) > 4096 for name in names)
+        ):
             raise ValueError("invalid DWARF unit name")
         directories = re.findall(
             r"(?m)^[ \t]*<[^>\n]+>[ \t]+DW_AT_comp_dir[ \t]*:[ \t]*(.*)$", root
@@ -237,10 +275,13 @@ def units(text):
             raise ValueError("invalid DWARF compilation directory")
         result.append(
             {
-                "name_rendered": names[0].strip(),
+                "kind": kind,
+                "name_rendered": names[0].strip() if names else None,
                 "compilation_directory_rendered": directories[0].strip() if directories else None,
             }
         )
+    if not any(entry["kind"] == "compile_unit" for entry in result):
+        raise ValueError("no named DWARF compilation units")
     return result
 
 
@@ -321,7 +362,8 @@ def main(root, output, scratch, revision, image):
             "debug_sha256": lineage.digest(debug),
             "debug_package_sha256": item["sha256"],
             "debuglink": link,
-            "compilation_units": len(unit_names),
+            "compilation_units": sum(entry["kind"] == "compile_unit" for entry in unit_names),
+            "partial_units": sum(entry["kind"] == "partial_unit" for entry in unit_names),
         }
     result = {
         "revision": revision,
