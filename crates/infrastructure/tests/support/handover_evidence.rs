@@ -772,8 +772,9 @@ async fn release_wins_the_attempt_claim_before_submission(pool: PgPool) {
     let grants = format!(
         "CREATE ROLE {role} NOLOGIN; GRANT USAGE ON SCHEMA public TO {role}; GRANT SELECT ON ALL TABLES IN SCHEMA public TO {role}; REVOKE SELECT ON public.handover_evidence_submissions FROM {role}; GRANT INSERT ON public.packing_custody,public.commerce_outbox TO {role}; GRANT UPDATE ON public.payment_attempts TO {role}; GRANT USAGE ON SEQUENCE public.packing_custody_fence_key_seq TO {role}"
     );
-    (&mut *limited)
-        .execute(grants.as_str())
+    // The generated identifier contains only a fixed prefix and the i32 backend PID.
+    sqlx::raw_sql(sqlx::AssertSqlSafe(grants))
+        .execute(&mut *limited)
         .await
         .expect("isolated baseline packing permissions");
     let allowed: bool = sqlx::query_scalar(
