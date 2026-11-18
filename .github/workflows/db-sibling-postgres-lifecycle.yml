@@ -1,0 +1,43 @@
+name: PostgreSQL sibling lifecycle lab
+on:
+  workflow_dispatch:
+  pull_request:
+    branches: [develop]
+    paths:
+      - .github/workflows/db-sibling-postgres-lifecycle.yml
+      - ops/db-sibling-postgres-lifecycle/**
+      - ops/db-sibling-postgres/**
+      - ops/db-sibling-runtime-root/**
+      - ops/db-source-feature-smoke/**
+      - ops/db-zlib-candidate/pull_verified_base.sh
+      - scripts/capture_db_image_scan.py
+permissions: {}
+jobs:
+  lifecycle:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 85
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+      - name: Test inspection controls
+        run: python3 ops/db-sibling-postgres-lifecycle/test_validate.py
+      - name: Rebuild and exercise disposable lifecycle
+        env:
+          LIFECYCLE_REVISION: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: bash ops/db-sibling-postgres-lifecycle/run.sh
+      - name: Retain redacted lifecycle and composition evidence
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+        with:
+          name: db-sibling-lifecycle-${{ github.event.pull_request.head.sha || github.sha }}
+          path: |
+            ${{ runner.temp }}/db-sibling-lifecycle-evidence/
+            ${{ runner.temp }}/db-sibling-postgres-evidence/
+            ${{ runner.temp }}/db-sibling-root-evidence/
+            ${{ runner.temp }}/db-source-feature-evidence/
+          if-no-files-found: error
+          retention-days: 30
