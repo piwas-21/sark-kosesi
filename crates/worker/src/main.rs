@@ -9,6 +9,8 @@ mod paid_parent;
 mod payments;
 mod reversal_items;
 mod reversal_pages;
+mod staff_input;
+mod staff_packing;
 mod staff_reversal_review;
 
 #[derive(PartialEq, Eq)]
@@ -24,6 +26,7 @@ enum Mode {
     EnrollReversalItem(reversal_items::Enrollment),
     InspectReversalItem(String),
     ReviewReversalItem(String),
+    InspectPacking(String),
     ReviewReversalInbox(Option<Cursor>),
     EnrollReversal(reversal_pages::Enrollment),
     InspectReversal(String),
@@ -64,6 +67,12 @@ fn parse_mode(args: &[String]) -> Result<Mode, std::io::Error> {
             if argument == "--review-reversal-item" && reversal_pages::identifier(job) =>
         {
             Ok(Mode::ReviewReversalItem(job.clone()))
+        }
+        [argument, order]
+            if argument == "--inspect-packing"
+                && commerce_domain::order_stock::identifier(order) =>
+        {
+            Ok(Mode::InspectPacking(order.clone()))
         }
         [argument] if argument == "--review-reversal-inbox" => Ok(Mode::ReviewReversalInbox(None)),
         [argument, timestamp, job] if argument == "--review-reversal-inbox" => {
@@ -120,17 +129,22 @@ fn batch_limit() -> Result<u16, std::io::Error> {
 
 #[tokio::main]
 async fn main() -> Result<(), std::io::Error> {
-    tracing_subscriber::fmt().json().init();
     if !matches!(std::env::var("APP_ENV").as_deref(), Ok("local" | "test")) {
         return Err(std::io::Error::other("production is disabled"));
     }
     let mode = mode()?;
+    let subscriber = tracing_subscriber::fmt().json();
+    if matches!(mode, Mode::InspectPacking(_)) {
+        subscriber.with_writer(std::io::stderr).init();
+    } else {
+        subscriber.init();
+    }
     // Read before any DB or provider configuration; never accept a token argument.
-    let review_token = if matches!(
+    let staff_token = if matches!(
         mode,
-        Mode::ReviewReversalItem(_) | Mode::ReviewReversalInbox(_)
+        Mode::ReviewReversalItem(_) | Mode::ReviewReversalInbox(_) | Mode::InspectPacking(_)
     ) {
-        Some(staff_reversal_review::read_token()?)
+        Some(staff_input::read_token()?)
     } else {
         None
     };
@@ -172,13 +186,18 @@ async fn main() -> Result<(), std::io::Error> {
         Mode::InspectReversalItem(id) => reversal_items::inspect(&pool, &id).await?,
         Mode::ReviewReversalItem(id) => {
             let token =
-                review_token.ok_or_else(|| std::io::Error::other("staff review unavailable"))?;
+                staff_token.ok_or_else(|| std::io::Error::other("staff review unavailable"))?;
             staff_reversal_review::inspect(&pool, &token, &id).await?
         }
         Mode::ReviewReversalInbox(after) => {
             let token =
-                review_token.ok_or_else(|| std::io::Error::other("staff review unavailable"))?;
+                staff_token.ok_or_else(|| std::io::Error::other("staff review unavailable"))?;
             staff_reversal_review::next(&pool, &token, after.as_ref()).await?
+        }
+        Mode::InspectPacking(order) => {
+            let token = staff_token
+                .ok_or_else(|| std::io::Error::other("packing inspection unavailable"))?;
+            staff_packing::inspect(&pool, &token, &order).await?
         }
         Mode::EnrollReversal(intent) => reversal_pages::run(&pool, Some(intent)).await?,
         Mode::InspectReversal(id) => reversal_pages::inspect(&pool, &id).await?,
@@ -190,105 +209,5 @@ async fn main() -> Result<(), std::io::Error> {
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-    fn args(values: &[&str]) -> Vec<String> {
-        values.iter().map(|value| (*value).into()).collect()
-    }
-    #[test]
-    fn reversal_item_commands_require_exact_valid_arguments() {
-        let id = "0123456789abcdef0123456789abcdef";
-        assert!(matches!(
-            parse_mode(&args(&["--reconcile-reversal-items"])),
-            Ok(Mode::ReversalItems)
-        ));
-        for ordinal in ["1", "10"] {
-            assert!(matches!(
-                parse_mode(&args(&[
-                    "--enroll-reversal-item",
-                    id,
-                    id,
-                    id,
-                    ordinal,
-                    "effect-123"
-                ])),
-                Ok(Mode::EnrollReversalItem(_))
-            ));
-        }
-        assert!(matches!(
-            parse_mode(&args(&["--inspect-reversal-item", id])),
-            Ok(Mode::InspectReversalItem(_))
-        ));
-        assert!(matches!(
-            parse_mode(&args(&["--review-reversal-item", id])),
-            Ok(Mode::ReviewReversalItem(_))
-        ));
-        assert!(matches!(
-            parse_mode(&args(&["--review-reversal-inbox"])),
-            Ok(Mode::ReviewReversalInbox(None))
-        ));
-        for time in ["0", "9007199254740991"] {
-            assert!(matches!(
-                parse_mode(&args(&["--review-reversal-inbox", time, id])),
-                Ok(Mode::ReviewReversalInbox(Some(_)))
-            ));
-        }
-        for command in [
-            vec!["--reconcile-reversal-items", "extra"],
-            vec!["--enroll-reversal-item", id, id, id, "0", "key"],
-            vec!["--enroll-reversal-item", id, id, id, "11", "key"],
-            vec!["--enroll-reversal-item", id, id, id, "01", "key"],
-            vec!["--enroll-reversal-item", id, id, "bad", "1", "key"],
-            vec!["--enroll-reversal-item", id, id, id, "1", "bad_key"],
-            vec!["--inspect-reversal-item", "bad"],
-            vec!["--review-reversal-item", "bad"],
-            vec!["--review-reversal-item", id, "token"],
-            vec!["--review-reversal-inbox", "1"],
-            vec!["--review-reversal-inbox", "-1", id],
-            vec!["--review-reversal-inbox", "+1", id],
-            vec!["--review-reversal-inbox", "01", id],
-            vec!["--review-reversal-inbox", "9007199254740992", id],
-            vec!["--review-reversal-inbox", "1", "bad"],
-            vec!["--review-reversal-inbox", "1", id, "token"],
-        ] {
-            assert!(parse_mode(&args(&command)).is_err());
-        }
-    }
-    #[test]
-    fn reversal_commands_require_exact_valid_arguments() {
-        let id = "0123456789abcdef0123456789abcdef";
-        assert!(matches!(parse_mode(&args(&[])), Ok(Mode::Probe)));
-        assert!(matches!(
-            parse_mode(&args(&["--reconcile-reversal-pages"])),
-            Ok(Mode::ReversalPages)
-        ));
-        for kind in ["refund", "chargeback"] {
-            assert!(matches!(
-                parse_mode(&args(&[
-                    "--enroll-reversal-scan",
-                    id,
-                    id,
-                    kind,
-                    "effect-123"
-                ])),
-                Ok(Mode::EnrollReversal(_))
-            ));
-        }
-        assert!(matches!(
-            parse_mode(&args(&["--inspect-reversal-scan", id])),
-            Ok(Mode::InspectReversal(_))
-        ));
-        for command in [
-            vec!["--reconcile-reversal-pages", "extra"],
-            vec!["--enroll-reversal-scan", id, id, "refund"],
-            vec!["--enroll-reversal-scan", id, id, "refund", "key", "extra"],
-            vec!["--enroll-reversal-scan", "bad", id, "refund", "key"],
-            vec!["--enroll-reversal-scan", id, "bad", "refund", "key"],
-            vec!["--enroll-reversal-scan", id, id, "Refund", "key"],
-            vec!["--enroll-reversal-scan", id, id, "refund", "secret_value"],
-            vec!["--inspect-reversal-scan", "bad"],
-        ] {
-            assert!(parse_mode(&args(&command)).is_err());
-        }
-    }
-}
+#[path = "../tests/support/command_modes.rs"]
+mod command_modes_tests;
