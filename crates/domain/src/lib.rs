@@ -13,6 +13,7 @@ pub mod holds;
 pub mod image_review;
 pub mod inventory;
 pub mod media;
+pub mod order_financial_basis;
 pub mod order_refunds;
 pub mod order_shipment_components;
 pub mod order_shipments;

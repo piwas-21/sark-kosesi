@@ -124,7 +124,10 @@ The latest draft and its latest review govern indicative quotes under one databa
 transaction; a newer draft or withdrawal blocks old approvals. No policies or
 grants are seeded. Trusted indicative promotion quotes now retain original prices,
 allocate capped fixed/percentage discounts by largest remainder, and split VAT on
-discounted extended lines under the same final source/expiry checks. Pure cumulative
+discounted extended lines under the same final source/expiry checks. A pure
+captured-order financial basis retains original and payable amounts, line discounts,
+and sums captured VAT allocations by rate without re-rounding. It does not establish
+payment or fiscal acceptance or issue a document. Pure cumulative
 refund allocations preserve captured tax across partial credits. A pure order-scoped
 allocator now checks explicit SKU/shipping balances and returns exact captured
 gross/net/VAT deltas. A private, confirmed finance reservation claims these
