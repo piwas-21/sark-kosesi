@@ -1,18 +1,5 @@
-import { it, expect, vi } from "vitest";
+import { it, expect, vi } from "../../../tests/application/unit-runtime.mjs";
 import { renderToStaticMarkup } from "react-dom/server";
-vi.mock("server-only", () => ({}));
-vi.mock("next/navigation", () => ({
-  notFound: () => {
-    throw new Error("NOT_FOUND");
-  },
-  redirect: (url: string) => {
-    throw new Error(`REDIRECT:${url}`);
-  },
-}));
-vi.mock("../src/lib/load-published", () => ({
-  publishedPage: vi.fn(),
-  publishedCollection: vi.fn(),
-}));
 import { publishedPage, publishedCollection } from "../src/lib/load-published";
 import Collection from "../src/app/[locale]/collection/page";
 import Family, {

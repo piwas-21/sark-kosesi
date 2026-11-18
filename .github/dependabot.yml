@@ -6,9 +6,9 @@ updates:
       interval: weekly
     open-pull-requests-limit: 5
     groups:
-      vitest:
+      test-assertions:
         patterns:
-          - "vitest"
+          - "chai"
           - "@vitest/*"
       tailwind:
         patterns:

@@ -6,7 +6,13 @@ import {
   waitFor,
   within,
 } from "@testing-library/react";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import {
+  afterEach,
+  describe,
+  expect,
+  it,
+  vi,
+} from "../../../tests/application/unit-runtime.mjs";
 import { plannerCopy } from "../src/components/room-planner/copy";
 import { RoomPlanner } from "../src/components/room-planner/planner";
 
