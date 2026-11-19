@@ -291,9 +291,12 @@ capacity and recovery under cgroup limits before release.
 The Alpine restore lab observed a collation change that rejected historical
 stock receipt reads and replay in its synthetic fixture. The same-base Debian
 candidate lab evaluates the pinned zlib and Gosu changes together using full
-scans, receipt replay and the schema-66 rehearsal. P7 still needs an isolated
-clone check of the actual database's collations, indexes and historical
-order-sensitive custody, plus security disposition and operational rollback.
+scans, receipt replay and the schema-66 rehearsal. The non-selling public
+preview now runs on the pinned official Debian PostgreSQL image with a restored
+copy of staging data, verified forward migrations through schema 82 and the
+original database retained for rollback. The separate production candidate
+still needs actual-clone checks of collations, indexes and historical
+order-sensitive custody, along with security disposition and operational rollback.
 
 Remaining delivery sequence: P0 business inputs in parallel → P2 inventory/catalogue → P3 checkout/payments → P4 customer/admin operations → P5 room planning and content → P6 acceptance → P7 controlled launch. Each phase has explicit exit evidence in the plan.
 
