@@ -649,6 +649,17 @@ may omit those components and their advisories. A separate same-run source
 component manifest records the upstream version and archive digest, executable
 hashes and evidence limits; it does not invent scanner matches or establish
 source vulnerability status. A source-aware advisory review remains necessary.
+The standalone `python3 ops/db-source-advisory-evidence/check.py --manifest
+<source-component.json> --image-id <composed-image-id> --revision <source-revision>
+--output-dir <new-directory>`
+can capture the official PostgreSQL 18 advisory table with a UTC retrieval time,
+raw HTML and digests, bound to the manifest, expected source revision and composed
+image ID. It atomically publishes complete evidence into a new directory. It
+reports every parsed row and fails on an affected version, incomplete or changed
+records, or an unsuccessful capture. Its result covers the project table at that
+capture time only; the source manifest is not independent build attestation.
+Reassess at release, separately from package findings and other dependencies.
+The standalone check is not yet part of the hosted workflow.
 All scanner findings remain open until separately disposed; scanner output is not
 proof of complete vulnerability coverage, deployment, or release readiness.
 The workflow publishes no image and does not connect to staging data.
