@@ -1810,6 +1810,10 @@ async fn combined_cancellation_and_packing_requires_both_grants_and_validates_ea
     pool.execute("INSERT INTO staff_capabilities VALUES('combined-reviewer','warehouse.manage')")
         .await
         .expect("second isolated grant");
+    assert!(matches!(
+        inspect(&pool, &reviewer, time.as_ref(), "invalid-order-id").await,
+        Err(InspectionError::InvalidRequest)
+    ));
     assert_eq!(
         inspect(&pool, &reviewer, time.as_ref(), id)
             .await
@@ -1884,6 +1888,12 @@ async fn combined_cancellation_and_packing_requires_both_grants_and_validates_ea
     assert_eq!(pending.request.order_id, *id);
     assert_eq!(pending.request.requested_at, 1500);
     assert_eq!(pending.packing, PackingEvidence::Unavailable);
+    time.0.store(1499, Ordering::SeqCst);
+    assert!(matches!(
+        inspect(&pool, &reviewer, time.as_ref(), id).await,
+        Err(InspectionError::ClockUnavailable)
+    ));
+    time.0.store(1500, Ordering::SeqCst);
     assert_eq!(before, Box::pin(footprint(&pool)).await);
 
     // Sole synthetic provider observation in the disposable fixture, with native
