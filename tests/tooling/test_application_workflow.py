@@ -11,6 +11,10 @@ from pathlib import Path
 WORKFLOW = Path(__file__).resolve().parents[2] / ".github/workflows/ci.yml"
 PACKAGE = Path(__file__).resolve().parents[2] / "package.json"
 REVISION = "${{ github.event.pull_request.head.sha || github.sha }}"
+COVERAGE_FAILURE = "failure() && steps.coverage.outcome == 'failure'"
+STABLE_RUST_FAILURE = (
+    "failure() && (steps.rust_checks.outcome == 'failure' || steps.coverage.outcome == 'failure')"
+)
 SONAR_GUARD = "\n".join(
     (
         "import json, os",
@@ -88,10 +92,11 @@ def check_application_graph(text):
                 raise ValueError(f"missing coverage command: {command}")
         if re.search(r"(?m)^(?:        )?if:", step(leg, "id: coverage\n")):
             raise ValueError("coverage producer cannot be conditional")
-        if "if: failure() && steps.coverage.outcome == 'failure'" not in leg:
-            raise ValueError("missing failure diagnostics")
-    if re.search(r"(?m)^(?:        )?if:", step(stable, "run: npm run check:rust\n")):
-        raise ValueError("Clippy cannot be conditional")
+    if (
+        step(stable, "id: rust_checks\n").strip()
+        != "id: rust_checks\n        run: npm run check:rust"
+    ):
+        raise ValueError("Clippy must run directly without conditions")
     if stable.index("run: npm run check:rust") > stable.index("id: coverage"):
         raise ValueError("Clippy must precede the stable coverage producer")
     if step(stable, "id: coverage\n").strip() != (
@@ -123,19 +128,25 @@ def check_application_graph(text):
             or any(path not in upload for path in paths)
         ):
             raise ValueError("coverage producer upload is incomplete or conditional")
-    for leg, name, paths in (
+    for leg, name, paths, condition in (
         (
             stable,
             "rust-stable-coverage-diagnostics-",
             ("coverage/rust-stable.json", "coverage/clippy.json"),
+            STABLE_RUST_FAILURE,
         ),
-        (nightly, "rust-coverage-diagnostics-", ("coverage/rust.json", "coverage/rust.lcov")),
+        (
+            nightly,
+            "rust-coverage-diagnostics-",
+            ("coverage/rust.json", "coverage/rust.lcov"),
+            COVERAGE_FAILURE,
+        ),
     ):
         diagnostic = step(leg, f"name: {name}${{{{ env.ANALYSIS_REVISION }}}}")
         if (
             "uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9"
             not in diagnostic
-            or "if: failure() && steps.coverage.outcome == 'failure'" not in diagnostic
+            or f"        if: {condition}\n" not in diagnostic
             or "if-no-files-found: ignore" not in diagnostic
             or any(path not in diagnostic for path in paths)
         ):
@@ -346,6 +357,7 @@ class ApplicationWorkflow(unittest.TestCase):
             ("ref: " + REVISION, "ref: develop"),
             ("  application_coverage:\n", "  coverage_missing:\n"),
             ("run: npm run check:rust", "run: echo skipped"),
+            (STABLE_RUST_FAILURE, COVERAGE_FAILURE),
             ("run: npm run test:coverage:stable", "run: echo skipped"),
             ("npm run test:coverage:nightly", "echo skipped"),
             ("npm run test:coverage:typescript", "echo skipped"),
