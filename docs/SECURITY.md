@@ -27,6 +27,21 @@ responsibility. The unseeded capability and missing staff-session issuer do not
 provide production operator access. The review validates existing custody and
 does not retry a provider operation or authorize a financial change.
 
+Private purported handover evidence submission requires an unseeded
+`handover.record` grant, recent MFA and explicit staff confirmation. The command
+hashes bounded opaque bytes without storing or logging them and binds the resulting
+fingerprint to an exact active whole packing assertion under the attempt claim.
+The parent must be committed and its release must use a separate transaction;
+final clock checks cover observed evidence and release timestamps even on
+source-dependent conflicts. A transaction-local advisory seal preserves the
+existing packing release role without granting evidence-table access. Native paths
+use explicit schema binding. The database validates parent and event custody, but
+relies on the trusted caller for the byte-to-hash binding; a digest is not proof of issuer or contents. Release
+remains independent. Historical inspection and same-actor exact replay require
+current authority and remain available after release. No provider call, customer
+exposure, financial, stock or fulfilment action follows. Document storage, retention,
+verification and operational access require separate decisions.
+
 The local/test packing record and release commands use the same bounded
 non-terminal bearer input and recent-MFA warehouse guard. The record command
 reads a bounded closed JSON payload from a regular file, with nonblocking open
@@ -385,7 +400,11 @@ result grants no disposition, provider, financial, stock or packing authority.
 The same held staff authority protects a one-candidate live inbox over stored
 request records; every candidate receives the exact historical validation and
 final time fence. Refresh to include earlier inserts. The scan is not a complete
-orphan-event audit and does not report disposition or fulfilment state.
+orphan-event audit and does not report disposition or fulfilment state. A separate
+exact-order evidence view holds both the review and warehouse grants under one
+staff session and the original attempt through both validations. Missing packing
+source remains unavailable, and damaged source fails closed; the returned
+assertions grant no hold, dispatch or disposition authority.
 
 Private cancellation uses the same guest and account authority as the order.
 Cancellation and admission share a basket claim; cancellation and dispatch share
@@ -730,6 +749,9 @@ unsigned 64-bit big-endian byte length and bytes, followed by signed 64-bit
 big-endian validity bounds, unsigned 64-bit big-endian entry count and the
 concatenated 32-byte entries. Snapshot validation establishes integrity and
 shape, not authenticity, actual corpus quality or reviewer qualification.
+The offline decoder accepts exactly this canonical preimage and an independently
+trusted digest, checks metadata and entry bounds before allocation, and rejects
+truncation, trailing bytes and invalid UTF-8. It does not acquire or activate a corpus.
 
 After the admission debit and cheap revision-bound proof precheck, release the
 database transaction and reject exact blocklist matches before Argon2. Normalize

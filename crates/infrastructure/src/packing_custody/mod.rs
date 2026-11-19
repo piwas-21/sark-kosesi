@@ -1,8 +1,8 @@
 //! Private staff packing assertions. No stock, physical shipment or provider effect.
 mod command;
 mod inspection;
-mod model;
-mod store;
+pub(crate) mod model;
+pub(crate) mod store;
 use crate::{
     shipment_planning::{self, PlanningError},
     staff_access::{SessionToken, StaffError, lock_staff},
@@ -11,6 +11,7 @@ use commerce_application::{
     request_context::{Clock, Identifiers, ObservedClock},
     staff_access::Capability,
 };
+pub(crate) use inspection::inspect_locked;
 pub use inspection::{Inspection, InspectionEntry, InspectionLine, inspect};
 pub use model::{Component, Packages, Record, Units};
 use sqlx::PgPool;

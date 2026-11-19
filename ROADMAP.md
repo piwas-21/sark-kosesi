@@ -124,7 +124,10 @@ The latest draft and its latest review govern indicative quotes under one databa
 transaction; a newer draft or withdrawal blocks old approvals. No policies or
 grants are seeded. Trusted indicative promotion quotes now retain original prices,
 allocate capped fixed/percentage discounts by largest remainder, and split VAT on
-discounted extended lines under the same final source/expiry checks. Pure cumulative
+discounted extended lines under the same final source/expiry checks. A pure
+captured-order financial basis retains original and payable amounts, line discounts,
+and sums captured VAT allocations by rate without re-rounding. It does not establish
+payment or fiscal acceptance or issue a document. Pure cumulative
 refund allocations preserve captured tax across partial credits. A pure order-scoped
 allocator now checks explicit SKU/shipping balances and returns exact captured
 gross/net/VAT deltas. A private, confirmed finance reservation claims these
@@ -434,6 +437,13 @@ release to authorized warehouse staff through bounded non-terminal session input
 a bounded private record payload and private JSON reports. A release is not proof
 of unpacking or restocking. Staff session issuance, physical handover and
 operational acceptance remain open.
+A private exact-order cancellation review now joins the pending request to
+recorded packing assertions under one attempt claim and both existing staff
+grants. Missing source evidence is reported as unavailable.
+A private evidence journal records bounded opaque-byte fingerprints against an
+active whole packing assertion without blocking its later release. A staff claim
+and digest do not verify carrier or physical handover. Evidence retention,
+correction, actual handover, delivery and fulfilment policies remain open.
 
 The isolated staging-config passive preview workflow is a bounded P6 rehearsal.
 Evidence must bind the exact revision, synthetic fixture, authenticated scope and
