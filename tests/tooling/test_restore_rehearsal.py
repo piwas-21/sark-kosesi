@@ -25,11 +25,12 @@ class RestoreRehearsalSafety(unittest.TestCase):
     def test_fixture_requires_exact_selected_success(self):
         from types import SimpleNamespace
 
+        built = SimpleNamespace(returncode=0)
         with patch("rehearse_restore.subprocess.run") as run:
-            run.return_value = SimpleNamespace(
-                returncode=0, stdout=b"test result: ok. 1 passed; 0 failed;"
-            )
+            selected = SimpleNamespace(returncode=0, stdout=b"test result: ok. 1 passed; 0 failed;")
+            run.side_effect = [built, selected]
             run_fixture({}, "verify_restored_keys")
+            self.assertEqual(run.call_count, 2)
             self.assertIn(
                 "mollie::tests::restore_rehearsal::verify_restored_keys", run.call_args.args[0]
             )
@@ -38,11 +39,15 @@ class RestoreRehearsalSafety(unittest.TestCase):
                 SimpleNamespace(returncode=0, stdout=b"test result: ok. 11 passed; 0 failed;"),
                 SimpleNamespace(returncode=0, stdout=b"test result: ok. 0 passed; 0 failed;"),
             ):
-                run.return_value = result
+                run.reset_mock()
+                run.side_effect = [built, result]
                 with self.assertRaises(RuntimeError):
                     run_fixture({}, "verify_restored_keys")
+                self.assertEqual(run.call_count, 2)
+            run.reset_mock()
             with self.assertRaises(ValueError):
                 run_fixture({}, "foreign_fixture")
+            run.assert_not_called()
 
     def test_fixture_preflight_is_distinct_silent_and_preserves_exact_test(self):
         from types import SimpleNamespace
@@ -181,6 +186,7 @@ class RestoreRehearsalSafety(unittest.TestCase):
     def test_stock_custody_requires_one_known_outcome_after_exact_success(self):
         from types import SimpleNamespace
 
+        built = SimpleNamespace(returncode=0)
         summary = b"test result: ok. 1 passed; 0 failed;\n"
         compatible = b"stock_custody_outcome=compatible\n"
         incompatible = b"stock_custody_outcome=ordering_incompatible\n"
@@ -190,7 +196,10 @@ class RestoreRehearsalSafety(unittest.TestCase):
                 (incompatible, "ordering_incompatible"),
             ):
                 with self.subTest(outcome=outcome):
-                    run.return_value = SimpleNamespace(returncode=0, stdout=marker + summary)
+                    run.side_effect = [
+                        built,
+                        SimpleNamespace(returncode=0, stdout=marker + summary),
+                    ]
                     self.assertEqual(run_fixture({}, "verify_stock_custody"), outcome)
                     self.assertEqual(
                         run.call_args.args[0][-3:], ["--ignored", "--exact", "--nocapture"]
@@ -202,12 +211,17 @@ class RestoreRehearsalSafety(unittest.TestCase):
                 b"stock_custody_outcome=other\n",
             ):
                 with self.subTest(output=output):
-                    run.return_value = SimpleNamespace(returncode=0, stdout=output + summary)
+                    run.side_effect = [
+                        built,
+                        SimpleNamespace(returncode=0, stdout=output + summary),
+                    ]
                     with self.assertRaises(ValueError):
                         run_fixture({}, "verify_stock_custody")
-            run.return_value = SimpleNamespace(returncode=1, stdout=compatible + summary)
+            run.reset_mock()
+            run.side_effect = [built, SimpleNamespace(returncode=1, stdout=compatible + summary)]
             with self.assertRaises(RuntimeError):
                 run_fixture({}, "verify_stock_custody")
+            self.assertEqual(run.call_count, 2)
 
     def test_sequence_inventory_quotes_identifiers_and_preserves_called_state(self):
         class SyntheticSnapshot:
