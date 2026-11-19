@@ -130,3 +130,53 @@ fn packing_release_requires_exact_confirmed_arguments() {
         assert!(parse_mode(&args(&command)).is_err());
     }
 }
+
+#[test]
+fn packing_record_requires_exact_confirmed_arguments() {
+    let id = "0123456789abcdef0123456789abcdef";
+    assert!(matches!(
+        parse_mode(&args(&[
+            "--record-packing",
+            id,
+            "effect-123",
+            "fixture.json",
+            "--confirm"
+        ])),
+        Ok(Mode::RecordPacking { .. })
+    ));
+    for command in [
+        vec!["--record-packing", id, "effect-123", "fixture.json"],
+        vec![
+            "--record-packing",
+            id,
+            "effect-123",
+            "fixture.json",
+            "confirm",
+        ],
+        vec![
+            "--record-packing",
+            "bad",
+            "effect-123",
+            "fixture.json",
+            "--confirm",
+        ],
+        vec![
+            "--record-packing",
+            id,
+            "bad_key",
+            "fixture.json",
+            "--confirm",
+        ],
+        vec!["--record-packing", id, "effect-123", "", "--confirm"],
+        vec![
+            "--record-packing",
+            id,
+            "effect-123",
+            "fixture.json",
+            "--confirm",
+            "extra",
+        ],
+    ] {
+        assert!(parse_mode(&args(&command)).is_err());
+    }
+}

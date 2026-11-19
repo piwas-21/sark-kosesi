@@ -131,9 +131,10 @@ function branch details by location and require both to match every LCOV branch
 identity and hit count. These details must account for at least the native
 summary's total and covered directions. Native coverage thresholds use the
 original summaries.
-If a coverage producer fails after writing reports, CI preserves available raw
-reports under separate revision-bound diagnostics artifacts. Sonar only consumes
-the coverage artifact published after successful aggregate validation.
+If Clippy or a coverage producer fails after writing reports, CI preserves
+available raw reports under separate revision-bound diagnostics artifacts.
+Sonar only consumes the coverage artifact published after successful aggregate
+validation.
 The native validator requires every owned source and populated counters, with
 85% lines / 80% instrumented branches per package and 95% for money, inventory
 domain/stock/hold adapter modules and preview authorization. The match-only hold
@@ -1105,11 +1106,14 @@ its exact late page, the attempt claim, source-clock boundary, damaged operation
 and event, and mismatched credential. It must preserve the stopped checkpoint,
 redact provider identity and perform no provider request.
 
-### Local/test packing assertion release
+### Local/test packing assertion record and release
 
-Use an isolated database and the worker process to verify confirmed release and
-exact replay create one journal record and event, while changed target, repeated
-release, wrong grant, revoked session and stale MFA fail without further effects.
+Use an isolated database and the worker process to verify confirmed record and
+release, including exact replay, each create one journal record and event. Reject
+a wrong SKU or component total against the sealed source and changed record intent.
+Reject non-regular, symlink, oversized or malformed record payloads. Changed
+target, repeated release, wrong grant, revoked session and stale MFA must fail
+without further effects.
 Check command bounds, explicit confirmation, local/test restriction, credential
 input and redacted errors. Verify no stock or payment record is added.
 

@@ -21,6 +21,45 @@ pub(super) async fn inspect(pool: &PgPool, token: &SessionToken, order: &str) ->
         .map_err(|_| io::Error::other("packing output unavailable"))
 }
 
+/// Record a bounded assertion through the same warehouse custody operation.
+pub(super) async fn record(
+    pool: &PgPool,
+    token: &SessionToken,
+    order: &str,
+    effect: &str,
+    input: &super::staff_packing_input::PackingInput,
+) -> io::Result<()> {
+    let receipt = packing_custody::record(
+        pool,
+        token,
+        &SystemClock,
+        &SecureIdentifiers,
+        Request {
+            order_id: order,
+            effect_key: effect,
+            confirmed: true,
+            action: Action::Packed {
+                units: &input.units,
+                packages: &input.packages,
+            },
+        },
+    )
+    .await
+    .map_err(|_| io::Error::other("packing record unavailable"))?;
+    let mut bytes = serde_json::to_vec(&json!({
+        "kind": "packing_assertion_record",
+        "id": receipt.record.id,
+        "recordedAt": receipt.record.recorded_at,
+        "replayed": receipt.replayed,
+    }))
+    .map_err(|_| io::Error::other("packing output unavailable"))?;
+    bytes.push(b'\n');
+    io::stdout()
+        .lock()
+        .write_all(&bytes)
+        .map_err(|_| io::Error::other("packing output unavailable"))
+}
+
 /// Release only an existing assertion; this does not establish physical unpacking.
 pub(super) async fn release(
     pool: &PgPool,
