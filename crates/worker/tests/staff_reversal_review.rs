@@ -345,3 +345,60 @@ fn packing_release_checks_confirmation_environment_and_input_before_database() {
         assert!(!text(&result).contains("synthetic-staff-token"));
     }
 }
+
+#[test]
+fn packing_record_guards_environment_confirmation_token_and_payload() {
+    let dir = std::env::temp_dir().join(format!(
+        "packing-cli-{}-{}",
+        std::process::id(),
+        SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .expect("clock")
+            .as_nanos()
+    ));
+    std::fs::create_dir(&dir).expect("isolated directory");
+    let payload = dir.join("private-payload.json");
+    let path = payload.to_str().expect("UTF-8 path");
+    std::fs::write(&payload, br#"{"units":[{"sku":"SET-FILLED","units":1}],"packages":[[{"code":"SEAT-COVER","quantity":2}]]}"#).expect("synthetic payload");
+    let command = |environment: &str, confirm: bool| {
+        let mut cmd = base_command();
+        cmd.args(["--record-packing", JOB, "record-effect", path]);
+        if confirm {
+            cmd.arg("--confirm");
+        }
+        cmd.env("APP_ENV", environment);
+        cmd
+    };
+    for (environment, confirm, input, expected) in [
+        ("test", false, b"".as_slice(), "unsupported worker command"),
+        ("staging", true, b"".as_slice(), "production is disabled"),
+        ("production", true, b"".as_slice(), "production is disabled"),
+        (
+            "test",
+            true,
+            &BEARER[..31],
+            "staff review input unavailable",
+        ),
+        ("test", true, &BEARER[..], "DATABASE_URL required"),
+    ] {
+        let result = output(command(environment, confirm), input);
+        assert!(!result.status.success());
+        assert!(result.stdout.is_empty());
+        assert!(text(&result).contains(expected));
+        assert!(!text(&result).contains("synthetic-staff-token"));
+        assert!(!text(&result).contains(path));
+    }
+    std::fs::write(
+        &payload,
+        br#"{"units":[],"packages":[],"private":"PRIVATE-PAYLOAD-MARKER"}"#,
+    )
+    .expect("invalid payload");
+    let rejected = output(command("test", true), BEARER);
+    assert!(!rejected.status.success());
+    assert!(rejected.stdout.is_empty());
+    assert!(text(&rejected).contains("packing input unavailable"));
+    assert!(!text(&rejected).contains("PRIVATE-PAYLOAD-MARKER"));
+    assert!(!text(&rejected).contains(path));
+    std::fs::remove_file(payload).expect("remove payload");
+    std::fs::remove_dir(dir).expect("remove directory");
+}

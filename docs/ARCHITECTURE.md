@@ -785,9 +785,10 @@ recognition has since changed; it does not report unpacking or restocking. At mo
 64 journal entries per order are admitted, including releases; every active
 record reserves its own release slot. Neither a record nor its release proves physical possession, net payment, dispatch, delivery, stock
 availability or permission to ship. No carrier, payment or stock operation follows.
-A local/test worker exposes the authenticated release with explicit confirmation
-and bounded non-terminal session input. It returns only a minimal receipt, and a
-lost response is recovered by the same actor and exact effect key and target.
+A local/test worker exposes authenticated record and release with explicit
+confirmation and bounded non-terminal session input. Record input is a bounded,
+closed JSON payload read from a regular file. It returns only a minimal receipt;
+a lost response is recovered by the same actor and exact effect key and intent.
 An order-scoped partial outbox index supports the reverse event check, including
 malformed or orphan events, without trusting their payload to select the order.
 

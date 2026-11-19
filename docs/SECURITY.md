@@ -42,11 +42,14 @@ current authority and remain available after release. No provider call, customer
 exposure, financial, stock or fulfilment action follows. Document storage, retention,
 verification and operational access require separate decisions.
 
-The local/test packing release command uses the same bounded non-terminal bearer
-input and recent-MFA warehouse guard. It requires explicit confirmation, returns a
-minimal receipt and does not issue credentials, grant dispatch authority or prove
-physical handling. A committed release can precede a failed output; retry its
-exact intent and staff identity with the same effect key.
+The local/test packing record and release commands use the same bounded
+non-terminal bearer input and recent-MFA warehouse guard. The record command
+reads a bounded closed JSON payload from a regular file, with nonblocking open
+and symlink rejection; errors do not expose its path or contents. Both require
+explicit confirmation, return minimal receipts and do not issue credentials,
+grant dispatch authority or prove physical handling. A committed operation can
+precede a failed output; retry its exact intent and staff identity with the same
+effect key.
 
 The RustSec check audits the full lockfile. The PostgreSQL-only SQLx export
 crate removes the unused SQLite dependency affected by
