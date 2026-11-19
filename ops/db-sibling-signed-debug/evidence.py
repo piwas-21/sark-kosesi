@@ -219,8 +219,28 @@ def tool_diagnostic(tool, code, error):
 
 
 def build_id(text, expected):
-    ids = re.findall(r"(?m)^\s*Build ID: ([0-9a-f]+)\s*$", text)
-    if ids != [expected]:
+    lines = text.strip("\n").splitlines()
+    if len(lines) != 4 or lines[0] != "Hex dump of section '.note.gnu.build-id':":
+        raise ValueError("unexpected ELF build ID section")
+    groups = []
+    previous = None
+    for line, count in zip(lines[1:], (4, 4, 1), strict=True):
+        padding = 1 + 9 * (4 - count)
+        match = re.fullmatch(
+            rf"[ \t]+0x([0-9a-f]+)((?: [0-9a-f]{{8}}){{{count}}}) {{{padding}}}.{{{4 * count}}}",
+            line,
+        )
+        if match is None:
+            raise ValueError("unexpected ELF build ID dump")
+        address = int(match[1], 16)
+        if previous is not None and address != previous + 16:
+            raise ValueError("noncontiguous ELF build ID dump")
+        previous = address
+        groups.extend(match[2].split())
+    # The pinned AMD64 packages use one little-endian GNU build-ID note.
+    if groups[:4] != ["04000000", "14000000", "03000000", "474e5500"]:
+        raise ValueError("unexpected ELF build ID note")
+    if "".join(groups[4:]) != expected:
         raise ValueError("ELF build ID mismatch")
 
 
@@ -350,7 +370,7 @@ def main(root, output, scratch, revision, image):
             raise ValueError("ELF does not match lineage")
         for source, suffix in ((elf, "elf"), (debug, "debug")):
             notes = scratch / f"{name}-{suffix}-notes.txt"
-            run_to_file(["readelf", "-n", str(source)], notes)
+            run_to_file(["readelf", "--hex-dump=.note.gnu.build-id", str(source)], notes, 4096)
             build_id(notes.read_text(), item["build_id"])
             (output / notes.name).write_bytes(notes.read_bytes())
         sections = scratch / f"{name}-sections.txt"
@@ -365,7 +385,7 @@ def main(root, output, scratch, revision, image):
             )
             link = debuglink(section.read_bytes(), debug.read_bytes())
         dwarf = scratch / f"{name}-dwarf.txt"
-        run_to_file(["readelf", "--debug-dump=info", "--wide", str(debug)], dwarf)
+        run_to_file(["readelf", "--debug-dump=info", "-wN", "--wide", str(debug)], dwarf)
         unit_names = units(dwarf.read_text(encoding="utf-8", errors="strict"))
         (output / f"{name}-units.json").write_text(json.dumps(unit_names, indent=2) + "\n")
         evidence[name] = {

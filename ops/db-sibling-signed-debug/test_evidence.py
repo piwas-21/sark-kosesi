@@ -80,12 +80,22 @@ class Controls(unittest.TestCase):
                 evidence.records(self.index)
 
     def test_build_id_and_debuglink_tamper(self):
-        ident = next(iter(evidence.LOCK.values()))["build_id"]
-        evidence.build_id("  Build ID: " + ident + "\n", ident)
+        ident = "50d75e545b53f25845679f2eccf50cf0ac3c475e"
+        note = (
+            "\nHex dump of section '.note.gnu.build-id':\n"
+            "  0x000002a8 04000000 14000000 03000000 474e5500 ............GNU.\n"
+            "  0x000002b8 50d75e54 5b53f258 45679f2e ccf50cf0 P.^T[S.XEg......\n"
+            "  0x000002c8 ac3c475e                            .<G^\n\n"
+        )
+        evidence.build_id(note, ident)
         for value in (
             "",
-            "  Build ID: " + "f" * 40 + "\n",
-            "  Build ID: " + ident + "\n" * 2 + "  Build ID: " + ident,
+            note.replace("50d75e54", "50d75e55"),
+            note.replace("03000000", "01000000"),
+            note.replace("474e5500", "46444f00"),
+            note.replace("0x000002b8", "0x000002b9"),
+            note.replace("ac3c475e", "ac3c475e ffffffff"),
+            note + note,
         ):
             with self.assertRaises(ValueError):
                 evidence.build_id(value, ident)

@@ -965,6 +965,9 @@ values may include rendering annotations and are not normalized source paths.
 Partial units are retained and counted separately from named compilation
 units. The lab requires at least one named compilation unit per library and
 rejects unsupported or inconsistent unit types.
+Build identity comes from the single GNU build-ID note in each authenticated
+ELF and debug payload. DWARF inspection stays inside the matched debug file
+with external debug links disabled.
 Debug package digest candidates were
 cross-checked against the [reproducible build manifest](https://tests.reproducible-builds.org/debian/buildinfo/trixie/amd64/systemd_257.13-1~deb13u1_amd64.buildinfo);
 the Debian signed index remains the required authority. Missing, unsigned,
