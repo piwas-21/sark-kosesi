@@ -792,6 +792,24 @@ a lost response is recovered by the same actor and exact effect key and intent.
 An order-scoped partial outbox index supports the reverse event check, including
 malformed or orphan events, without trusting their payload to select the order.
 
+A separate unseeded `handover.record` capability records a staff-confirmed SHA-256
+fingerprint of 1 byte to 1 MiB of opaque purported handover evidence. The bytes
+are not retained. Under the same attempt claim, submission requires one exact
+active whole packing record, validates its historical source and complete packing
+history, and atomically appends an immutable record and reciprocal event. The
+parent must already be committed, and a release cannot share the submission
+transaction, including after an early constraint flush. A final clock fence covers
+recorded evidence and visible release times, including before source-dependent
+conflict results. The submission transaction holds a parent-specific advisory seal
+so a release writer needs no access to the evidence table. The journal allows four different fingerprints per parent and 64 per order. An exact
+actor- and effect-bound replay requires fresh authority but survives a later
+packing release. The normal release remains available; inspection reports its
+presence alongside the original submission. Neither the fingerprint nor the
+staff assertion authenticates the source, content or physical handover, and no
+shipment, payment, stock, carrier or customer transition follows. Recording after
+release is rejected; this is a filing constraint rather than a physical conclusion.
+The private caller and database writer are trusted to hash the supplied bytes.
+
 An authenticated warehouse inspection holds the same attempt claim while it
 validates the complete packing history and immutable allocation. It reports the
 ordered, actively asserted and not asserted whole units per SKU, and bounded
@@ -1939,7 +1957,15 @@ it neither establishes current fulfilment status nor grants disposition authorit
 A private one-candidate inbox scans stored request order IDs with explicit `C`
 keyset ordering, then applies that same exact inspection and final authority
 fence. The live cursor requires refresh for earlier inserts. Discovery scans
-request records, not orphan events or disposition state.
+request records, not orphan events or disposition state. A separate exact-order
+view holds both existing `cancellation.review` and `warehouse.manage` grants,
+the staff account and session, then the original attempt claim through both
+historical request and complete packing-source validation. Both grants are
+claimed in that order, and authority and time are checked again after waits. The
+combined view fences the selected recognition, allocation and latest assertion
+timestamps even when the validated history is empty. Missing usable packing source is explicitly unavailable; corrupt custody fails
+closed. The validated result contains only the recorded assertions, not physical
+possession, unshipped quantities, a hold or a disposition.
 
 Seller policy is a required trusted server argument with explicit identity, tax
 registration choice, document versions/digests, locale, evidence and validity.

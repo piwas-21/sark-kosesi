@@ -44,43 +44,9 @@ pub async fn inspect(
         crate::order_stock::source::claim_attempt(&mut access.tx, &attempt)
             .await
             .map_err(|_| Error::Database)?;
-        let history = store::history(&mut access.tx, order_id).await?;
-        // An existing assertion binds its historical received recognition. An
-        // empty history has no such proof and requires current source evidence.
-        let historical = history.first().map(|record| record.recognition_id.as_str());
-        let source = shipment_planning::source(&mut access.tx, order_id, &attempt, historical)
+        inspect_locked(&mut access.tx, order_id, &attempt)
             .await
-            .map_err(source)?;
-        let (active, _) = model::validate(&source, &history)?;
-        // Validation preserves one occupancy entry per ordered line in the same order.
-        let lines = source
-            .order
-            .quote
-            .lines
-            .iter()
-            .zip(active)
-            .map(|(line, asserted)| {
-                Ok(InspectionLine {
-                    sku: line.sku.clone(),
-                    ordered: line.quantity,
-                    active_asserted: asserted.units,
-                    not_asserted: line
-                        .quantity
-                        .checked_sub(asserted.units)
-                        .ok_or(Error::InvalidStoredData)?,
-                })
-            })
-            .collect::<Result<Vec<_>, Error>>()?;
-        let history = history
-            .into_iter()
-            .map(|record| InspectionEntry {
-                id: record.id,
-                action: record.action,
-                target_id: record.target_id,
-                recorded_at: record.recorded_at,
-            })
-            .collect();
-        Ok(Inspection { lines, history })
+            .map(|validated| validated.inspection)
     }
     .await;
     // All outcomes after a lock wait, including errors, cross the same fence.
@@ -89,4 +55,59 @@ pub async fn inspect(
     // expose a stale-authority database result after the final check.
     drop(access);
     result
+}
+
+/// The source watermark is private to transaction-scoped consumers.
+pub(crate) struct ValidatedInspection {
+    pub inspection: Inspection,
+    pub source_at: i64,
+}
+
+/// Reuse the complete validator only under the caller's original attempt claim.
+pub(crate) async fn inspect_locked(
+    tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
+    order_id: &str,
+    attempt: &str,
+) -> Result<ValidatedInspection, Error> {
+    let history = store::history(tx, order_id).await?;
+    // An existing assertion binds its historical received recognition. An
+    // empty history has no such proof and requires current source evidence.
+    let historical = history.first().map(|record| record.recognition_id.as_str());
+    let source = shipment_planning::source(tx, order_id, attempt, historical)
+        .await
+        .map_err(source)?;
+    let source_at = source.recognition_at.max(source.allocation_at);
+    let (active, _) = model::validate(&source, &history)?;
+    // Validation preserves one occupancy entry per ordered line in the same order.
+    let lines = source
+        .order
+        .quote
+        .lines
+        .iter()
+        .zip(active)
+        .map(|(line, asserted)| {
+            Ok(InspectionLine {
+                sku: line.sku.clone(),
+                ordered: line.quantity,
+                active_asserted: asserted.units,
+                not_asserted: line
+                    .quantity
+                    .checked_sub(asserted.units)
+                    .ok_or(Error::InvalidStoredData)?,
+            })
+        })
+        .collect::<Result<Vec<_>, Error>>()?;
+    let history = history
+        .into_iter()
+        .map(|record| InspectionEntry {
+            id: record.id,
+            action: record.action,
+            target_id: record.target_id,
+            recorded_at: record.recorded_at,
+        })
+        .collect();
+    Ok(ValidatedInspection {
+        inspection: Inspection { lines, history },
+        source_at,
+    })
 }
