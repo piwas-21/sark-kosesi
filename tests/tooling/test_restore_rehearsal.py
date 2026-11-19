@@ -25,11 +25,12 @@ class RestoreRehearsalSafety(unittest.TestCase):
     def test_fixture_requires_exact_selected_success(self):
         from types import SimpleNamespace
 
+        built = SimpleNamespace(returncode=0)
         with patch("rehearse_restore.subprocess.run") as run:
-            run.return_value = SimpleNamespace(
-                returncode=0, stdout=b"test result: ok. 1 passed; 0 failed;"
-            )
+            selected = SimpleNamespace(returncode=0, stdout=b"test result: ok. 1 passed; 0 failed;")
+            run.side_effect = [built, selected]
             run_fixture({}, "verify_restored_keys")
+            self.assertEqual(run.call_count, 2)
             self.assertIn(
                 "mollie::tests::restore_rehearsal::verify_restored_keys", run.call_args.args[0]
             )
@@ -38,15 +39,154 @@ class RestoreRehearsalSafety(unittest.TestCase):
                 SimpleNamespace(returncode=0, stdout=b"test result: ok. 11 passed; 0 failed;"),
                 SimpleNamespace(returncode=0, stdout=b"test result: ok. 0 passed; 0 failed;"),
             ):
-                run.return_value = result
+                run.reset_mock()
+                run.side_effect = [built, result]
                 with self.assertRaises(RuntimeError):
                     run_fixture({}, "verify_restored_keys")
+                self.assertEqual(run.call_count, 2)
+            run.reset_mock()
             with self.assertRaises(ValueError):
                 run_fixture({}, "foreign_fixture")
+            run.assert_not_called()
+
+    def test_fixture_preflight_is_distinct_silent_and_preserves_exact_test(self):
+        from types import SimpleNamespace
+
+        secret = "customer-provider-credential-synthetic"
+        environment = {"RESTORE_FIXTURE_DATABASE_URL": secret}
+        built = SimpleNamespace(returncode=0, stdout=secret.encode(), stderr=secret.encode())
+        success = SimpleNamespace(
+            returncode=0, stdout=b"test result: ok. 1 passed; 0 failed;", stderr=secret.encode()
+        )
+        output = io.StringIO()
+        with patch("rehearse_restore.subprocess.run", side_effect=[built, success]) as run:
+            with contextlib.redirect_stderr(output):
+                run_fixture(environment, "seed_synthetic")
+        self.assertEqual(output.getvalue(), "")
+        preflight, selected = run.call_args_list
+        self.assertEqual(
+            preflight.args[0],
+            ["cargo", "test", "--locked", "-p", "commerce-infrastructure", "--lib", "--no-run"],
+        )
+        self.assertEqual(preflight.kwargs["stdout"], subprocess.DEVNULL)
+        self.assertEqual(preflight.kwargs["stderr"], subprocess.DEVNULL)
+        self.assertEqual(preflight.kwargs["env"], environment)
+        self.assertEqual(
+            selected.args[0],
+            [
+                "cargo",
+                "test",
+                "--locked",
+                "-p",
+                "commerce-infrastructure",
+                "--lib",
+                "mollie::tests::restore_rehearsal::seed_synthetic",
+                "--",
+                "--ignored",
+                "--exact",
+            ],
+        )
+        self.assertEqual(selected.kwargs["env"], environment)
+        self.assertTrue(selected.kwargs["capture_output"])
+
+        failed = SimpleNamespace(returncode=1, stdout=secret.encode(), stderr=secret.encode())
+        output = io.StringIO()
+        with patch("rehearse_restore.subprocess.run", return_value=failed) as run:
+            with contextlib.redirect_stderr(output), self.assertRaises(RuntimeError) as error:
+                run_fixture(environment, "seed_synthetic")
+        self.assertEqual(run.call_count, 1)
+        self.assertEqual(output.getvalue(), "restore_fixture: build_preflight_failed\n")
+        self.assertNotIn(secret, str(error.exception) + output.getvalue())
+
+        output = io.StringIO()
+        with patch("rehearse_restore.subprocess.run", side_effect=[built, failed]) as run:
+            with contextlib.redirect_stderr(output), self.assertRaises(RuntimeError) as error:
+                run_fixture(environment, "seed_synthetic")
+        self.assertEqual(run.call_count, 2)
+        self.assertEqual(output.getvalue(), "restore_fixture: invocation_failed_after_preflight\n")
+        self.assertNotIn(secret, str(error.exception) + output.getvalue())
+
+    def test_fixture_phase_timeouts_and_launch_errors_are_redacted(self):
+        from types import SimpleNamespace
+
+        secret = "synthetic-database-credential"
+        built = SimpleNamespace(returncode=0)
+        for preflight, kind, expected in (
+            (True, "timeout", "build_preflight_timeout"),
+            (True, "launch", "build_preflight_launch"),
+            (False, "timeout", "invocation_timeout_after_preflight"),
+            (False, "launch", "invocation_launch_after_preflight"),
+        ):
+            with self.subTest(preflight=preflight, kind=kind):
+                problem = (
+                    subprocess.TimeoutExpired(secret, 1, output=secret, stderr=secret)
+                    if kind == "timeout"
+                    else OSError(secret)
+                )
+                side_effect = [problem] if preflight else [built, problem]
+                output = io.StringIO()
+                expected_type = subprocess.TimeoutExpired if kind == "timeout" else OSError
+                with patch("rehearse_restore.subprocess.run", side_effect=side_effect) as run:
+                    with (
+                        contextlib.redirect_stderr(output),
+                        self.assertRaises(expected_type) as error,
+                    ):
+                        run_fixture({"SECRET": secret}, "seed_synthetic")
+                self.assertEqual(run.call_count, 1 if preflight else 2)
+                self.assertEqual(output.getvalue(), f"restore_fixture: {expected}\n")
+                self.assertNotIn(secret, output.getvalue() + str(error.exception))
+                self.assertIsNone(error.exception.__context__)
+                if kind == "timeout":
+                    self.assertIsNone(error.exception.stdout)
+                    self.assertIsNone(error.exception.stderr)
+
+    def test_real_fixture_process_keeps_both_streams_private(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            cargo = root / "cargo"
+            cargo.write_text(
+                "#!/bin/sh\n"
+                'case " $* " in\n'
+                '  *" --no-run "*) phase=build; status=$BUILD_STATUS;;\n'
+                "  *) phase=fixture; status=$FIXTURE_STATUS;;\n"
+                "esac\n"
+                'printf \'%s\\n\' "$phase" >> "$PHASE_FILE"\n'
+                "printf '%s\\n' \"$SYNTHETIC_SECRET\"\n"
+                "printf '%s\\n' \"$SYNTHETIC_SECRET\" >&2\n"
+                'if [ "$phase" = fixture ]; then\n'
+                "  printf 'test result: ok. 1 passed; 0 failed;\\n'\n"
+                "fi\n"
+                'exit "$status"\n'
+            )
+            cargo.chmod(0o700)
+            phase_file = root / "phases"
+            secret = "synthetic-private-output"
+            environment = {
+                **os.environ,
+                "PATH": str(root),
+                "PHASE_FILE": str(phase_file),
+                "SYNTHETIC_SECRET": secret,
+                "BUILD_STATUS": "0",
+                "FIXTURE_STATUS": "0",
+            }
+            stdout, stderr = io.StringIO(), io.StringIO()
+            with contextlib.redirect_stdout(stdout), contextlib.redirect_stderr(stderr):
+                run_fixture(environment, "seed_synthetic")
+            self.assertEqual(phase_file.read_text().splitlines(), ["build", "fixture"])
+            self.assertEqual(stdout.getvalue() + stderr.getvalue(), "")
+            phase_file.unlink()
+            environment["BUILD_STATUS"] = "1"
+            with contextlib.redirect_stdout(stdout), contextlib.redirect_stderr(stderr):
+                with self.assertRaises(RuntimeError):
+                    run_fixture(environment, "seed_synthetic")
+            self.assertEqual(phase_file.read_text().splitlines(), ["build"])
+            self.assertEqual(stderr.getvalue(), "restore_fixture: build_preflight_failed\n")
+            self.assertNotIn(secret, stdout.getvalue() + stderr.getvalue())
 
     def test_stock_custody_requires_one_known_outcome_after_exact_success(self):
         from types import SimpleNamespace
 
+        built = SimpleNamespace(returncode=0)
         summary = b"test result: ok. 1 passed; 0 failed;\n"
         compatible = b"stock_custody_outcome=compatible\n"
         incompatible = b"stock_custody_outcome=ordering_incompatible\n"
@@ -56,7 +196,10 @@ class RestoreRehearsalSafety(unittest.TestCase):
                 (incompatible, "ordering_incompatible"),
             ):
                 with self.subTest(outcome=outcome):
-                    run.return_value = SimpleNamespace(returncode=0, stdout=marker + summary)
+                    run.side_effect = [
+                        built,
+                        SimpleNamespace(returncode=0, stdout=marker + summary),
+                    ]
                     self.assertEqual(run_fixture({}, "verify_stock_custody"), outcome)
                     self.assertEqual(
                         run.call_args.args[0][-3:], ["--ignored", "--exact", "--nocapture"]
@@ -68,12 +211,17 @@ class RestoreRehearsalSafety(unittest.TestCase):
                 b"stock_custody_outcome=other\n",
             ):
                 with self.subTest(output=output):
-                    run.return_value = SimpleNamespace(returncode=0, stdout=output + summary)
+                    run.side_effect = [
+                        built,
+                        SimpleNamespace(returncode=0, stdout=output + summary),
+                    ]
                     with self.assertRaises(ValueError):
                         run_fixture({}, "verify_stock_custody")
-            run.return_value = SimpleNamespace(returncode=1, stdout=compatible + summary)
+            run.reset_mock()
+            run.side_effect = [built, SimpleNamespace(returncode=1, stdout=compatible + summary)]
             with self.assertRaises(RuntimeError):
                 run_fixture({}, "verify_stock_custody")
+            self.assertEqual(run.call_count, 2)
 
     def test_sequence_inventory_quotes_identifiers_and_preserves_called_state(self):
         class SyntheticSnapshot:

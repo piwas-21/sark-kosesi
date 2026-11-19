@@ -602,6 +602,27 @@ readiness or vulnerability disposition. A separate reviewed slice must add the
 verified PostgreSQL install, exercise the runtime and compare unfiltered scans.
 No image is published or deployed by this workflow.
 
+## PostgreSQL sibling TLS lab
+
+The path-scoped `PostgreSQL sibling TLS lab` rebuilds and verifies the sibling
+composition at the same checkout, then starts a disposable non-root PostgreSQL
+cluster without a network or published ports. A temporary synthetic CA signs a
+server certificate for one fixed test hostname. The client connects to loopback
+with `hostaddr` and `verify-full`, checks an encrypted connection and a stored
+SCRAM verifier, and requires specific rejection diagnostics for a wrong CA,
+wrong hostname, disabled TLS and wrong password. A valid connection is checked
+after every negative. Certificate keys, credentials and raw diagnostics stay in
+runner scratch or container tmpfs; the retained artifact contains only fixed
+status lines, image and public-certificate hashes, evidence checksums, and
+bounded public prerequisite build logs and statuses. TLS raw diagnostics are
+not included. The lab publishes the evidence directory after writing all
+checksums, so an incomplete publication cannot report success.
+
+This lab tests the named synthetic connection only. It does not establish a
+production PKI, certificate renewal, staging endpoint behavior, provider or
+customer acceptance, or a complete TLS lifecycle. It publishes no image and
+uses no staging data.
+
 ## PostgreSQL sibling composition lab
 
 The path-scoped `PostgreSQL sibling composition lab` rebuilds and validates the
@@ -720,6 +741,9 @@ and wrong-owner volumes, SCRAM success and wrong-password rejection, then
 stops with SIGINT, recreates the container on the same volume and verifies a
 synthetic row. Inspection checks identity, isolation and clean exit. Only the
 labelled disposable resources are removed; no existing volume is mounted.
+Lifecycle status and checksums are completed in private runner scratch before
+the evidence directory is published atomically; a publication failure fails the
+workflow and cannot expose a partial successful result.
 
 This tests a pre-initialized cluster contract, not the stock image entrypoint:
 automatic initialization, environment-based user/database creation, init
@@ -899,6 +923,12 @@ restore failure. Retained checksums cover available evidence even on failure;
 the overall workflow succeeds only when both checks succeed. The restore status
 artifact reports fixed stage/invariant codes, elapsed time and cleanup outcome;
 it does not include database credentials, exception text or process output.
+A separate Cargo `--no-run` preflight checks whether the selected library test
+target builds. Its stdout and stderr are discarded; fixed build-preflight or
+later-invocation failure, timeout and launch codes appear in the job log. A failed preflight does not
+identify the cause, and a later invocation failure does not prove the fixture
+started. The exact fixture and its success checks remain required. The retained
+restore status continues to use the existing fixed stage and operation code.
 
 The probe covers one original settlement. An isolated clone must still validate
 the actual source and candidate collation metadata, restored application indexes,

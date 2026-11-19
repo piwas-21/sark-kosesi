@@ -23,8 +23,10 @@ jobs:
         with:
           ref: ${{ github.event.pull_request.head.sha || github.sha }}
           persist-credentials: false
-      - name: Test inspection controls
-        run: python3 ops/db-sibling-postgres-lifecycle/test_validate.py
+      - name: Test inspection and publication controls
+        run: |
+          python3 ops/db-sibling-postgres-lifecycle/test_validate.py
+          python3 ops/db-sibling-postgres-lifecycle/test_publish.py
       - name: Rebuild and exercise disposable lifecycle
         env:
           LIFECYCLE_REVISION: ${{ github.event.pull_request.head.sha || github.sha }}
