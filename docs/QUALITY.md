@@ -1338,7 +1338,12 @@ browser bridge with a guarded synthetic database. Node explicitly trusts the
 generated certificate, and Chromium pins its ephemeral public key. Both clients
 must reject a separately generated certificate before sending an HTTP request.
 Chromium checks the guest cookie, Origin and CSRF through quote, order acceptance,
-cancellation and exact replay. Synthetic verified accounts and a real owner-issued
+cancellation and exact replay. A test-only form requires an explicit click on
+synthetic terms before submission. The bridge drops the first successful order
+receipt after the API responds; a second click submits the identical intent and
+shows the same order ID with replay confirmed. The final database assertion checks
+one order and no payment attempts. This form is not a storefront checkout.
+Synthetic verified accounts and a real owner-issued
 guest proof exercise bound customer login, missing-session, wrong-account and
 wrong-CSRF refusal, one redemption, replay denial and owner-only linked history.
 Direct loopback probes also require the server-held preview credential even when
