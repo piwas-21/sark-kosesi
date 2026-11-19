@@ -55,6 +55,27 @@ impl StaffTransaction {
     pub fn authorized_at(&self, clock: &dyn Clock) -> Result<i64, StaffError> {
         authorized_at(self.state, clock)
     }
+    /// Claim a second grant without releasing the already held staff authority.
+    /// Callers acquire capability rows in a fixed order before any business claim.
+    pub(super) async fn require_additional(
+        &mut self,
+        capability: Capability,
+        clock: &dyn Clock,
+    ) -> Result<(), StaffError> {
+        let grant = sqlx::query_scalar::<_, String>(
+            "SELECT staff_id FROM staff_capabilities WHERE staff_id=$1 AND capability=$2 FOR SHARE",
+        )
+        .bind(&self.actor)
+        .bind(capability.code())
+        .fetch_optional(&mut *self.tx)
+        .await;
+        // Even a database failure or absence after a wait must not expose stale authority.
+        self.check_time(clock)?;
+        if grant?.is_none() {
+            return Err(StaffError::Denied);
+        }
+        Ok(())
+    }
     /// A failed commit can itself wait; stale authority must mask that outcome.
     pub(super) async fn commit(self, clock: &dyn Clock) -> Result<(), StaffError> {
         let state = self.state;

@@ -322,7 +322,10 @@ full workload bounds and operational acceptance remain separate.
    capability and recent MFA, revalidates the historical request and dispatch
    under the original attempt claim, and grants no disposition authority. A
    private one-candidate cursor discovers recorded requests under the same grant;
-   refresh is needed for insertions preceding the cursor.
+   refresh is needed for insertions preceding the cursor. A separate exact-order
+   view holds both cancellation-review and warehouse grants, claims the same
+   original attempt and revalidates packing assertions. Missing source remains
+   unavailable rather than proof of an empty or unshipped order.
    Finish post-dispatch disposition, redemption disposition, lifecycle/payment
    transitions and retention before public checkout. Seller and legal facts
    remain required trusted configuration.
@@ -551,6 +554,11 @@ reports. The record reads a bounded closed payload from a regular file. Exact
 retries retain their original receipt; a release establishes no physical
 unpacking or restock. Staff session issuance and physical handover remain
 separate work.
+A private recent-MFA submission records a fingerprint of bounded operator-supplied
+opaque purported handover evidence against one exact active whole packing record.
+Releases remain allowed, and authorized exact replay and inspection retain the
+historical association. This is no physical or carrier verification. Evidence
+retention, operator access, correction, real handover and delivery remain open.
 
 Trusted whole-basket reservation primitives now provide immutable manifests,
 exact fresh child bindings and aggregated component claims in one transaction.
