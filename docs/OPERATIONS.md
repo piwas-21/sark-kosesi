@@ -602,6 +602,27 @@ readiness or vulnerability disposition. A separate reviewed slice must add the
 verified PostgreSQL install, exercise the runtime and compare unfiltered scans.
 No image is published or deployed by this workflow.
 
+## PostgreSQL sibling TLS lab
+
+The path-scoped `PostgreSQL sibling TLS lab` rebuilds and verifies the sibling
+composition at the same checkout, then starts a disposable non-root PostgreSQL
+cluster without a network or published ports. A temporary synthetic CA signs a
+server certificate for one fixed test hostname. The client connects to loopback
+with `hostaddr` and `verify-full`, checks an encrypted connection and a stored
+SCRAM verifier, and requires specific rejection diagnostics for a wrong CA,
+wrong hostname, disabled TLS and wrong password. A valid connection is checked
+after every negative. Certificate keys, credentials and raw diagnostics stay in
+runner scratch or container tmpfs; the retained artifact contains only fixed
+status lines, image and public-certificate hashes, evidence checksums, and
+bounded public prerequisite build logs and statuses. TLS raw diagnostics are
+not included. The lab publishes the evidence directory after writing all
+checksums, so an incomplete publication cannot report success.
+
+This lab tests the named synthetic connection only. It does not establish a
+production PKI, certificate renewal, staging endpoint behavior, provider or
+customer acceptance, or a complete TLS lifecycle. It publishes no image and
+uses no staging data.
+
 ## PostgreSQL sibling composition lab
 
 The path-scoped `PostgreSQL sibling composition lab` rebuilds and validates the
