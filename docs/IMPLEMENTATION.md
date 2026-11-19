@@ -270,6 +270,11 @@ full workload bounds and operational acceptance remain separate.
    command below derives the prior balances from immutable reservation history.
    One promotion per quote, exact eligibility, UTC windows and immutable cent/tax
    allocations must remain consistent through checkout, payment and credit records.
+   A pure captured-order financial basis validates the snapshot and retains original
+   and payable SKU/shipping amounts, discounts and per-rate sums of captured amounts.
+   Grouping never re-rounds. Callers must establish source provenance and access;
+   this projection excludes buyer and seller data and does not prove payment or
+   tax acceptance or issue an invoice or credit document.
    No customer coupon is accepted and no customer policy may grant readiness.
 3. Durable guest intent now has a PostgreSQL-backed maintained session adapter,
    fixed Secure/HttpOnly host cookies, exact configured HTTPS Origin and CSRF
