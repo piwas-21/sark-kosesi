@@ -963,3 +963,33 @@ the entire executable tree, scan images, validate the official entrypoint or
 exercise an operational rollback. Actual-clone collation and custody checks,
 security disposition and a reviewed operating model remain separate work. The
 workflow publishes no image and makes no deployment or staging change.
+
+## PostgreSQL sibling signed debug evidence
+
+The scoped debug workflow reruns the signed binary-lineage lab and binds its
+same image and exact revision. It verifies the Debian debug snapshot Release
+with the pinned archive keyring, checks the Release's AMD64 index checksum,
+and requires that signed index to match the two exact systemd debug-package
+versions, sizes and candidate digests. It matches their ELF build IDs to the
+selected, image-matched binaries, verifies debug links where present and records
+bounded, trimmed `readelf`-rendered DWARF compilation-unit attributes. These
+values may include rendering annotations and are not normalized source paths.
+Partial units are retained and counted separately from named compilation
+units. The lab requires at least one named compilation unit per library and
+rejects unsupported or inconsistent unit types.
+Build identity comes from the single GNU build-ID note in each authenticated
+ELF and debug payload. DWARF inspection stays inside the matched debug file
+with external debug links disabled.
+Debug package digest candidates were
+cross-checked against the [reproducible build manifest](https://tests.reproducible-builds.org/debian/buildinfo/trixie/amd64/systemd_257.13-1~deb13u1_amd64.buildinfo);
+the Debian signed index remains the required authority. Missing, unsigned,
+changed or unsupported inputs fail the lab.
+If `readelf` fails or reports a warning, the lab fails and emits a bounded,
+path-filtered diagnostic from its authenticated public input; it never treats
+the warning as successful evidence.
+
+The inventory is limited to represented debug units in those two libraries;
+optimization, inlining, incomplete debug information and other image files are
+outside its proof. It makes no code-absence or advisory-applicability decision,
+does not suppress findings, and does not accept risk or establish release
+readiness. Raw scanner evidence and all existing release gates remain required.
