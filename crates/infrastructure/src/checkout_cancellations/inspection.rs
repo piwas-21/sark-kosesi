@@ -101,6 +101,16 @@ pub(super) async fn inspect_locked(
     tx: &mut Transaction<'_, Postgres>,
     order: &str,
 ) -> Result<Option<CancellationInspection>, InspectionError> {
+    Ok(inspect_bound_locked(tx, order)
+        .await?
+        .map(|(request, _)| request))
+}
+
+/// Return the exact already-claimed attempt with the validated request.
+pub(super) async fn inspect_bound_locked(
+    tx: &mut Transaction<'_, Postgres>,
+    order: &str,
+) -> Result<Option<(CancellationInspection, String)>, InspectionError> {
     let (attempt, request, event) = index(tx, order).await?;
     let Some(attempt) = attempt else {
         return if request || event {
@@ -153,9 +163,12 @@ pub(super) async fn inspect_locked(
     }
     let digest: String = sqlx::query_scalar("SELECT public.checkout_post_dispatch_request_digest(r) FROM public.checkout_post_dispatch_requests r WHERE r.order_id=$1")
         .bind(order).fetch_one(&mut **tx).await?;
-    Ok(Some(CancellationInspection {
-        order_id: order.into(),
-        requested_at: row.requested_at,
-        request_digest: digest,
-    }))
+    Ok(Some((
+        CancellationInspection {
+            order_id: order.into(),
+            requested_at: row.requested_at,
+            request_digest: digest,
+        },
+        attempt,
+    )))
 }

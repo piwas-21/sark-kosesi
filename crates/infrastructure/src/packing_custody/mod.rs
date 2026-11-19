@@ -11,6 +11,7 @@ use commerce_application::{
     request_context::{Clock, Identifiers, ObservedClock},
     staff_access::Capability,
 };
+pub(crate) use inspection::inspect_locked;
 pub use inspection::{Inspection, InspectionEntry, InspectionLine, inspect};
 pub use model::{Component, Packages, Record, Units};
 use sqlx::PgPool;
