@@ -8,9 +8,10 @@ fail() { printf 'sibling lifecycle: %s\n' "$1" >&2; exit 1; }
 [[ "$LIFECYCLE_REVISION" =~ ^[0-9a-f]{40}$ && "$(git rev-parse HEAD)" == "$LIFECYCLE_REVISION" ]] || fail 'revision mismatch'
 unset DOCKER_CONTEXT DOCKER_TLS_VERIFY DOCKER_CERT_PATH
 export DOCKER_HOST=unix:///var/run/docker.sock
-out="$RUNNER_TEMP/db-sibling-lifecycle-evidence"
+published="$RUNNER_TEMP/db-sibling-lifecycle-evidence"
 scratch="$RUNNER_TEMP/db-sibling-lifecycle-scratch"
-mkdir "$out" "$scratch"
+out="$scratch/evidence"
+mkdir -m 700 "$scratch" "$out"
 stage=composition
 volume=''
 control_volume=''
@@ -20,7 +21,7 @@ control=''
 nonce=$(python3 -c 'import secrets; print(secrets.token_hex(16))')
 owned_label="piwas.sibling-lifecycle=$nonce"
 cleanup() {
-  local rc=$?
+  local rc=$? status_written=1
   trap - EXIT
   for id in "$container" "$control"; do
     if [[ -n "$id" ]]; then
@@ -38,9 +39,14 @@ cleanup() {
       rc=1
     fi
   done
-  if [[ "$rc" == 0 ]]; then printf 'stage=complete outcome=success\n' > "$out/status.txt"; else printf 'stage=%s outcome=failed exit=%s\n' "$stage" "$rc" > "$out/status.txt"; fi
-  (cd "$out" && find . -type f ! -name SHA256SUMS -print0 | LC_ALL=C sort -z | xargs -0 sha256sum > "$scratch/SHA256SUMS")
-  mv "$scratch/SHA256SUMS" "$out/SHA256SUMS"
+  if [[ "$rc" == 0 ]]; then
+    printf 'stage=complete outcome=success\n' > "$out/status.txt" || { rc=1; status_written=0; }
+  else
+    printf 'stage=%s outcome=failed exit=%s\n' "$stage" "$rc" > "$out/status.txt" || { rc=1; status_written=0; }
+  fi
+  if [[ "$status_written" == 1 ]]; then
+    python3 ops/db-sibling-postgres-lifecycle/publish.py "$out" "$published" || rc=1
+  fi
   exit "$rc"
 }
 trap cleanup EXIT

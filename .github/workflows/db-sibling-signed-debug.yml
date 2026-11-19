@@ -1,0 +1,54 @@
+name: PostgreSQL sibling signed debug evidence
+on:
+  workflow_dispatch:
+  pull_request:
+    branches: [develop]
+    paths:
+      - .github/workflows/db-sibling-signed-debug.yml
+      - ops/db-sibling-signed-debug/**
+      - ops/db-sibling-binary-lineage/**
+      - ops/db-sibling-component-presence/**
+      - ops/db-sibling-scan-evidence/**
+      - ops/db-sibling-postgres/**
+      - ops/db-sibling-runtime-root/**
+      - ops/db-source-feature-smoke/**
+      - ops/db-zlib-candidate/**
+      - scripts/capture_db_image_scan.py
+      - scripts/check_alpine_gosu_image.py
+      - scripts/check_db_alpine_gosu.py
+      - scripts/compare_db_zlib_scan.py
+permissions: {}
+jobs:
+  debug-evidence:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 110
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+      - name: Test debug controls
+        run: |
+          python3 ops/db-sibling-binary-lineage/test_lineage.py
+          python3 ops/db-sibling-signed-debug/test_evidence.py
+      - name: Authenticate and inspect matching debug packages
+        env:
+          DEBUG_REVISION: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: bash ops/db-sibling-signed-debug/run.sh
+      - name: Retain public lineage and debug evidence
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+        with:
+          name: db-sibling-signed-debug-${{ github.event.pull_request.head.sha || github.sha }}
+          path: |
+            ${{ runner.temp }}/db-sibling-signed-debug-evidence/
+            ${{ runner.temp }}/db-sibling-binary-lineage-evidence/
+            ${{ runner.temp }}/db-sibling-component-presence-evidence/
+            ${{ runner.temp }}/db-sibling-scan-evidence/
+            ${{ runner.temp }}/db-sibling-postgres-evidence/
+            ${{ runner.temp }}/db-sibling-root-evidence/
+            ${{ runner.temp }}/db-source-feature-evidence/
+          if-no-files-found: error
+          retention-days: 30

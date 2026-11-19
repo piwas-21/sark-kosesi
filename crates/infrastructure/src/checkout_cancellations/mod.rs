@@ -6,10 +6,14 @@ use crate::{
 };
 use commerce_domain::media::valid_command_id;
 use sqlx::{Postgres, Transaction};
+mod evidence_view;
 mod inbox;
 mod inspection;
 mod post_dispatch;
 mod rows;
+pub use evidence_view::{
+    CancellationPackingEvidence, PackingEvidence, inspect_cancellation_packing,
+};
 pub use inbox::next_post_dispatch_request;
 pub use inspection::{CancellationInspection, InspectionError, inspect_post_dispatch_request};
 pub use post_dispatch::{

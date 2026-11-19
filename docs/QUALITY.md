@@ -973,7 +973,14 @@ actual attempt-lock wait, and include account-bound and legacy-start controls.
 Inspection does not change the underlying state or prove customer or provider
 acceptance. The one-candidate inbox exercises empty, cursor traversal, inserts
 behind a cursor, damaged candidate custody and an actual attempt wait with MFA
-expiry; no scan claims complete orphan-event discovery.
+expiry; no scan claims complete orphan-event discovery. For the combined exact-order evidence view, require both
+grants and recent MFA; test a missing packing source separately from a validated
+empty history. Reject a final clock earlier than the selected recognition or
+allocation, including a recognition newer than the allocation. Revalidate recorded and released packing, damaged and repaired
+request or packing events, and an actual attempt wait with expiry. Hold the view
+at the packing reader and verify grant removal and a competing packing write wait
+until its snapshot completes. Confirm inspection produces no financial, stock,
+packing, provider or event effects.
 
 ### Private refund reservations
 
@@ -1308,6 +1315,10 @@ unspent proof.
 
 ### Private password blocklist preflight
 
+The canonical offline decoder uses independently hashed synthetic bytes; check
+truncation, trailing bytes, invalid UTF-8, length/count limits, ordering and
+wrong trusted digests, including ordering faults with matching literal digests.
+
 Use independently calculated literal digests and NFC/space-sensitive positive and
 negative controls. Reject malformed, unsorted, duplicate, over-capacity, expired
 and integrity-mismatched snapshots. Isolated PostgreSQL tests retain proof and
@@ -1327,7 +1338,12 @@ browser bridge with a guarded synthetic database. Node explicitly trusts the
 generated certificate, and Chromium pins its ephemeral public key. Both clients
 must reject a separately generated certificate before sending an HTTP request.
 Chromium checks the guest cookie, Origin and CSRF through quote, order acceptance,
-cancellation and exact replay. Synthetic verified accounts and a real owner-issued
+cancellation and exact replay. A test-only form requires an explicit click on
+synthetic terms before submission. The bridge drops the first successful order
+receipt after the API responds; a second click submits the identical intent and
+shows the same order ID with replay confirmed. The final database assertion checks
+one order and no payment attempts. This form is not a storefront checkout.
+Synthetic verified accounts and a real owner-issued
 guest proof exercise bound customer login, missing-session, wrong-account and
 wrong-CSRF refusal, one redemption, replay denial and owner-only linked history.
 Direct loopback probes also require the server-held preview credential even when

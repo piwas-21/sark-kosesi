@@ -602,6 +602,27 @@ readiness or vulnerability disposition. A separate reviewed slice must add the
 verified PostgreSQL install, exercise the runtime and compare unfiltered scans.
 No image is published or deployed by this workflow.
 
+## PostgreSQL sibling TLS lab
+
+The path-scoped `PostgreSQL sibling TLS lab` rebuilds and verifies the sibling
+composition at the same checkout, then starts a disposable non-root PostgreSQL
+cluster without a network or published ports. A temporary synthetic CA signs a
+server certificate for one fixed test hostname. The client connects to loopback
+with `hostaddr` and `verify-full`, checks an encrypted connection and a stored
+SCRAM verifier, and requires specific rejection diagnostics for a wrong CA,
+wrong hostname, disabled TLS and wrong password. A valid connection is checked
+after every negative. Certificate keys, credentials and raw diagnostics stay in
+runner scratch or container tmpfs; the retained artifact contains only fixed
+status lines, image and public-certificate hashes, evidence checksums, and
+bounded public prerequisite build logs and statuses. TLS raw diagnostics are
+not included. The lab publishes the evidence directory after writing all
+checksums, so an incomplete publication cannot report success.
+
+This lab tests the named synthetic connection only. It does not establish a
+production PKI, certificate renewal, staging endpoint behavior, provider or
+customer acceptance, or a complete TLS lifecycle. It publishes no image and
+uses no staging data.
+
 ## PostgreSQL sibling composition lab
 
 The path-scoped `PostgreSQL sibling composition lab` rebuilds and validates the
@@ -649,6 +670,17 @@ may omit those components and their advisories. A separate same-run source
 component manifest records the upstream version and archive digest, executable
 hashes and evidence limits; it does not invent scanner matches or establish
 source vulnerability status. A source-aware advisory review remains necessary.
+The standalone `python3 ops/db-source-advisory-evidence/check.py --manifest
+<source-component.json> --image-id <composed-image-id> --revision <source-revision>
+--output-dir <new-directory>`
+can capture the official PostgreSQL 18 advisory table with a UTC retrieval time,
+raw HTML and digests, bound to the manifest, expected source revision and composed
+image ID. It atomically publishes complete evidence into a new directory. It
+reports every parsed row and fails on an affected version, incomplete or changed
+records, or an unsuccessful capture. Its result covers the project table at that
+capture time only; the source manifest is not independent build attestation.
+Reassess at release, separately from package findings and other dependencies.
+The standalone check is not yet part of the hosted workflow.
 All scanner findings remain open until separately disposed; scanner output is not
 proof of complete vulnerability coverage, deployment, or release readiness.
 The workflow publishes no image and does not connect to staging data.
@@ -709,6 +741,9 @@ and wrong-owner volumes, SCRAM success and wrong-password rejection, then
 stops with SIGINT, recreates the container on the same volume and verifies a
 synthetic row. Inspection checks identity, isolation and clean exit. Only the
 labelled disposable resources are removed; no existing volume is mounted.
+Lifecycle status and checksums are completed in private runner scratch before
+the evidence directory is published atomically; a publication failure fails the
+workflow and cannot expose a partial successful result.
 
 This tests a pre-initialized cluster contract, not the stock image entrypoint:
 automatic initialization, environment-based user/database creation, init
@@ -888,6 +923,12 @@ restore failure. Retained checksums cover available evidence even on failure;
 the overall workflow succeeds only when both checks succeed. The restore status
 artifact reports fixed stage/invariant codes, elapsed time and cleanup outcome;
 it does not include database credentials, exception text or process output.
+A separate Cargo `--no-run` preflight checks whether the selected library test
+target builds. Its stdout and stderr are discarded; fixed build-preflight or
+later-invocation failure, timeout and launch codes appear in the job log. A failed preflight does not
+identify the cause, and a later invocation failure does not prove the fixture
+started. The exact fixture and its success checks remain required. The retained
+restore status continues to use the existing fixed stage and operation code.
 
 The probe covers one original settlement. An isolated clone must still validate
 the actual source and candidate collation metadata, restored application indexes,
@@ -963,3 +1004,33 @@ the entire executable tree, scan images, validate the official entrypoint or
 exercise an operational rollback. Actual-clone collation and custody checks,
 security disposition and a reviewed operating model remain separate work. The
 workflow publishes no image and makes no deployment or staging change.
+
+## PostgreSQL sibling signed debug evidence
+
+The scoped debug workflow reruns the signed binary-lineage lab and binds its
+same image and exact revision. It verifies the Debian debug snapshot Release
+with the pinned archive keyring, checks the Release's AMD64 index checksum,
+and requires that signed index to match the two exact systemd debug-package
+versions, sizes and candidate digests. It matches their ELF build IDs to the
+selected, image-matched binaries, verifies debug links where present and records
+bounded, trimmed `readelf`-rendered DWARF compilation-unit attributes. These
+values may include rendering annotations and are not normalized source paths.
+Partial units are retained and counted separately from named compilation
+units. The lab requires at least one named compilation unit per library and
+rejects unsupported or inconsistent unit types.
+Build identity comes from the single GNU build-ID note in each authenticated
+ELF and debug payload. DWARF inspection stays inside the matched debug file
+with external debug links disabled.
+Debug package digest candidates were
+cross-checked against the [reproducible build manifest](https://tests.reproducible-builds.org/debian/buildinfo/trixie/amd64/systemd_257.13-1~deb13u1_amd64.buildinfo);
+the Debian signed index remains the required authority. Missing, unsigned,
+changed or unsupported inputs fail the lab.
+If `readelf` fails or reports a warning, the lab fails and emits a bounded,
+path-filtered diagnostic from its authenticated public input; it never treats
+the warning as successful evidence.
+
+The inventory is limited to represented debug units in those two libraries;
+optimization, inlining, incomplete debug information and other image files are
+outside its proof. It makes no code-absence or advisory-applicability decision,
+does not suppress findings, and does not accept risk or establish release
+readiness. Raw scanner evidence and all existing release gates remain required.
