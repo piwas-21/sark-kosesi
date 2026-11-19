@@ -131,9 +131,10 @@ function branch details by location and require both to match every LCOV branch
 identity and hit count. These details must account for at least the native
 summary's total and covered directions. Native coverage thresholds use the
 original summaries.
-If a coverage producer fails after writing reports, CI preserves available raw
-reports under separate revision-bound diagnostics artifacts. Sonar only consumes
-the coverage artifact published after successful aggregate validation.
+If Clippy or a coverage producer fails after writing reports, CI preserves
+available raw reports under separate revision-bound diagnostics artifacts.
+Sonar only consumes the coverage artifact published after successful aggregate
+validation.
 The native validator requires every owned source and populated counters, with
 85% lines / 80% instrumented branches per package and 95% for money, inventory
 domain/stock/hold adapter modules and preview authorization. The match-only hold
@@ -946,6 +947,13 @@ generation exhaustion, unsupported case reasons, a changed original state
 and denied staff or stale MFA. Check raw SQL cannot admit a detached decision
 or allocate against another case. Verify deferred reciprocity and rollback,
 including an early constraint flush, transaction failure or lock wait.
+For the two-caller effect-key serialization control, observe both real waiters
+and use the explicit task-scoped test budget so the winner and replay can finish.
+A separate unscoped control holds the key through the normal one-second lock
+timeout, verifies the effect-key SQLSTATE and no durable decision or event,
+then releases the key and retries the same actor and intent. Test-only diagnostics
+retain only the fixed operation stage and SQLSTATE; they do not identify the
+cause of a different run's database failure.
 Maintain the maximum-basket and component conservation checks from the
 underlying late-stock path. Tests and private decisions supply no provider,
 shipment or production acceptance evidence.
@@ -1091,11 +1099,14 @@ its exact late page, the attempt claim, source-clock boundary, damaged operation
 and event, and mismatched credential. It must preserve the stopped checkpoint,
 redact provider identity and perform no provider request.
 
-### Local/test packing assertion release
+### Local/test packing assertion record and release
 
-Use an isolated database and the worker process to verify confirmed release and
-exact replay create one journal record and event, while changed target, repeated
-release, wrong grant, revoked session and stale MFA fail without further effects.
+Use an isolated database and the worker process to verify confirmed record and
+release, including exact replay, each create one journal record and event. Reject
+a wrong SKU or component total against the sealed source and changed record intent.
+Reject non-regular, symlink, oversized or malformed record payloads. Changed
+target, repeated release, wrong grant, revoked session and stale MFA must fail
+without further effects.
 Check command bounds, explicit confirmation, local/test restriction, credential
 input and redacted errors. Verify no stock or payment record is added.
 

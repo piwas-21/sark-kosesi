@@ -176,11 +176,12 @@ jobs:
           cache: npm
       - run: npm ci --ignore-scripts
       - run: python3 scripts/install_app_tools.py
-      - run: npm run check:rust
+      - id: rust_checks
+        run: npm run check:rust
       - id: coverage
         run: npm run test:coverage:stable
-      - name: Preserve stable coverage on failure
-        if: failure() && steps.coverage.outcome == 'failure'
+      - name: Preserve stable Rust diagnostics on failure
+        if: failure() && (steps.rust_checks.outcome == 'failure' || steps.coverage.outcome == 'failure')
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
         with:
           name: rust-stable-coverage-diagnostics-${{ env.ANALYSIS_REVISION }}
