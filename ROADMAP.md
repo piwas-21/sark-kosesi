@@ -434,6 +434,9 @@ release to authorized warehouse staff through bounded non-terminal session input
 a bounded private record payload and private JSON reports. A release is not proof
 of unpacking or restocking. Staff session issuance, physical handover and
 operational acceptance remain open.
+A private exact-order cancellation review now joins the pending request to
+recorded packing assertions under one attempt claim and both existing staff
+grants. Missing source evidence is reported as unavailable.
 
 The isolated staging-config passive preview workflow is a bounded P6 rehearsal.
 Evidence must bind the exact revision, synthetic fixture, authenticated scope and
