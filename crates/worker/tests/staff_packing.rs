@@ -16,7 +16,6 @@ use commerce_infrastructure::{
     MIGRATOR,
     guest_baskets::GuestCredential,
     order_stock::settle,
-    packing_custody::{self, Action, Component, Request, Units},
     payment_attempts::{
         identities::resolve, prepare_attempt, recognition::recognize, start_dispatch,
     },
@@ -28,7 +27,7 @@ use sqlx::{ConnectOptions, Executor, PgPool};
 use std::{
     io::Write,
     process::{Command, Output, Stdio},
-    sync::atomic::AtomicU64,
+    sync::atomic::{AtomicU64, Ordering},
 };
 
 async fn seed_paid_observation(pool: &PgPool, attempt: &AttemptSnapshot) {
@@ -96,6 +95,36 @@ fn run(database: &str, args: &[&str], bearer: &[u8; 32]) -> Output {
     child.wait_with_output().expect("packing worker result")
 }
 
+struct PayloadFile(std::path::PathBuf);
+impl PayloadFile {
+    fn new() -> Self {
+        static NEXT: AtomicU64 = AtomicU64::new(0);
+        let path = std::env::temp_dir().join(format!(
+            "packing-worker-{}-{}.json",
+            std::process::id(),
+            NEXT.fetch_add(1, Ordering::Relaxed)
+        ));
+        std::fs::OpenOptions::new()
+            .write(true)
+            .create_new(true)
+            .open(&path)
+            .expect("isolated fixture file");
+        Self(path)
+    }
+    fn write(&self, value: &Value) {
+        std::fs::write(&self.0, serde_json::to_vec(value).expect("fixture JSON"))
+            .expect("fixture payload");
+    }
+    fn path(&self) -> &str {
+        self.0.to_str().expect("UTF-8 test path")
+    }
+}
+impl Drop for PayloadFile {
+    fn drop(&mut self) {
+        let _ = std::fs::remove_file(&self.0);
+    }
+}
+
 async fn footprint(pool: &PgPool) -> (i64, i64, i64, i64, i64) {
     sqlx::query_as("SELECT (SELECT count(*) FROM packing_custody),(SELECT count(*) FROM commerce_outbox),(SELECT count(*) FROM stock_movements),(SELECT count(*) FROM payment_attempts),(SELECT count(*) FROM payment_recognitions)")
         .fetch_one(pool).await.expect("packing and related effect counts")
@@ -156,37 +185,72 @@ async fn packing_cli_returns_exact_assertions_only_to_warehouse_staff(pool: PgPo
             .bind(SessionToken::from_bytes(bearer).digest().as_slice())
             .bind(id).bind(now - 1).bind(now + 300).execute(&pool).await.expect("staff session");
     }
-    let receipt = packing_custody::record(
-        &pool,
-        &SessionToken::from_bytes(packer),
-        &SystemClock,
-        &ids,
-        Request {
-            order_id,
-            effect_key: "packing-worker-pack",
-            confirmed: true,
-            action: Action::Packed {
-                units: &[Units {
-                    sku: "SET-FILLED".into(),
-                    units: 1,
-                }],
-                packages: &[vec![
-                    Component {
-                        code: "SEAT-COVER".into(),
-                        quantity: 2,
-                    },
-                    Component {
-                        code: "SEAT-FOAM".into(),
-                        quantity: 2,
-                    },
-                ]],
-            },
-        },
-    )
-    .await
-    .expect("record synthetic package assertion");
-    let before = footprint(&pool).await;
+    let payload = PayloadFile::new();
+    let valid = json!({
+        "units": [{"sku": "SET-FILLED", "units": 1}],
+        "packages": [[{"code": "SEAT-COVER", "quantity": 2}, {"code": "SEAT-FOAM", "quantity": 2}]],
+    });
+    let record_args = [
+        "--record-packing",
+        order_id.as_str(),
+        "packing-worker-pack",
+        payload.path(),
+        "--confirm",
+    ];
     let database = pool.connect_options().to_url_lossy().to_string();
+    let before_record = footprint(&pool).await;
+    for invalid in [
+        json!({"units":[{"sku":"NOT-ORDERED","units":1}],"packages":[[{"code":"SEAT-COVER","quantity":2},{"code":"SEAT-FOAM","quantity":2}]]}),
+        json!({"units":[{"sku":"SET-FILLED","units":1}],"packages":[[{"code":"SEAT-COVER","quantity":1},{"code":"SEAT-FOAM","quantity":2}]]}),
+    ] {
+        payload.write(&invalid);
+        let rejected = run(&database, &record_args, &packer);
+        assert!(!rejected.status.success());
+        assert!(rejected.stdout.is_empty());
+        assert!(
+            String::from_utf8(rejected.stderr)
+                .expect("redacted error")
+                .contains("packing record unavailable")
+        );
+        assert_eq!(before_record, footprint(&pool).await);
+    }
+    payload.write(&valid);
+    let denied = run(&database, &record_args, &observer);
+    assert!(!denied.status.success());
+    assert!(denied.stdout.is_empty());
+    assert_eq!(before_record, footprint(&pool).await);
+    let result = run(&database, &record_args, &packer);
+    assert!(result.status.success());
+    assert!(result.stderr.is_empty());
+    let record: Value = serde_json::from_slice(&result.stdout).expect("record receipt");
+    assert_eq!(record["kind"], "packing_assertion_record");
+    assert_eq!(record["replayed"], false);
+    assert_eq!(record.as_object().expect("closed receipt").len(), 4);
+    let record_id = record["id"].as_str().expect("record ID").to_owned();
+    let recorded_at = record["recordedAt"].as_i64().expect("record timestamp");
+    let after_record = footprint(&pool).await;
+    assert_eq!(
+        after_record,
+        (
+            before_record.0 + 1,
+            before_record.1 + 1,
+            before_record.2,
+            before_record.3,
+            before_record.4
+        )
+    );
+    let replay = run(&database, &record_args, &packer);
+    assert!(replay.status.success());
+    let replayed: Value = serde_json::from_slice(&replay.stdout).expect("replay receipt");
+    assert_eq!(replayed["id"], record["id"]);
+    assert_eq!(replayed["recordedAt"], record["recordedAt"]);
+    assert_eq!(replayed["replayed"], true);
+    payload.write(&json!({"units":[{"sku":"SET-FILLED","units":2}],"packages":[[{"code":"SEAT-COVER","quantity":4},{"code":"SEAT-FOAM","quantity":4}]]}));
+    assert!(!run(&database, &record_args, &packer).status.success());
+    payload.write(&valid);
+    assert!(!run(&database, &record_args, &other_packer).status.success());
+    assert_eq!(after_record, footprint(&pool).await);
+    let before = footprint(&pool).await;
     let result = run(&database, &["--inspect-packing", order_id], &packer);
     assert!(result.status.success());
     assert!(result.stderr.is_empty());
@@ -195,7 +259,7 @@ async fn packing_cli_returns_exact_assertions_only_to_warehouse_staff(pool: PgPo
         json!({
             "kind": "packing_assertions",
             "lines": [{"sku": "SET-FILLED", "ordered": 3, "activeAsserted": 1, "notAsserted": 2}],
-            "history": [{"id": receipt.record.id, "action": "packed", "targetId": null, "recordedAt": receipt.record.recorded_at}],
+            "history": [{"id": record_id, "action": "packed", "targetId": null, "recordedAt": recorded_at}],
         })
     );
     for (id, token) in [
@@ -219,7 +283,7 @@ async fn packing_cli_returns_exact_assertions_only_to_warehouse_staff(pool: PgPo
     }
     assert_eq!(before, footprint(&pool).await);
 
-    let target = &receipt.record.id;
+    let target = &record_id;
     let release_args = [
         "--release-packing",
         order_id,
@@ -296,10 +360,12 @@ async fn packing_cli_returns_exact_assertions_only_to_warehouse_staff(pool: PgPo
         .await
         .expect("revoke session");
     assert!(!run(&database, &release_args, &packer).status.success());
+    assert!(!run(&database, &record_args, &packer).status.success());
     let stale = *b"synthetic-stale--000000000000000";
     sqlx::query("INSERT INTO staff_sessions(token_hash,staff_id,created_at,expires_at,mfa_verified_at) VALUES($1,'packing-worker',$2,$3,$2)")
         .bind(SessionToken::from_bytes(stale).digest().as_slice())
         .bind(now - 902).bind(now + 300).execute(&pool).await.expect("stale MFA session");
     assert!(!run(&database, &release_args, &stale).status.success());
+    assert!(!run(&database, &record_args, &stale).status.success());
     assert_eq!(after_release, footprint(&pool).await);
 }
