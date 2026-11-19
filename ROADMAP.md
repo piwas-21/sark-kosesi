@@ -294,11 +294,20 @@ capacity and recovery under cgroup limits before release.
 The Alpine restore lab observed a collation change that rejected historical
 stock receipt reads and replay in its synthetic fixture. The same-base Debian
 candidate lab evaluates the pinned zlib and Gosu changes together using full
-scans, receipt replay and the schema-66 rehearsal. P7 still needs an isolated
-clone check of the actual database's collations, indexes and historical
-order-sensitive custody, plus security disposition and operational rollback.
+scans, receipt replay and the schema-66 rehearsal. The non-selling public
+preview now runs on the pinned official Debian PostgreSQL image with a restored
+copy of staging data, verified forward migrations through schema 82 and the
+original database retained for rollback. Production release still needs
+actual-clone checks of collations, indexes and historical
+order-sensitive custody, along with security disposition and operational rollback.
 
 Remaining delivery sequence: P0 business inputs in parallel → P2 inventory/catalogue → P3 checkout/payments → P4 customer/admin operations → P5 room planning and content → P6 acceptance → P7 controlled launch. Each phase has explicit exit evidence in the plan.
+
+For P4 staff access, agree first-administrator bootstrap, factor verification,
+grant delegation and recovery with the owner and security reviewer. Use those
+decisions to define the first isolated implementation slice and its acceptance
+tests. Staff access remains private until the identity chain and operator
+procedures pass the [staff identity acceptance criteria](docs/SECURITY.md#staff-identity-acceptance-boundary).
 
 External blockers: final brand/domain, real product specification/media, market/carrier/tax readiness, Mollie retail website approval, translated legal/product content, email delivery and recovery evidence. EU-wide intent is unchanged; an unready country cannot take payment.
 The [EU destination readiness register](docs/MARKET-READINESS.md) tracks the

@@ -652,6 +652,77 @@ collection and key. A receipt from another operation cannot advance the job.
 Expired operations preserve their evidence for review without starting another
 fetch for the same operation.
 
+## Staff identity acceptance boundary
+
+The existing staff authorization consumer is not an enrollment or login system.
+Installation creates no staff account, grant or session. The consumer accepts a
+persisted session for an enabled account, an explicit capability and a recent MFA
+attestation; it holds those records through the protected operation and checks
+time after waits. The private self-revocation operation only relinquishes the
+supplied bearer. Neither operation verifies how a person obtained a credential or
+MFA factor. Preview credentials, customer accounts and test-only session rows
+cannot bootstrap staff authority.
+
+Before an operator can use staff access, the owner and security reviewer must
+agree how the first administrator is established, how later administrators and
+staff are identified, which capabilities each may delegate, and how lost factors
+and compromised accounts are recovered. Define who can approve and carry out each
+step, how their authority is verified, and how the database writer and bootstrap
+material are protected. The first-administrator procedure must not silently seed
+an enabled account, grant or credential. The mechanism, factors, delivery and
+operational custody remain decisions, not assumptions in the source.
+
+The completed flow must bind identity proof and factor enrollment to the intended
+staff account and the exact authorized enrollment attempt. An invitation,
+identifier, delivery acknowledgement or caller-supplied timestamp alone is not
+proof of identity, factor possession or MFA. The chosen maintained verification
+mechanism must authenticate its ceremony and bind its result to the account and
+purpose. Evidence of identity and factor verification must be attributable to
+that ceremony without exposing private factor material. Session issuance must
+verify all factors required by the approved MFA policy for the same account and
+login attempt; only a verified, fresh result may establish MFA time. One-use proofs must expire and resist replay, substitution and concurrent use.
+An interruption or lost response must have an explicit recovery state; it must not
+quietly produce a second authority or treat an uncertain outcome as success.
+
+Staff login and recovery need bounded admission before sensitive lookup or
+credential work, neutral denial for unknown and invalid identities, safe failure
+on unavailable dependencies and timing/abuse controls for the actual ingress.
+Protect bearer, factor, credential and recovery material in transit and at rest;
+never log them or put them in browser local storage. Session issuance and rotation
+must bind the validated identity and current credential/factor state, use
+HttpOnly, Secure and SameSite cookies plus CSRF/origin controls for browser
+mutations, and preserve the existing maximum session and recent-MFA limits.
+Credential or factor replacement,
+revocation, account disablement and grant removal must invalidate or deny stale
+authority according to the approved policy, including in-flight operations after
+lock waits. A customer session, preview bearer or enrollment proof grants no staff
+capability.
+
+Capability changes require an authorized administrator, recent MFA and explicit
+confirmation under the approved delegation policy. Bind the action to the exact
+target and capability, retain a redacted actor/action/object/reason audit, and
+prevent self-service or replay from creating authority outside that policy.
+Existing separation-of-duties checks still apply to delegated capabilities.
+Recovery must re-establish identity and authorization under a reviewed procedure;
+losing a factor must not create an unreviewed way around MFA or revocation. The
+procedure must cover key compromise, factor replacement, expired and revoked
+proofs, account departure and loss of the last administrator. Audit and recovery
+evidence must bind the approved procedure, actor, target, outcome and relevant
+times without secrets, bearer values or unnecessary personal data.
+
+Use isolated PostgreSQL and synthetic identities to test both successful paths
+and invalid, expired, replayed, wrong-purpose and wrong-account proofs; unknown,
+disabled and revoked staff; missing and stale MFA; unauthorized delegation; and
+credential/factor or grant changes concurrent with login and protected writes.
+Exercise real lock waits, clock expiry and failed writes, then verify no partial
+session, grant, success audit or enrollment effect survives. Independently committed admission
+debits and redacted failed-attempt audits may remain. Test bounded admission and
+redacted diagnostics with positive and negative controls. Before production,
+review the changed threat boundary and verify the chosen bootstrap and recovery
+procedures, factor and delivery custody, ingress/CSRF controls and actual operator
+acceptance against the release revision. Source tests alone do not establish
+identity, delivery or operational acceptance.
+
 ## Private email verification challenge custody
 
 The private challenge primitive accepts only ASCII dot-atom local parts and ASCII
