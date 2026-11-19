@@ -1315,6 +1315,10 @@ unspent proof.
 
 ### Private password blocklist preflight
 
+The canonical offline decoder uses independently hashed synthetic bytes; check
+truncation, trailing bytes, invalid UTF-8, length/count limits, ordering and
+wrong trusted digests, including ordering faults with matching literal digests.
+
 Use independently calculated literal digests and NFC/space-sensitive positive and
 negative controls. Reject malformed, unsorted, duplicate, over-capacity, expired
 and integrity-mismatched snapshots. Isolated PostgreSQL tests retain proof and

@@ -749,6 +749,9 @@ unsigned 64-bit big-endian byte length and bytes, followed by signed 64-bit
 big-endian validity bounds, unsigned 64-bit big-endian entry count and the
 concatenated 32-byte entries. Snapshot validation establishes integrity and
 shape, not authenticity, actual corpus quality or reviewer qualification.
+The offline decoder accepts exactly this canonical preimage and an independently
+trusted digest, checks metadata and entry bounds before allocation, and rejects
+truncation, trailing bytes and invalid UTF-8. It does not acquire or activate a corpus.
 
 After the admission debit and cheap revision-bound proof precheck, release the
 database transaction and reject exact blocklist matches before Argon2. Normalize
