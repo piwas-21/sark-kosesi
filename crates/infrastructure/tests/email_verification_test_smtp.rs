@@ -25,6 +25,7 @@ use std::{
 use tokio::{
     io::{AsyncBufReadExt, AsyncWriteExt, BufReader},
     net::TcpListener,
+    sync::oneshot,
 };
 use zeroize::Zeroizing;
 
@@ -60,12 +61,18 @@ enum Reply {
     Disconnect,
 }
 
+struct Rendezvous {
+    ready: oneshot::Sender<()>,
+    release: oneshot::Receiver<()>,
+}
+
 // One connection only. No forwarding, filesystem storage, DNS or external mail.
 async fn peer(
-    listener: TcpListener,
+    listener: &TcpListener,
     pool: &PgPool,
     verifier: &[u8; 32],
     reply: Reply,
+    rendezvous: Option<Rendezvous>,
 ) -> Zeroizing<String> {
     let (stream, _) = tokio::time::timeout(Duration::from_secs(5), listener.accept())
         .await
@@ -106,13 +113,22 @@ async fn peer(
     }
     // The peer receives DATA only after opening commits; a new DB writer can lock
     // the challenge while this SMTP connection is active.
+    let mut probe = pool.begin().await.expect("begin lock probe");
     sqlx::query(
         "SELECT verifier FROM email_verification_challenges WHERE verifier=$1 FOR UPDATE NOWAIT",
     )
     .bind(verifier.as_slice())
-    .fetch_one(pool)
+    .fetch_one(&mut *probe)
     .await
     .expect("no database lock across SMTP");
+    probe.commit().await.expect("release probe lock");
+    if let Some(rendezvous) = rendezvous {
+        rendezvous.ready.send(()).expect("signal lock probe");
+        tokio::time::timeout(Duration::from_secs(5), rendezvous.release)
+            .await
+            .expect("release deadline")
+            .expect("release sender");
+    }
     match reply {
         Reply::Disconnect => return message,
         Reply::Accept | Reply::AcceptThenStall => stream
@@ -166,16 +182,55 @@ async fn delivered_message_redeems_and_concurrent_openers_send_once(pool: PgPool
     let listener = TcpListener::bind("127.0.0.1:0").await.expect("listen");
     let endpoint =
         LocalTestEndpoint::new(true, listener.local_addr().expect("address")).expect("local");
-    let (message, a, b) = tokio::join!(
-        peer(listener, &pool, &verifier, Reply::Accept),
+    let (ready_tx, ready_rx) = oneshot::channel();
+    let (release_tx, release_rx) = oneshot::channel();
+    let competitor = async {
+        tokio::time::timeout(Duration::from_secs(5), ready_rx)
+            .await
+            .expect("lock probe deadline")
+            .expect("lock probe sender");
+        // The first sender is waiting for the SMTP response after the peer's
+        // lock probe. A duplicate connection at any point is a test failure.
+        let result = tokio::select! {
+            biased;
+            connection = listener.accept() => panic!("duplicate SMTP connection: {connection:?}"),
+            result = tokio::time::timeout(
+                Duration::from_secs(5),
+                deliver(&pool, &verifier, &time, &key, &endpoint),
+            ) => result.expect("competitor deadline"),
+        };
+        assert_eq!(result, Ok(OpenOutcome::AlreadyStarted));
+        assert_eq!(inspect(&pool, &verifier).await, Ok(DeliveryState::Unknown));
+        let counts: (i64, i64) = sqlx::query_as(
+            "SELECT (SELECT count(*) FROM email_verification_delivery_starts WHERE verifier=$1), (SELECT count(*) FROM email_verification_delivery_outcomes WHERE verifier=$1)",
+        )
+        .bind(verifier.as_slice())
+        .fetch_one(&pool)
+        .await
+        .expect("delivery row counts");
+        assert_eq!(counts, (1, 0));
+        tokio::select! {
+            biased;
+            connection = listener.accept() => panic!("duplicate SMTP connection: {connection:?}"),
+            () = std::future::ready(()) => {},
+        }
+        release_tx.send(()).expect("release peer");
+    };
+    let (message, result, ()) = tokio::join!(
+        peer(
+            &listener,
+            &pool,
+            &verifier,
+            Reply::Accept,
+            Some(Rendezvous {
+                ready: ready_tx,
+                release: release_rx,
+            })
+        ),
         deliver(&pool, &verifier, &time, &key, &endpoint),
-        deliver(&pool, &verifier, &time, &key, &endpoint)
+        competitor,
     );
-    assert!(matches!(
-        (a, b),
-        (Ok(OpenOutcome::Opened), Ok(OpenOutcome::AlreadyStarted))
-            | (Ok(OpenOutcome::AlreadyStarted), Ok(OpenOutcome::Opened))
-    ));
+    assert_eq!(result, Ok(OpenOutcome::Opened));
     assert!(message.starts_with("From: sender@example.test\r\nTo: verify@example.test\r\n"));
     assert_eq!(
         inspect(&pool, &verifier).await,
@@ -234,7 +289,7 @@ async fn explicit_rejection_and_missing_reply_never_resend(pool: PgPool) {
         let endpoint =
             LocalTestEndpoint::new(true, listener.local_addr().expect("address")).expect("local");
         let (_message, result) = tokio::join!(
-            peer(listener, &pool, &verifier, reply),
+            peer(&listener, &pool, &verifier, reply, None),
             deliver(&pool, &verifier, &time, &key, &endpoint)
         );
         assert_eq!(result, Ok(OpenOutcome::Opened));
@@ -269,7 +324,7 @@ async fn accepted_message_with_failed_record_stays_unknown(pool: PgPool) {
     let endpoint =
         LocalTestEndpoint::new(true, listener.local_addr().expect("address")).expect("local");
     let (_message, result) = tokio::join!(
-        peer(listener, &pool, &verifier, Reply::Accept),
+        peer(&listener, &pool, &verifier, Reply::Accept, None),
         deliver(&pool, &verifier, &time, &key, &endpoint)
     );
     assert!(result.is_err());
