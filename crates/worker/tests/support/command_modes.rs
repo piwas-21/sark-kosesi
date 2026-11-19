@@ -98,3 +98,35 @@ fn reversal_commands_require_exact_valid_arguments() {
         assert!(parse_mode(&args(&command)).is_err());
     }
 }
+
+#[test]
+fn packing_release_requires_exact_confirmed_arguments() {
+    let id = "0123456789abcdef0123456789abcdef";
+    assert!(matches!(
+        parse_mode(&args(&[
+            "--release-packing",
+            id,
+            id,
+            "effect-123",
+            "--confirm"
+        ])),
+        Ok(Mode::ReleasePacking { .. })
+    ));
+    for command in [
+        vec!["--release-packing", id, id, "effect-123"],
+        vec!["--release-packing", id, id, "effect-123", "confirm"],
+        vec!["--release-packing", "bad", id, "effect-123", "--confirm"],
+        vec!["--release-packing", id, "bad", "effect-123", "--confirm"],
+        vec!["--release-packing", id, id, "bad_key", "--confirm"],
+        vec![
+            "--release-packing",
+            id,
+            id,
+            "effect-123",
+            "--confirm",
+            "extra",
+        ],
+    ] {
+        assert!(parse_mode(&args(&command)).is_err());
+    }
+}

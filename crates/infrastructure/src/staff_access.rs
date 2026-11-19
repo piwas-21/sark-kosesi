@@ -94,6 +94,8 @@ async fn begin(pool: &PgPool) -> Result<Transaction<'static, Postgres>, sqlx::Er
     sqlx::query("SET LOCAL statement_timeout='2s'")
         .execute(&mut *tx)
         .await?;
+    #[cfg(test)]
+    crate::late_stock_wait_budget::apply(&mut tx).await?;
     Ok(tx)
 }
 
@@ -148,5 +150,37 @@ mod tests {
                 0x4b, 0x75, 0x14, 0xac,
             ]
         );
+    }
+}
+
+#[cfg(test)]
+mod wait_budget_tests {
+    use super::begin;
+    use crate::{MIGRATOR, late_stock_wait_budget};
+    use sqlx::PgPool;
+
+    #[sqlx::test(migrator = "MIGRATOR")]
+    async fn staff_wait_budget_is_explicit_and_transaction_local(pool: PgPool) {
+        let mut tx = begin(&pool).await.expect("default staff transaction");
+        assert_eq!(
+            late_stock_wait_budget::settings(&mut tx).await,
+            ("1s".into(), "2s".into())
+        );
+        tx.rollback().await.expect("release");
+        late_stock_wait_budget::scope(async {
+            let mut tx = begin(&pool).await.expect("scoped staff transaction");
+            assert_eq!(
+                late_stock_wait_budget::settings(&mut tx).await,
+                ("10s".into(), "20s".into())
+            );
+            tx.rollback().await.expect("release");
+        })
+        .await;
+        let mut tx = begin(&pool).await.expect("post-scope staff transaction");
+        assert_eq!(
+            late_stock_wait_budget::settings(&mut tx).await,
+            ("1s".into(), "2s".into())
+        );
+        tx.rollback().await.expect("release");
     }
 }
