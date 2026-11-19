@@ -162,10 +162,15 @@ pub async fn retry(
         .await
         .map_err(DispositionError::Staff)?;
     // A global effect-key lock serializes cross-case retries as well as same-case requests.
-    sqlx::query("SELECT pg_advisory_xact_lock(hashtextextended($1,0))")
+    let key_lock = sqlx::query("SELECT pg_advisory_xact_lock(hashtextextended($1,0))")
         .bind(format!("late-stock-disposition:{}", request.effect_key))
         .execute(&mut *access.tx)
-        .await?;
+        .await;
+    #[cfg(test)]
+    if let Err(error) = &key_lock {
+        crate::late_stock_wait_budget::record_effect_key_error(error);
+    }
+    key_lock?;
     let prior_attempt: Option<String> = sqlx::query_scalar(
         "SELECT left(attempt_id,33) FROM late_stock_dispositions WHERE effect_key=$1",
     )
