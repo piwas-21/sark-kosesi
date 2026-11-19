@@ -294,8 +294,8 @@ candidate lab evaluates the pinned zlib and Gosu changes together using full
 scans, receipt replay and the schema-66 rehearsal. The non-selling public
 preview now runs on the pinned official Debian PostgreSQL image with a restored
 copy of staging data, verified forward migrations through schema 82 and the
-original database retained for rollback. The separate production candidate
-still needs actual-clone checks of collations, indexes and historical
+original database retained for rollback. Production release still needs
+actual-clone checks of collations, indexes and historical
 order-sensitive custody, along with security disposition and operational rollback.
 
 Remaining delivery sequence: P0 business inputs in parallel → P2 inventory/catalogue → P3 checkout/payments → P4 customer/admin operations → P5 room planning and content → P6 acceptance → P7 controlled launch. Each phase has explicit exit evidence in the plan.
