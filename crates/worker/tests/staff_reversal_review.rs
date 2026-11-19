@@ -315,3 +315,33 @@ fn packing_uses_the_bounded_staff_input_and_rejects_extra_arguments() {
         assert!(!text(&rejected).contains("synthetic-staff-token"));
     }
 }
+
+#[test]
+fn packing_release_checks_confirmation_environment_and_input_before_database() {
+    let command = |environment: &str, confirmation: bool| {
+        let mut cmd = base_command();
+        cmd.args(["--release-packing", JOB, JOB, "release-effect"]);
+        if confirmation {
+            cmd.arg("--confirm");
+        }
+        cmd.env("APP_ENV", environment);
+        cmd
+    };
+    let missing = output(command("test", false), b"");
+    assert!(!missing.status.success());
+    assert!(text(&missing).contains("unsupported worker command"));
+    for (environment, input, expected) in [
+        ("production", b"".as_slice(), "production is disabled"),
+        ("staging", b"".as_slice(), "production is disabled"),
+        ("test", b"".as_slice(), "staff review input unavailable"),
+        ("test", &BEARER[..31], "staff review input unavailable"),
+        ("test", &[b'x'; 33][..], "staff review input unavailable"),
+        ("test", &BEARER[..], "DATABASE_URL required"),
+    ] {
+        let result = output(command(environment, true), input);
+        assert!(!result.status.success());
+        assert!(result.stdout.is_empty());
+        assert!(text(&result).contains(expected));
+        assert!(!text(&result).contains("synthetic-staff-token"));
+    }
+}

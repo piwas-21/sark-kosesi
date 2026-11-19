@@ -461,6 +461,15 @@ and logs. The command returns one JSON object on stdout with `kind` set to
 Store this output as private order evidence. Assertion counts do not establish
 which units have shipped or whether dispatch is permitted.
 
+To relinquish one existing assertion in an isolated local/test environment, run
+`commerce-worker --release-packing <order-id> <packed-record-id> <effect-key> --confirm`
+with the same bounded staff session input. Use a unique effect key for the exact
+intent. The JSON receipt identifies the release and its target, timestamp and
+whether it was replayed. If output is lost, retry the same effect key, target and
+staff identity; a changed intent or actor conflicts. This records a release of an
+assertion only; it does not establish physical unpacking, restock or permission
+to dispatch. Staff session issuance and production operator access remain absent.
+
 ## Private callback supervision
 
 `cargo run --locked -p commerce-worker -- --reconcile-callbacks` runs one bounded
@@ -557,6 +566,144 @@ credentials or response bodies. Independently verify the workflow revision, scan
 and image identities, scope and custody; inspect the unfiltered report with the
 offline audit above. A successful capture does not establish deployment, image
 provenance, vulnerability disposition or release readiness.
+
+## PostgreSQL sibling root bootstrap
+
+The path-scoped `PostgreSQL sibling runtime root` workflow builds a disposable
+AMD64 Debian root without PostgreSQL. Its digest-pinned Docker Official Debian
+root shares the pinned stock PostgreSQL image’s first layer; the workflow
+checks registry identities, package inventory against the upstream root manifest,
+and the actual stock image. A scoped, signed Debian snapshot supplies exactly
+three pinned ICU and locale packages, and the resulting package inventory must
+otherwise match the original root. The original util-linux packages remain.
+The workflow records raw package names, versions and dpkg status; only fully
+installed packages count toward closure, and partial or broken states fail.
+It also records loader caches, OCI image
+metadata, matching libc bytes and a small locale comparison, with positive and
+negative controls for selected stock-only packages and libraries. Trust inputs,
+source pins and snapshot provenance are in `ops/db-sibling-runtime-root/`.
+
+This is a bootstrap and closure experiment, not a PostgreSQL runtime or an image
+security scan. It starts no database, provides no deployment entrypoint and does
+not establish PostgreSQL client dependencies, collation equivalence, operational
+readiness or vulnerability disposition. A separate reviewed slice must add the
+verified PostgreSQL install, exercise the runtime and compare unfiltered scans.
+No image is published or deployed by this workflow.
+
+## PostgreSQL sibling composition lab
+
+The path-scoped `PostgreSQL sibling composition lab` rebuilds and validates the
+sibling root and source feature experiments at the same checkout. It installs
+the snapshot-pinned readline runtime pair and the already-present terminal
+library version, then copies the source experiment’s `/opt/pg-smoke` tree into
+the sibling root. A separate build of the existing verified zlib candidate
+verifies the Debian archive signature and the zlib package digest. The final
+layer installs the verified package from a read-only mount. The package archive
+stays in the build stage. The lab requires the installed zlib change from `1:1.3.dfsg+really1.3.1-1+b1` to
+`1:1.3.dfsg+really1.3.1-1+deb13u1` and no other final-layer package changes.
+Signed archive and package evidence is retained outside the resulting image.
+Package delta, file hashes, modes, owners and symlinks are compared. The lab inspects executable and module ELF linkages and samples
+libraries actually loaded by synthetic PostgreSQL and psql processes; missing
+or selected prohibited libraries fail. These measurements do not cover every
+possible dynamically loaded extension or operating path.
+
+Network-isolated, non-root disposable clusters exercise SCRAM success and a
+specific wrong-password rejection, a stock-to-composed compressed custom-format
+restore and an invalid archive control. The source tree, exact package versions,
+image identities, fixture outcomes and trust evidence remain in the workflow
+artifact. This is a feasibility test, not a bit-reproducible build, a complete
+entrypoint or lifecycle test, a TLS test, a vulnerability scan, staging clone or
+rollback acceptance. It publishes no image and does not deploy or alter staging.
+
+## PostgreSQL sibling scan comparison
+
+The path-scoped `PostgreSQL sibling scan evidence` workflow first rebuilds and
+checks the source, sibling root and composition on one disposable AMD64 runner.
+It validates the saved composed image’s configuration and all layer hashes,
+then compares the pinned stock image and that exact composed image with the
+pinned Trivy scanner and one freshly acquired, unchanged vulnerability database.
+Both raw reports retain every reported severity, status and package inventory;
+CycloneDX files are converted from those same reports. A stock positive finding,
+image identities, report and database timestamps, dpkg inventories and empty
+suppression inputs are checked. Exact unmatched scanner rows are recorded as
+comparison evidence, not as vulnerability fixes or acceptance. A separate
+same-run control requires stock zlib to report `CVE-2026-85091` as HIGH and
+requires the updated zlib package not to report that advisory at any severity;
+all other rows and findings remain retained and undisposed.
+
+PostgreSQL and libpq in the composed image are compiled from source rather than
+installed as Debian PostgreSQL packages. The package scanner and generated SBOM
+may omit those components and their advisories. A separate same-run source
+component manifest records the upstream version and archive digest, executable
+hashes and evidence limits; it does not invent scanner matches or establish
+source vulnerability status. A source-aware advisory review remains necessary.
+All scanner findings remain open until separately disposed; scanner output is not
+proof of complete vulnerability coverage, deployment, or release readiness.
+The workflow publishes no image and does not connect to staging data.
+
+## PostgreSQL sibling component-presence evidence
+
+The path-scoped component-presence workflow repeats the unfiltered paired scan,
+then creates an unstarted, network-disabled container from that same verified
+composition ID. It requires the container to have no mounts and exports its
+merged filesystem without executing it. A bounded tar inspection reads every
+file and records name and link-target matches for `systemd-homed` and
+`Archive::Tar` indicators, along with the image ID, checkout, export digest and
+scan-evidence hashes. Raw scans and all findings remain in the artifact; the
+filesystem export stays in runner scratch.
+
+The indicators cover common names, including the Debian
+[systemd-homed file inventory](https://packages.debian.org/trixie/armhf/systemd-homed/filelist)
+and the [Debian Perl module file inventory](https://packages.debian.org/trixie/all/perl-modules-5.40/filelist).
+They do not detect renamed, embedded, compressed or generated copies, establish
+reachability, prove a package absent, or resolve a vulnerability finding. The
+archive is a same-run daemon export, not an independent attestation. Docker
+[does not export mounted volume contents](https://docs.docker.com/reference/cli/docker/container/export/),
+so this check fails when mounts or image volumes are present. It does not inspect
+future runtime mounts or change, deploy or accept the image.
+
+## PostgreSQL sibling signed binary lineage
+
+The path-scoped binary-lineage workflow runs the component-presence experiment
+once and reuses its verified image ID and private root filesystem export. It
+checks the export digest, then uses the pinned Debian-root keyring to verify the
+Trixie snapshot Release signature. The signed Release binds the exact compressed
+package index; that index binds the three exact AMD64 package versions, source
+names, sizes and package SHA-256 values. The workflow retains the Release,
+signature, index, keyring and package archives for review, then compares selected
+shared-library and Perl executable paths, file hashes, modes and symlink targets
+against the same image export without executing the image for this comparison.
+Missing, altered or transformed selected files fail the check.
+
+The snapshot and keyring trust position follows the sibling-root provenance;
+Debian's [archive authentication documentation](https://manpages.debian.org/trixie/apt/apt-secure.8.en.html)
+describes the Release-to-index-to-package chain. The pinned SHA-256 and sizes
+are also published for [libsystemd0](https://packages.debian.org/ca/trixie/amd64/libsystemd0/download),
+[libudev1](https://packages.debian.org/trixie/amd64/libudev1/download) and
+[perl-base](https://packages.debian.org/trixie/amd64/perl-base/download).
+This verifies only selected package payload paths, not every file or the absence
+of renamed or embedded code. It does not establish compiled-code applicability,
+fix a CVE, suppress a scanner row or accept a vulnerability. The retained raw
+scanner output and other release gates remain unchanged.
+
+## PostgreSQL sibling lifecycle lab
+
+The path-scoped `PostgreSQL sibling lifecycle lab` rebuilds the composition on
+the same disposable AMD64 hosted runner and records its exact image identity.
+It prepares uniquely labelled new volumes, initializes a synthetic cluster as
+UID/GID 999:999 and runs PostgreSQL directly as PID 1 with no network, a
+read-only root and an explicit data directory. It checks failed starts on empty
+and wrong-owner volumes, SCRAM success and wrong-password rejection, then
+stops with SIGINT, recreates the container on the same volume and verifies a
+synthetic row. Inspection checks identity, isolation and clean exit. Only the
+labelled disposable resources are removed; no existing volume is mounted.
+
+This tests a pre-initialized cluster contract, not the stock image entrypoint:
+automatic initialization, environment-based user/database creation, init
+scripts and ownership repair are not provided. A second-volume restore,
+staging-compatible credentials and network, TLS, physical-volume migration,
+backup, rollback, source vulnerability review and production acceptance remain
+separate work. It publishes no image and does not access staging or live data.
 
 ## Isolated PostgreSQL zlib candidate
 
@@ -762,3 +909,45 @@ compatibility of an existing physical volume, application extensions or default
 locale semantics across libc implementations. Actual restore, ownership, indexes,
 collations, extension compatibility, current security disposition and deployment
 remain separate gates. The lab never connects to or alters staging or production.
+
+## PostgreSQL source feature smoke
+
+The path-scoped `PostgreSQL source feature smoke` workflow is an optional,
+synthetic experiment on a disposable hosted AMD64 runner. It builds upstream
+PostgreSQL 18.7 from the project's HTTPS source archive after checking the
+pinned SHA-256 `441dfae4280cae3e0425e5f876f80559fb0731c140f1aae22b3e5a54d0411bfd`
+before extraction. The archive and upstream checksum share an HTTPS origin;
+this pin is not an independent release signature. The exact pinned stock PGDG
+image supplies both build and runtime bases. The locked direct build dependencies come from a timestamped Debian Trixie
+snapshot and its dated security snapshot; APT verifies both with the pinned
+base's Debian archive keyring, while
+expiry checking is disabled for the historical snapshot. The complete installed
+package inventory and trust-input hashes are recorded. Transitive packages are
+not individually locked, so this is not a reproducible build. The lock's
+source and index hashes are documented in
+`ops/db-source-feature-smoke/PACKAGE-PROVENANCE.md`.
+
+The new binary enables ICU, OpenSSL and zlib, and disables GSSAPI, LDAP and
+libxml/libxslt. The workflow captures each image's PostgreSQL configure flags,
+architecture, available locales, libc version, full installed-package list and
+resolved libraries for the server and client library. It checks selected missing
+libraries in the candidate's resolved linkage, with stock positive controls;
+this does not establish their absence from the full image. The runtime retains
+the stock image and its packages. Synthetic non-root, network-isolated clusters
+check SCRAM success and the expected wrong-password diagnosis, stock-to-candidate compressed
+custom archive restore, SQL/XML availability and its specific unsupported-feature
+SQLSTATE, and invalid-archive
+rejection. Retained evidence includes source and image identity, build output,
+fixture results and checksums. Fixture files are transferred through the owned
+container processes with size limits and matching SHA-256 checks; status records
+the failed fixture stage without database output. Passwords are fixed synthetic
+values and are
+not included in the evidence.
+
+This is a binary and feature smoke, not a compatible replacement image or a
+privilege, vulnerability, collation, TLS handshake, staging or release acceptance.
+It does not compare actual database roles, extensions, schema or data, inspect
+the entire executable tree, scan images, validate the official entrypoint or
+exercise an operational rollback. Actual-clone collation and custody checks,
+security disposition and a reviewed operating model remain separate work. The
+workflow publishes no image and makes no deployment or staging change.

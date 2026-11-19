@@ -1,7 +1,7 @@
 //! Local/test-only output for a validated view of recorded packing assertions.
 use commerce_infrastructure::{
-    packing_custody::{self, Inspection},
-    runtime::SystemClock,
+    packing_custody::{self, Action, Inspection, Request},
+    runtime::{SecureIdentifiers, SystemClock},
     staff_access::SessionToken,
 };
 use serde_json::{Value, json};
@@ -14,6 +14,43 @@ pub(super) async fn inspect(pool: &PgPool, token: &SessionToken, order: &str) ->
         .map_err(|_| io::Error::other("packing inspection unavailable"))?;
     let mut bytes = serde_json::to_vec(&report(inspection))
         .map_err(|_| io::Error::other("packing output unavailable"))?;
+    bytes.push(b'\n');
+    io::stdout()
+        .lock()
+        .write_all(&bytes)
+        .map_err(|_| io::Error::other("packing output unavailable"))
+}
+
+/// Release only an existing assertion; this does not establish physical unpacking.
+pub(super) async fn release(
+    pool: &PgPool,
+    token: &SessionToken,
+    order: &str,
+    target: &str,
+    effect: &str,
+) -> io::Result<()> {
+    let receipt = packing_custody::record(
+        pool,
+        token,
+        &SystemClock,
+        &SecureIdentifiers,
+        Request {
+            order_id: order,
+            effect_key: effect,
+            confirmed: true,
+            action: Action::Released { target_id: target },
+        },
+    )
+    .await
+    .map_err(|_| io::Error::other("packing release unavailable"))?;
+    let mut bytes = serde_json::to_vec(&json!({
+        "kind": "packing_assertion_release",
+        "id": receipt.record.id,
+        "targetId": receipt.record.target_id,
+        "recordedAt": receipt.record.recorded_at,
+        "replayed": receipt.replayed,
+    }))
+    .map_err(|_| io::Error::other("packing output unavailable"))?;
     bytes.push(b'\n');
     io::stdout()
         .lock()

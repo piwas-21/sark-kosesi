@@ -71,10 +71,10 @@ async fn seed_paid_observation(pool: &PgPool, attempt: &AttemptSnapshot) {
     tx.commit().await.expect("reciprocal observation and event");
 }
 
-fn inspect(database: &str, order: &str, bearer: &[u8; 32]) -> Output {
+fn run(database: &str, args: &[&str], bearer: &[u8; 32]) -> Output {
     let mut command = Command::new(env!("CARGO_BIN_EXE_commerce-worker"));
     command
-        .args(["--inspect-packing", order])
+        .args(args)
         .env_clear()
         .env("APP_ENV", "test")
         .env("DATABASE_URL", database)
@@ -96,8 +96,8 @@ fn inspect(database: &str, order: &str, bearer: &[u8; 32]) -> Output {
     child.wait_with_output().expect("packing worker result")
 }
 
-async fn footprint(pool: &PgPool) -> (i64, i64, i64) {
-    sqlx::query_as("SELECT (SELECT count(*) FROM packing_custody),(SELECT count(*) FROM commerce_outbox),(SELECT count(*) FROM stock_movements)")
+async fn footprint(pool: &PgPool) -> (i64, i64, i64, i64, i64) {
+    sqlx::query_as("SELECT (SELECT count(*) FROM packing_custody),(SELECT count(*) FROM commerce_outbox),(SELECT count(*) FROM stock_movements),(SELECT count(*) FROM payment_attempts),(SELECT count(*) FROM payment_recognitions)")
         .fetch_one(pool).await.expect("packing and related effect counts")
 }
 
@@ -142,11 +142,16 @@ async fn packing_cli_returns_exact_assertions_only_to_warehouse_staff(pool: PgPo
 
     let packer = *b"synthetic-packer-000000000000000";
     let observer = *b"synthetic-reader-000000000000000";
+    let other_packer = *b"synthetic-other--000000000000000";
     let now =
         i64::try_from(SystemClock.unix_seconds().expect("system clock")).expect("clock fits SQL");
-    pool.execute("INSERT INTO staff_accounts VALUES ('packing-worker',true),('stock-review-only',true); INSERT INTO staff_capabilities VALUES ('packing-worker','warehouse.manage'),('stock-review-only','stock.review')")
+    pool.execute("INSERT INTO staff_accounts VALUES ('packing-worker',true),('stock-review-only',true),('other-packer',true); INSERT INTO staff_capabilities VALUES ('packing-worker','warehouse.manage'),('stock-review-only','stock.review'),('other-packer','warehouse.manage')")
         .await.expect("test staff grants");
-    for (id, bearer) in [("packing-worker", packer), ("stock-review-only", observer)] {
+    for (id, bearer) in [
+        ("packing-worker", packer),
+        ("stock-review-only", observer),
+        ("other-packer", other_packer),
+    ] {
         sqlx::query("INSERT INTO staff_sessions(token_hash,staff_id,created_at,expires_at,mfa_verified_at) VALUES ($1,$2,$3,$4,$3)")
             .bind(SessionToken::from_bytes(bearer).digest().as_slice())
             .bind(id).bind(now - 1).bind(now + 300).execute(&pool).await.expect("staff session");
@@ -182,7 +187,7 @@ async fn packing_cli_returns_exact_assertions_only_to_warehouse_staff(pool: PgPo
     .expect("record synthetic package assertion");
     let before = footprint(&pool).await;
     let database = pool.connect_options().to_url_lossy().to_string();
-    let result = inspect(&database, order_id, &packer);
+    let result = run(&database, &["--inspect-packing", order_id], &packer);
     assert!(result.status.success());
     assert!(result.stderr.is_empty());
     assert_eq!(
@@ -197,7 +202,7 @@ async fn packing_cli_returns_exact_assertions_only_to_warehouse_staff(pool: PgPo
         (order_id.as_str(), &observer),
         ("cccccccccccccccccccccccccccccccc", &packer),
     ] {
-        let denied = inspect(&database, id, token);
+        let denied = run(&database, &["--inspect-packing", id], token);
         assert!(!denied.status.success());
         assert!(denied.stdout.is_empty());
         let error = String::from_utf8(denied.stderr).expect("process diagnostic");
@@ -213,4 +218,88 @@ async fn packing_cli_returns_exact_assertions_only_to_warehouse_staff(pool: PgPo
         }
     }
     assert_eq!(before, footprint(&pool).await);
+
+    let target = &receipt.record.id;
+    let release_args = [
+        "--release-packing",
+        order_id,
+        target,
+        "packing-release",
+        "--confirm",
+    ];
+    let result = run(&database, &release_args, &packer);
+    assert!(result.status.success(), "release failed");
+    assert!(result.stderr.is_empty());
+    let released: Value = serde_json::from_slice(&result.stdout).expect("release receipt");
+    assert_eq!(released["kind"], "packing_assertion_release");
+    assert_eq!(released["targetId"], *target);
+    assert_eq!(released["replayed"], false);
+    assert_eq!(released.as_object().expect("closed receipt").len(), 5);
+    let event_count: i64 = sqlx::query_scalar(
+        "SELECT count(*) FROM commerce_outbox e JOIN packing_custody p ON p.event_id=e.id WHERE e.aggregate_id=$1 AND e.kind='order.packing_custody_recorded.v1' AND p.action='released' AND e.payload=packing_custody_event(p)",
+    )
+    .bind(order_id).fetch_one(&pool).await.expect("release event");
+    assert_eq!(event_count, 1);
+    let after_release = footprint(&pool).await;
+    assert_eq!(
+        after_release,
+        (before.0 + 1, before.1 + 1, before.2, before.3, before.4)
+    );
+    let replay = run(&database, &release_args, &packer);
+    assert!(replay.status.success());
+    let replayed: Value = serde_json::from_slice(&replay.stdout).expect("replay receipt");
+    assert_eq!(replayed["id"], released["id"]);
+    assert_eq!(replayed["targetId"], released["targetId"]);
+    assert_eq!(replayed["recordedAt"], released["recordedAt"]);
+    assert_eq!(replayed["replayed"], true);
+    for (args, bearer) in [
+        (
+            vec![
+                "--release-packing",
+                order_id.as_str(),
+                target.as_str(),
+                "another-effect",
+                "--confirm",
+            ],
+            &packer,
+        ),
+        (
+            vec![
+                "--release-packing",
+                order_id.as_str(),
+                "cccccccccccccccccccccccccccccccc",
+                "packing-release",
+                "--confirm",
+            ],
+            &packer,
+        ),
+        (release_args.to_vec(), &observer),
+        (release_args.to_vec(), &other_packer),
+    ] {
+        let denied = run(&database, &args, bearer);
+        assert!(!denied.status.success());
+        assert!(denied.stdout.is_empty());
+        let diagnostic = String::from_utf8(denied.stderr).expect("redacted diagnostic");
+        assert!(diagnostic.contains("packing release unavailable"));
+        for secret in [
+            database.as_str(),
+            "synthetic-packer",
+            "synthetic-reader",
+            "tr_SyntheticPackingPayment",
+        ] {
+            assert!(!diagnostic.contains(secret));
+        }
+    }
+    sqlx::query("UPDATE staff_sessions SET revoked_at=$1 WHERE staff_id='packing-worker'")
+        .bind(now)
+        .execute(&pool)
+        .await
+        .expect("revoke session");
+    assert!(!run(&database, &release_args, &packer).status.success());
+    let stale = *b"synthetic-stale--000000000000000";
+    sqlx::query("INSERT INTO staff_sessions(token_hash,staff_id,created_at,expires_at,mfa_verified_at) VALUES($1,'packing-worker',$2,$3,$2)")
+        .bind(SessionToken::from_bytes(stale).digest().as_slice())
+        .bind(now - 902).bind(now + 300).execute(&pool).await.expect("stale MFA session");
+    assert!(!run(&database, &release_args, &stale).status.success());
+    assert_eq!(after_release, footprint(&pool).await);
 }
