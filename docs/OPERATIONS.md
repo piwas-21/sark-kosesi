@@ -461,6 +461,27 @@ and logs. The command returns one JSON object on stdout with `kind` set to
 Store this output as private order evidence. Assertion counts do not establish
 which units have shipped or whether dispatch is permitted.
 
+To record a packing assertion in an isolated local/test environment, run
+`commerce-worker --record-packing <order-id> <effect-key> <payload-file> --confirm`
+with the same bounded staff session input. The payload is a regular, non-symlink
+file of at most 256 KiB, with a closed JSON object shaped as
+`{"units":[{"sku":"SKU","units":1}],"packages":[[{"code":"COMPONENT","quantity":1}]]}`.
+Provide 1–20 SKU entries and 1–32 packages, each with 1–64 components. Supply
+actual values from the order and physical process; the server validates them
+against the frozen order and allocation. The JSON receipt contains the record ID,
+record time and replay flag. Keep the payload and output private; a retry after
+lost output must use the same actor, effect key and exact payload. A recorded
+assertion does not prove physical contents or grant permission to dispatch.
+
+To relinquish one existing assertion in an isolated local/test environment, run
+`commerce-worker --release-packing <order-id> <packed-record-id> <effect-key> --confirm`
+with the same bounded staff session input. Use a unique effect key for the exact
+intent. The JSON receipt identifies the release and its target, timestamp and
+whether it was replayed. If output is lost, retry the same effect key, target and
+staff identity; a changed intent or actor conflicts. This records a release of an
+assertion only; it does not establish physical unpacking, restock or permission
+to dispatch. Staff session issuance and production operator access remain absent.
+
 ## Private callback supervision
 
 `cargo run --locked -p commerce-worker -- --reconcile-callbacks` runs one bounded
@@ -631,6 +652,51 @@ source vulnerability status. A source-aware advisory review remains necessary.
 All scanner findings remain open until separately disposed; scanner output is not
 proof of complete vulnerability coverage, deployment, or release readiness.
 The workflow publishes no image and does not connect to staging data.
+
+## PostgreSQL sibling component-presence evidence
+
+The path-scoped component-presence workflow repeats the unfiltered paired scan,
+then creates an unstarted, network-disabled container from that same verified
+composition ID. It requires the container to have no mounts and exports its
+merged filesystem without executing it. A bounded tar inspection reads every
+file and records name and link-target matches for `systemd-homed` and
+`Archive::Tar` indicators, along with the image ID, checkout, export digest and
+scan-evidence hashes. Raw scans and all findings remain in the artifact; the
+filesystem export stays in runner scratch.
+
+The indicators cover common names, including the Debian
+[systemd-homed file inventory](https://packages.debian.org/trixie/armhf/systemd-homed/filelist)
+and the [Debian Perl module file inventory](https://packages.debian.org/trixie/all/perl-modules-5.40/filelist).
+They do not detect renamed, embedded, compressed or generated copies, establish
+reachability, prove a package absent, or resolve a vulnerability finding. The
+archive is a same-run daemon export, not an independent attestation. Docker
+[does not export mounted volume contents](https://docs.docker.com/reference/cli/docker/container/export/),
+so this check fails when mounts or image volumes are present. It does not inspect
+future runtime mounts or change, deploy or accept the image.
+
+## PostgreSQL sibling signed binary lineage
+
+The path-scoped binary-lineage workflow runs the component-presence experiment
+once and reuses its verified image ID and private root filesystem export. It
+checks the export digest, then uses the pinned Debian-root keyring to verify the
+Trixie snapshot Release signature. The signed Release binds the exact compressed
+package index; that index binds the three exact AMD64 package versions, source
+names, sizes and package SHA-256 values. The workflow retains the Release,
+signature, index, keyring and package archives for review, then compares selected
+shared-library and Perl executable paths, file hashes, modes and symlink targets
+against the same image export without executing the image for this comparison.
+Missing, altered or transformed selected files fail the check.
+
+The snapshot and keyring trust position follows the sibling-root provenance;
+Debian's [archive authentication documentation](https://manpages.debian.org/trixie/apt/apt-secure.8.en.html)
+describes the Release-to-index-to-package chain. The pinned SHA-256 and sizes
+are also published for [libsystemd0](https://packages.debian.org/ca/trixie/amd64/libsystemd0/download),
+[libudev1](https://packages.debian.org/trixie/amd64/libudev1/download) and
+[perl-base](https://packages.debian.org/trixie/amd64/perl-base/download).
+This verifies only selected package payload paths, not every file or the absence
+of renamed or embedded code. It does not establish compiled-code applicability,
+fix a CVE, suppress a scanner row or accept a vulnerability. The retained raw
+scanner output and other release gates remain unchanged.
 
 ## PostgreSQL sibling lifecycle lab
 

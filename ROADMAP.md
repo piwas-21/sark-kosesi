@@ -429,9 +429,11 @@ contents or dispatch authority. Complete shipment handover and delivery custody,
 reversal/refund disposition and physical fulfilment evidence separately.
 Authenticated warehouse inspection can read the bounded validated assertion
 history and per-SKU recorded occupancy without granting shipment authority.
-The local/test worker exposes this inspection to authorized warehouse staff
-through bounded non-terminal session input and a private JSON report. Staff
-session issuance, physical handover and operational acceptance remain open.
+The local/test worker exposes this inspection and confirmed assertion record and
+release to authorized warehouse staff through bounded non-terminal session input,
+a bounded private record payload and private JSON reports. A release is not proof
+of unpacking or restocking. Staff session issuance, physical handover and
+operational acceptance remain open.
 
 The isolated staging-config passive preview workflow is a bounded P6 rehearsal.
 Evidence must bind the exact revision, synthetic fixture, authenticated scope and
