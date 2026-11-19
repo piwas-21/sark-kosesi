@@ -176,11 +176,12 @@ jobs:
           cache: npm
       - run: npm ci --ignore-scripts
       - run: python3 scripts/install_app_tools.py
-      - run: npm run check:rust
+      - id: rust_checks
+        run: npm run check:rust
       - id: coverage
         run: npm run test:coverage:stable
-      - name: Preserve stable coverage on failure
-        if: failure() && steps.coverage.outcome == 'failure'
+      - name: Preserve stable Rust diagnostics on failure
+        if: failure() && (steps.rust_checks.outcome == 'failure' || steps.coverage.outcome == 'failure')
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
         with:
           name: rust-stable-coverage-diagnostics-${{ env.ANALYSIS_REVISION }}
@@ -413,7 +414,7 @@ jobs:
             --ulimit nofile=131072:131072 --ulimit nproc=8192:8192 \
             sonarqube:26.10.0.133078-community@sha256:0b3408443fb6a311253de27941b10977c9b977fd53be2265947bfe14161308b8
           python3 scripts/sonar_ci.py bootstrap
-      - uses: SonarSource/sonarqube-scan-action@38f03825196cad93cbb3d92e9d20d1f1fe7dc2a7
+      - uses: SonarSource/sonarqube-scan-action@59202af334b4ba7b5db01b701b8e79f8b3bef0f4
         with:
           scannerVersion: 8.2.0.6438
           args: >-

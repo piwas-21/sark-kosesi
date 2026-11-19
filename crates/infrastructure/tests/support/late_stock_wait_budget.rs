@@ -1,11 +1,36 @@
 //! Test-only longer wait budget for explicitly scoped, real lock-queue races.
 use sqlx::{Postgres, Transaction};
+use std::cell::RefCell;
 use std::future::Future;
 
 tokio::task_local! { static ORDERED_RACE: (); }
+tokio::task_local! { static EFFECT_KEY_ERROR: RefCell<Option<String>>; }
 
 pub(crate) async fn scope<F: Future>(future: F) -> F::Output {
     ORDERED_RACE.scope((), future).await
+}
+
+/// Capture only SQLSTATE from the disposition effect-key query, never SQL or data.
+pub(crate) async fn diagnose_effect_key<F: Future>(future: F) -> (F::Output, Option<String>) {
+    EFFECT_KEY_ERROR
+        .scope(RefCell::new(None), async {
+            let result = future.await;
+            let code = EFFECT_KEY_ERROR.with(|value| value.borrow_mut().take());
+            (result, code)
+        })
+        .await
+}
+
+pub(crate) fn record_effect_key_error(error: &sqlx::Error) {
+    let code = error.as_database_error().and_then(|error| error.code());
+    if let Some(code) = code.filter(|code| {
+        code.len() == 5
+            && code
+                .bytes()
+                .all(|b| b.is_ascii_uppercase() || b.is_ascii_digit())
+    }) {
+        let _ = EFFECT_KEY_ERROR.try_with(|value| *value.borrow_mut() = Some(code.into_owned()));
+    }
 }
 
 pub(crate) async fn apply(tx: &mut Transaction<'_, Postgres>) -> Result<(), sqlx::Error> {

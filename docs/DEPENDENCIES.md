@@ -179,3 +179,6 @@ The private reversal observation parser directly pins the already locked `time`
 0.3.55 (MIT/Apache-2.0) with its parsing feature for typed RFC 3339 timestamps.
 It changes no package version or dependency closure; its licence remains covered
 by the Rust source/licence allowlist.
+
+The local/test packing worker uses the already pinned `libc` constants on Unix
+for a nonblocking, no-follow file open; non-Unix input fails closed.
