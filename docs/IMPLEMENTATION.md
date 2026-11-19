@@ -549,6 +549,11 @@ reports. The record reads a bounded closed payload from a regular file. Exact
 retries retain their original receipt; a release establishes no physical
 unpacking or restock. Staff session issuance and physical handover remain
 separate work.
+A private recent-MFA submission records a fingerprint of bounded operator-supplied
+opaque purported handover evidence against one exact active whole packing record.
+Releases remain allowed, and authorized exact replay and inspection retain the
+historical association. This is no physical or carrier verification. Evidence
+retention, operator access, correction, real handover and delivery remain open.
 
 Trusted whole-basket reservation primitives now provide immutable manifests,
 exact fresh child bindings and aggregated component claims in one transaction.

@@ -27,6 +27,21 @@ responsibility. The unseeded capability and missing staff-session issuer do not
 provide production operator access. The review validates existing custody and
 does not retry a provider operation or authorize a financial change.
 
+Private purported handover evidence submission requires an unseeded
+`handover.record` grant, recent MFA and explicit staff confirmation. The command
+hashes bounded opaque bytes without storing or logging them and binds the resulting
+fingerprint to an exact active whole packing assertion under the attempt claim.
+The parent must be committed and its release must use a separate transaction;
+final clock checks cover observed evidence and release timestamps even on
+source-dependent conflicts. A transaction-local advisory seal preserves the
+existing packing release role without granting evidence-table access. Native paths
+use explicit schema binding. The database validates parent and event custody, but
+relies on the trusted caller for the byte-to-hash binding; a digest is not proof of issuer or contents. Release
+remains independent. Historical inspection and same-actor exact replay require
+current authority and remain available after release. No provider call, customer
+exposure, financial, stock or fulfilment action follows. Document storage, retention,
+verification and operational access require separate decisions.
+
 The local/test packing record and release commands use the same bounded
 non-terminal bearer input and recent-MFA warehouse guard. The record command
 reads a bounded closed JSON payload from a regular file, with nonblocking open
