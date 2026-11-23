@@ -7,7 +7,9 @@ export default function ErrorBoundary({ reset }: { reset: () => void }) {
       <section>
         <h1>Collectie tijdelijk niet beschikbaar</h1>
         <p role="alert">Probeer het over een ogenblik opnieuw.</p>
-        <Button onClick={reset}>Probeer opnieuw</Button>
+        <Button onClick={() => window.location.reload()}>
+          Probeer opnieuw
+        </Button>
       </section>
     );
   }
