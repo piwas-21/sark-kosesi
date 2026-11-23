@@ -2,22 +2,22 @@
   "schemaVersion": 1,
   "humanApproved": true,
   "reviewer": "Mahmut Kaya",
-  "reviewedAt": "2026-11-15T20:45:23+00:00",
-  "evidence": "Mahmut Kaya selected \"Approve the visual baseline binding\" for PR #157. All 252 captures in Linux run 43713481708, artifact 14162196233, match the existing approved baselines pixel for pixel.",
-  "sourceSha256": "83dcb7d4b95ddb5288aae8ed908b62fff562bb6a1e2497bcf09521357a2c8fef",
+  "reviewedAt": "2026-11-23T14:28:17+00:00",
+  "evidence": "Mahmut Kaya explicitly approved the screenshots for PR #226 in Codex on 23 November 2026. All 252 captures in Linux run 45182699332, artifact 14822759584, match the existing approved baselines byte for byte.",
+  "sourceSha256": "1d21b3e8e02b0298c38a4e7aa44d4a4bc783e5d27ee024d7bb3ec4b4789db238",
   "capture": {
-    "revision": "766817ca6d0b35b5acdc9111a5feb97237bafb7f",
-    "ciRun": 43713481708,
-    "artifactId": 14162196233,
+    "revision": "98c39f84d85959903226fd4d2a640474bef9cf72",
+    "ciRun": 45182699332,
+    "artifactId": 14822759584,
     "platform": "linux",
-    "capturedAt": "2026-11-15T12:45:21.456Z",
-    "manifestSha256": "a8c1604f4a321b87af51d379f02ec6d050e1461a6df27fee7b7308ce77b61922",
+    "capturedAt": "2026-11-23T13:38:42.451Z",
+    "manifestSha256": "45ed7f0a2a374435c4351bee25ec7ebc537232e7848d4a3c7175f7f8a08b7273",
     "workingTreeClean": true
   },
   "supersedes": {
-    "revision": "d0120a6a4ba0782f15c699595185c9642785c020",
-    "approvalFileSha256": "cdf56a9c3c630fbc18c9f94189aa8b4e6272ee19cadffee271e61e4e5159f891",
-    "sourceSha256": "f051ffed08724bad94c54da779fcd4c09d7178d02ab1367a02961cefc6c1c737",
+    "revision": "8d1e77a10b759e398caf6bbf6601950b0da44d72",
+    "approvalFileSha256": "ec688132a1423be26168fdebbe2559b350834ce64e8fb29460f92019c266509d",
+    "sourceSha256": "83dcb7d4b95ddb5288aae8ed908b62fff562bb6a1e2497bcf09521357a2c8fef",
     "imageCount": 252
   },
   "images": {
