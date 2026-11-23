@@ -7,6 +7,7 @@ import {
 } from "../../../tests/application/unit-runtime.mjs";
 import { reviewEnvironment } from "./store-review-fixture";
 import { Preferences } from "../src/components/preferences";
+import { StoreReviewScope } from "../src/components/store-review-scope";
 import Gallery from "../src/app/[locale]/gallery/page";
 import Admin from "../src/app/[locale]/admin/page";
 import ErrorBoundary from "../src/app/[locale]/error";
@@ -198,4 +199,24 @@ it("keeps the Dutch storefront shell free of preview controls with an accessible
   render(<Preferences locale="nl" storeReview />);
   await waitFor(() => expect(screen.getByLabelText("Thema")).toBeEnabled());
   expect(screen.queryByLabelText("Language")).toBeNull();
+});
+
+it("renders a Dutch retry when the review catalogue fails", () => {
+  const reset = vi.fn();
+  render(
+    <StoreReviewScope>
+      <ErrorBoundary reset={reset} />
+    </StoreReviewScope>,
+  );
+  expect(
+    screen.getByRole("heading", {
+      name: "Collectie tijdelijk niet beschikbaar",
+    }),
+  ).toBeVisible();
+  expect(screen.getByRole("alert")).toHaveTextContent(
+    "Probeer het over een ogenblik opnieuw.",
+  );
+  fireEvent.click(screen.getByRole("button", { name: "Probeer opnieuw" }));
+  expect(reset).toHaveBeenCalledOnce();
+  expect(screen.queryByText("The preview could not load.")).toBeNull();
 });

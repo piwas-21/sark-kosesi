@@ -1,6 +1,7 @@
 import { Suspense, type ReactNode } from "react";
 import Link from "next/link";
 import { Preferences } from "./preferences";
+import { StoreReviewScope } from "./store-review-scope";
 import { CourtyardMark } from "@piwas/design";
 import { storeInformationPath, type StoreReview } from "../lib/store-review";
 
@@ -37,7 +38,9 @@ export function StoreReviewShell({
             <Preferences locale="nl" storeReview />
           </Suspense>
         </header>
-        <main id="main">{children}</main>
+        <main id="main">
+          <StoreReviewScope>{children}</StoreReviewScope>
+        </main>
         <footer>
           <p>{content.sellerName}</p>
           <nav className="mt-4" aria-label="Winkelinformatie">

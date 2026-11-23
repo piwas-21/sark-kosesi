@@ -10,6 +10,8 @@ import {
   measurements,
   decimal,
 } from "./published-validation";
+export const collectionPageLimit = 40;
+
 export type PublishedProduct = Omit<
   components["schemas"]["PublishedProduct"],
   "images"

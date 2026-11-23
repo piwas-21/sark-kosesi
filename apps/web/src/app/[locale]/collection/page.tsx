@@ -2,6 +2,7 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { configuration } from "../../../lib/config";
 import { storeReviewFill } from "../../../lib/store-review";
+import { collectionPageLimit } from "../../../lib/published-catalogue";
 import { isLocale } from "../../../lib/locale";
 import { publishedPage } from "../../../lib/load-published";
 import { merchantCode } from "../../../lib/published-validation";
@@ -11,6 +12,16 @@ import {
   productPath,
 } from "../../../lib/published-presentation";
 import styles from "../../../components/published.module.css";
+
+async function firstEligiblePage(after?: string) {
+  for (let pageNumber = 0; pageNumber < collectionPageLimit; pageNumber++) {
+    const page = await publishedPage("nl", after);
+    if (page.items.length || page.next_after === null) return page;
+    after = page.next_after;
+  }
+  throw new Error("Published collection exceeds preview limit");
+}
+
 export default async function Collection({
   params,
   searchParams,
@@ -23,7 +34,10 @@ export default async function Collection({
   if (!isLocale(locale) || (after !== undefined && !merchantCode(after)))
     notFound();
   const { storeReview } = configuration();
-  const page = await publishedPage(locale, after);
+  if (storeReview && locale !== "nl") notFound();
+  const page = storeReview
+    ? await firstEligiblePage(after)
+    : await publishedPage(locale, after);
   if (storeReview && !page.items.length) notFound();
   return (
     <>

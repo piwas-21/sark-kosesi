@@ -296,3 +296,43 @@ it("serves the current Dutch catalogue, variant and review policies without demo
   vi.stubEnv("STAGING_STORE_REVIEW_CONTENT", "");
   await expect(StoreInformation(dutch)).rejects.toThrow("NOT_FOUND");
 });
+
+it("continues across empty historical Dutch catalogue windows within the existing bound", async () => {
+  for (const [name, value] of Object.entries(reviewEnvironment))
+    vi.stubEnv(name, value);
+  const args = {
+    params: Promise.resolve({ locale: "nl" }),
+    searchParams: Promise.resolve({}),
+  };
+  vi.mocked(publishedPage)
+    .mockClear()
+    .mockResolvedValueOnce(page([], "ARCHIVED-A"))
+    .mockResolvedValueOnce(page([], "ARCHIVED-B"))
+    .mockResolvedValueOnce(page([approved]));
+  expect(renderToStaticMarkup(await Collection(args))).toContain(
+    approved.copy.title,
+  );
+  expect(vi.mocked(publishedPage).mock.calls).toEqual([
+    ["nl", undefined],
+    ["nl", "ARCHIVED-A"],
+    ["nl", "ARCHIVED-B"],
+  ]);
+
+  vi.mocked(publishedPage)
+    .mockResolvedValueOnce(page([], "ARCHIVED-A"))
+    .mockResolvedValueOnce(page([]));
+  await expect(Collection(args)).rejects.toThrow("NOT_FOUND");
+
+  vi.mocked(publishedPage)
+    .mockClear()
+    .mockImplementation(async (_locale, after) =>
+      page([], after === undefined ? "ARCHIVED" : after + "A"),
+    );
+  await expect(Collection(args)).rejects.toThrow(
+    "Published collection exceeds preview limit",
+  );
+  expect(vi.mocked(publishedPage)).toHaveBeenCalledTimes(40);
+  await expect(
+    Collection({ ...args, params: Promise.resolve({ locale: "en" }) }),
+  ).rejects.toThrow("NOT_FOUND");
+});
