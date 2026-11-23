@@ -72,11 +72,14 @@ best-effort. This adds no hosted image service. New release-image SBOM/notices a
 actual photographic acceptance remain release requirements.
 
 `tower-sessions` 0.15.0 (MIT) supplies maintained Axum cookie/session transport with
-its memory store disabled. The owned SQLx store binds immutable guest identity to
-a SHA-256 verifier of the library's 128-bit identifier; no raw credential is stored.
-`async-trait` 0.1.92 (MIT/Apache-2.0) implements its store interface, and `url` 2.5.8
-(MIT/Apache-2.0, already locked transitively) validates an explicit HTTPS origin.
-Exact direct versions and the added dependency closure pass cargo-audit/cargo-deny.
+its memory store disabled. The transitive `cookie` crate is locked to 0.18.3
+(MIT/Apache-2.0) for [RUSTSEC-2026-0594]. The SQLx store binds immutable guest
+identity to a SHA-256 verifier of the library's 128-bit identifier and stores only
+the verifier.
+`async-trait` 0.1.92 (MIT/Apache-2.0) implements its store interface, and `url` 2.5.9
+(MIT/Apache-2.0) validates an explicit HTTPS origin and fixes [RUSTSEC-2026-0592].
+This patch of `url` requires `form_urlencoded` 1.2.3. The locked closure must pass
+cargo-audit and cargo-deny.
 The HTTP adapter also normalizes removal-cookie attributes and clears failed
 creation state so middleware cannot retry an issuance rejected by the quota.
 This is guest identity only; verified accounts, privilege rotation and guest-order
@@ -149,18 +152,15 @@ Unsupported operation shapes fail generation. Exact Rust OpenAPI, model and adap
 bytes are checked separately; typed contract controls exercise their consumers.
 No vulnerability exception is added by this change.
 
-The payment-request application now directly uses the already locked `serde`,
-`serde_json` 1.0.154, `sha2` 0.10.9 and `url` 2.5.8 packages. Their existing
-MIT/Apache-2.0 reviews apply; no package version or dependency closure changes.
+The payment-request application directly uses `serde`, `serde_json` 1.0.154,
+`sha2` 0.10.9 and `url` 2.5.9 under their existing MIT/Apache-2.0 reviews.
 Maintained URL parsing validates explicit merchant endpoints, and SHA-256 binds
 canonical configuration/request bytes. A digest alone grants no provider authority.
 
 The private test-provider HTTP boundary pins Reqwest 0.13.5 without default features,
 using its supported `rustls-no-provider` feature and an explicit preconfigured
-Rustls 0.23.46 Ring client with WebPKI-roots 1.0.11. URL 2.5.8 is now a direct
-infrastructure dependency. Rustls/roots/URL versions already existed in the lock;
-no existing package/version is removed or upgraded. Reqwest and its transitive
-platform/HTTP/WASM support add 39 locked packages, all under the existing reviewed
+Rustls 0.23.46 Ring client with WebPKI-roots 1.0.11. The infrastructure pins URL
+2.5.9 directly. Reqwest and its transitive platform/HTTP/WASM support add 39 locked packages, all under the existing reviewed
 free licence/source policy. Default charset, HTTP/2, proxy, compression and cookie
 features are not selected. No paid SDK or provider engine is introduced.
 Hyper 1.12.0, Hyper-util 0.1.21, HTTP-body-util 0.1.5 and Bytes 1.12.1 become exact test
@@ -182,3 +182,6 @@ by the Rust source/licence allowlist.
 
 The local/test packing worker uses the already pinned `libc` constants on Unix
 for a nonblocking, no-follow file open; non-Unix input fails closed.
+
+[RUSTSEC-2026-0592]: https://rustsec.org/advisories/RUSTSEC-2026-0592.html
+[RUSTSEC-2026-0594]: https://rustsec.org/advisories/RUSTSEC-2026-0594.html
