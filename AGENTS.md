@@ -4,7 +4,7 @@ Read [ROADMAP.md](ROADMAP.md), [implementation plan](docs/IMPLEMENTATION.md), an
 
 ## Product and boundaries
 
-- Legal seller: Piwas, Netherlands. Stock in the Netherlands; intended EU-wide delivery. The brand/domain are undecided; Dicle is a working name.
+- Legal seller: Piwas, Netherlands. Stock in the Netherlands; intended EU-wide delivery. The storefront domain is `sark-kosesi.piwas.nl`. The brand is undecided; Dicle is a working name.
 - Narrow model range, with explicit foam and covers-only configurations. Shared physical components cannot become independent fictional stock pools.
 - Direction 02, “The living courtyard,” is the design baseline. Preserve its regional character, strong typography, custom icons and purposeful motion. Adapt the design to real content and accessibility; do not copy the prototype into production wholesale.
 - `design/prototype/` is a non-selling design specimen. Sample prices, dimensions, reviews/admin data, generated images and draft translations must never become production catalogue facts.

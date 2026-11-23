@@ -3,6 +3,7 @@ import createClient from "openapi-fetch";
 import type { paths } from "@piwas/contracts";
 import { configuration } from "./config";
 import {
+  collectionPageLimit,
   decodePublishedCatalogue,
   decodePublishedProduct,
   type PublishedProduct,
@@ -55,7 +56,7 @@ export async function publishedCollection(locale: Locale) {
   const items: PublishedProduct[] = [];
   let after: string | undefined;
   // A bounded preview fails as a whole instead of emitting a silently partial feed.
-  for (let pageNumber = 0; pageNumber < 40; pageNumber++) {
+  for (let pageNumber = 0; pageNumber < collectionPageLimit; pageNumber++) {
     const page = await publishedPage(locale, after);
     items.push(...page.items);
     if (page.next_after === null) return items;

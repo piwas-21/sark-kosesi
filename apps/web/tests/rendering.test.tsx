@@ -5,7 +5,9 @@ import {
   vi,
   routerPush as push,
 } from "../../../tests/application/unit-runtime.mjs";
+import { reviewEnvironment } from "./store-review-fixture";
 import { Preferences } from "../src/components/preferences";
+import { StoreReviewScope } from "../src/components/store-review-scope";
 import Gallery from "../src/app/[locale]/gallery/page";
 import Admin from "../src/app/[locale]/admin/page";
 import ErrorBoundary from "../src/app/[locale]/error";
@@ -139,6 +141,7 @@ it("renders empty and Kurdish previews, details and missing routes", async () =>
   ).rejects.toThrow("NOT_FOUND");
 });
 it("sets RTL language, nonce, noindex and empty sitemap on preview shells", async () => {
+  serve("ar");
   const element = await Layout({
     params: Promise.resolve({ locale: "ar" }),
     children: <p>Fixture</p>,
@@ -176,4 +179,43 @@ it("validates the same-origin proxy and redacts dependency failures", async () =
   expect(await failed.json()).toEqual({ code: "catalogue_unavailable" });
   serve("de");
   await expect(loadCatalogue("nl")).rejects.toThrow("locale mismatch");
+});
+
+it("keeps the Dutch storefront shell free of preview controls with an accessible theme choice", async () => {
+  for (const [name, value] of Object.entries(reviewEnvironment))
+    vi.stubEnv(name, value);
+  const html = renderToStaticMarkup(
+    await Layout({
+      params: Promise.resolve({ locale: "nl" }),
+      children: <p>Product</p>,
+    }),
+  );
+  expect(html).toContain("Testcollectie");
+  expect(html).toContain("/nl/winkelinformatie");
+  expect(html).toContain("Verkoopvoorwaarden");
+  expect(html).not.toContain("Private preview");
+  expect(html).not.toContain("/nl/admin");
+  expect(html).not.toContain("Language");
+  render(<Preferences locale="nl" storeReview />);
+  await waitFor(() => expect(screen.getByLabelText("Thema")).toBeEnabled());
+  expect(screen.queryByLabelText("Language")).toBeNull();
+});
+
+it("renders a Dutch retry when the review catalogue fails", () => {
+  const reset = vi.fn();
+  render(
+    <StoreReviewScope>
+      <ErrorBoundary reset={reset} />
+    </StoreReviewScope>,
+  );
+  expect(
+    screen.getByRole("heading", {
+      name: "Collectie tijdelijk niet beschikbaar",
+    }),
+  ).toBeVisible();
+  expect(screen.getByRole("alert")).toHaveTextContent(
+    "Probeer het over een ogenblik opnieuw.",
+  );
+  expect(screen.getByRole("button", { name: "Probeer opnieuw" })).toBeEnabled();
+  expect(screen.queryByText("The preview could not load.")).toBeNull();
 });

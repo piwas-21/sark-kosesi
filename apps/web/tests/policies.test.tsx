@@ -149,6 +149,7 @@ it("allows a private HTTPS staging origin with a loopback-only API", () => {
     api: "http://127.0.0.1:45671",
     canonical: "https://sark-kosesi-test.piwas.nl",
     publicStorefront: false,
+    storeReview: null,
     browserUsername: "preview",
     browserToken: "s".repeat(32),
   });

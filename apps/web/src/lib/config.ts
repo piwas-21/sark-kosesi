@@ -1,3 +1,5 @@
+import { decodeStoreReview } from "./store-review";
+
 export function configuration(
   values: Record<string, string | undefined> = process.env,
 ) {
@@ -18,6 +20,12 @@ export function configuration(
   )
     throw new Error("Invalid public staging configuration");
   const publicStorefront = staging && publicSetting === "true";
+  const storeReviewContent = values.STAGING_STORE_REVIEW_CONTENT;
+  if (storeReviewContent && !publicStorefront)
+    throw new Error("Store review requires public staging");
+  const storeReview = storeReviewContent
+    ? decodeStoreReview(storeReviewContent)
+    : null;
   const adminToken = values.STAGING_ADMIN_TOKEN ?? "";
   if (
     publicStorefront &&
@@ -59,6 +67,7 @@ export function configuration(
     canonical: canonical.origin,
     revision: staging ? revision : undefined,
     publicStorefront,
+    storeReview,
     browserUsername: publicStorefront ? "test-admin" : "preview",
     browserToken: publicStorefront ? adminToken : token,
   };

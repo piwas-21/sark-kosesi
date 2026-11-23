@@ -309,7 +309,7 @@ decisions to define the first isolated implementation slice and its acceptance
 tests. Staff access remains private until the identity chain and operator
 procedures pass the [staff identity acceptance criteria](docs/SECURITY.md#staff-identity-acceptance-boundary).
 
-External blockers: final brand/domain, real product specification/media, market/carrier/tax readiness, Mollie retail website approval, translated legal/product content, email delivery and recovery evidence. EU-wide intent is unchanged; an unready country cannot take payment.
+External blockers: final brand, real product specification/media, market/carrier/tax readiness, Mollie retail website approval, translated legal/product content, email delivery and recovery evidence. EU-wide intent is unchanged; an unready country cannot take payment.
 The [EU destination readiness register](docs/MARKET-READINESS.md) tracks the
 qualified evidence still needed for each of the 27 disabled destinations.
 

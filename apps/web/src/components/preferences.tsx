@@ -10,7 +10,13 @@ import {
   type Locale,
 } from "../lib/locale";
 import { isTheme, resolveTheme, type Theme } from "../lib/theme";
-export function Preferences({ locale }: { locale: Locale }) {
+export function Preferences({
+  locale,
+  storeReview = false,
+}: {
+  locale: Locale;
+  storeReview?: boolean;
+}) {
   const [theme, setTheme] = useState<Theme | undefined>(undefined);
   const router = useRouter();
   const path = usePathname();
@@ -39,43 +45,45 @@ export function Preferences({ locale }: { locale: Locale }) {
   }, [theme]);
   return (
     <div className="preferences">
+      {!storeReview && (
+        <label>
+          Language{" "}
+          <select
+            aria-label="Language"
+            disabled={theme === undefined}
+            value={locale}
+            onChange={(event) => {
+              const next = event.target.value;
+              if (!isLocale(next)) return;
+              document.cookie = `locale=${next}; Path=/; SameSite=Lax; Max-Age=31536000`;
+              router.push(
+                switchLocale(
+                  path,
+                  search.size ? `?${search.toString()}` : "",
+                  next,
+                  document.querySelector<HTMLElement>("[data-selected-sku]")
+                    ?.dataset.selectedSku,
+                ),
+              );
+            }}
+          >
+            {locales.map((value) => (
+              <option
+                value={value}
+                key={value}
+                lang={value}
+                dir={direction(value)}
+              >
+                {languageNames[value]}
+              </option>
+            ))}
+          </select>
+        </label>
+      )}
       <label>
-        Language{" "}
+        {storeReview ? "Thema" : "Theme"}{" "}
         <select
-          aria-label="Language"
-          disabled={theme === undefined}
-          value={locale}
-          onChange={(event) => {
-            const next = event.target.value;
-            if (!isLocale(next)) return;
-            document.cookie = `locale=${next}; Path=/; SameSite=Lax; Max-Age=31536000`;
-            router.push(
-              switchLocale(
-                path,
-                search.size ? `?${search.toString()}` : "",
-                next,
-                document.querySelector<HTMLElement>("[data-selected-sku]")
-                  ?.dataset.selectedSku,
-              ),
-            );
-          }}
-        >
-          {locales.map((value) => (
-            <option
-              value={value}
-              key={value}
-              lang={value}
-              dir={direction(value)}
-            >
-              {languageNames[value]}
-            </option>
-          ))}
-        </select>
-      </label>
-      <label>
-        Theme{" "}
-        <select
-          aria-label="Theme"
+          aria-label={storeReview ? "Thema" : "Theme"}
           disabled={theme === undefined}
           value={theme ?? "system"}
           onChange={(event) => {
@@ -89,9 +97,9 @@ export function Preferences({ locale }: { locale: Locale }) {
             }
           }}
         >
-          <option value="system">System</option>
-          <option value="light">Light</option>
-          <option value="dark">Dark</option>
+          <option value="system">{storeReview ? "Systeem" : "System"}</option>
+          <option value="light">{storeReview ? "Licht" : "Light"}</option>
+          <option value="dark">{storeReview ? "Donker" : "Dark"}</option>
         </select>
       </label>
     </div>

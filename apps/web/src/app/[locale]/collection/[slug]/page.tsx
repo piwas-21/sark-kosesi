@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
 import { isLocale } from "../../../../lib/locale";
+import { storeReviewFill } from "../../../../lib/store-review";
 import { configuration } from "../../../../lib/config";
 import { publishedCollection } from "../../../../lib/load-published";
 import {
@@ -39,6 +40,8 @@ export default async function Family({ params, searchParams }: Props) {
   )
     notFound();
   // An explicitly requested SKU either resolves exactly or fails; it never selects a sibling.
+  const { storeReview } = configuration();
+  const uiLanguage = storeReview ? "nl" : "en";
   const products = await publishedCollection(locale);
   const selected =
     variant !== undefined
@@ -52,9 +55,11 @@ export default async function Family({ params, searchParams }: Props) {
   const image = selected.images[0];
   return (
     <article data-selected-sku={selected.sku}>
-      <p lang="en">
-        <Link href={`/${locale}/collection`}>Collection</Link> /{" "}
-        <bdi>{selected.family_code}</bdi>
+      <p lang={uiLanguage}>
+        <Link href={`/${locale}/collection`}>
+          {storeReview ? "Collectie" : "Collection"}
+        </Link>{" "}
+        / <bdi>{selected.family_code}</bdi>
       </p>
       <div className={styles.family}>
         <figure>
@@ -66,23 +71,30 @@ export default async function Family({ params, searchParams }: Props) {
               alt={selected.copy.title}
             />
           }
-          <figcaption lang="en">
-            Selected configuration: <bdi>{selected.sku}</bdi>
+          <figcaption lang={uiLanguage}>
+            {storeReview ? "Gekozen uitvoering" : "Selected configuration"}:{" "}
+            <bdi>{selected.sku}</bdi>
           </figcaption>
         </figure>
         <div>
-          <p lang="en">Private preview · Not for sale</p>
+          {!storeReview && <p lang="en">Private preview · Not for sale</p>}
           <h1>{selected.copy.title}</h1>
           <p>{selected.copy.description}</p>
           <p className={styles.price} data-price={selected.price_decimal}>
             {displayPrice(selected.minor_units, locale)}
+            {storeReview && <span className="ms-2 text-sm">incl. btw</span>}
           </p>
-          <p lang="en" data-availability={selected.availability}>
-            {selected.availability === "in_stock"
-              ? "Available"
-              : "Out of stock"}
-          </p>
-          <nav aria-label="Configuration" lang="en">
+          {!storeReview && (
+            <p lang="en" data-availability={selected.availability}>
+              {selected.availability === "in_stock"
+                ? "Available"
+                : "Out of stock"}
+            </p>
+          )}
+          <nav
+            aria-label={storeReview ? "Uitvoering" : "Configuration"}
+            lang={uiLanguage}
+          >
             <ul className={styles.variants}>
               {variants.map((p) => (
                 <li key={p.sku}>
@@ -90,19 +102,21 @@ export default async function Family({ params, searchParams }: Props) {
                     href={productPath(p)}
                     aria-current={p.sku === selected.sku ? "true" : undefined}
                   >
-                    {p.fill} · {p.size_code} · <bdi>{p.sku}</bdi>
+                    {storeReview ? storeReviewFill(p.fill) : p.fill} ·{" "}
+                    {p.size_code} · <bdi>{p.sku}</bdi>
                   </Link>
                 </li>
               ))}
             </ul>
           </nav>
-          <p lang="en">
-            Choose a configuration to see its exact contents, price and physical
-            stock availability. Checkout is disabled.
+          <p lang={uiLanguage}>
+            {storeReview
+              ? "Online bestellen is nog niet beschikbaar."
+              : "Choose a configuration to see its exact contents, price and physical stock availability. Checkout is disabled."}
           </p>
         </div>
       </div>
-      <ProductFacts product={selected} />
+      <ProductFacts product={selected} storeReview={storeReview !== null} />
     </article>
   );
 }

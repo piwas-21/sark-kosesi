@@ -7,6 +7,8 @@ import Family, {
 } from "../src/app/[locale]/collection/[slug]/page";
 import { GET as feed } from "../src/app/[locale]/catalogue.xml/route";
 import { GET as image } from "../src/app/catalogue-images/[locale]/[sku]/[revision]/[edge]/route";
+import StoreInformation from "../src/app/[locale]/winkelinformatie/page";
+import { reviewContent, reviewEnvironment } from "./store-review-fixture";
 import { approved, page, dimensions } from "./published-fixture";
 import type { PublishedProduct } from "../src/lib/published-catalogue";
 const filled: PublishedProduct = {
@@ -96,6 +98,7 @@ it("renders exact selected facts as escaped HTML and genuine variant links", asy
   ).toEqual({});
 });
 it("renders empty and paginated collection responses without pretending missing copy exists", async () => {
+  environment();
   vi.mocked(publishedPage).mockResolvedValue({
     ...page([approved, filled], "SET-FILLED"),
     production_enabled: false,
@@ -219,6 +222,7 @@ it("proxies only exact revision-bound sanitized raster paths with bounded privat
   expect((await call()).status).toBe(503);
 });
 it("explains an unavailable configuration without substituting another SKU", async () => {
+  environment();
   const { default: Unavailable } =
     await import("../src/app/[locale]/collection/not-found");
   expect(renderToStaticMarkup(<Unavailable />)).toContain(
@@ -235,4 +239,100 @@ it("keeps loading status scoped to specimen routes", async () => {
     "Loading preview",
   );
   expect(renderToStaticMarkup(<GalleryLoading />)).toContain("Loading preview");
+});
+
+it("serves the current Dutch catalogue, variant and review policies without demo or checkout links", async () => {
+  for (const [name, value] of Object.entries(reviewEnvironment))
+    vi.stubEnv(name, value);
+  const dutch = { params: Promise.resolve({ locale: "nl" }) };
+  const collection = { ...dutch, searchParams: Promise.resolve({}) };
+  vi.mocked(publishedPage).mockResolvedValue(page([approved]));
+  vi.mocked(publishedCollection).mockResolvedValue([approved, filled]);
+
+  const collectionHtml = renderToStaticMarkup(await Collection(collection));
+  expect(collectionHtml).toContain("De collectie");
+  expect(collectionHtml).toContain(approved.copy.title);
+  expect(collectionHtml).toContain("123,45");
+  expect(collectionHtml).toContain("incl. btw");
+  expect(collectionHtml).toContain("Alleen hoezen, zonder schuim");
+  expect(collectionHtml).not.toContain("Preview catalogue feed");
+  expect(collectionHtml).not.toContain("/checkout");
+  const productHtml = renderToStaticMarkup(await Family(family("SET-FILLED")));
+  expect(productHtml).toContain("Met schuimvulling");
+  expect(productHtml).toContain("543,21");
+  expect(productHtml).toContain("Online bestellen is nog niet beschikbaar.");
+  expect(productHtml).toContain("/nl/winkelinformatie#retourneren");
+  expect(productHtml).not.toContain("Private preview");
+
+  const information = renderToStaticMarkup(await StoreInformation(dutch));
+  const doc = new DOMParser().parseFromString(information, "text/html");
+  expect(
+    doc.querySelector('a[href="mailto:contact@example.test"]'),
+  ).not.toBeNull();
+  expect(doc.querySelector('a[href="tel:+31123456789"]')).not.toBeNull();
+  expect(doc.body.textContent).toContain("01234567");
+  expect(doc.body.textContent).toContain("NL012345678B01");
+  for (const [anchor, text] of [
+    ["bezorging", reviewContent.policies.delivery],
+    ["retourneren", reviewContent.policies.returns],
+    ["privacy", reviewContent.policies.privacy],
+    ["betalen", reviewContent.policies.payment],
+    ["voorwaarden", reviewContent.policies.terms],
+  ])
+    expect(doc.getElementById(anchor ?? "")?.textContent).toContain(text);
+  expect(doc.querySelector("script")).toBeNull();
+
+  const { default: Unavailable } =
+    await import("../src/app/[locale]/collection/not-found");
+  expect(renderToStaticMarkup(<Unavailable />)).toContain(
+    "Product niet beschikbaar",
+  );
+
+  vi.mocked(publishedPage).mockResolvedValue(page([]));
+  await expect(Collection(collection)).rejects.toThrow("NOT_FOUND");
+  await expect(
+    StoreInformation({ params: Promise.resolve({ locale: "en" }) }),
+  ).rejects.toThrow("NOT_FOUND");
+  vi.stubEnv("STAGING_STORE_REVIEW_CONTENT", "");
+  await expect(StoreInformation(dutch)).rejects.toThrow("NOT_FOUND");
+});
+
+it("continues across empty historical Dutch catalogue windows within the existing bound", async () => {
+  for (const [name, value] of Object.entries(reviewEnvironment))
+    vi.stubEnv(name, value);
+  const args = {
+    params: Promise.resolve({ locale: "nl" }),
+    searchParams: Promise.resolve({}),
+  };
+  vi.mocked(publishedPage)
+    .mockClear()
+    .mockResolvedValueOnce(page([], "ARCHIVED-A"))
+    .mockResolvedValueOnce(page([], "ARCHIVED-B"))
+    .mockResolvedValueOnce(page([approved]));
+  expect(renderToStaticMarkup(await Collection(args))).toContain(
+    approved.copy.title,
+  );
+  expect(vi.mocked(publishedPage).mock.calls).toEqual([
+    ["nl", undefined],
+    ["nl", "ARCHIVED-A"],
+    ["nl", "ARCHIVED-B"],
+  ]);
+
+  vi.mocked(publishedPage)
+    .mockResolvedValueOnce(page([], "ARCHIVED-A"))
+    .mockResolvedValueOnce(page([]));
+  await expect(Collection(args)).rejects.toThrow("NOT_FOUND");
+
+  vi.mocked(publishedPage)
+    .mockClear()
+    .mockImplementation(async (_locale, after) =>
+      page([], after === undefined ? "ARCHIVED" : after + "A"),
+    );
+  await expect(Collection(args)).rejects.toThrow(
+    "Published collection exceeds preview limit",
+  );
+  expect(vi.mocked(publishedPage)).toHaveBeenCalledTimes(40);
+  await expect(
+    Collection({ ...args, params: Promise.resolve({ locale: "en" }) }),
+  ).rejects.toThrow("NOT_FOUND");
 });

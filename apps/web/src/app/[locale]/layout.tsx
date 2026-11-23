@@ -6,6 +6,8 @@ import { Suspense, type ReactNode } from "react";
 import Link from "next/link";
 import { CourtyardMark } from "@piwas/design";
 import { Preferences } from "../../components/preferences";
+import { configuration } from "../../lib/config";
+import { StoreReviewShell } from "../../components/store-review-shell";
 import { direction, isLocale, languageTag } from "../../lib/locale";
 import { themeBootstrap } from "../../lib/theme";
 import "../globals.css";
@@ -24,12 +26,18 @@ const bodyFont = localFont({
   preload: true,
 });
 export const dynamic = "force-dynamic";
-export const metadata: Metadata = {
+const previewMetadata: Metadata = {
   title: "Dicle design preview",
   description:
     "Private Piwas application preview. All catalogue values are test fixtures.",
   robots: { index: false, follow: false },
 };
+export function generateMetadata(): Metadata {
+  const { storeReview } = configuration();
+  return storeReview
+    ? { title: storeReview.storeName, robots: { index: false, follow: false } }
+    : previewMetadata;
+}
 export default async function Layout({
   children,
   params,
@@ -39,6 +47,7 @@ export default async function Layout({
 }) {
   const { locale } = await params;
   if (!isLocale(locale)) notFound();
+  const { storeReview } = configuration();
   const nonce = (await headers()).get("x-nonce") ?? undefined;
   return (
     <html
@@ -54,35 +63,41 @@ export default async function Layout({
         />
       </head>
       <body>
-        <a href="#main" className="skip">
-          Skip to content
-        </a>
-        <p className="notice" lang="en">
-          Private preview · Draft translations · Test fixtures only · Nothing is
-          for sale
-        </p>
-        <div className="shell">
-          <header>
-            <Link className="brand" href={`/${locale}`}>
-              <CourtyardMark />
-              dicle.
-            </Link>
-            <nav aria-label="Main" lang="en">
-              <Link href={`/${locale}#collection`}>Collection</Link>
-              <Link href={`/${locale}/collection`}>Product preview</Link>
-              <Link href={`/${locale}/gallery`}>Components</Link>
-              <Link href={`/${locale}/admin`}>Admin</Link>
-            </nav>
-            <Suspense>
-              <Preferences locale={locale} />
-            </Suspense>
-          </header>
-          <main id="main">{children}</main>
-          <footer lang="en">
-            Piwas application preview. Dicle is a working name. Product and
-            language review pending.
-          </footer>
-        </div>
+        {storeReview ? (
+          <StoreReviewShell content={storeReview}>{children}</StoreReviewShell>
+        ) : (
+          <>
+            <a href="#main" className="skip">
+              Skip to content
+            </a>
+            <p className="notice" lang="en">
+              Private preview · Draft translations · Test fixtures only ·
+              Nothing is for sale
+            </p>
+            <div className="shell">
+              <header>
+                <Link className="brand" href={`/${locale}`}>
+                  <CourtyardMark />
+                  dicle.
+                </Link>
+                <nav aria-label="Main" lang="en">
+                  <Link href={`/${locale}#collection`}>Collection</Link>
+                  <Link href={`/${locale}/collection`}>Product preview</Link>
+                  <Link href={`/${locale}/gallery`}>Components</Link>
+                  <Link href={`/${locale}/admin`}>Admin</Link>
+                </nav>
+                <Suspense>
+                  <Preferences locale={locale} />
+                </Suspense>
+              </header>
+              <main id="main">{children}</main>
+              <footer lang="en">
+                Piwas application preview. Dicle is a working name. Product and
+                language review pending.
+              </footer>
+            </div>
+          </>
+        )}
       </body>
     </html>
   );
