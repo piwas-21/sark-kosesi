@@ -1,0 +1,5 @@
+.informationTitle {
+  max-inline-size: none;
+  font-size: clamp(1.75rem, 7vw, 5rem);
+  hyphens: auto;
+}

@@ -1,6 +1,6 @@
 # Product scope and required inputs
 
-Seller: Piwas, Netherlands. Stock: Netherlands. Launch intent: all 27 EU countries. The initial catalogue is narrow and model-led. Brand/domain remain undecided; “Dicle” is a working design name. The approved courtyard design owns the visual direction; sample imagery, dimensions and prices are not catalogue facts.
+Seller: Piwas, Netherlands. Stock: Netherlands. Launch intent: all 27 EU countries. The initial catalogue is narrow and model-led. The storefront domain is `sark-kosesi.piwas.nl`. The brand remains undecided; “Dicle” is a working design name. The approved courtyard design owns the visual direction; sample imagery, dimensions and prices are not catalogue facts.
 
 ## Customer experience
 

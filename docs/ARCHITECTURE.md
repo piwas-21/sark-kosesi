@@ -724,6 +724,16 @@ the browser gate. The `test-admin` browser credential is a distinct random
 admin shell and grants no staff capability. Local/test previews retain their
 original authentication. Full staff login/MFA/session issuance remains P4 work.
 
+A dedicated staging deployment can supply reviewed Dutch business and policy
+content to render the storefront for provider review. Its GET/HEAD allowlist
+covers only the Dutch collection, product and information pages, approved image
+renditions and robots.txt. The site reads the current approved catalogue
+projection without changing currency, prices, variant identity, publication
+eligibility or image authority. The private and fixture routes remain unavailable
+even to callers with a preview credential. This review deployment exposes no
+checkout, login or staff surface. Keep it isolated from the test preview and use
+the [deployment requirements](../deploy/staging/README.md#dutch-storefront-review).
+
 ## Payments and durable work
 
 Use a dedicated approved Piwas retail website profile and keys in the existing Mollie organization only if Mollie confirms eligibility. Do not copy Sofra's subscription keys or payment logic. Start with implemented payment methods only; hosted provider checkout reduces card-data scope. Customer redirects never establish payment success.

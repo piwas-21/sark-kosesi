@@ -230,6 +230,10 @@ and live commerce remain rejected. The staging runbook owns resource caps, exact
 source labels, read-only smoke checks and rollback. No fixture seeding, worker
 supervision or live provider activation follows from deploying the empty preview.
 
+The [Dutch storefront review](../deploy/staging/README.md#dutch-storefront-review)
+uses the current approved Dutch catalogue and reviewed seller and policy content.
+Live payment activation and market acceptance stay under the P7 gates.
+
 Catalogue projection uses bounded schema-qualified lock-only functions for its
 variant and media claims. Provision and verify a separate restricted runtime and
 NOLOGIN function owner before enabling such an identity; the migration grants no

@@ -40,6 +40,33 @@ Verify a fresh cluster with a restored copy and preserve the current volume
 for rollback. If using incremental backups, start a new chain from a full
 backup on 18.7.
 
+## Dutch storefront review
+
+Use a separate project, database, credentials, loopback port and exact staging
+origin configured for the storefront hostname. Use the base Compose file without
+the guest or callback overlays. Keep its Docker ingress disabled while proving
+private startup; the existing staging router names are fixed and must not be
+reused alongside the test hostname. The public edge for the storefront hostname
+must target only this candidate. Check that the test hostname still points to its
+own project before and after cutover.
+
+Set `STAGING_PUBLIC_STOREFRONT=true` and provide one JSON object in
+`STAGING_STORE_REVIEW_CONTENT` in the private environment file. The object has
+`storeName`, `sellerName`, `kvk`, `vatId`, `address`, `email`, `phone` (E.164)
+and `policies`. The latter contains reviewed Dutch text in `delivery`, `returns`,
+`privacy`, `payment` and `terms`. Retain the approved source for each value with
+the release evidence. A syntactically valid object does not establish that the
+information is true, current or legally acceptable.
+
+The web health check follows the collection redirect and fails on an empty
+approved catalogue. Before setting the public edge, check the rendered product
+price and approved image, the exact selected configuration, and every policy
+section under `/nl/winkelinformatie`. Verify anonymous GET and HEAD. The candidate
+returns 404 for private, preview, alternate locale and mutation paths even when
+a preview credential is supplied. It serves no purchase controls or API
+credentials and retains noindex and no-store. Use fresh exact-host evidence for
+the dedicated Mollie profile.
+
 ## Optional private image decoder
 
 This source-only overlay is off unless explicitly included and selected. It gives

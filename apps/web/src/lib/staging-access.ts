@@ -1,4 +1,5 @@
 import { locales } from "./locale";
+import { storeInformationPath } from "./store-review";
 
 const locale = `(?:${locales.join("|")})`;
 const publicRoutes = [
@@ -19,5 +20,19 @@ export function publicStagingRead(path: string, method: string): boolean {
   return (
     (method === "GET" || method === "HEAD") &&
     publicRoutes.some((route) => route.test(path))
+  );
+}
+
+export function storeReviewRead(path: string, method: string): boolean {
+  return (
+    (method === "GET" || method === "HEAD") &&
+    (path === "/" ||
+      path === "/nl" ||
+      path === storeInformationPath ||
+      path === "/robots.txt" ||
+      /^\/nl\/collection(?:\/[a-z0-9]+(?:-[a-z0-9]+)*)?$/.test(path) ||
+      /^\/catalogue-images\/nl\/[A-Z0-9-]+\/[1-9]\d*\/(?:320|640|960)$/.test(
+        path,
+      ))
   );
 }

@@ -2,7 +2,7 @@ import { NextResponse, type NextRequest } from "next/server";
 import { randomBytes, timingSafeEqual } from "node:crypto";
 import { configuration } from "./lib/config";
 import { resolveLocale } from "./lib/locale";
-import { publicStagingRead } from "./lib/staging-access";
+import { publicStagingRead, storeReviewRead } from "./lib/staging-access";
 function privateResponse(response: NextResponse, revision: string | undefined) {
   response.headers.set("Cache-Control", "private, no-store");
   response.headers.set("X-Robots-Tag", "noindex, nofollow");
@@ -16,17 +16,25 @@ export function proxy(request: NextRequest) {
     browserToken,
     browserUsername,
     publicStorefront,
+    storeReview,
     canonical,
     revision,
   } = configuration();
+  const path = request.nextUrl.pathname;
+  if (storeReview && !storeReviewRead(path, request.method)) {
+    return privateResponse(
+      new NextResponse("Niet gevonden", { status: 404 }),
+      revision,
+    );
+  }
   const expected = Buffer.from(
     `Basic ${Buffer.from(`${browserUsername}:${browserToken}`).toString("base64")}`,
   );
   const supplied = Buffer.from(request.headers.get("authorization") ?? "");
   if (
     !(
-      publicStorefront &&
-      publicStagingRead(request.nextUrl.pathname, request.method)
+      storeReview ||
+      (publicStorefront && publicStagingRead(path, request.method))
     ) &&
     (supplied.length !== expected.length ||
       !timingSafeEqual(supplied, expected))
@@ -41,15 +49,17 @@ export function proxy(request: NextRequest) {
       revision,
     );
   }
-  if (request.nextUrl.pathname === "/") {
-    const locale = resolveLocale(
-      request.cookies.get("locale")?.value,
-      request.headers.get("accept-language") ?? "",
-    );
+  if (path === "/") {
+    const locale = storeReview
+      ? "nl"
+      : resolveLocale(
+          request.cookies.get("locale")?.value,
+          request.headers.get("accept-language") ?? "",
+        );
     const target = new URL(`/${locale}`, canonical);
-    target.search = request.nextUrl.search;
+    if (!storeReview) target.search = request.nextUrl.search;
     const response = NextResponse.redirect(target);
-    response.headers.set("Vary", "Cookie, Accept-Language");
+    if (!storeReview) response.headers.set("Vary", "Cookie, Accept-Language");
     return privateResponse(response, revision);
   }
   const nonce = randomBytes(18).toString("base64");
