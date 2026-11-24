@@ -9,7 +9,8 @@ mod guest_support;
 mod order_fixture;
 use axum::{Router, http::StatusCode};
 use commerce_api::{
-    config::Config, guest::test_orders::TestOrderConfig, router_with_test_guest_operations,
+    TestGuestOperations, config::Config, guest::test_orders::TestOrderConfig,
+    router_with_test_guest_operations,
 };
 use commerce_infrastructure::MIGRATOR;
 use guest_support::*;
@@ -50,8 +51,11 @@ fn configured_app(pool: &PgPool, values: &HashMap<String, String>) -> (Router, A
             None,
             None,
             None,
-            config.test_guest_order,
-            config.test_guest_cancellation,
+            TestGuestOperations {
+                order: config.test_guest_order,
+                cancellation: config.test_guest_cancellation,
+                pending_cancellation: config.test_guest_pending_cancellation,
+            },
         )
         .expect("router"),
         clock,
@@ -135,8 +139,11 @@ async fn test_routes_accept_then_cancel_one_order_under_the_same_guest_authority
                 None,
                 None,
                 None,
-                order,
-                cancellation,
+                TestGuestOperations {
+                    order,
+                    cancellation,
+                    ..TestGuestOperations::default()
+                },
             )
             .is_err(),
             "each test operation requires the guest origin"
@@ -308,8 +315,11 @@ async fn owner_can_accept_and_retry_exact_order_without_payment(pool: PgPool) {
         None,
         None,
         None,
-        cfg.test_guest_order,
-        cfg.test_guest_cancellation,
+        TestGuestOperations {
+            order: cfg.test_guest_order,
+            cancellation: cfg.test_guest_cancellation,
+            pending_cancellation: cfg.test_guest_pending_cancellation,
+        },
     )
     .expect("restarted router");
     let prior = send(&restarted, Some(&cookie), Some(&csrf), &body).await;

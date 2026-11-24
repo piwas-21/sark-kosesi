@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
 import { test } from "node:test";
 import { allowsBrowserHistory } from "./link-policy.mjs";
+import { allowsPendingCancellationRead } from "./pending-cancellation.mjs";
 
 const runner = "tests/application/guest-browser/runner.mjs";
 function rejected(url, extra = {}) {
@@ -52,6 +53,31 @@ test("only same-origin browser history GET can use the private Origin bridge", (
   ])
     assert.equal(
       allowsBrowserHistory({ ...request, ...change }, expected),
+      false,
+    );
+});
+
+test("the pending cancellation Origin bridge requires an exact same-origin order read", () => {
+  const expected = "https://127.0.0.1:12345";
+  const path = `/api/test/guest/orders/${"a".repeat(32)}/pending-cancellation`;
+  const request = { method: "GET", url: path, site: "same-origin" };
+  assert.equal(allowsPendingCancellationRead(request, expected), true);
+  assert.equal(
+    allowsPendingCancellationRead({ ...request, origin: expected }, expected),
+    true,
+  );
+  for (const change of [
+    { method: "POST" },
+    { url: `${path}?extra=1` },
+    { url: path.replace("pending-cancellation", "cancellation") },
+    { url: path.replace("a".repeat(32), "a".repeat(31)) },
+    { site: "same-site" },
+    { site: "cross-site" },
+    { site: undefined },
+    { origin: "https://other.invalid" },
+  ])
+    assert.equal(
+      allowsPendingCancellationRead({ ...request, ...change }, expected),
       false,
     );
 });

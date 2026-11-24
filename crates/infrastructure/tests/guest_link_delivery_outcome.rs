@@ -31,8 +31,19 @@ mod fixture;
 #[allow(dead_code)]
 #[path = "support/checkout_quote_fixture.rs"]
 mod quote;
+#[cfg(feature = "test-verification-smtp")]
+#[path = "support/guest_link_test_smtp.rs"]
+mod test_smtp_transport;
 
 async fn sample(pool: &PgPool, suffix: &str) -> (Arc<quote::Time>, DeliveryKey, [u8; 32], String) {
+    sample_with_buyer(pool, suffix, "buyer@example.test").await
+}
+
+async fn sample_with_buyer(
+    pool: &PgPool,
+    suffix: &str,
+    email: &str,
+) -> (Arc<quote::Time>, DeliveryKey, [u8; 32], String) {
     quote::seed(pool).await;
     let (store, clock) = quote::store(pool, 1100);
     let (session, csrf) = quote::guest(&store).await;
@@ -47,12 +58,14 @@ async fn sample(pool: &PgPool, suffix: &str) -> (Arc<quote::Time>, DeliveryKey, 
     .await
     .expect("quote")
     .snapshot;
+    let mut intent = fixture::intent(&value.binding.quote_id);
+    intent.buyer.email = email.into();
     let id = create_order(
         &store,
         &guest,
         &csrf,
         &format!("o-{suffix}"),
-        &fixture::intent(&value.binding.quote_id),
+        &intent,
         &fixture::seller(),
     )
     .await

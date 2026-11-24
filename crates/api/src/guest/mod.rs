@@ -2,6 +2,7 @@
 pub(crate) mod cancellation;
 pub(crate) mod cookies;
 pub(crate) mod origin;
+pub(crate) mod pending_cancellation;
 pub(crate) mod quotes;
 pub mod test_orders;
 pub mod types;

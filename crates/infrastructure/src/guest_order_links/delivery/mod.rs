@@ -1,10 +1,12 @@
-//! Private encrypted guest-link custody and one in-process start; no transport.
+//! Private encrypted guest-link custody and one in-process start.
 use super::*;
 use commerce_domain::{checkout_quotes::MAX_QUOTE_UNIX_SECONDS, email_identity::normalize_email};
 use sha2::{Digest, Sha256};
 mod crypto;
 mod opening;
 pub mod outcome;
+#[cfg(feature = "test-verification-smtp")]
+pub mod test_smtp;
 pub use opening::{OpenOutcome, claim_and_open, claim_open_and_record};
 
 /// Privately supplied root key, purpose-derived before encryption.

@@ -406,6 +406,13 @@ when bound, customer-session authority through the attempt claim and event write
 The detached receipt is pending intent only; it neither changes cancellation nor
 authorizes provider, financial, stock, packing or physical fulfilment effects.
 Legacy NULL start transaction provenance is preserved without inference.
+An independent default-off test transport uses the exact configured Origin,
+preview authority and the owned guest cookie for both pending request routes.
+POST also requires the basket synchronizer, explicit confirmation and an
+effect key. The receipt contains the original request timestamp and replay
+state. GET returns only the recorded timestamp or an empty request. Absence
+describes the owned order's recorded intent. Account-bound custody uses its
+separate private authority.
 Private inspection requires the separate unseeded `cancellation.review` grant,
 a held live staff session and recent MFA. It claims the original attempt,
 validates historical request and reciprocal event custody and rechecks staff
@@ -942,7 +949,7 @@ transaction; legacy private callers remain separate. An independently enabled
 test-only POST requires preview authentication, the exact configured Origin,
 the canonical customer cookie and its bound synchronizer. Its bounded body holds
 only an order ID and proof, and its empty success response contains no identity.
-No public browser route or proof-delivery transport is installed.
+Public browser ingress and real proof delivery require separate acceptance.
 Private delivery issuance uses a dedicated HKDF-SHA256 guest-link key context and
 an independent deterministic nonce prefix. It authenticates the original order,
 basket, normalized buyer, verifier, timing, key fingerprint and nonce. Every
@@ -958,7 +965,11 @@ proof of message delivery. A separate durable local start permits only its fresh
 winner to relock the proof and guest order, revalidate source and key, and open
 the envelope for a trusted synchronous in-process callback. A failed or uncertain
 start cannot be retried automatically, and source state can change after the final
-check. No transport is installed. As with nonce allocation, the durable-commit
+check. A test-only SMTP transport uses the reserved synthetic guest mailbox and
+one bounded transaction at a numeric loopback sink. It records a closed outcome
+under the exact start. The Chromium rehearsal receives the reserved proof from
+its owned sink and submits it in the redemption body. Child output carries
+no proof. As with nonce allocation, the durable-commit
 claim relies on the supported Rust writer; a privileged arbitrary SQL writer can
 force the deferred setting check early. Key generation, separate custody, abuse
 controls and expiry/deletion policy remain release work.

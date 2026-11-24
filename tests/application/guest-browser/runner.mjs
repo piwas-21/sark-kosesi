@@ -9,6 +9,12 @@ import { join, resolve } from "node:path";
 import { chromium } from "@playwright/test";
 import { availablePort } from "../ports.mjs";
 import { allowsBrowserHistory } from "./link-policy.mjs";
+import {
+  allowsPendingCancellationRead,
+  exercisePendingCancellation,
+  pendingCancellationPath,
+} from "./pending-cancellation.mjs";
+import { startGuestLinkSink } from "./smtp-sink.mjs";
 
 if (process.env.APP_ENV !== "test") throw new Error("Requires test mode");
 if (process.env.PGOPTIONS !== undefined)
@@ -40,9 +46,9 @@ database.pathname = `/${fixtureName}`;
 const apiPort = await availablePort();
 const api = `http://127.0.0.1:${apiPort}`;
 const children = [];
-const run = (command, args, env = process.env) =>
+const run = (command, args, env = process.env, options = {}) =>
   new Promise((resolveRun, reject) => {
-    const child = spawn(command, args, { env, stdio: "inherit" });
+    const child = spawn(command, args, { env, stdio: "inherit", ...options });
     children.push(child);
     child.once("error", reject);
     child.once("exit", (code) =>
@@ -50,43 +56,6 @@ const run = (command, args, env = process.env) =>
         ? resolveRun()
         : reject(new Error(`${command} failed (${code})`)),
     );
-  });
-// Capture the synthetic proof only in this process; never print child output.
-const issueProof = (args, env) =>
-  new Promise((resolveProof, reject) => {
-    const child = spawn("cargo", args, {
-      env,
-      stdio: ["ignore", "pipe", "pipe"],
-    });
-    children.push(child);
-    let output = "";
-    let failed = false;
-    const timeout = setTimeout(() => {
-      failed = true;
-      child.kill("SIGTERM");
-    }, 120000);
-    const collect = (chunk) => {
-      output += chunk.toString();
-      if (output.length > 65536) {
-        failed = true;
-        child.kill("SIGTERM");
-      }
-    };
-    child.stdout.on("data", collect);
-    child.stderr.on("data", collect);
-    child.once("error", () => {
-      clearTimeout(timeout);
-      reject(new Error("Synthetic proof fixture failed"));
-    });
-    child.once("close", (code) => {
-      clearTimeout(timeout);
-      const matches = [
-        ...output.matchAll(/BROWSER_LINK_PROOF=([a-f0-9]{64})/g),
-      ];
-      if (failed || code !== 0 || matches.length !== 1)
-        reject(new Error("Synthetic proof fixture failed"));
-      else resolveProof(matches[0][1]);
-    });
   });
 const address = {
   recipient: "Synthetic Recipient",
@@ -124,6 +93,8 @@ const routes = [
   ["POST", /^\/api\/guest\/nl\/quotes$/],
   ["POST", /^\/api\/test\/guest\/orders$/],
   ["POST", /^\/api\/test\/guest\/orders\/[0-9a-f]{32}\/cancellation$/],
+  ["POST", pendingCancellationPath],
+  ["GET", pendingCancellationPath],
   ["POST", /^\/api\/test\/customer\/login-with-csrf$/],
   ["POST", /^\/api\/test\/customer\/guest-order-link\/redeem$/],
   ["GET", /^\/api\/test\/customer\/linked-orders$/],
@@ -209,17 +180,17 @@ try {
       }
       // Browsers may omit Origin on same-origin GET. Only this private proxy
       // supplies it after checking the browser's same-origin fetch metadata.
-      const historyGet = allowsBrowserHistory(
-        {
-          method: request.method,
-          url: request.url,
-          site: request.headers["sec-fetch-site"],
-          origin: request.headers.origin,
-        },
-        origin,
-      );
+      const browserRequest = {
+        method: request.method,
+        url: request.url,
+        site: request.headers["sec-fetch-site"],
+        origin: request.headers.origin,
+      };
+      const ownerRead =
+        allowsBrowserHistory(browserRequest, origin) ||
+        allowsPendingCancellationRead(browserRequest, origin);
       if (
-        (!historyGet && request.headers.origin !== origin) ||
+        (!ownerRead && request.headers.origin !== origin) ||
         !routes.some(
           ([method, pattern]) =>
             method === request.method && pattern.test(request.url ?? ""),
@@ -285,6 +256,7 @@ try {
     GUEST_ORIGIN: origin,
     TEST_GUEST_ORDER_TRANSPORT: "1",
     TEST_GUEST_CANCELLATION_TRANSPORT: "1",
+    TEST_GUEST_PENDING_CANCELLATION_TRANSPORT: "1",
     TEST_GUEST_ORDER_SELLER: JSON.stringify(seller),
     TEST_LOGIN_ORIGIN: origin,
     TEST_LOGIN_ADMISSION_KEY: randomBytes(32).toString("hex"),
@@ -299,6 +271,7 @@ try {
       ![
         "TEST_GUEST_ORDER_TRANSPORT",
         "TEST_GUEST_CANCELLATION_TRANSPORT",
+        "TEST_GUEST_PENDING_CANCELLATION_TRANSPORT",
         "TEST_GUEST_ORDER_SELLER",
         "TEST_LOGIN_ORIGIN",
         "TEST_LOGIN_ADMISSION_KEY",
@@ -313,6 +286,8 @@ try {
     "--locked",
     "-p",
     "commerce-infrastructure",
+    "--features",
+    "test-verification-smtp",
     "--test",
     "guest_browser_fixture",
     "--",
@@ -660,21 +635,31 @@ try {
   assert.equal(orderRequests()[0].postData(), orderRequests()[1].postData());
   assert.deepEqual(JSON.parse(orderRequests()[0].postData()), order);
   const first = { body: lostOrderReceipt };
-  // The proof comes from the real private issuer for the cookie-owned order.
-  // Its bearer is captured only by this process and passed in the request body.
-  const proof = await issueProof(
-    [
-      ...testArgs,
-      "guest_browser_link::issue_browser_guest_link_proof",
-      "--nocapture",
-    ],
-    {
-      ...env,
-      GUEST_BROWSER_GUEST_COOKIE: cookies[0].value,
-      GUEST_BROWSER_GUEST_CSRF: csrf,
-      GUEST_BROWSER_ORDER_ID: first.body.id,
-    },
-  );
+  // The private issuer delivers an encrypted proof through the owned loopback
+  // mailbox. Child output is discarded and never carries the proof.
+  const mailbox = await startGuestLinkSink();
+  let proof;
+  try {
+    await run(
+      "cargo",
+      [...testArgs, "guest_browser_link::deliver_browser_guest_link_proof"],
+      {
+        ...env,
+        GUEST_BROWSER_GUEST_COOKIE: cookies[0].value,
+        GUEST_BROWSER_GUEST_CSRF: csrf,
+        GUEST_BROWSER_ORDER_ID: first.body.id,
+        GUEST_BROWSER_LINK_SMTP_PORT: String(mailbox.port),
+      },
+      {
+        stdio: "ignore",
+        signal: AbortSignal.timeout(120000),
+        killSignal: "SIGKILL",
+      },
+    );
+    proof = mailbox.takeProof();
+  } finally {
+    await mailbox.close();
+  }
   const loginPath = "/api/test/customer/login-with-csrf";
   const redeemPath = "/api/test/customer/guest-order-link/redeem";
   const historyPath = "/api/test/customer/linked-orders";
@@ -814,7 +799,6 @@ try {
     (await callWith(otherPage, historyPath, "GET")).body.orders,
     [],
   );
-  await otherContext.close();
   const cancellationPath = `/api/test/guest/orders/${first.body.id}/cancellation`;
   const cancellation = { effect_key: "browser-cancel", confirmed: true };
   assert.deepEqual(
@@ -825,6 +809,43 @@ try {
     (await call(cancellationPath, "POST", cancellation, csrf)).body,
     { replayed: true },
   );
+  await run("cargo", [...testArgs, "verify_guest_browser_effects"], env);
+  const pending = await exercisePendingCancellation({
+    call,
+    otherCall: (path, method, body, proof) =>
+      callWith(otherPage, path, method, body, proof),
+    reload: () => page.reload(),
+    csrf,
+    quoteInput,
+    order,
+    stageDispatch: (orderId) =>
+      run(
+        "cargo",
+        [
+          ...testArgs,
+          "guest_browser_pending_cancellation::seed_browser_pending_cancellation_start",
+        ],
+        {
+          ...env,
+          GUEST_BROWSER_ORDER_ID: orderId,
+          GUEST_BROWSER_GUEST_COOKIE: cookies[0].value,
+          GUEST_BROWSER_GUEST_CSRF: csrf,
+        },
+      ),
+  });
+  await run(
+    "cargo",
+    [
+      ...testArgs,
+      "guest_browser_pending_cancellation::verify_browser_pending_cancellation_effects",
+    ],
+    {
+      ...env,
+      GUEST_BROWSER_ORDER_ID: pending.orderId,
+      GUEST_BROWSER_PENDING_REQUESTED_AT: String(pending.requestedAt),
+    },
+  );
+  await otherContext.close();
   assert.equal(blockedNetwork, false);
   for (const request of outbound) {
     assert(
@@ -839,24 +860,8 @@ try {
     assert(!request.url().includes(proof));
   }
   await context.close();
-  await run(
-    "cargo",
-    [
-      "test",
-      "--locked",
-      "-p",
-      "commerce-infrastructure",
-      "--test",
-      "guest_browser_fixture",
-      "--",
-      "--ignored",
-      "--exact",
-      "verify_guest_browser_effects",
-    ],
-    env,
-  );
   console.log(
-    "Synthetic Chromium guest checkout, linking and history transports passed; no provider, mail or public UI acceptance.",
+    "Synthetic Chromium guest checkout, loopback guest-link delivery, owned history and pending cancellation passed.",
   );
 } finally {
   if (browser) await browser.close();

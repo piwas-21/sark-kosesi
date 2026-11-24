@@ -124,6 +124,30 @@ export type Parcel = {
     gross_weight_g: number;
 };
 
+export type PendingCancellationLookup = {
+    request: PendingCancellationRecord | null;
+};
+
+export type PendingCancellationReceipt = {
+    replayed: boolean;
+    requested_at: number;
+};
+
+export type PendingCancellationRecord = {
+    requested_at: number;
+};
+
+export type PendingCancellationRequest = {
+    /**
+     * Must be true to confirm recording the request.
+     */
+    confirmed: boolean;
+    /**
+     * Stable identifier for exact retries of this pending request.
+     */
+    effect_key: string;
+};
+
 export type Product = {
     care: string;
     currency: string;
@@ -983,6 +1007,68 @@ export type TestGuestCancelOrderResponses = {
 };
 
 export type TestGuestCancelOrderResponse = TestGuestCancelOrderResponses[keyof TestGuestCancelOrderResponses];
+
+export type TestGuestPendingCancellationStatusData = {
+    body?: never;
+    headers: {
+        Origin: string;
+    };
+    path: {
+        id: string;
+    };
+    query?: never;
+    url: '/api/test/guest/orders/{id}/pending-cancellation';
+};
+
+export type TestGuestPendingCancellationStatusErrors = {
+    400: ApiError;
+    401: ApiError;
+    403: ApiError;
+    404: ApiError;
+    503: ApiError;
+    504: ApiError;
+};
+
+export type TestGuestPendingCancellationStatusError = TestGuestPendingCancellationStatusErrors[keyof TestGuestPendingCancellationStatusErrors];
+
+export type TestGuestPendingCancellationStatusResponses = {
+    200: PendingCancellationLookup;
+};
+
+export type TestGuestPendingCancellationStatusResponse = TestGuestPendingCancellationStatusResponses[keyof TestGuestPendingCancellationStatusResponses];
+
+export type TestGuestRequestPendingCancellationData = {
+    body: PendingCancellationRequest;
+    headers: {
+        Origin: string;
+        'x-csrf-token': string;
+    };
+    path: {
+        id: string;
+    };
+    query?: never;
+    url: '/api/test/guest/orders/{id}/pending-cancellation';
+};
+
+export type TestGuestRequestPendingCancellationErrors = {
+    400: ApiError;
+    401: ApiError;
+    403: ApiError;
+    404: ApiError;
+    409: ApiError;
+    413: ApiError;
+    415: ApiError;
+    503: ApiError;
+    504: ApiError;
+};
+
+export type TestGuestRequestPendingCancellationError = TestGuestRequestPendingCancellationErrors[keyof TestGuestRequestPendingCancellationErrors];
+
+export type TestGuestRequestPendingCancellationResponses = {
+    200: PendingCancellationReceipt;
+};
+
+export type TestGuestRequestPendingCancellationResponse = TestGuestRequestPendingCancellationResponses[keyof TestGuestRequestPendingCancellationResponses];
 
 export type RedeemTestVerificationData = {
     body: RedeemRequest;

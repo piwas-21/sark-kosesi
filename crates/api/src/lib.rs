@@ -7,8 +7,8 @@ pub mod contract;
 pub mod guest;
 mod routing;
 pub use routing::{
-    router, router_with_guest, router_with_options, router_with_test_guest_operations,
-    router_with_test_login, router_with_verification,
+    TestGuestOperations, router, router_with_guest, router_with_options,
+    router_with_test_guest_operations, router_with_test_login, router_with_verification,
 };
 pub mod published;
 pub mod published_types;

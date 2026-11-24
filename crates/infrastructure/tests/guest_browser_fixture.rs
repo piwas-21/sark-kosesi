@@ -9,6 +9,8 @@ use std::time::{SystemTime, UNIX_EPOCH};
 mod fixture;
 #[path = "support/guest_browser_link.rs"]
 mod guest_browser_link;
+#[path = "support/guest_browser_pending_cancellation.rs"]
+mod guest_browser_pending_cancellation;
 
 fn inputs() -> (String, String, String) {
     assert_eq!(std::env::var("APP_ENV").as_deref(), Ok("test"));
@@ -188,4 +190,7 @@ async fn verify_guest_browser_effects() {
     let custody: (i64, i64, i64) = sqlx::query_as("SELECT (SELECT count(*) FROM guest_order_link_proofs),(SELECT count(*) FROM customer_order_links),(SELECT count(*) FROM guest_order_link_proofs p JOIN customer_order_links l ON l.order_id=p.order_id AND l.proof_verifier=p.verifier AND l.account_id=p.consumed_account_id AND l.linked_at=p.consumed_at AND l.linked_xid=p.consumed_xid JOIN verified_customer_accounts a ON a.id=l.account_id WHERE a.email_identity='buyer@example.test')")
         .fetch_one(&pool).await.expect("exact linked proof custody");
     assert_eq!(custody, (1, 1, 1));
+    let delivery: (i64, i64, i64, i64) = sqlx::query_as("SELECT (SELECT count(*) FROM guest_link_delivery_envelopes),(SELECT count(*) FROM guest_link_delivery_starts),(SELECT count(*) FROM guest_link_delivery_outcomes),(SELECT count(*) FROM guest_link_delivery_outcomes o JOIN guest_link_delivery_envelopes e USING(verifier) JOIN customer_order_links l ON l.proof_verifier=o.verifier WHERE o.outcome='accepted' AND o.ciphertext_sha256=sha256(e.ciphertext))")
+        .fetch_one(&pool).await.expect("exact accepted synthetic delivery linked to consumed proof");
+    assert_eq!(delivery, (1, 1, 1, 1));
 }

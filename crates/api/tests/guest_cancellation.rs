@@ -11,7 +11,7 @@ mod guest_support;
 #[path = "../../infrastructure/tests/support/payment_fixture.rs"]
 mod payment;
 use axum::{Router, http::StatusCode};
-use commerce_api::{config::Config, router_with_test_guest_operations};
+use commerce_api::{TestGuestOperations, config::Config, router_with_test_guest_operations};
 use commerce_application::{Locale, guest_access::GuestLimits};
 use commerce_infrastructure::{
     MIGRATOR,
@@ -34,6 +34,8 @@ use tower::ServiceExt;
 use tower_sessions::{Session, session::Id};
 
 const INPUT: &str = r#"{"effect_key":"cancel-1","confirmed":true}"#;
+#[path = "support/guest_pending_cancellation.rs"]
+mod pending;
 fn values() -> HashMap<String, String> {
     [
         ("APP_ENV", "test"),
@@ -71,8 +73,11 @@ fn app_with(
         config.callback_profile,
         config.verification,
         config.test_login,
-        config.test_guest_order,
-        config.test_guest_cancellation,
+        TestGuestOperations {
+            order: config.test_guest_order,
+            cancellation: config.test_guest_cancellation,
+            pending_cancellation: config.test_guest_pending_cancellation,
+        },
     )
     .expect("router");
     (app, time, store)
@@ -87,8 +92,21 @@ async fn accepted(
     String,
     commerce_domain::checkout_orders::OrderSnapshot,
 ) {
+    accepted_with(pool, &enabled()).await
+}
+async fn accepted_with(
+    pool: &PgPool,
+    values: &HashMap<String, String>,
+) -> (
+    Router,
+    Arc<Time>,
+    GuestSessionStore,
+    String,
+    String,
+    commerce_domain::checkout_orders::OrderSnapshot,
+) {
     fixture::seed(pool).await;
-    let (app, time, store) = app_with(pool, &enabled());
+    let (app, time, store) = app_with(pool, values);
     let (cookie, csrf) = issue(&app, None).await;
     let response = app
         .clone()
