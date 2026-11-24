@@ -36,6 +36,8 @@ use tower_sessions::{Session, session::Id};
 const INPUT: &str = r#"{"effect_key":"cancel-1","confirmed":true}"#;
 #[path = "support/guest_pending_cancellation.rs"]
 mod pending;
+#[path = "support/guest_order_progress.rs"]
+mod progress;
 fn values() -> HashMap<String, String> {
     [
         ("APP_ENV", "test"),
@@ -77,6 +79,7 @@ fn app_with(
             order: config.test_guest_order,
             cancellation: config.test_guest_cancellation,
             pending_cancellation: config.test_guest_pending_cancellation,
+            order_progress: config.test_guest_order_progress,
         },
     )
     .expect("router");
@@ -621,7 +624,7 @@ async fn prepared_but_undispatched_attempt_can_be_canceled_and_never_started(poo
 }
 
 #[sqlx::test(migrator = "MIGRATOR")]
-async fn guest_only_route_cannot_cancel_account_bound_order(pool: PgPool) {
+async fn guest_only_routes_cannot_cancel_or_inspect_account_bound_order(pool: PgPool) {
     use admitted_proofs::{customer_passwords, email_verification, verified_customer_accounts};
     use commerce_infrastructure::{
         checkout_orders::create_verified_promoted_order,
@@ -637,7 +640,9 @@ async fn guest_only_route_cannot_cancel_account_bound_order(pool: PgPool) {
     payment::promotion::decide(&pool, "review", 1, 0, true)
         .await
         .expect("review");
-    let (app, time, store) = app_with(&pool, &enabled());
+    let mut settings = enabled();
+    settings.insert("TEST_GUEST_ORDER_PROGRESS_TRANSPORT".into(), "1".into());
+    let (app, time, store) = app_with(&pool, &settings);
     let email = "bound@example.test";
     let proof = email_verification::issue(&pool, email, time.as_ref())
         .await
@@ -716,6 +721,18 @@ async fn guest_only_route_cannot_cancel_account_bound_order(pool: PgPool) {
         StatusCode::NOT_FOUND,
     )
     .await;
+    let progress = app
+        .oneshot(request(
+            "GET",
+            &format!("/api/test/guest/orders/{}/progress", owned.identity.id),
+            Some(&cookie),
+            None,
+            "",
+        ))
+        .await
+        .expect("account-bound order check");
+    assert_eq!(progress.status(), StatusCode::NOT_FOUND);
+    assert_eq!(json(progress).await["code"], "order_progress_not_found");
     assert_eq!(effects(&pool).await, before);
     let n: i64 = sqlx::query_scalar("SELECT count(*) FROM checkout_order_cancellations")
         .fetch_one(&pool)

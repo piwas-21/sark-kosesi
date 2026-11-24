@@ -318,6 +318,21 @@ full workload bounds and operational acceptance remain separate.
    result grants no payment, cancellation or recovery authority. Missing starts
    remain unavailable and are not proof of provider absence. Both guest and any
    linked customer authority are rechecked after waits and source failures.
+   A private exact-order progress read holds the owned basket and any bound
+   customer session before it acquires the original attempt claim. It validates
+   the creation event, the pre-dispatch cancellation receipt, pending intent,
+   and the current recognition watermark. The result separates lifecycle and
+   pending intent from the gross payment observation. A stored recognition
+   that is stale or detached from its evidence fails closed. The closed result
+   contains no provider identifiers, amounts, refunds or fulfilment details.
+   Before reporting no gross recognition, the read rejects contradictory
+   recognition pointers, journal rows and order events. Migration 0084 indexes
+   the order-scoped recognition event lookup.
+   The independently enabled test-only guest GET uses
+   `TEST_GUEST_ORDER_PROGRESS_TRANSPORT=1` with the exact guest Origin.
+   It serves the closed result under preview authority and the current owned
+   guest cookie. The Chromium journey exercises progress before dispatch,
+   after pre-dispatch cancellation, and while post-dispatch intent is pending.
    A separate private owner-authenticated request after dispatch records only pending
    intent against the original attempt and exact reconciliation event. It can replay
    under live authority but neither cancels the order nor pauses packing or dispatch.

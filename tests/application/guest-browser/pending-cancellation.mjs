@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { checkOrderProgress } from "./order-progress.mjs";
 
 export const pendingCancellationPath =
   /^\/api\/test\/guest\/orders\/[0-9a-f]{32}\/pending-cancellation$/;
@@ -57,9 +58,19 @@ export async function exercisePendingCancellation({
   assert.equal(beforeStart.status, 200);
   assert.deepEqual(beforeStart.body, { request: null });
   assert.equal((await call(path, "POST", intent, csrf)).status, 409);
+  await checkOrderProgress(call, orderId, {
+    order: "accepted",
+    pending_cancellation: false,
+    gross_payment: "no_recorded_dispatch",
+  });
 
   await stageDispatch(orderId);
   assert.deepEqual((await call(path, "GET")).body, { request: null });
+  await checkOrderProgress(call, orderId, {
+    order: "accepted",
+    pending_cancellation: false,
+    gross_payment: "no_recognition",
+  });
   const foreignGuest = await otherCall("/api/guest/session", "POST", {});
   assert.equal(foreignGuest.status, 200);
   assert.match(foreignGuest.body.csrf_token, /^[a-f0-9]{64}$/);
@@ -89,5 +100,16 @@ export async function exercisePendingCancellation({
   assert.equal(refreshed.cache, "private, no-store");
   assert.deepEqual(refreshed.body, { request: { requested_at: requestedAt } });
   assert.equal((await otherCall(path, "GET")).status, 404);
+  await checkOrderProgress(call, orderId, {
+    order: "accepted",
+    pending_cancellation: true,
+    gross_payment: "no_recognition",
+  });
+  assert.equal(
+    (await otherCall(`/api/test/guest/orders/${orderId}/progress`, "GET"))
+      .status,
+    404,
+    "foreign guest progress",
+  );
   return { orderId, requestedAt };
 }
