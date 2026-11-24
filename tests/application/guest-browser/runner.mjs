@@ -392,6 +392,11 @@ try {
   }
   if (!ready || child.exitCode !== null)
     throw new Error("Owned API did not start");
+  assert.equal(
+    (await fetch(`${api}/health/ready`, { signal: AbortSignal.timeout(500) }))
+      .status,
+    204,
+  );
   assert.equal((await fetch(`${api}/api/guest/basket`)).status, 401);
   let untrustedRequests = 0;
   untrustedServer = createServer(

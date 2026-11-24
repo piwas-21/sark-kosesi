@@ -61,9 +61,9 @@ the release evidence. A syntactically valid object does not establish that the
 information is true, current or legally acceptable.
 
 The web health check probes the collection and policy pages directly, requires
-API readiness and expects the anonymous admin path to return 404. An empty
-approved catalogue fails health. Use the Dockerfile and Compose file from the
-same revision when deploying or returning to an earlier stack.
+the API readiness endpoint to return 204, and expects a 404 on the anonymous
+admin path. An empty approved catalogue fails health. Use the Dockerfile and
+Compose file from the same revision when deploying or returning to an earlier stack.
 
 Before setting the public edge, prepare a private, mode-0600 JSON evidence file.
 Set `store` to the exact approved seller and policy object above. List every

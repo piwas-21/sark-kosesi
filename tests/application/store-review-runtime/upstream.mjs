@@ -41,7 +41,7 @@ export async function startUpstream(token) {
   let state = "ready";
   const server = createServer((request, response) => {
     if (request.method !== "GET") return response.writeHead(405).end();
-    if (request.url === "/health/ready") return response.writeHead(200).end();
+    if (request.url === "/health/ready") return response.writeHead(204).end();
     if (request.headers.authorization !== `Bearer ${token}`)
       return response.writeHead(401).end();
     if (state === "unavailable") return response.writeHead(503).end();

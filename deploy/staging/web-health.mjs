@@ -12,7 +12,7 @@ export async function stagingWebHealthy(env, request = fetch) {
         [`${web}/nl`, env.STAGING_PUBLIC_STOREFRONT === "true" ? 200 : 401],
         [`${web}/nl/admin`, 401],
       ];
-  const checks = [...storefrontChecks, [`${api}/health/ready`, 200]];
+  const checks = [...storefrontChecks, [`${api}/health/ready`, 204]];
   const signal = AbortSignal.timeout(4000);
   try {
     const matches = await Promise.all(
