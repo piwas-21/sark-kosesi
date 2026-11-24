@@ -58,7 +58,23 @@ pub async fn claim_open_and_record(
 pub(super) struct FreshOpening {
     pub(super) identity: Zeroizing<String>,
     pub(super) bearer: Zeroizing<[u8; 32]>,
-    pub(super) permit: start::Permit,
+    pub(super) permit: OutcomePermit,
+}
+
+/// Only successful authenticated opening can construct a record permit.
+pub(super) struct OutcomePermit {
+    start: start::Permit,
+    ciphertext_sha256: [u8; 32],
+}
+
+impl OutcomePermit {
+    pub(super) fn start(&self) -> &start::Permit {
+        &self.start
+    }
+
+    pub(super) fn ciphertext_sha256(&self) -> &[u8; 32] {
+        &self.ciphertext_sha256
+    }
 }
 
 pub(super) async fn open(
@@ -92,6 +108,7 @@ pub(super) async fn open(
             version: crypto::VERSION,
         };
         let bearer = crypto::open(key, &context, ciphertext)?;
+        let ciphertext_sha256 = Sha256::digest(ciphertext).into();
         let identity = Zeroizing::new(identity.to_owned());
         start::check_live(&source, bounded_now(observed)?)?;
         tx.commit()
@@ -101,7 +118,10 @@ pub(super) async fn open(
         Ok(Some(FreshOpening {
             identity,
             bearer,
-            permit: *permit,
+            permit: OutcomePermit {
+                start: *permit,
+                ciphertext_sha256,
+            },
         }))
     } else {
         Ok(None)

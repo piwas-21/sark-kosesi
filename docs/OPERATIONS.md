@@ -202,6 +202,20 @@ may lack the manifest command.
 
 For a quiescent non-selling preview only, the [staging runbook](../deploy/staging/README.md#rollback) permits a consistent snapshot restored into a separate owned project/database while preserving the old database and containers. Verify restore integrity, private startup and exclusive router ownership before switching. If business writes occur after the snapshot, require reviewed catch-up/reconciliation before cutover or rollback; a snapshot must not discard those writes.
 
+### Verification outcome writer upgrade
+
+Migration 0085 preserves earlier callback outcomes and requires an authenticated
+ciphertext commitment on new writes. The pre-0085 outcome writer cannot insert
+that commitment. Before applying the migration, verify that no such writer is
+running. Drain and stop any earlier verification callbacks, including a send
+awaiting its result write. The repository installs no production verification
+sender. Verify the exact deployment and tested compatible writer independently.
+
+Keep the verified pre-0085 snapshot and compatible image together for recovery.
+Never run a pre-0085 outcome writer against schema 85. After an ambiguous
+delivery, preserve the recorded start and reconcile the result through the
+approved recovery process. Reopening a committed start can duplicate mail.
+
 ## Recovery and acceptance
 
 Proposed service targets: database RPO <=15 minutes and RTO <=4 hours, subject to a measured rehearsal and approved hosting capacity. Encrypted off-host DB/backups, WAL/PITR where needed, media backups and independently stored keys. Alert on age/failure; restore to a fresh isolated environment, verify row counts/constraints, representative orders/stock and private media, then measure elapsed time. A successful backup job is not restore evidence.

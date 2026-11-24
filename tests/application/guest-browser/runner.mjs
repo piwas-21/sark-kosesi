@@ -9,6 +9,10 @@ import { join, resolve } from "node:path";
 import { chromium } from "@playwright/test";
 import { availablePort } from "../ports.mjs";
 import {
+  checkCustomerEnrolment,
+  customerEnrolmentRoute,
+} from "./customer-enrolment.mjs";
+import {
   allowsBrowserCustomerList,
   checkAnonymousCustomerLists,
   checkCustomerLists,
@@ -30,7 +34,7 @@ import {
   exercisePendingCancellation,
   pendingCancellationPath,
 } from "./pending-cancellation.mjs";
-import { startGuestLinkSink } from "./smtp-sink.mjs";
+import { startGuestLinkSink, startVerificationSink } from "./smtp-sink.mjs";
 
 if (process.env.APP_ENV !== "test") throw new Error("Requires test mode");
 if (process.env.PGOPTIONS !== undefined)
@@ -117,6 +121,7 @@ const routes = [
   ["GET", /^\/api\/test\/customer\/linked-orders$/],
   ...customerListRoutes,
   customerLogoutRoute,
+  customerEnrolmentRoute,
 ];
 let origin = "";
 let server;
@@ -283,6 +288,8 @@ try {
     TEST_LOGIN_ORIGIN: origin,
     TEST_LOGIN_ADMISSION_KEY: randomBytes(32).toString("hex"),
     TEST_LOGIN_CSRF_TRANSPORT: "1",
+    TEST_VERIFICATION_ORIGIN: origin,
+    TEST_VERIFICATION_ADMISSION_KEY: randomBytes(32).toString("hex"),
     TEST_GUEST_LINK_REDEEM_TRANSPORT: "1",
     TEST_LINKED_ORDERS_TRANSPORT: "1",
     ...Object.fromEntries(customerListFlags.map((key) => [key, "1"])),
@@ -300,6 +307,8 @@ try {
         "TEST_LOGIN_ORIGIN",
         "TEST_LOGIN_ADMISSION_KEY",
         "TEST_LOGIN_CSRF_TRANSPORT",
+        "TEST_VERIFICATION_ORIGIN",
+        "TEST_VERIFICATION_ADMISSION_KEY",
         "TEST_GUEST_LINK_REDEEM_TRANSPORT",
         "TEST_LINKED_ORDERS_TRANSPORT",
         ...customerListFlags,
@@ -706,16 +715,21 @@ try {
     env,
   );
   const password = "synthetic horse battery staple";
-  const otherContext = await browser.newContext();
-  await otherContext.route("**/*", (route) => {
-    if (new URL(route.request().url()).origin === origin)
-      return route.continue();
-    blockedNetwork = true;
-    return route.abort();
-  });
-  const otherPage = await otherContext.newPage();
-  otherPage.on("request", (request) => outbound.push(request));
-  await otherPage.goto(origin);
+  const openIndependentPage = async () => {
+    const context = await browser.newContext();
+    await context.route("**/*", (route) => {
+      if (new URL(route.request().url()).origin === origin)
+        return route.continue();
+      blockedNetwork = true;
+      return route.abort();
+    });
+    const page = await context.newPage();
+    page.on("request", (request) => outbound.push(request));
+    await page.goto(origin);
+    return { context, page };
+  };
+  const { context: otherContext, page: otherPage } =
+    await openIndependentPage();
   const otherCall = (path, method, body, proof) =>
     callWith(otherPage, path, method, body, proof);
   const otherLogin = await callWith(otherPage, loginPath, "POST", {
@@ -917,6 +931,51 @@ try {
   });
   await listFixture("verify_customer_logout_browser_sessions");
   await otherContext.close();
+  const enrolmentFixture = (test, environment = env, options) =>
+    run(
+      "cargo",
+      [...testArgs, `guest_browser_enrolment::${test}`],
+      environment,
+      options,
+    );
+  const enrolled = await openIndependentPage();
+  let enrolmentProof;
+  try {
+    const verificationMailbox = await startVerificationSink();
+    try {
+      await enrolmentFixture(
+        "deliver_browser_enrolment_proof",
+        {
+          ...env,
+          GUEST_BROWSER_VERIFICATION_SMTP_PORT: String(
+            verificationMailbox.port,
+          ),
+        },
+        {
+          stdio: "ignore",
+          signal: AbortSignal.timeout(120000),
+          killSignal: "SIGKILL",
+        },
+      );
+      enrolmentProof = verificationMailbox.takeProof();
+    } finally {
+      await verificationMailbox.close();
+    }
+    await checkCustomerEnrolment({
+      call: (path, method, body, proof) =>
+        callWith(enrolled.page, path, method, body, proof),
+      context: enrolled.context,
+      origin,
+      proof: enrolmentProof,
+      verifyPristine: () =>
+        enrolmentFixture("verify_browser_enrolment_pristine"),
+      completePassword: () =>
+        enrolmentFixture("complete_browser_enrolment_password"),
+      verifyCustody: () => enrolmentFixture("verify_browser_enrolment_custody"),
+    });
+  } finally {
+    await enrolled.context.close();
+  }
   assert.equal(blockedNetwork, false);
   for (const request of outbound) {
     assert(
@@ -929,10 +988,11 @@ try {
     );
     assert(!request.url().includes(token));
     assert(!request.url().includes(proof));
+    assert(!request.url().includes(enrolmentProof));
   }
   await context.close();
   console.log(
-    "Synthetic Chromium guest checkout, guest-link delivery, order progress, pending cancellation, favourites, restock and logout passed.",
+    "Synthetic Chromium guest checkout, guest-link delivery, order progress, pending cancellation, favourites, restock, logout and verified enrolment passed.",
   );
 } finally {
   if (browser) await browser.close();

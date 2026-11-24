@@ -819,6 +819,12 @@ outcome stays unknown; replay cannot reopen it.
 An optional trusted in-process callback returns only accepted, explicit rejection
 or uncertain. An immutable durable row binds that classification to its exact
 earlier start without storing a mailbox, bearer, credentials or provider body.
+New rows also attest the SHA-256 digest of the ciphertext authenticated during
+that exact opening. The final record and historical inspection check the envelope
+binding. Legacy rows retain a separate provenance classification. Migration 0085
+preserves their existing evidence and requires the new authenticated digest
+for future inserts. Drain prior send callbacks and stop pre-0085 outcome
+writers before applying the schema.
 Recording happens after the callback, outside its I/O, and does not require the
 challenge to remain live. The database records the trusted caller's classification.
 Provider authentication, mailbox receipt and redemption each require their own
