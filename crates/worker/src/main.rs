@@ -11,11 +11,13 @@ mod payments;
 mod reversal_items;
 mod reversal_pages;
 mod staff_cancellation;
+mod staff_files;
 mod staff_handover;
 mod staff_input;
 mod staff_late_stock;
 mod staff_packing;
 mod staff_packing_input;
+mod staff_recovery;
 mod staff_refund_proposal;
 mod staff_reversal_review;
 
@@ -26,7 +28,7 @@ async fn main() -> Result<(), std::io::Error> {
     }
     let mode = mode()?;
     let subscriber = tracing_subscriber::fmt().json();
-    let staff_review_read = matches!(
+    let staff_private_report = matches!(
         mode,
         Mode::ReviewCancellation(_)
             | Mode::ReviewCancellationInbox(_)
@@ -34,8 +36,9 @@ async fn main() -> Result<(), std::io::Error> {
             | Mode::InspectHandoverEvidence(_)
             | Mode::ReviewLateStockInbox(_)
             | Mode::InspectRefundProposal(_)
+            | Mode::StaffRecovery { .. }
     );
-    if staff_review_read
+    if staff_private_report
         || matches!(
             mode,
             Mode::InspectPacking(_) | Mode::ReleasePacking { .. } | Mode::RecordPacking { .. }
@@ -46,7 +49,7 @@ async fn main() -> Result<(), std::io::Error> {
         subscriber.init();
     }
     // Read before any DB or provider configuration; never accept a token argument.
-    let staff_token = if staff_review_read
+    let staff_token = if staff_private_report
         || matches!(
             mode,
             Mode::ReviewReversalItem(_)
@@ -61,6 +64,10 @@ async fn main() -> Result<(), std::io::Error> {
     };
     let packing_input = match &mode {
         Mode::RecordPacking { path, .. } => Some(staff_packing_input::read(path)?),
+        _ => None,
+    };
+    let recovery_intent = match &mode {
+        Mode::StaffRecovery { action, path, .. } => Some(action.read(path)?),
         _ => None,
     };
     let limit = if mode == Mode::Expire {
@@ -144,6 +151,14 @@ async fn main() -> Result<(), std::io::Error> {
                 .as_ref()
                 .ok_or_else(|| std::io::Error::other("refund proposal inspection unavailable"))?;
             staff_refund_proposal::inspect(&pool, token, &proposal).await?
+        }
+        Mode::StaffRecovery { target, .. } => {
+            let token = staff_token
+                .as_ref()
+                .ok_or_else(|| std::io::Error::other("operator recovery unavailable"))?;
+            let intent = recovery_intent
+                .ok_or_else(|| std::io::Error::other("operator recovery input unavailable"))?;
+            staff_recovery::run(&pool, token, &target, intent).await?
         }
         Mode::InspectPacking(order) => {
             let token = staff_token

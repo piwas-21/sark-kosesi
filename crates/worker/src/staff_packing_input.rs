@@ -4,7 +4,6 @@ use serde::Deserialize;
 use std::io;
 
 // Covers the bounded 20 SKU lines and 32 x 64 component entries, including JSON syntax.
-#[cfg(unix)]
 const MAX_BYTES: u64 = 256 * 1024;
 
 #[derive(Deserialize)]
@@ -14,39 +13,10 @@ pub(super) struct PackingInput {
     pub packages: Vec<Vec<Component>>,
 }
 
-#[cfg(unix)]
 pub(super) fn read(path: &str) -> io::Result<PackingInput> {
-    use std::{
-        fs,
-        io::Read,
-        os::unix::fs::{MetadataExt, OpenOptionsExt},
-    };
     let unavailable = || io::Error::other("packing input unavailable");
-    let before = fs::symlink_metadata(path).map_err(|_| unavailable())?;
-    if !before.is_file() || before.len() > MAX_BYTES {
-        return Err(unavailable());
-    }
-    // A replaced FIFO cannot block the open; symlinks fail closed. Verify the
-    // opened descriptor still refers to the same regular file as the precheck.
-    let file = fs::OpenOptions::new()
-        .read(true)
-        .custom_flags(libc::O_NONBLOCK | libc::O_NOFOLLOW)
-        .open(path)
+    let bytes = crate::staff_files::read(path, MAX_BYTES, crate::staff_files::Visibility::Regular)
         .map_err(|_| unavailable())?;
-    let opened = file.metadata().map_err(|_| unavailable())?;
-    if !opened.is_file()
-        || opened.len() > MAX_BYTES
-        || (before.dev(), before.ino()) != (opened.dev(), opened.ino())
-    {
-        return Err(unavailable());
-    }
-    let mut bytes = Vec::new();
-    file.take(MAX_BYTES + 1)
-        .read_to_end(&mut bytes)
-        .map_err(|_| unavailable())?;
-    if u64::try_from(bytes.len()).map_err(|_| unavailable())? > MAX_BYTES {
-        return Err(unavailable());
-    }
     let input: PackingInput = serde_json::from_slice(&bytes).map_err(|_| unavailable())?;
     if !(1..=20).contains(&input.units.len())
         || !(1..=32).contains(&input.packages.len())
@@ -58,11 +28,6 @@ pub(super) fn read(path: &str) -> io::Result<PackingInput> {
         return Err(unavailable());
     }
     Ok(input)
-}
-
-#[cfg(not(unix))]
-pub(super) fn read(_: &str) -> io::Result<PackingInput> {
-    Err(io::Error::other("packing input unavailable"))
 }
 
 #[cfg(all(test, unix))]

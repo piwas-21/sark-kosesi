@@ -47,6 +47,15 @@ staff bearer input and a current recent-MFA `handover.record` grant. It returns
 submission and packing IDs, generation, time and packing release state. Actor,
 event and effect identifiers and evidence bytes and fingerprints stay private.
 
+The local/test late-stock retry and transient payment-resume commands use the
+same bounded staff bearer input, their respective unseeded `stock.recover` and
+`payment.reconcile` grants, and explicit confirmation. The intent file must be a
+bounded owner-only regular file. The worker opens it nonblocking, rejects symlinks
+and file replacement, and accepts one closed JSON object. Audit reasons stay out
+of arguments, reports and diagnostics. Provider credentials and provider requests
+are unnecessary for these decisions. A successful commit can precede output
+failure. Obtain the recorded result with the same intent and current authority.
+
 The local/test packing record and release commands use the same bounded
 non-terminal bearer input and recent-MFA warehouse guard. The record command
 reads a bounded closed JSON payload from a regular file, with nonblocking open

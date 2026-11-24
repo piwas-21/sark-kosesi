@@ -1,5 +1,5 @@
 //! Strict worker command and batch configuration parsing.
-use crate::{paid_parent, reversal_items, reversal_pages};
+use crate::{paid_parent, reversal_items, reversal_pages, staff_recovery};
 use commerce_infrastructure::payment_attempts::reversal_item_supervision::inbox::Cursor;
 
 #[derive(PartialEq, Eq)]
@@ -21,6 +21,11 @@ pub(super) enum Mode {
     InspectHandoverEvidence(String),
     ReviewLateStockInbox(Option<String>),
     InspectRefundProposal(String),
+    StaffRecovery {
+        action: staff_recovery::Action,
+        target: String,
+        path: String,
+    },
     InspectPacking(String),
     RecordPacking {
         order: String,
@@ -125,6 +130,19 @@ fn parse_mode(args: &[String]) -> Result<Mode, std::io::Error> {
                 target: target.clone(),
                 effect: effect.clone(),
             })
+        }
+        [argument, target, path, confirmation]
+            if confirmation == "--confirm"
+                && !path.is_empty()
+                && commerce_domain::order_stock::identifier(target) =>
+        {
+            staff_recovery::Action::from_flag(argument)
+                .map(|action| Mode::StaffRecovery {
+                    action,
+                    target: target.clone(),
+                    path: path.clone(),
+                })
+                .ok_or_else(|| std::io::Error::other("unsupported worker command"))
         }
         [argument] if argument == "--review-reversal-inbox" => Ok(Mode::ReviewReversalInbox(None)),
         [argument, timestamp, job] if argument == "--review-reversal-inbox" => {

@@ -390,7 +390,8 @@ redacted summary and no provider credential. No runtime key or scheduler is inst
 recovery now retains immutable full-checkpoint decisions and permits at most three
 lifetime resumes without resetting claim, poll or scan budgets. Fresh session/MFA,
 exact generation and confirmation protect every call, including receipt replay.
-A private original-attempt preflight validates bounded retained evidence without
+A local/test worker command records the same explicit resume without making a
+provider request. A private original-attempt preflight validates bounded retained evidence without
 provider access or job enrollment. Paid, ambiguous, capped and invalid-custody stops remain unresolved. Private
 callback-ID GETs now obtain exact-profile minimal evidence and use authenticated
 metadata only to locate and fully match the original frozen order/attempt/dispatch
@@ -427,8 +428,9 @@ An unseeded dedicated recent-MFA capability permits private bounded, validated
 case summaries. The local/test worker returns one validated case per call and
 a live cursor. Refresh to see earlier insertions.
 A separate private recent-MFA command allows an explicitly confirmed retry of
-one scarcity case generation. It retains the original review case and records a
-digest-bound allocation or a fresh still-scarce assessment. Release and prior
+one scarcity case generation. The local/test worker exposes this operation under
+its separate grant. It retains the original review case and records a digest-bound
+allocation or a fresh still-scarce assessment. Release and prior
 consumption cases stay stopped. Complete actual proxy/resource-limit/no-bypass
 and TLS/provider acceptance before public activation, remaining operator
 dispositions and separate order/fulfilment/refund/invoice transitions. A pure
