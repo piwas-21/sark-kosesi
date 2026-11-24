@@ -459,3 +459,10 @@ Evidence must bind the exact revision, synthetic fixture, authenticated scope an
 completed passive checks. Actual ingress, browser-driven authenticated security
 assessment and manual threat review remain P6 acceptance work even after a
 successful rehearsal; production stays disabled.
+
+The Dutch review storefront has a standalone synthetic browser rehearsal and a
+separate anonymous readback for the private candidate and exact public HTTPS
+hostname. Readback compares the served catalogue, prices, renditions and seller
+policies with supplied approved evidence. The final hostname still needs a
+verified supplier offer, approved Dutch product and policy records, candidate
+startup and public HTTPS readback before the dedicated Mollie review can resume.

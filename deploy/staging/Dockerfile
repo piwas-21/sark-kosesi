@@ -71,6 +71,7 @@ COPY --from=node-runtime /usr/local/LICENSE /usr/local/LICENSE
 COPY --from=web-build --chown=node:node /app/apps/web/.next/standalone ./
 COPY --from=web-build --chown=node:node /app/apps/web/.next/static ./apps/web/.next/static
 COPY --from=web-build --chown=node:node /app/apps/web/public ./apps/web/public
+COPY deploy/staging/web-health.mjs ./web-health.mjs
 ENV NEXT_TELEMETRY_DISABLED=1 HOSTNAME=0.0.0.0 PORT=3000
 USER node
 ENTRYPOINT ["node", "apps/web/server.js"]

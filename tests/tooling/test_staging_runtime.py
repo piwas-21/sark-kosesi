@@ -16,6 +16,7 @@ NODE_COPIES = {
     "COPY --from=node-runtime /usr/local/bin/node /usr/local/bin/node",
     "COPY --from=node-runtime /usr/local/LICENSE /usr/local/LICENSE",
 }
+WEB_HEALTH_COPY = "COPY deploy/staging/web-health.mjs ./web-health.mjs"
 EXPECTED_COPIES = {
     "api": {"COPY --from=rust-build /source/target/release/commerce-api /app/commerce-api"},
     "image-decoder": {
@@ -30,6 +31,7 @@ EXPECTED_COPIES = {
         "COPY --from=web-build --chown=node:node /app/apps/web/.next/standalone ./",
         "COPY --from=web-build --chown=node:node /app/apps/web/.next/static ./apps/web/.next/static",
         "COPY --from=web-build --chown=node:node /app/apps/web/public ./apps/web/public",
+        WEB_HEALTH_COPY,
     },
 }
 EXPECTED_ENTRYPOINTS = {
@@ -116,6 +118,8 @@ class StagingRuntime(unittest.TestCase):
             ),
             source.replace(RUNTIME_INPUTS[0] + "\n", ""),
             source.replace(RUNTIME_INPUTS[1] + "\n", ""),
+            source.replace(WEB_HEALTH_COPY + "\n", ""),
+            source.replace(WEB_HEALTH_COPY, "COPY deploy/staging/ ./"),
             source.replace(DEBIAN, "gcr.io/distroless/cc-debian13:nonroot"),
         ):
             self.assertNotEqual(changed, source)
