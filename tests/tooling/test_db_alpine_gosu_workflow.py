@@ -1,6 +1,7 @@
 """Boundary controls for the disposable Alpine Gosu workflow."""
 
 import os
+import re
 import subprocess
 import tempfile
 import unittest
@@ -67,6 +68,33 @@ class AlpineGosuWorkflowTests(unittest.TestCase):
         )
         self.assertIn('outcome=success\\n\' > "$evidence/scan-status.txt"', source)
         self.assertIn('outcome=success\\n\' > "$evidence/restore-status.txt"', source)
+
+    def test_scanner_failure_is_retained_in_alpine_artifact_evidence(self):
+        source = SCRIPT.read_text()
+        block = re.search(r"(?ms)^scan\(\) \{\n.*?^\}", source)
+        self.assertIsNotNone(block)
+        with tempfile.TemporaryDirectory() as directory:
+            mock = r"""
+docker() {
+    [ "$1" = run ] && [ "$2" = --pull=never ] || return 99
+    printf '%s\n' 'mock scanner diagnostic' >&2
+    return 43
+}
+scanner=mock-scanner
+scanner_args=()
+scratch="$evidence/scratch"
+"""
+            result = subprocess.run(
+                ["bash", "-c", mock + block.group() + "\nscan stock --image-src remote"],
+                env={"PATH": os.defpath, "evidence": directory},
+                capture_output=True,
+                text=True,
+                check=False,
+            )
+            self.assertEqual(result.returncode, 43)
+            self.assertEqual(result.stderr, "")
+            log = Path(directory) / "stock-scan.log"
+            self.assertEqual(log.read_text(), "mock scanner diagnostic\n")
 
     def test_non_hosted_request_never_invokes_docker_or_creates_outputs(self):
         with tempfile.TemporaryDirectory() as directory:

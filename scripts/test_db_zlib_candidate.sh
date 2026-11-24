@@ -31,6 +31,7 @@ export DOCKER_CONFIG="$scratch/docker-config"
 image="local/$prefix:${ZLIB_SOURCE_REVISION}"
 base='mirror.gcr.io/library/postgres@sha256:c7fedce47eff6a78cb35dad6b627f0d684107f75ab15c0870e40c093766ba452'
 scanner='mirror.gcr.io/aquasec/trivy@sha256:85e87be1a96459c38a4eea47dc64eb2d342bb14cd4b4cef96adcf6ff03378b7c'
+scanner_config='sha256:c0a2b004a57047aff2bc7a8b87d693d368ba40cd10ef9bb1213345f043f416dd'
 source_id=''
 target_id=''
 copy_id=''
@@ -51,9 +52,11 @@ cleanup() {
 trap cleanup EXIT
 
 printf 'source_revision=%s\nbase=%s\nscanner=%s\n' "$ZLIB_SOURCE_REVISION" "$base" "$scanner" > "$evidence/identity.txt"
-base_id=$(sh ops/db-zlib-candidate/pull_verified_base.sh "$scratch/base-pull.log") || fail 'base pull or identity verification failed'
+stage=base_pull
+base_id=$(sh ops/db-zlib-candidate/pull_verified_base.sh "$scratch/base-pull.log" \
+  2> "$evidence/base-pull-status.txt") || fail 'base pull or identity verification failed'
 [[ "$base_id" == sha256:3cccc725163a95947178f4da5e9bf16add75cb286170ac5a2cd2f6513534955d ]] || fail 'unexpected base image identity'
-printf '%s\n' 'stage=base_pull category=success exit=0' > "$evidence/base-pull-status.txt"
+stage=build
 mkdir "$scratch/build-context"
 cp ops/db-zlib-candidate/Dockerfile "$scratch/build-context/Dockerfile"
 cp ops/db-zlib-candidate/sanitize_apt_failure.sh "$scratch/build-context/sanitize_apt_failure.sh"
@@ -145,6 +148,8 @@ if [[ "$profile" == debian-gosu ]]; then
   python3 scripts/check_alpine_gosu_image.py --debian "$scratch/candidate.tar" "$evidence/stock-config.json" "$candidate_id" "$evidence"
 fi
 stage=paired_scans
+sh ops/db-zlib-candidate/pull_verified_base.sh --image "$scanner" "$scanner_config" "$scratch/scanner-pull.log" \
+  > /dev/null 2> "$evidence/scanner-pull-status.txt" || fail 'verified scanner pull failed'
 printf '{}\n' > "$scratch/empty.yml"
 : > "$scratch/empty.ignore"
 scanner_args=(--config /scratch/empty.yml --cache-dir /scratch/cache image --format json
@@ -154,7 +159,7 @@ scanner_args=(--config /scratch/empty.yml --cache-dir /scratch/cache image --for
 scan() {
   local label=$1
   shift
-  local -a command=(docker run --rm --read-only --cap-drop=ALL --security-opt=no-new-privileges \
+  local -a command=(docker run --pull=never --rm --read-only --cap-drop=ALL --security-opt=no-new-privileges \
     --user "$(id -u):$(id -g)" --tmpfs '/tmp:rw,nosuid,nodev' \
     --mount "type=bind,src=$scratch,dst=/scratch" "$scanner" "${scanner_args[@]}" "$@")
   printf '%q ' "${command[@]}" > "$evidence/$label-command.txt"
