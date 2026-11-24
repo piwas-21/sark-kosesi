@@ -2,6 +2,40 @@ use super::*;
 fn args(values: &[&str]) -> Vec<String> {
     values.iter().map(|value| (*value).into()).collect()
 }
+
+#[test]
+fn staff_order_reads_accept_only_exact_commands_and_order_identifiers() {
+    let order = "0123456789abcdef0123456789abcdef";
+    for (command, expected) in [
+        (
+            "--review-cancellation",
+            Mode::ReviewCancellation(order.into()),
+        ),
+        (
+            "--review-cancellation-inbox",
+            Mode::ReviewCancellationInbox(Some(order.into())),
+        ),
+        (
+            "--inspect-cancellation-packing",
+            Mode::InspectCancellationPacking(order.into()),
+        ),
+        (
+            "--inspect-handover-evidence",
+            Mode::InspectHandoverEvidence(order.into()),
+        ),
+    ] {
+        assert!(parse_mode(&args(&[command, order])).is_ok_and(|mode| mode == expected));
+        assert!(parse_mode(&args(&[command, "bad"])).is_err());
+        assert!(parse_mode(&args(&[command, order, "extra"])).is_err());
+    }
+    assert!(matches!(
+        parse_mode(&args(&["--review-cancellation-inbox"])),
+        Ok(Mode::ReviewCancellationInbox(None))
+    ));
+    assert!(parse_mode(&args(&["--inspect-handover-evidence"])).is_err());
+    assert!(parse_mode(&args(&["--unknown-order-read", order])).is_err());
+}
+
 #[test]
 fn reversal_item_commands_require_exact_valid_arguments() {
     let id = "0123456789abcdef0123456789abcdef";

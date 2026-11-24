@@ -1,14 +1,23 @@
 """Source controls for the staging runtime layers; not image inspection."""
 
 import re
+import subprocess
+import tempfile
 import unittest
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
 DOCKERFILE = ROOT / "deploy/staging/Dockerfile"
 NODE = "node:24.22.3-bookworm-slim@sha256:dc26ae92c9fb15cf6b1d63e20f0944b2efe0f115b20e00be48fb23fceb061c54"
-DEBIAN = "gcr.io/distroless/cc-debian13:nonroot@sha256:cb87acc574abe719b6e5c547384defa2f7b1f24af9605d3f618cf852495d8be2"
+DEBIAN_CC = "gcr.io/distroless/cc-debian13:nonroot@sha256:cb87acc574abe719b6e5c547384defa2f7b1f24af9605d3f618cf852495d8be2"
+DEBIAN = "gcr.io/distroless/base-nossl-debian13:nonroot@sha256:4006ac92504be607b70de01d1f64f38288c69fcd8faa820f6d3aed266ea32ac5"
+LIBRARY_HELPER = ROOT / "deploy/staging/copy-runtime-libraries.sh"
+LIBRARY_BUILD = [
+    "COPY deploy/staging/copy-runtime-libraries.sh /copy-runtime-libraries.sh",
+    "RUN --network=none --mount=type=bind,from=runtime-library-source,target=/donor sh /copy-runtime-libraries.sh /donor /runtime-libraries",
+]
 RUNTIME_INPUTS = [
+    "COPY --from=runtime-libraries /runtime-libraries/ /",
     "COPY --from=node-runtime /etc/passwd /etc/passwd",
     "COPY --from=node-runtime /etc/group /etc/group",
 ]
@@ -61,6 +70,10 @@ def valid_runtime(source):
     ]:
         return False
     if stages.get("node-runtime") != [NODE, []]:
+        return False
+    if stages.get("runtime-library-source") != [DEBIAN_CC, []]:
+        return False
+    if stages.get("runtime-libraries") != ["node-runtime", LIBRARY_BUILD]:
         return False
     if stages.get("runtime") != [DEBIAN, RUNTIME_INPUTS]:
         return False
@@ -120,7 +133,87 @@ class StagingRuntime(unittest.TestCase):
             source.replace(RUNTIME_INPUTS[1] + "\n", ""),
             source.replace(WEB_HEALTH_COPY + "\n", ""),
             source.replace(WEB_HEALTH_COPY, "COPY deploy/staging/ ./"),
-            source.replace(DEBIAN, "gcr.io/distroless/cc-debian13:nonroot"),
+            source.replace(RUNTIME_INPUTS[2] + "\n", ""),
+            source.replace(DEBIAN + " AS runtime", DEBIAN_CC + " AS runtime"),
+            source.replace(DEBIAN_CC, "gcr.io/distroless/cc-debian13:nonroot"),
+            source.replace("--network=none", "--network=default"),
+            source.replace("from=runtime-library-source,target", "from=node-runtime,target"),
         ):
             self.assertNotEqual(changed, source)
             self.assertFalse(valid_runtime(changed))
+
+
+class RuntimeLibraryOverlay(unittest.TestCase):
+    def setUp(self):
+        temporary = tempfile.TemporaryDirectory()
+        self.addCleanup(temporary.cleanup)
+        self.donor = Path(temporary.name) / "donor"
+        self.output = Path(temporary.name) / "output"
+        self.expected = set()
+        self.cc_library = "usr/lib/aarch64-linux-gnu/libstdc++.so.6"
+        gomp_library = "usr/lib/aarch64-linux-gnu/libgomp.so.1"
+        packages = {
+            "gcc-14-base": "usr/share/doc/gcc-14-base/copyright",
+            "libgcc-s1": "usr/lib/aarch64-linux-gnu/libgcc_s.so.1",
+            "libstdc++6": self.cc_library + ".0.33",
+            "libgomp1": gomp_library + ".0.0",
+        }
+        for package, payload in packages.items():
+            self.write(payload, "synthetic package file\n")
+            status = f"var/lib/dpkg/status.d/{package}"
+            self.write(status, f"Package: {package}\n")
+            self.write(status + ".md5sums", f"800b2be505e9eaa00116f6917ec97b2f  {payload}\n")
+            if package != "gcc-14-base":
+                self.link(f"usr/share/doc/{package}", "gcc-14-base")
+        self.link(self.cc_library, "libstdc++.so.6.0.33")
+        self.link(gomp_library, "libgomp.so.1.0.0")
+        self.write("usr/lib/aarch64-linux-gnu/libssl.so.3", "unrelated library", selected=False)
+        self.write("var/lib/dpkg/status.d/libssl3t64", "unrelated status", selected=False)
+
+    def write(self, name, content, *, selected=True):
+        entry = self.donor / name
+        entry.parent.mkdir(parents=True, exist_ok=True)
+        entry.write_text(content)
+        if selected:
+            self.expected.add(name)
+
+    def link(self, name, target):
+        entry = self.donor / name
+        entry.parent.mkdir(parents=True, exist_ok=True)
+        entry.symlink_to(target)
+        self.expected.add(name)
+
+    def copy(self):
+        return subprocess.run(
+            ["sh", str(LIBRARY_HELPER), str(self.donor), str(self.output)],
+            capture_output=True,
+            timeout=10,
+        )
+
+    def test_copies_complete_packages_and_soname_links_only(self):
+        result = self.copy()
+        self.assertEqual(result.returncode, 0, result.stderr)
+        actual = {
+            entry.relative_to(self.output).as_posix()
+            for entry in self.output.rglob("*")
+            if entry.is_file() or entry.is_symlink()
+        }
+        self.assertEqual(actual, self.expected)
+        for name in self.expected:
+            source, target = self.donor / name, self.output / name
+            if source.is_symlink():
+                self.assertEqual(source.readlink(), target.readlink())
+            else:
+                self.assertEqual(source.read_bytes(), target.read_bytes())
+
+    def test_rejects_integrity_mismatch(self):
+        (self.donor / (self.cc_library + ".0.33")).write_text("corrupted package file")
+        self.assertNotEqual(self.copy().returncode, 0)
+
+    def test_rejects_missing_soname(self):
+        (self.donor / self.cc_library).unlink()
+        self.assertNotEqual(self.copy().returncode, 0)
+
+    def test_rejects_missing_metadata(self):
+        (self.donor / "var/lib/dpkg/status.d/libgcc-s1").unlink()
+        self.assertNotEqual(self.copy().returncode, 0)

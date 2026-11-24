@@ -453,6 +453,11 @@ A private evidence journal records bounded opaque-byte fingerprints against an
 active whole packing assertion without blocking its later release. A staff claim
 and digest do not verify carrier or physical handover. Evidence retention,
 correction, actual handover, delivery and fulfilment policies remain open.
+The local/test worker exposes exact cancellation, a one-request inbox,
+cancellation with packing assertions, and historical handover submissions to
+staff holding the required recent-MFA capabilities. These reads give operators
+the records needed to begin disposition review. Staff issuance, disposition and
+carrier/warehouse acceptance still need their own implementation and evidence.
 
 The isolated staging-config passive preview workflow is a bounded P6 rehearsal.
 Evidence must bind the exact revision, synthetic fixture, authenticated scope and

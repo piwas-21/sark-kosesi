@@ -482,6 +482,28 @@ staff identity; a changed intent or actor conflicts. This records a release of a
 assertion only; it does not establish physical unpacking, restock or permission
 to dispatch. Staff session issuance and production operator access remain absent.
 
+## Private cancellation and handover review
+
+Use these reads in an isolated local/test environment with the same
+32-byte non-terminal session input and isolated `DATABASE_URL` as packing
+inspection. Keep stdout reports private. Each command writes one JSON object.
+
+| Command                                          | Current staff grants                      | Report                                                                                |
+| ------------------------------------------------ | ----------------------------------------- | ------------------------------------------------------------------------------------- |
+| `--review-cancellation <order-id>`               | `cancellation.review`                     | `request` contains the order ID and recorded time, or is null when no request exists. |
+| `--review-cancellation-inbox [<after-order-id>]` | `cancellation.review`                     | One validated `request`, or null at the end. Pass the returned `orderId` to continue. |
+| `--inspect-cancellation-packing <order-id>`      | `cancellation.review`, `warehouse.manage` | `evidence` contains the request and packing view, or is null when no request exists.  |
+| `--inspect-handover-evidence <order-id>`         | `handover.record`                         | `submissions` contains IDs, generation, recorded time and packing release status.     |
+
+Run these arguments with `commerce-worker`. The inbox cursor is live. Restart
+without a cursor to see requests added before the current position. In the
+combined view, `packing.status` is `unavailable` when the source cannot be
+established. A `validated` view includes the expected `lines` and `history`.
+An empty history means no packing assertions were recorded for that source.
+Handover submissions remain visible after release of the linked packing
+assertion. Confirmation of carrier handover, cancellation disposition and
+physical fulfilment requires separate evidence.
+
 ## Private callback supervision
 
 `cargo run --locked -p commerce-worker -- --reconcile-callbacks` runs one bounded

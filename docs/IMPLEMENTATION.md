@@ -330,6 +330,10 @@ full workload bounds and operational acceptance remain separate.
    view holds both cancellation-review and warehouse grants, claims the same
    original attempt and revalidates packing assertions. Missing source remains
    unavailable rather than proof of an empty or unshipped order.
+   The local/test worker exposes the exact request, cursor and combined reads
+   through the same held recent-MFA grants and bounded session input. Its
+   reports preserve the distinction between absent intent, unavailable packing
+   evidence and validated empty assertion history.
    Finish post-dispatch disposition, redemption disposition, lifecycle/payment
    transitions and retention before public checkout. Seller and legal facts
    remain required trusted configuration.
@@ -561,8 +565,10 @@ separate work.
 A private recent-MFA submission records a fingerprint of bounded operator-supplied
 opaque purported handover evidence against one exact active whole packing record.
 Releases remain allowed, and authorized exact replay and inspection retain the
-historical association. This is no physical or carrier verification. Evidence
-retention, operator access, correction, real handover and delivery remain open.
+historical association. The local/test worker reads validated submissions with
+the same current grant and reports the linked packing release state. Evidence
+retention, live operator access, correction, carrier and physical handover
+verification, and delivery remain open.
 
 Trusted whole-basket reservation primitives now provide immutable manifests,
 exact fresh child bindings and aggregated component claims in one transaction.

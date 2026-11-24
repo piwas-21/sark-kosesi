@@ -42,6 +42,11 @@ current authority and remain available after release. No provider call, customer
 exposure, financial, stock or fulfilment action follows. Document storage, retention,
 verification and operational access require separate decisions.
 
+The local/test handover inspection command uses the same bounded non-terminal
+staff bearer input and a current recent-MFA `handover.record` grant. It returns
+submission and packing IDs, generation, time and packing release state. Actor,
+event and effect identifiers and evidence bytes and fingerprints stay private.
+
 The local/test packing record and release commands use the same bounded
 non-terminal bearer input and recent-MFA warehouse guard. The record command
 reads a bounded closed JSON payload from a regular file, with nonblocking open
@@ -405,6 +410,10 @@ exact-order evidence view holds both the review and warehouse grants under one
 staff session and the original attempt through both validations. Missing packing
 source remains unavailable, and damaged source fails closed; the returned
 assertions grant no hold, dispatch or disposition authority.
+The local/test worker exposes these three reads using the bounded
+non-terminal staff bearer input and existing grants through each validation.
+It returns minimal closed JSON and uses fixed errors when the source or
+authority cannot be established.
 
 Private cancellation uses the same guest and account authority as the order.
 Cancellation and admission share a basket claim; cancellation and dispatch share

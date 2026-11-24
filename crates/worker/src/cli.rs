@@ -15,6 +15,10 @@ pub(super) enum Mode {
     EnrollReversalItem(reversal_items::Enrollment),
     InspectReversalItem(String),
     ReviewReversalItem(String),
+    ReviewCancellation(String),
+    ReviewCancellationInbox(Option<String>),
+    InspectCancellationPacking(String),
+    InspectHandoverEvidence(String),
     InspectPacking(String),
     RecordPacking {
         order: String,
@@ -31,6 +35,19 @@ pub(super) enum Mode {
     InspectReversal(String),
     InspectPaidParent(paid_parent::Inspection),
     InspectPaidParentSet(String),
+}
+
+fn staff_order_read(command: &str, order: &str) -> Option<Mode> {
+    if !commerce_domain::order_stock::identifier(order) {
+        return None;
+    }
+    Some(match command {
+        "--review-cancellation" => Mode::ReviewCancellation(order.to_owned()),
+        "--review-cancellation-inbox" => Mode::ReviewCancellationInbox(Some(order.to_owned())),
+        "--inspect-cancellation-packing" => Mode::InspectCancellationPacking(order.to_owned()),
+        "--inspect-handover-evidence" => Mode::InspectHandoverEvidence(order.to_owned()),
+        _ => return None,
+    })
 }
 
 fn parse_mode(args: &[String]) -> Result<Mode, std::io::Error> {
@@ -66,6 +83,9 @@ fn parse_mode(args: &[String]) -> Result<Mode, std::io::Error> {
             if argument == "--review-reversal-item" && reversal_pages::identifier(job) =>
         {
             Ok(Mode::ReviewReversalItem(job.clone()))
+        }
+        [argument] if argument == "--review-cancellation-inbox" => {
+            Ok(Mode::ReviewCancellationInbox(None))
         }
         [argument, order]
             if argument == "--inspect-packing"
@@ -127,6 +147,8 @@ fn parse_mode(args: &[String]) -> Result<Mode, std::io::Error> {
         {
             Ok(Mode::InspectPaidParentSet(attempt.clone()))
         }
+        [argument, order] => staff_order_read(argument, order)
+            .ok_or_else(|| std::io::Error::other("unsupported worker command")),
         _ => Err(std::io::Error::other("unsupported worker command")),
     }
 }

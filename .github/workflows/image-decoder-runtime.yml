@@ -11,6 +11,7 @@ on:
       - crates/**
       - migrations/**
       - deploy/staging/Dockerfile
+      - deploy/staging/copy-runtime-libraries.sh
       - deploy/staging/compose.yml
       - deploy/staging/image-decoder.compose.yml
 permissions: {}
