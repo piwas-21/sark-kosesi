@@ -69,32 +69,74 @@ class AlpineGosuWorkflowTests(unittest.TestCase):
         self.assertIn('outcome=success\\n\' > "$evidence/scan-status.txt"', source)
         self.assertIn('outcome=success\\n\' > "$evidence/restore-status.txt"', source)
 
-    def test_scanner_failure_is_retained_in_alpine_artifact_evidence(self):
+    def test_scanner_artifact_keeps_only_fixed_outcomes_and_exit_codes(self):
         source = SCRIPT.read_text()
         block = re.search(r"(?ms)^scan\(\) \{\n.*?^\}", source)
         self.assertIsNotNone(block)
-        with tempfile.TemporaryDirectory() as directory:
-            mock = r"""
+        mock = r"""
+set -euo pipefail
 docker() {
     [ "$1" = run ] && [ "$2" = --pull=never ] || return 99
-    printf '%s\n' 'mock scanner diagnostic' >&2
-    return 43
+    printf '%s\n' "$MOCK_DIAGNOSTIC" >&2
+    return "$MOCK_EXIT"
 }
 scanner=mock-scanner
-scanner_args=()
-scratch="$evidence/scratch"
+scanner_args=(--format json)
 """
-            result = subprocess.run(
-                ["bash", "-c", mock + block.group() + "\nscan stock --image-src remote"],
-                env={"PATH": os.defpath, "evidence": directory},
-                capture_output=True,
-                text=True,
-                check=False,
-            )
-            self.assertEqual(result.returncode, 43)
-            self.assertEqual(result.stderr, "")
-            log = Path(directory) / "stock-scan.log"
-            self.assertEqual(log.read_text(), "mock scanner diagnostic\n")
+        for label, code, diagnostic, category in (
+            ("stock", 0, "scanner complete", "success"),
+            ("stock", 125, "mirror.gcr.io: toomanyrequests:", "mirror_rate_limit"),
+            (
+                "stock",
+                43,
+                "https://mirror.gcr.io/v2/ returned 429 Too Many Requests",
+                "mirror_rate_limit",
+            ),
+            ("candidate", 43, "https://mirror.gcr.io/v2/ returned 403 Forbidden", "generic_exit"),
+            (
+                "stock",
+                43,
+                "mirror.gcr.io configured\nhttps://other.test/ status: 429",
+                "generic_exit",
+            ),
+            ("stock", 43, "https://mirror.gcr.io.other.test/ status: 429", "generic_exit"),
+        ):
+            with self.subTest(diagnostic=diagnostic), tempfile.TemporaryDirectory() as directory:
+                evidence = Path(directory) / "evidence"
+                scratch = Path(directory) / "scratch"
+                evidence.mkdir()
+                scratch.mkdir()
+                raw = (
+                    diagnostic
+                    + "\nAuthorization: Bearer private-auth-fixture ?sig=private-url-fixture"
+                )
+                result = subprocess.run(
+                    ["bash", "-c", mock + block.group() + f"\nscan {label}"],
+                    env={
+                        "PATH": os.defpath,
+                        "evidence": str(evidence),
+                        "scratch": str(scratch),
+                        "MOCK_EXIT": str(code),
+                        "MOCK_DIAGNOSTIC": raw,
+                    },
+                    capture_output=True,
+                    text=True,
+                    check=False,
+                )
+                self.assertEqual(result.returncode, code, result.stderr)
+                self.assertEqual((result.stdout, result.stderr), ("", ""))
+                self.assertEqual(
+                    sorted(path.name for path in evidence.iterdir()),
+                    [f"{label}-command.txt", f"{label}-scan-status.txt"],
+                )
+                self.assertEqual(
+                    (evidence / f"{label}-scan-status.txt").read_text(),
+                    f"category={category} exit={code}\n",
+                )
+                self.assertNotIn("private-", (evidence / f"{label}-command.txt").read_text())
+                log = scratch / f"{label}-scan.log"
+                self.assertEqual(log.read_text(), raw + "\n")
+                self.assertEqual(log.stat().st_mode & 0o077, 0)
 
     def test_non_hosted_request_never_invokes_docker_or_creates_outputs(self):
         with tempfile.TemporaryDirectory() as directory:

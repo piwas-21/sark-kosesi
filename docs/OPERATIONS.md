@@ -835,11 +835,11 @@ controls for the targeted zlib and Gosu advisories. Raw inventories and every
 finding delta stay in the artifact. Release review still requires separate
 disposition of residual or new findings.
 
-The Debian and Alpine Gosu experiments retry an explicit mirror rate limit
-during the verified PostgreSQL and Trivy image pulls. They keep the same pinned
-AMD64 references and check the expected image identities after a successful
-pull. Exhausted retries or any other pull failure still fail the experiment.
-The Alpine artifact retains scanner diagnostics when a scan fails.
+The hosted database checks retry explicit mirror rate limits during verified
+image pulls and registry evidence reads. They keep the pinned AMD64 references
+and verify the same image identities and digests. Exhausted retries and other
+failures still fail the experiment. The Alpine artifact retains a fixed
+category and exit status for each scan.
 
 An isolated base-to-candidate restore must preserve default and explicit C
 collation probes, the synthetic stock receipt read and idempotent replay,

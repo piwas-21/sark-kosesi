@@ -128,13 +128,29 @@ scanner_args=(--config /scratch/empty.yml --cache-dir /scratch/cache image --for
   --show-suppressed --exit-code 0 --ignorefile /scratch/empty.ignore --platform linux/amd64)
 scan() {
   local label=$1
+  local log="$scratch/$label-scan.log" category=success rc=0
   shift
   local -a command=(docker run --pull=never --rm --read-only --cap-drop=ALL --security-opt=no-new-privileges \
     --user "$(id -u):$(id -g)" --tmpfs '/tmp:rw,nosuid,nodev' \
     --mount "type=bind,src=$scratch,dst=/scratch" "$scanner" "${scanner_args[@]}" "$@")
   printf '%q ' "${command[@]}" > "$evidence/$label-command.txt"
   printf '\n' >> "$evidence/$label-command.txt"
-  "${command[@]}" > "$evidence/$label-scan.log" 2>&1
+  if (umask 077 && "${command[@]}" > "$log" 2>&1); then
+    :
+  else
+    rc=$?
+    category=generic_exit
+    if LC_ALL=C awk '
+      { line = tolower($0) }
+      line ~ /(^|[^[:alnum:]._-])mirror[.]gcr[.]io([:\/[:space:]]|$)/ &&
+      line ~ /(^|[^[:alnum:]_])toomanyrequests:|(^|[^[:digit:]])429[[:space:]]+too many requests|status( code)?:?[[:space:]]+429([^[:digit:]]|$)/ { quota = 1 }
+      END { exit !quota }
+    ' "$log" 2>/dev/null; then
+      category=mirror_rate_limit
+    fi
+  fi
+  printf 'category=%s exit=%s\n' "$category" "$rc" > "$evidence/$label-scan-status.txt" || return 1
+  return "$rc"
 }
 scan stock --image-src remote --output /scratch/stock-report.json "$stock" || fail 'stock scan failed'
 cp "$scratch/cache/db/metadata.json" "$evidence/db-metadata.json"

@@ -7,6 +7,7 @@ import os
 import re
 import subprocess
 import sys
+import time
 import urllib.error
 import urllib.request
 from datetime import UTC, datetime
@@ -44,11 +45,15 @@ def get_registry(repo, kind, reference):
     request = urllib.request.Request(
         f"https://{REGISTRY}/v2/{repo}/{kind}/{reference}", headers={"Accept": ACCEPT}
     )
-    try:
-        with urllib.request.urlopen(request, timeout=60) as response:
-            return response.read()
-    except urllib.error.HTTPError as error:
-        raise RegistryFailure(repo, kind, reference, error.code) from None
+    for delay in (15, 30, 0):
+        try:
+            with urllib.request.urlopen(request, timeout=60) as response:
+                return response.read()
+        except urllib.error.HTTPError as error:
+            error.close()
+            if error.code != 429 or not delay:
+                raise RegistryFailure(repo, kind, reference, error.code) from None
+            time.sleep(delay)
 
 
 def capture_registry_identity(output, repo, index_digest, platform_digest, prefix):
