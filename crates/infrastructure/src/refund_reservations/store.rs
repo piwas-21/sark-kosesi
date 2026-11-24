@@ -1,4 +1,19 @@
 use super::*;
+
+pub(super) async fn attempt_for_order(
+    tx: &mut Transaction<'_, Postgres>,
+    order: &str,
+) -> Result<String, RefundError> {
+    use crate::order_stock::SettlementError;
+    crate::order_stock::source::attempt(tx, order)
+        .await
+        .map_err(|error| match error {
+            SettlementError::NotFound => RefundError::Unavailable,
+            SettlementError::Database => RefundError::Database,
+            _ => RefundError::InvalidStoredData,
+        })
+}
+
 #[derive(sqlx::FromRow)]
 struct Row {
     id: String,

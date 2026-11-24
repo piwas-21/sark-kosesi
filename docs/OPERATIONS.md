@@ -526,7 +526,7 @@ Handover submissions remain visible after release of the linked packing
 assertion. Confirmation of carrier handover, cancellation disposition and
 physical fulfilment requires separate evidence.
 
-## Private late-stock and refund proposal review
+## Private late-stock review and retry
 
 Use `commerce-worker --review-late-stock-inbox [<after-case-id>]` in an
 isolated local/test environment with a recent-MFA `stock.review` staff session.
@@ -544,6 +544,39 @@ its internal decision and case IDs, generation, timestamp, replay flag and eithe
 `still_scarce` or `allocated` with an internal allocation ID. An exact retry
 returns the recorded outcome. A new assessment needs its own confirmation and
 next generation. Release and prior consumption cases remain stopped.
+
+## Private refund preparation and review
+
+In isolated local/test, run `commerce-worker --inspect-refund-source <order-id>
+<reservation|proposal>` with the same bounded 32-byte staff session input.
+The reservation phase requires a recent-MFA `refund.prepare` session and returns
+the order and received `recognitionId`. The proposal phase requires a
+recent-MFA `refund.execution.prepare` session and includes `throughObservation`.
+`source: null` means there is no current received source for the order. A damaged
+source or denied lookup returns a fixed error. Collect each phase's own binding
+before confirming its intent. New observations can make a prior binding stale.
+
+Run `commerce-worker --reserve-refund <order-id> <private-intent-file> --confirm`
+under `refund.prepare`. The file contains `expectedRecognitionId`, `effectKey`,
+`lines`, `shippingGrossMinor` and `reason`. Supply the requested gross EUR cents
+for 1–20 line objects with `sku` and `grossMinor`, plus the shipping gross cents.
+The receipt contains the reservation ID, generation, timestamp, replay flag and
+validated allocation in EUR cents.
+
+Run `commerce-worker --propose-refund <order-id> <private-intent-file> --confirm`
+under `refund.execution.prepare`. Supply `reservationId`, `expectedRecognitionId`,
+`expectedThroughObservation`, `effectKey` and `reason`. The command prepares one
+test-mode proposal for the exact reservation. The receipt contains its proposal,
+order and reservation IDs, timestamp, replay flag and validated EUR allocation.
+
+Each file is an owner-only regular JSON object of at most 8 KiB. Use one effect
+key of 1–128 ASCII letters, digits or hyphens per confirmed operation. Keep the
+files, reasons and reports private. To recover a lost receipt, retry the same
+file, effect key and staff identity under current authority. Obtain a fresh
+binding and confirmation for new intent if the source changed before commit.
+Reservation and proposal preparation record internal custody. Refund execution,
+provider reconciliation, credits and restocking require separate evidence and
+authorization.
 
 Use `commerce-worker --inspect-refund-proposal <proposal-id>` with a
 recent-MFA `refund.execution.prepare` session and the same private input.

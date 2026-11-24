@@ -18,6 +18,7 @@ mod staff_late_stock;
 mod staff_packing;
 mod staff_packing_input;
 mod staff_recovery;
+mod staff_refund_preparation;
 mod staff_refund_proposal;
 mod staff_reversal_review;
 
@@ -36,6 +37,8 @@ async fn main() -> Result<(), std::io::Error> {
             | Mode::InspectHandoverEvidence(_)
             | Mode::ReviewLateStockInbox(_)
             | Mode::InspectRefundProposal(_)
+            | Mode::InspectRefundSource { .. }
+            | Mode::PrepareRefund { .. }
             | Mode::StaffRecovery { .. }
     );
     if staff_private_report
@@ -68,6 +71,10 @@ async fn main() -> Result<(), std::io::Error> {
     };
     let recovery_intent = match &mode {
         Mode::StaffRecovery { action, path, .. } => Some(action.read(path)?),
+        _ => None,
+    };
+    let refund_intent = match &mode {
+        Mode::PrepareRefund { action, path, .. } => Some(action.read(path)?),
         _ => None,
     };
     let limit = if mode == Mode::Expire {
@@ -151,6 +158,20 @@ async fn main() -> Result<(), std::io::Error> {
                 .as_ref()
                 .ok_or_else(|| std::io::Error::other("refund proposal inspection unavailable"))?;
             staff_refund_proposal::inspect(&pool, token, &proposal).await?
+        }
+        Mode::InspectRefundSource { order, phase } => {
+            let token = staff_token
+                .as_ref()
+                .ok_or_else(|| std::io::Error::other("refund preparation source unavailable"))?;
+            staff_refund_preparation::inspect(&pool, token, &order, phase).await?
+        }
+        Mode::PrepareRefund { order, .. } => {
+            let token = staff_token
+                .as_ref()
+                .ok_or_else(|| std::io::Error::other("refund preparation unavailable"))?;
+            let intent = refund_intent
+                .ok_or_else(|| std::io::Error::other("refund preparation input unavailable"))?;
+            staff_refund_preparation::run(&pool, token, &order, intent).await?
         }
         Mode::StaffRecovery { target, .. } => {
             let token = staff_token

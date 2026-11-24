@@ -164,6 +164,9 @@ reversal reconciliation, reservation disposition and dispatch custody remain ope
 Private exact proposal inspection now validates historical source and event custody
 under current finance authority. The local/test worker reports the validated
 historical allocation in integer EUR cents for authorized operator review.
+Finance staff can obtain each phase's current source binding and separately
+confirm a reservation or test-mode proposal through private local/test commands.
+Provider execution, reconciliation and reservation disposition remain open.
 A separate private owner request after payment dispatch records pending cancellation
 intent against the exact original start. Order, payment, stock and packing state
 remain intact. Private staff inspection now validates that historical request

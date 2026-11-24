@@ -486,6 +486,11 @@ full workload bounds and operational acceptance remain separate.
    allocation, original profile-scoped payment and current received recognition
    with its observation watermark. Exact authorized retries return history. This
    proposal supplies no net balance or permission to contact the provider.
+   The local/test worker exposes both preparation operations separately using
+   owner-only intent files. Each phase's recent-MFA grant can inspect the current
+   received recognition for the exact order, with the observation watermark
+   only in the proposal phase. Confirmed writes revalidate their supplied source
+   independently. The reads and preparation records remain local/test.
    A private exact-ID inspection revalidates its historical source and event under
    current staff authority and the original attempt claim. The local/test worker
    returns the validated historical EUR allocation through the same private
