@@ -1,0 +1,130 @@
+{
+  "base": {
+    "amd64_manifest": "sha256:92bd5c18b6011e913998cc8ce3b6a423e12b9141fc379de5863c5c0274b6fd1b",
+    "config": "sha256:b40d3c368a4589e9c316a53a5b24fa5e5f832d783bf21b9c321b23b225521895",
+    "index": "sha256:83e67481ae9fc8c7a6d211113431fb8085619bed49672e583261111bac184f0d",
+    "oidc_issuer": "https://accounts.google.com",
+    "packages": {
+      "base-files": {
+        "arch": "amd64",
+        "member": "var/lib/dpkg/status.d/base-files",
+        "version": "13.8+deb13u8"
+      },
+      "ca-certificates": {
+        "arch": "all",
+        "member": "var/lib/dpkg/status.d/ca-certificates",
+        "version": "20250419+deb13u1"
+      },
+      "libc6": {
+        "arch": "amd64",
+        "member": "var/lib/dpkg/status.d/libc6",
+        "version": "2.41-12+deb13u5"
+      },
+      "libssl3t64": {
+        "arch": "amd64",
+        "member": "var/lib/dpkg/status.d/libssl3t64",
+        "version": "3.5.9-1~deb13u1"
+      },
+      "libzstd1": {
+        "arch": "amd64",
+        "member": "var/lib/dpkg/status.d/libzstd1",
+        "version": "1.5.7+dfsg-1"
+      },
+      "media-types": {
+        "arch": "all",
+        "member": "var/lib/dpkg/status.d/media-types",
+        "version": "13.0.0"
+      },
+      "netbase": {
+        "arch": "all",
+        "member": "var/lib/dpkg/status.d/netbase",
+        "version": "6.5"
+      },
+      "tzdata": {
+        "arch": "all",
+        "member": "var/lib/dpkg/status.d/tzdata",
+        "version": "2026f-0+deb13u1"
+      },
+      "tzdata-legacy": {
+        "arch": "all",
+        "member": "var/lib/dpkg/status.d/tzdata-legacy",
+        "version": "2026f-0+deb13u1"
+      },
+      "zlib1g": {
+        "arch": "amd64",
+        "member": "var/lib/dpkg/status.d/zlib1g",
+        "version": "1:1.3.dfsg+really1.3.1-1+deb13u1"
+      }
+    },
+    "reference": "gcr.io/distroless/base-debian13",
+    "signer": "keyless@distroless.iam.gserviceaccount.com"
+  },
+  "debian": {
+    "index_bytes": 9679304,
+    "index_path": "main/binary-amd64/Packages.xz",
+    "index_sha256": "be3d7d96a040eda0505c1808cccc67f183bbc05dff0842c50f88e6c396557412",
+    "keyring_sha256": "506b815cbb32d9b6066b4a2aa524071e071761e7e7f68c3ac74f3061ba852017",
+    "origin": "https://snapshot.debian.org/archive/debian/20261122T000000Z/",
+    "packages": {
+      "gcc-14-base": {
+        "arch": "amd64",
+        "bytes": 49432,
+        "filename": "pool/main/g/gcc-14/gcc-14-base_14.2.0-19_amd64.deb",
+        "installed_kib": 112,
+        "sha256": "5b6825de4263824b78c4c51f6476414f3b4e89c2ab63e81dc8b9b5501e867cf6",
+        "version": "14.2.0-19"
+      },
+      "libc-l10n": {
+        "arch": "all",
+        "bytes": 741624,
+        "filename": "pool/main/g/glibc/libc-l10n_2.41-12+deb13u5_all.deb",
+        "installed_kib": 4740,
+        "sha256": "2973fcad6e05fcc7e96076ecc327fada86c3a1483087d635284cf39f0f4b754a",
+        "version": "2.41-12+deb13u5"
+      },
+      "libgcc-s1": {
+        "arch": "amd64",
+        "bytes": 72772,
+        "filename": "pool/main/g/gcc-14/libgcc-s1_14.2.0-19_amd64.deb",
+        "installed_kib": 197,
+        "sha256": "3c71917b490d1a17aed43196a2787a256ecf060526cdb20216a74bedc061b150",
+        "version": "14.2.0-19"
+      },
+      "libicu76": {
+        "arch": "amd64",
+        "bytes": 9722072,
+        "filename": "pool/main/i/icu/libicu76_76.1-4_amd64.deb",
+        "installed_kib": 37371,
+        "sha256": "c1bf762996de9ecba9b9d871e4928a8090f023a3e9e7fa3240b3d90f892a01dc",
+        "version": "76.1-4"
+      },
+      "libstdc++6": {
+        "arch": "amd64",
+        "bytes": 713628,
+        "filename": "pool/main/g/gcc-14/libstdc++6_14.2.0-19_amd64.deb",
+        "installed_kib": 3019,
+        "sha256": "ab1fa05837aa7a92aae748fd07a18a35f7d18bb4a71c4724fe2bbf0e32089de0",
+        "version": "14.2.0-19"
+      },
+      "locales-all": {
+        "arch": "amd64",
+        "bytes": 11203784,
+        "filename": "pool/main/g/glibc/locales-all_2.41-12+deb13u5_amd64.deb",
+        "installed_kib": 236467,
+        "sha256": "f6ab5ad40b16ac52c1062988b4f81709568d576f04db9cae247c0a8a2fc81739",
+        "version": "2.41-12+deb13u5"
+      }
+    },
+    "release_date": "Sat, 21 Nov 2026 09:15:44 UTC",
+    "release_sha256": "4a04448a82727a76452dbe2473b50f3d1f9ec5421fe7f3457b2b03b8673b1e8d",
+    "signature_sha256": "7ec70d2e520dc452a2412d044007ea6ca1cce24816bec944a896504a09e05883",
+    "signers": [
+      "04B54C3CDCA79751B16BC6B5225629DF75B188BD",
+      "41587F7DB8C774BCCF131416762F67A0B2C39DE4"
+    ],
+    "snapshot_time": "2026-11-22T00:00:00+00:00",
+    "suite": "trixie",
+    "valid_until": null
+  },
+  "schema": 1
+}
