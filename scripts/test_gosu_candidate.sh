@@ -75,8 +75,12 @@ grep -Fxq '# golang.org/x/sys v0.1.0' "$scratch/source/vendor/modules.txt" || fa
 # This hash records the prepared input, not independent provenance for upstream source.
 (cd "$scratch/source" && find vendor -type f -print0 | LC_ALL=C sort -z | xargs -0 sha256sum) > "$evidence/vendor-sha256.txt"
 [[ -s "$evidence/vendor-sha256.txt" ]] || fail 'empty vendor inputs'
-docker pull --platform linux/amd64 "$base" >/dev/null
-[[ "$(docker image inspect "$base" --format '{{.Id}}')" == "$base_config" ]] || fail 'base config mismatch'
+printf 'stage=base_pull outcome=running\n' > "$evidence/status.txt"
+if ! sh ops/db-zlib-candidate/pull_verified_base.sh --image "$base" "$base_config" "$scratch/base-pull.log" \
+    > /dev/null 2> "$evidence/base-pull-status.txt"; then
+  printf 'stage=base_pull outcome=failed\n' > "$evidence/status.txt"
+  fail 'verified base pull failed'
+fi
 printf 'stage=offline_build outcome=running\n' > "$evidence/status.txt"
 for output in one two; do
   docker run --rm --network none --read-only --cap-drop ALL --security-opt no-new-privileges \

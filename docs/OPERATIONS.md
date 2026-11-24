@@ -504,6 +504,25 @@ Handover submissions remain visible after release of the linked packing
 assertion. Confirmation of carrier handover, cancellation disposition and
 physical fulfilment requires separate evidence.
 
+## Private late-stock and refund proposal review
+
+Use `commerce-worker --review-late-stock-inbox [<after-case-id>]` in an
+isolated local/test environment with a recent-MFA `stock.review` staff session.
+Supply the same 32-byte non-terminal session input as packing inspection. The
+JSON has one validated `case` and a `nextCursor` to pass on the next call.
+Both are null at the end. Start over to find earlier insertions. Keep the case
+identity and digest private. An open scarcity case may report its next decision
+generation.
+
+Use `commerce-worker --inspect-refund-proposal <proposal-id>` with a
+recent-MFA `refund.execution.prepare` session and the same private input.
+The report contains the recorded internal proposal, order and reservation IDs,
+proposal time, and the stored EUR gross, net and VAT amounts by SKU, shipping
+and total in integer cents. An authorized lookup of an absent proposal returns
+`proposal: null`. A failure returns a fixed error. These records describe
+historical custody. Disposition, provider reconciliation and financial execution
+require their own authorization and evidence.
+
 ## Private callback supervision
 
 `cargo run --locked -p commerce-worker -- --reconcile-callbacks` runs one bounded
@@ -815,6 +834,12 @@ comparison checks exact image metadata, package versions and positive finding
 controls for the targeted zlib and Gosu advisories. Raw inventories and every
 finding delta stay in the artifact. Release review still requires separate
 disposition of residual or new findings.
+
+The hosted database checks retry explicit mirror rate limits during verified
+image pulls and registry evidence reads. They keep the pinned AMD64 references
+and verify the same image identities and digests. Exhausted retries and other
+failures still fail the experiment. The Alpine artifact retains a fixed
+category and exit status for each scan.
 
 An isolated base-to-candidate restore must preserve default and explicit C
 collation probes, the synthetic stock receipt read and idempotent replay,

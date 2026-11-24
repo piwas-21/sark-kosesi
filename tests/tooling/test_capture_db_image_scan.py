@@ -18,6 +18,36 @@ SPEC.loader.exec_module(capture)
 
 
 class CaptureTests(unittest.TestCase):
+    def test_rate_limited_registry_request_retries_only_the_same_request(self):
+        response = mock.MagicMock()
+        response.__enter__.return_value.read.return_value = b"exact bytes"
+        quota = urllib.error.HTTPError("https://example.invalid/", 429, "", {}, None)
+        with (
+            mock.patch.object(
+                capture.urllib.request, "urlopen", side_effect=[quota, response]
+            ) as request,
+            mock.patch.object(capture.time, "sleep") as wait,
+        ):
+            result = capture.get_registry("library/postgres", "manifests", capture.INDEX)
+        self.assertEqual(result, b"exact bytes")
+        self.assertEqual(request.call_count, 2)
+        self.assertIs(request.call_args_list[0].args[0], request.call_args_list[1].args[0])
+        wait.assert_called_once_with(15)
+
+    def test_registry_quota_exhaustion_fails_with_sanitized_endpoint(self):
+        quota = urllib.error.HTTPError("https://example.invalid/?secret=hidden", 429, "", {}, None)
+        with (
+            mock.patch.object(capture.urllib.request, "urlopen", side_effect=quota) as request,
+            mock.patch.object(capture.time, "sleep") as wait,
+            self.assertRaisesRegex(
+                capture.RegistryFailure, r"mirror\.gcr\.io/.+: HTTP 429"
+            ) as failure,
+        ):
+            capture.get_registry("library/postgres", "manifests", capture.INDEX)
+        self.assertEqual(request.call_count, 3)
+        self.assertEqual(wait.call_args_list, [mock.call(15), mock.call(30)])
+        self.assertNotIn("hidden", str(failure.exception))
+
     def test_registry_http_failure_retains_sanitized_stage_and_endpoint(self):
         revision = "a" * 40
         http_error = urllib.error.HTTPError(
@@ -34,10 +64,15 @@ class CaptureTests(unittest.TestCase):
                 mock.patch.object(capture, "verify_staging_image"),
                 mock.patch.object(capture.os, "geteuid", return_value=1001),
                 mock.patch.object(capture.os, "getegid", return_value=1001),
-                mock.patch.object(capture.urllib.request, "urlopen", side_effect=http_error),
+                mock.patch.object(
+                    capture.urllib.request, "urlopen", side_effect=http_error
+                ) as request,
+                mock.patch.object(capture.time, "sleep") as wait,
                 self.assertRaises(capture.RegistryFailure) as failure,
             ):
                 capture.main()
+            self.assertEqual(request.call_count, 1)
+            wait.assert_not_called()
             status_raw = (output / "capture-status.json").read_text()
             status = json.loads(status_raw)
             self.assertEqual(status["stage"], "registry_identity")

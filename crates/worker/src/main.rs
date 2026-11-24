@@ -13,8 +13,10 @@ mod reversal_pages;
 mod staff_cancellation;
 mod staff_handover;
 mod staff_input;
+mod staff_late_stock;
 mod staff_packing;
 mod staff_packing_input;
+mod staff_refund_proposal;
 mod staff_reversal_review;
 
 #[tokio::main]
@@ -24,14 +26,16 @@ async fn main() -> Result<(), std::io::Error> {
     }
     let mode = mode()?;
     let subscriber = tracing_subscriber::fmt().json();
-    let staff_order_read = matches!(
+    let staff_review_read = matches!(
         mode,
         Mode::ReviewCancellation(_)
             | Mode::ReviewCancellationInbox(_)
             | Mode::InspectCancellationPacking(_)
             | Mode::InspectHandoverEvidence(_)
+            | Mode::ReviewLateStockInbox(_)
+            | Mode::InspectRefundProposal(_)
     );
-    if staff_order_read
+    if staff_review_read
         || matches!(
             mode,
             Mode::InspectPacking(_) | Mode::ReleasePacking { .. } | Mode::RecordPacking { .. }
@@ -42,7 +46,7 @@ async fn main() -> Result<(), std::io::Error> {
         subscriber.init();
     }
     // Read before any DB or provider configuration; never accept a token argument.
-    let staff_token = if staff_order_read
+    let staff_token = if staff_review_read
         || matches!(
             mode,
             Mode::ReviewReversalItem(_)
@@ -128,6 +132,18 @@ async fn main() -> Result<(), std::io::Error> {
                 .as_ref()
                 .ok_or_else(|| std::io::Error::other("staff handover inspection unavailable"))?;
             staff_handover::inspect(&pool, token, &order).await?
+        }
+        Mode::ReviewLateStockInbox(after) => {
+            let token = staff_token
+                .as_ref()
+                .ok_or_else(|| std::io::Error::other("late stock review unavailable"))?;
+            staff_late_stock::next(&pool, token, after.as_deref()).await?
+        }
+        Mode::InspectRefundProposal(proposal) => {
+            let token = staff_token
+                .as_ref()
+                .ok_or_else(|| std::io::Error::other("refund proposal inspection unavailable"))?;
+            staff_refund_proposal::inspect(&pool, token, &proposal).await?
         }
         Mode::InspectPacking(order) => {
             let token = staff_token

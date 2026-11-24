@@ -595,6 +595,11 @@ review, fresh received evidence and reciprocal decision, claim and effects.
 Database write-role restrictions still apply. The outbox projection carries
 only the decision and order identities and a digest, with no operator reason.
 
+The local/test late-stock inbox uses the separate unseeded `stock.review`
+grant, recent MFA and the bounded non-terminal session input. It returns one
+validated internal case summary and live cursor per call. Keep its digest and
+case details in private custody. Using the cursor does not authorize a retry.
+
 ## Private refund reservation custody
 
 Use an unseeded `refund.prepare` grant, recent MFA and explicit confirmation of
@@ -620,6 +625,9 @@ Exact proposal inspection uses the same unseeded grant and recent MFA, claims th
 original payment attempt and revalidates historical source and reciprocal event.
 It returns a bounded allocation without the reason or provider identifiers and
 rechecks staff time after waits; inspection grants no financial authority.
+The local/test worker exposes that validated allocation and proposal identity
+through the bounded non-terminal session input. It distinguishes an authorized
+absence from a fixed custody or authority failure.
 
 ## Private provider reversal observation custody
 

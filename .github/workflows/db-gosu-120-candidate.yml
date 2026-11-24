@@ -6,6 +6,7 @@ on:
     paths:
       - .github/workflows/db-gosu-120-candidate.yml
       - ops/db-gosu-candidate/**
+      - ops/db-zlib-candidate/pull_verified_base.sh
       - scripts/test_gosu_candidate.sh
       - tests/tooling/test_gosu_120_candidate.py
 permissions: {}

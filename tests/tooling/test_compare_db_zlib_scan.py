@@ -74,6 +74,128 @@ class CompareZlibScanTests(unittest.TestCase):
             self.assertEqual(result.returncode, 7)
             self.assertNotIn("do-not-emit-this", result.stdout + result.stderr)
 
+    def test_verified_image_pull_retries_only_explicit_mirror_rate_limits(self):
+        script = Path(__file__).resolve().parents[2] / "ops/db-zlib-candidate/pull_verified_base.sh"
+        scanner = "mirror.gcr.io/aquasec/trivy@sha256:" + "a" * 64
+        cases = (
+            ("oci quota", "docker: toomanyrequests:\nok", compare.BASE_CONFIG, 0, 2, [15], 1),
+            (
+                "HTTP 429",
+                "unexpected status code: 429 Too Many Requests\nok",
+                compare.BASE_CONFIG,
+                0,
+                2,
+                [15],
+                1,
+            ),
+            (
+                "quota exhausted",
+                "toomanyrequests:\ntoomanyrequests:\ntoomanyrequests:",
+                compare.BASE_CONFIG,
+                125,
+                3,
+                [15, 30],
+                0,
+            ),
+            ("403 error", "unexpected status code: 403", compare.BASE_CONFIG, 125, 1, [], 0),
+            (
+                "digest mismatch after quota",
+                "toomanyrequests:\nok",
+                "sha256:" + "b" * 64,
+                1,
+                2,
+                [15],
+                1,
+            ),
+        )
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            docker = root / "docker"
+            docker.write_text(
+                r"""#!/bin/sh
+printf '%s\n' "$*" >> "$CALLS"
+if [ "$1" = pull ]; then
+    attempt=$(grep -c '^pull ' "$CALLS")
+    response=$(sed -n "${attempt}p" "$RESPONSES")
+    [ "$response" = ok ] && exit 0
+    printf '%s\n' 'Authorization: Bearer do-not-emit-this' "$response" >&2
+    exit 125
+fi
+printf '%s\n' "$IMAGE_ID"
+"""
+            )
+            docker.chmod(0o755)
+            sleep = root / "sleep"
+            sleep.write_text('#!/bin/sh\nprintf \'sleep %s\\n\' "$*" >> "$CALLS"\n')
+            sleep.chmod(0o755)
+            calls = root / "calls"
+            responses = root / "responses"
+            env = {
+                "PATH": f"{directory}:/usr/bin:/bin",
+                "CALLS": str(calls),
+                "RESPONSES": str(responses),
+            }
+            for name, output, identity, status, pulls, delays, inspections in cases:
+                with self.subTest(name=name):
+                    calls.write_text("")
+                    responses.write_text(output + "\n")
+                    result = subprocess.run(
+                        [
+                            "sh",
+                            str(script),
+                            "--image",
+                            scanner,
+                            compare.BASE_CONFIG,
+                            str(root / "pull.log"),
+                        ],
+                        env={**env, "IMAGE_ID": identity},
+                        capture_output=True,
+                        text=True,
+                        check=False,
+                    )
+                    self.assertEqual(result.returncode, status, result.stderr)
+                    executed = calls.read_text().splitlines()
+                    self.assertEqual(
+                        [line for line in executed if line.startswith("pull ")],
+                        [f"pull --platform linux/amd64 {scanner}"] * pulls,
+                    )
+                    self.assertEqual(
+                        [line for line in executed if line.startswith("sleep ")],
+                        [f"sleep {delay}" for delay in delays],
+                    )
+                    self.assertEqual(
+                        [line for line in executed if line.startswith("image ")],
+                        [f"image inspect {scanner} --format {{{{.Id}}}}"] * inspections,
+                    )
+                    self.assertEqual(
+                        result.stdout.strip(), compare.BASE_CONFIG if status == 0 else ""
+                    )
+                    self.assertNotIn("do-not-emit-this", result.stdout + result.stderr)
+                    if delays:
+                        self.assertIn("category=mirror_rate_limit", result.stderr)
+                    if identity != compare.BASE_CONFIG:
+                        self.assertIn("category=identity_mismatch", result.stderr)
+
+            for invalid in (scanner.replace("mirror.gcr.io", "example.test"), scanner[:-3]):
+                with self.subTest(invalid=invalid):
+                    calls.write_text("")
+                    result = subprocess.run(
+                        [
+                            "sh",
+                            str(script),
+                            "--image",
+                            invalid,
+                            compare.BASE_CONFIG,
+                            str(root / "pull.log"),
+                        ],
+                        env=env,
+                        capture_output=True,
+                        text=True,
+                        check=False,
+                    )
+                    self.assertEqual(result.returncode, 2)
+                    self.assertEqual(calls.read_text(), "")
+
     def test_apt_failures_emit_only_fixed_diagnostics(self):
         script = (
             Path(__file__).resolve().parents[2] / "ops/db-zlib-candidate/sanitize_apt_failure.sh"

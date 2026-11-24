@@ -17,7 +17,7 @@ function responses(entries) {
     assert.ok(expected.has(url));
     const status = expected.get(url);
     expected.delete(url);
-    return new Response("test response", { status });
+    return new Response(status === 204 ? null : "test response", { status });
   };
 }
 
@@ -29,7 +29,7 @@ test("private and public previews retain their separate storefront expectations"
     const request = responses([
       [home, status],
       [admin, 401],
-      [api, 200],
+      [api, 204],
     ]);
     assert.equal(await stagingWebHealthy(env, request), true);
   }
@@ -44,7 +44,7 @@ test("Dutch review health requires available catalogue and policies, denied admi
     [collection]: 200,
     [policy]: 200,
     [admin]: 404,
-    [api]: 200,
+    [api]: 204,
   };
   assert.equal(
     await stagingWebHealthy(env, responses(Object.entries(healthy))),
@@ -55,6 +55,7 @@ test("Dutch review health requires available catalogue and policies, denied admi
     [collection, 307],
     [policy, 404],
     [admin, 401],
+    [api, 200],
     [api, 503],
   ]) {
     const request = responses(Object.entries({ ...healthy, [path]: status }));

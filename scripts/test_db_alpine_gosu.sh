@@ -22,6 +22,7 @@ export DOCKER_CONFIG="$scratch/docker-config"
 stock='mirror.gcr.io/library/postgres@sha256:fa1b61f5a4844f4d4b73c9b15716cfc75fe70c931f2d32723630f3b900056366'
 stock_config='sha256:0f6c51e48b3458e87ab43692e49c9dafc72ffe0a0dbde3fd8cdb6ab92d5c025e'
 scanner='mirror.gcr.io/aquasec/trivy@sha256:85e87be1a96459c38a4eea47dc64eb2d342bb14cd4b4cef96adcf6ff03378b7c'
+scanner_config='sha256:c0a2b004a57047aff2bc7a8b87d693d368ba40cd10ef9bb1213345f043f416dd'
 expected_gosu=ad2e645f69d82e23e0b54a208828589ff4a021a343ad5090cd36f2a2ae7aa556
 db_id=''
 stage=gosu_custody
@@ -68,8 +69,8 @@ capture_registry_identity(out, 'library/postgres',
     'sha256:fa1b61f5a4844f4d4b73c9b15716cfc75fe70c931f2d32723630f3b900056366', 'stock-')
 PY
 [[ "sha256:$(sha256sum "$evidence/stock-config.json" | cut -d ' ' -f 1)" == "$stock_config" ]] || fail 'stock registry config mismatch'
-docker pull --platform linux/amd64 "$stock" > "$scratch/stock-pull.log" 2>&1 || fail 'stock image pull failed'
-[[ "$(docker image inspect "$stock" --format '{{.Id}}')" == "$stock_config" ]] || fail 'stock image config mismatch'
+sh ops/db-zlib-candidate/pull_verified_base.sh --image "$stock" "$stock_config" "$scratch/stock-pull.log" \
+  > /dev/null 2> "$evidence/stock-pull-status.txt" || fail 'verified stock image pull failed'
 
 stage=candidate
 printf 'stage=%s outcome=running\n' "$stage" > "$evidence/status.txt"
@@ -115,6 +116,8 @@ python3 scripts/check_alpine_gosu_image.py "$scratch/candidate.tar" "$evidence/s
 stage=paired_scan
 printf 'stage=%s outcome=running\n' "$stage" > "$evidence/status.txt"
 printf 'outcome=running\n' > "$evidence/scan-status.txt"
+sh ops/db-zlib-candidate/pull_verified_base.sh --image "$scanner" "$scanner_config" "$scratch/scanner-pull.log" \
+  > /dev/null 2> "$evidence/scanner-pull-status.txt" || fail 'verified scanner pull failed'
 printf '{}\n' > "$scratch/empty.yml"
 : > "$scratch/empty.ignore"
 cp "$scratch/empty.yml" "$evidence/empty.yml"
@@ -125,13 +128,29 @@ scanner_args=(--config /scratch/empty.yml --cache-dir /scratch/cache image --for
   --show-suppressed --exit-code 0 --ignorefile /scratch/empty.ignore --platform linux/amd64)
 scan() {
   local label=$1
+  local log="$scratch/$label-scan.log" category=success rc=0
   shift
-  local -a command=(docker run --rm --read-only --cap-drop=ALL --security-opt=no-new-privileges \
+  local -a command=(docker run --pull=never --rm --read-only --cap-drop=ALL --security-opt=no-new-privileges \
     --user "$(id -u):$(id -g)" --tmpfs '/tmp:rw,nosuid,nodev' \
     --mount "type=bind,src=$scratch,dst=/scratch" "$scanner" "${scanner_args[@]}" "$@")
   printf '%q ' "${command[@]}" > "$evidence/$label-command.txt"
   printf '\n' >> "$evidence/$label-command.txt"
-  "${command[@]}" > "$scratch/$label-scan.log" 2>&1
+  if (umask 077 && "${command[@]}" > "$log" 2>&1); then
+    :
+  else
+    rc=$?
+    category=generic_exit
+    if LC_ALL=C awk '
+      { line = tolower($0) }
+      line ~ /(^|[^[:alnum:]._-])mirror[.]gcr[.]io([:\/[:space:]]|$)/ &&
+      line ~ /(^|[^[:alnum:]_])toomanyrequests:|(^|[^[:digit:]])429[[:space:]]+too many requests|status( code)?:?[[:space:]]+429([^[:digit:]]|$)/ { quota = 1 }
+      END { exit !quota }
+    ' "$log" 2>/dev/null; then
+      category=mirror_rate_limit
+    fi
+  fi
+  printf 'category=%s exit=%s\n' "$category" "$rc" > "$evidence/$label-scan-status.txt" || return 1
+  return "$rc"
 }
 scan stock --image-src remote --output /scratch/stock-report.json "$stock" || fail 'stock scan failed'
 cp "$scratch/cache/db/metadata.json" "$evidence/db-metadata.json"
@@ -145,7 +164,8 @@ printf 'outcome=success\n' > "$evidence/scan-status.txt"
 stage=application_restore
 printf 'stage=%s outcome=running\n' "$stage" > "$evidence/status.txt"
 printf 'outcome=running\n' > "$evidence/restore-status.txt"
-source_id=$(sh ops/db-zlib-candidate/pull_verified_base.sh "$scratch/base-pull.log") || fail 'restore source pull failed'
+source_id=$(sh ops/db-zlib-candidate/pull_verified_base.sh "$scratch/base-pull.log" \
+  2> "$evidence/restore-source-pull-status.txt") || fail 'restore source pull failed'
 [[ "$source_id" == sha256:3cccc725163a95947178f4da5e9bf16add75cb286170ac5a2cd2f6513534955d ]] || fail 'restore source identity mismatch'
 python3 scripts/rehearse_alpine_gosu_restore.py "$candidate_id" "$ALPINE_GOSU_SOURCE_REVISION" "$scratch" "$evidence"
 printf 'outcome=success\n' > "$evidence/restore-status.txt"
