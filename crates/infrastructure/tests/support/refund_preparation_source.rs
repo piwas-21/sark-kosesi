@@ -38,6 +38,17 @@ async fn preparation_source_tracks_only_the_exact_received_prefix(pool: PgPool) 
         staff(&pool, "source-proposer", 76, "refund.execution.prepare").await,
     );
     let clock = fixture.time.as_ref();
+    assert_eq!(
+        Box::pin(inspect_preparation_source(
+            &pool,
+            &reserver,
+            clock,
+            "malformed-order",
+            PreparationPhase::Reservation,
+        ))
+        .await,
+        Err(RefundError::InvalidRequest)
+    );
     let read = |token, phase| {
         Box::pin(inspect_preparation_source(
             &pool, token, clock, order, phase,
@@ -111,6 +122,105 @@ async fn preparation_source_tracks_only_the_exact_received_prefix(pool: PgPool) 
         read(&proposer, PreparationPhase::Proposal).await,
         Err(RefundError::InvalidStoredData)
     );
+}
+
+#[sqlx::test(migrator = "MIGRATOR")]
+async fn preparation_source_rejects_a_different_order_in_the_locked_attempt(pool: PgPool) {
+    Box::pin(orders::seed(&pool)).await;
+    let (store, clock) = crate::payment_test_fixture::quote::store(&pool, 1100);
+    let first = Box::pin(orders::accepted_with_store(
+        &pool,
+        store.clone(),
+        clock.clone(),
+        false,
+        true,
+    ))
+    .await;
+    clock.0.store(1100, Ordering::SeqCst);
+    let other = Box::pin(orders::accepted_with_store(
+        &pool,
+        store,
+        clock.clone(),
+        true,
+        false,
+    ))
+    .await;
+    Box::pin(orders::observe(
+        &pool,
+        &other,
+        "tr_OTHERREFUNDSOURCE",
+        "paid",
+        "other-source",
+    ))
+    .await;
+    let other_proof = Box::pin(recognition::recognize(
+        &pool,
+        clock.as_ref(),
+        other.ids.as_ref(),
+        &other.frozen.snapshot().binding.id,
+    ))
+    .await
+    .expect("valid other received recognition")
+    .recognition;
+    let first_order = &first.order.identity.id;
+    let other_order = &other.order.identity.id;
+    assert_ne!(first_order, other_order);
+    let token = staff(
+        &pool,
+        "locked-source-proposer",
+        78,
+        "refund.execution.prepare",
+    )
+    .await;
+    let read = |order| {
+        Box::pin(inspect_preparation_source(
+            &pool,
+            &token,
+            clock.as_ref(),
+            order,
+            PreparationPhase::Proposal,
+        ))
+    };
+    let first_proof = read(first_order)
+        .await
+        .expect("valid first source")
+        .expect("received first");
+    let valid_other = read(other_order)
+        .await
+        .expect("valid other source")
+        .expect("received other");
+    assert_eq!(&valid_other.order_id, other_order);
+    assert_eq!(valid_other.recognition_id, other_proof.id);
+    assert_ne!(first_proof.recognition_id, valid_other.recognition_id);
+
+    // Keep the requested relational order and attempt ID intact. Simulate an
+    // inconsistent frozen order in only this disposable database.
+    let mut damage = pool
+        .begin()
+        .await
+        .expect("isolated corrupt-import transaction");
+    damage
+        .execute("ALTER TABLE payment_attempts DISABLE TRIGGER guard_payment_attempt")
+        .await
+        .expect("allow isolated frozen-source corruption");
+    sqlx::query("UPDATE payment_attempts SET snapshot=jsonb_set(snapshot,'{binding,order_id}',to_jsonb($2::text)) WHERE id=$1")
+        .bind(&first.frozen.snapshot().binding.id).bind(other_order)
+        .execute(&mut *damage).await.expect("mismatched frozen order fixture");
+    damage
+        .execute("ALTER TABLE payment_attempts ENABLE TRIGGER guard_payment_attempt")
+        .await
+        .expect("restore native guard");
+    damage
+        .commit()
+        .await
+        .expect("expose inconsistent import to the read");
+    let before = orders::footprint(&pool).await;
+    assert_eq!(read(first_order).await, Err(RefundError::InvalidStoredData));
+    assert_eq!(
+        read(other_order).await.expect("independent valid proof"),
+        Some(valid_other)
+    );
+    assert_eq!(orders::footprint(&pool).await, before);
 }
 
 #[sqlx::test(migrator = "MIGRATOR")]

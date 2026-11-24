@@ -1,11 +1,11 @@
 use super::*;
 
-pub(super) async fn attempt_for_order(
+pub(super) async fn claim_attempt_for_order(
     tx: &mut Transaction<'_, Postgres>,
     order: &str,
 ) -> Result<String, RefundError> {
     use crate::order_stock::SettlementError;
-    crate::order_stock::source::attempt(tx, order)
+    crate::order_stock::source::claim_order_attempt(tx, order)
         .await
         .map_err(|error| match error {
             SettlementError::NotFound => RefundError::Unavailable,

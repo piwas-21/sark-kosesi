@@ -41,13 +41,12 @@ pub async fn inspect_preparation_source(
         .await
         .map_err(staff)?;
     let result = async {
-        let attempt = store::attempt_for_order(&mut access.tx, order_id).await?;
-        // The current source validates the frozen attempt under its row claim.
-        let (order, received) = Box::pin(source(&mut access.tx, &attempt, None)).await?;
-        if order.identity.id != order_id {
-            return Err(RefundError::InvalidStoredData);
-        }
-        Ok(received)
+        let attempt = store::claim_attempt_for_order(&mut access.tx, order_id).await?;
+        // The locked row binds the requested order. Source restoration checks
+        // the frozen attempt and recognition against that same row and order.
+        Box::pin(source(&mut access.tx, &attempt, None))
+            .await
+            .map(|(_, received)| received)
     }
     .await;
     let at = access.authorized_at(&observed).map_err(staff)?;
