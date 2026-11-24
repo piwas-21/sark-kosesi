@@ -467,7 +467,8 @@ full workload bounds and operational acceptance remain separate.
    stops; changed availability after rollback creates no permanent scarcity case.
    A private recent-MFA `stock.review` inbox validates each bounded historical
    case before returning a minimal summary; no grant or HTTP route is seeded.
-   Live keyset traversal requires a refresh to see earlier insertions. A separate
+   The local/test worker reads one validated case per call with a live keyset
+   cursor. Refresh to see earlier insertions. A separate
    private recent-MFA `stock.recover` command accepts an explicitly confirmed
    scarcity case revision and one bounded generation. It atomically records an
    allocation or fresh still-scarce assessment. Keep release/consumption cases
@@ -482,8 +483,9 @@ full workload bounds and operational acceptance remain separate.
    with its observation watermark. Exact authorized retries return history. This
    proposal supplies no net balance or permission to contact the provider.
    A private exact-ID inspection revalidates its historical source and event under
-   current staff authority and the original attempt claim; it has no provider or
-   financial effects. Reconciliation and reservation disposition remain open.
+   current staff authority and the original attempt claim. The local/test worker
+   returns the validated historical EUR allocation through the same private
+   recent-MFA grant. Reconciliation and reservation disposition remain open.
    Private test-key exact-item refund and chargeback GETs now require a matched
    paid original and retain minimal bounded observations only. A separate
    paid-parent test-profile GET commits its exact received source before I/O and

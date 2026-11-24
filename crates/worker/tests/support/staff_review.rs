@@ -72,6 +72,18 @@ pub async fn settle_paid_attempt(
     ids: &dyn Identifiers,
     attempt: &AttemptSnapshot,
 ) {
+    recognize_paid_attempt(pool, clock, ids, attempt).await;
+    Box::pin(settle(pool, clock, ids, &attempt.binding.order_id))
+        .await
+        .expect("settled synthetic allocation");
+}
+
+pub async fn recognize_paid_attempt(
+    pool: &PgPool,
+    clock: &dyn Clock,
+    ids: &dyn Identifiers,
+    attempt: &AttemptSnapshot,
+) {
     seed_paid_observation(pool, attempt).await;
     let binding = &attempt.binding;
     Box::pin(resolve(
@@ -86,9 +98,6 @@ pub async fn settle_paid_attempt(
     Box::pin(recognize(pool, clock, ids, &binding.id))
         .await
         .expect("received recognition");
-    Box::pin(settle(pool, clock, ids, &binding.order_id))
-        .await
-        .expect("settled synthetic allocation");
 }
 
 async fn seed_paid_observation(pool: &PgPool, attempt: &AttemptSnapshot) {

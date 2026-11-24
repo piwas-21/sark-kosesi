@@ -19,6 +19,8 @@ pub(super) enum Mode {
     ReviewCancellationInbox(Option<String>),
     InspectCancellationPacking(String),
     InspectHandoverEvidence(String),
+    ReviewLateStockInbox(Option<String>),
+    InspectRefundProposal(String),
     InspectPacking(String),
     RecordPacking {
         order: String,
@@ -37,15 +39,17 @@ pub(super) enum Mode {
     InspectPaidParentSet(String),
 }
 
-fn staff_order_read(command: &str, order: &str) -> Option<Mode> {
-    if !commerce_domain::order_stock::identifier(order) {
+fn staff_review_read(command: &str, target: &str) -> Option<Mode> {
+    if !commerce_domain::order_stock::identifier(target) {
         return None;
     }
     Some(match command {
-        "--review-cancellation" => Mode::ReviewCancellation(order.to_owned()),
-        "--review-cancellation-inbox" => Mode::ReviewCancellationInbox(Some(order.to_owned())),
-        "--inspect-cancellation-packing" => Mode::InspectCancellationPacking(order.to_owned()),
-        "--inspect-handover-evidence" => Mode::InspectHandoverEvidence(order.to_owned()),
+        "--review-cancellation" => Mode::ReviewCancellation(target.to_owned()),
+        "--review-cancellation-inbox" => Mode::ReviewCancellationInbox(Some(target.to_owned())),
+        "--inspect-cancellation-packing" => Mode::InspectCancellationPacking(target.to_owned()),
+        "--inspect-handover-evidence" => Mode::InspectHandoverEvidence(target.to_owned()),
+        "--review-late-stock-inbox" => Mode::ReviewLateStockInbox(Some(target.to_owned())),
+        "--inspect-refund-proposal" => Mode::InspectRefundProposal(target.to_owned()),
         _ => return None,
     })
 }
@@ -86,6 +90,9 @@ fn parse_mode(args: &[String]) -> Result<Mode, std::io::Error> {
         }
         [argument] if argument == "--review-cancellation-inbox" => {
             Ok(Mode::ReviewCancellationInbox(None))
+        }
+        [argument] if argument == "--review-late-stock-inbox" => {
+            Ok(Mode::ReviewLateStockInbox(None))
         }
         [argument, order]
             if argument == "--inspect-packing"
@@ -147,7 +154,7 @@ fn parse_mode(args: &[String]) -> Result<Mode, std::io::Error> {
         {
             Ok(Mode::InspectPaidParentSet(attempt.clone()))
         }
-        [argument, order] => staff_order_read(argument, order)
+        [argument, target] => staff_review_read(argument, target)
             .ok_or_else(|| std::io::Error::other("unsupported worker command")),
         _ => Err(std::io::Error::other("unsupported worker command")),
     }

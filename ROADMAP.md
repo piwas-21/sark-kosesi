@@ -162,7 +162,8 @@ and original payment under its frozen test profile. Exact retries return the
 historical proposal under current staff authority. Operator recovery, provider
 reversal reconciliation, reservation disposition and dispatch custody remain open.
 Private exact proposal inspection now validates historical source and event custody
-under current finance authority without contacting the provider or moving funds.
+under current finance authority. The local/test worker reports the validated
+historical allocation in integer EUR cents for authorized operator review.
 A separate private owner request after payment dispatch records pending cancellation
 intent against the exact original start. Order, payment, stock and packing state
 remain intact. Private staff inspection now validates that historical request
@@ -423,7 +424,8 @@ originals using the same single allocation identity and frozen component demand.
 Released or consumed originals and persistent scarcity retain durable review stops;
 restock cannot silently restart them. Historical replay preserves original custody.
 An unseeded dedicated recent-MFA capability permits private bounded, validated
-case summaries. The live cursor requires a refresh for earlier insertions.
+case summaries. The local/test worker returns one validated case per call and
+a live cursor. Refresh to see earlier insertions.
 A separate private recent-MFA command allows an explicitly confirmed retry of
 one scarcity case generation. It retains the original review case and records a
 digest-bound allocation or a fresh still-scarce assessment. Release and prior

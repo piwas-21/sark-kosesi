@@ -504,6 +504,25 @@ Handover submissions remain visible after release of the linked packing
 assertion. Confirmation of carrier handover, cancellation disposition and
 physical fulfilment requires separate evidence.
 
+## Private late-stock and refund proposal review
+
+Use `commerce-worker --review-late-stock-inbox [<after-case-id>]` in an
+isolated local/test environment with a recent-MFA `stock.review` staff session.
+Supply the same 32-byte non-terminal session input as packing inspection. The
+JSON has one validated `case` and a `nextCursor` to pass on the next call.
+Both are null at the end. Start over to find earlier insertions. Keep the case
+identity and digest private. An open scarcity case may report its next decision
+generation.
+
+Use `commerce-worker --inspect-refund-proposal <proposal-id>` with a
+recent-MFA `refund.execution.prepare` session and the same private input.
+The report contains the recorded internal proposal, order and reservation IDs,
+proposal time, and the stored EUR gross, net and VAT amounts by SKU, shipping
+and total in integer cents. An authorized lookup of an absent proposal returns
+`proposal: null`. A failure returns a fixed error. These records describe
+historical custody. Disposition, provider reconciliation and financial execution
+require their own authorization and evidence.
+
 ## Private callback supervision
 
 `cargo run --locked -p commerce-worker -- --reconcile-callbacks` runs one bounded
