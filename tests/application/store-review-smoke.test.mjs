@@ -25,12 +25,12 @@ const photo = Buffer.from(
 const imagePath = "/catalogue-images/nl/SET-COVERS/4/320";
 const productPath = "/nl/collection/test-collectie?variant=SET-COVERS";
 const policyText = "Getoetste tekst & retourinstructies.";
-const policyIds = [
-  "bezorging",
-  "retourneren",
-  "privacy",
-  "betalen",
-  "voorwaarden",
+const policies = [
+  ["bezorging", "Bezorging"],
+  ["retourneren", "Retourneren"],
+  ["privacy", "Privacy"],
+  ["betalen", "Betalen"],
+  ["voorwaarden", "Verkoopvoorwaarden"],
 ];
 const evidence = {
   store: {
@@ -64,8 +64,8 @@ const evidence = {
 const availability = "<p>Online bestellen is nog niet beschikbaar.</p>";
 const fill = "Alleen hoezen, zonder schuim";
 const displayedPrice = "€&nbsp;123,45<span>incl. btw</span>";
-const links = policyIds
-  .map((id) => `<a href="/nl/winkelinformatie#${id}">${id}</a>`)
+const links = policies
+  .map(([id]) => `<a href="/nl/winkelinformatie#${id}">${id}</a>`)
   .join("");
 const layout = (content, extraHead = "") =>
   `<!doctype html><html lang="nl" dir="ltr"><head><title>Testwinkel</title>${extraHead}</head><body>
@@ -87,7 +87,7 @@ const information = layout(`
   <address><p>Voorbeeld B.V.</p><p>Voorbeeldweg 1
   1234 AB Stad</p><p><a href="mailto:voorbeeld@example.test">voorbeeld@example.test</a></p>
   <p><a href="tel:+31123456789">+31123456789</a></p></address><dl><dt>KvK</dt><dd>12345678</dd><dt>VAT</dt><dd>NL123456789B01</dd></dl>
-  ${policyIds.map((id) => `<section id="${id}"><p>Getoetste tekst &amp; retourinstructies.</p></section>`).join("")}`);
+  ${policies.map(([id, title]) => `<section id="${id}"><h2>${title}</h2><p>Getoetste tekst &amp; retourinstructies.</p></section>`).join("")}`);
 
 const routes = new Map([
   ["/?variant=discarded", [307, { location: `${origin}/nl` }, null]],
@@ -110,11 +110,16 @@ const headers = {
   "x-content-type-options": "nosniff",
   "referrer-policy": "no-referrer",
 };
+const csp =
+  "default-src 'self'; script-src 'self' 'nonce-A1b2C3d4E5f6G7h8I9j0K1l2' 'strict-dynamic'; style-src 'self' 'nonce-A1b2C3d4E5f6G7h8I9j0K1l2'; img-src 'self' data:; font-src 'self'; connect-src 'self'; frame-ancestors 'none'; base-uri 'self'; form-action 'self'; object-src 'none'";
 
 function fixture(path, override) {
   const base = routes.get(path) ?? [404, {}, "Niet gevonden"];
   const [status, extra, body] = override?.(path, base) ?? base;
-  return { status, headers: { ...headers, ...extra }, body };
+  const htmlHeaders = base[1]["content-type"]?.startsWith("text/html")
+    ? { "content-security-policy": csp }
+    : {};
+  return { status, headers: { ...headers, ...htmlHeaders, ...extra }, body };
 }
 
 function runMock(override, observed = []) {
@@ -195,6 +200,32 @@ test("readback fails closed on drift, incomplete output or access change", async
       /cache or indexing directives/,
     ],
     [
+      "missing review CSP",
+      "/nl/collection",
+      [
+        200,
+        { "content-type": "text/html", "content-security-policy": "" },
+        collection,
+      ],
+      /unexpected content security policy/,
+    ],
+    [
+      "relaxed review CSP",
+      "/nl/collection",
+      [
+        200,
+        {
+          "content-type": "text/html",
+          "content-security-policy": csp.replace(
+            "frame-ancestors 'none'",
+            "frame-ancestors *",
+          ),
+        },
+        collection,
+      ],
+      /unexpected content security policy/,
+    ],
+    [
       "empty collection",
       "/nl/collection",
       [
@@ -258,6 +289,32 @@ test("readback fails closed on drift, incomplete output or access change", async
       /delivery policy/,
     ],
     [
+      "extra policy paragraph",
+      "/nl/winkelinformatie",
+      [
+        200,
+        { "content-type": "text/html" },
+        information.replace(
+          "</section>",
+          "<p>Onbeoordeelde voorwaarde.</p></section>",
+        ),
+      ],
+      /delivery policy/,
+    ],
+    [
+      "duplicate policy section",
+      "/nl/winkelinformatie",
+      [
+        200,
+        { "content-type": "text/html" },
+        information.replace(
+          "</main>",
+          '<section id="retourneren"><h2>Retourneren</h2><p>Onbeoordeelde voorwaarde.</p></section></main>',
+        ),
+      ],
+      /returns policy/,
+    ],
+    [
       "open admin shell",
       "/nl/admin",
       [200, {}, null],
@@ -299,12 +356,17 @@ test("runner uses only a selected loopback endpoint before cutover", async (t) =
   ];
   const { stdout, stderr } = await exec(process.execPath, args);
   assert.equal(stderr, "");
-  assert.deepEqual(JSON.parse(stdout), {
+  const { observedAt, ...receipt } = JSON.parse(stdout);
+  assert.equal(new Date(observedAt).toISOString(), observedAt);
+  assert.deepEqual(receipt, {
     origin,
     revision,
     transport: "private-loopback",
     approvedProducts: 1,
     collectionPages: 1,
+    evidenceSha256: createHash("sha256")
+      .update(JSON.stringify(evidence))
+      .digest("hex"),
   });
   assert.doesNotMatch(
     stdout,

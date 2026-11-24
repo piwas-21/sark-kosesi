@@ -49,6 +49,7 @@ jobs:
                 (.services.web.ports[0] |
                   .host_ip == "127.0.0.1" and .published == $port and
                   .target == 3000 and .protocol == "tcp") and
+                (.services.web.healthcheck.test == ["CMD", "node", "/app/web-health.mjs"]) and
                 (.services.web.labels["traefik.enable"] == "false") and
                 (.services.web.labels["traefik.http.services.sark-preview.loadbalancer.server.port"] == "3000")
               '

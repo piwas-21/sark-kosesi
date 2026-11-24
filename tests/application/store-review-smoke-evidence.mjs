@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import { constants } from "node:fs";
 import { open } from "node:fs/promises";
 
@@ -8,11 +9,11 @@ export function requireCheck(condition, label) {
 }
 
 export const policySections = {
-  delivery: "bezorging",
-  returns: "retourneren",
-  privacy: "privacy",
-  payment: "betalen",
-  terms: "voorwaarden",
+  delivery: { id: "bezorging", title: "Bezorging" },
+  returns: { id: "retourneren", title: "Retourneren" },
+  privacy: { id: "privacy", title: "Privacy" },
+  payment: { id: "betalen", title: "Betalen" },
+  terms: { id: "voorwaarden", title: "Verkoopvoorwaarden" },
 };
 
 const evidenceLimit = 64 * 1024;
@@ -151,7 +152,10 @@ export async function loadEvidence(path) {
         evidence.products.length,
     "Evidence must contain exact seller, policies and distinct approved products",
   );
-  return evidence;
+  return {
+    evidence,
+    evidenceSha256: createHash("sha256").update(bytes).digest("hex"),
+  };
 }
 
 export function productHref({ slug, sku }) {

@@ -81,9 +81,10 @@ node tests/application/store-review-smoke.mjs --origin https://STOREFRONT_HOST -
 node tests/application/store-review-smoke.mjs --origin https://STOREFRONT_HOST --revision REVISION --evidence-file PRIVATE_EVIDENCE_FILE
 ```
 
-Keep both results with the release evidence. The check compares served content
-with the supplied approvals. Its output contains no merchant facts or policy
-text. Use the fresh HTTPS result for the dedicated Mollie profile. The
+Keep both results with the release evidence and confirm their evidence-file
+SHA-256 values agree. The check compares served content with the supplied
+approvals. The receipt includes the UTC observation time and omits merchant
+facts and policy text. Use the fresh HTTPS result for the dedicated Mollie profile. The
 application browser gate also exercises the built review mode against an
 isolated synthetic catalogue and a temporary upstream outage.
 

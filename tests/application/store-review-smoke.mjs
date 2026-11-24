@@ -30,6 +30,34 @@ const imageLimit = 250 * 1024;
 const nextCollection =
   /^\/nl\/collection\?after=[A-Z0-9](?:[A-Z0-9-]{0,63}[A-Z0-9])?$/;
 const pageLimit = 40;
+const reviewDirectives = [
+  "default-src 'self'",
+  "script-src 'self' 'nonce' 'strict-dynamic'",
+  "style-src 'self' 'nonce'",
+  "img-src 'self' data:",
+  "font-src 'self'",
+  "connect-src 'self'",
+  "frame-ancestors 'none'",
+  "base-uri 'self'",
+  "form-action 'self'",
+  "object-src 'none'",
+];
+
+function validReviewCsp(policy) {
+  const noncePattern = /'nonce-([A-Za-z0-9+/]{24})'/g;
+  const nonces = [...policy.matchAll(noncePattern)];
+  const rules = policy
+    .replace(noncePattern, "'nonce'")
+    .split(";")
+    .map((rule) => rule.trim())
+    .filter(Boolean);
+  return (
+    nonces.length === 2 &&
+    nonces[0][1] === nonces[1][1] &&
+    rules.length === reviewDirectives.length &&
+    reviewDirectives.every((rule) => rules.includes(rule))
+  );
+}
 
 function directives(response, name) {
   return (response.headers.get(name) ?? "")
@@ -123,6 +151,10 @@ async function verifyPage(probe, path, label, inspect) {
     requireCheck(
       /^text\/html(?:;|$)/i.test(receipt.headers.get("content-type") ?? ""),
       `${label}: expected HTML response`,
+    );
+    requireCheck(
+      validReviewCsp(receipt.headers.get("content-security-policy") ?? ""),
+      `${label}: missing or unexpected content security policy`,
     );
   }
   return inspectPage(
@@ -254,14 +286,20 @@ async function main() {
       process.env.NODE_TLS_REJECT_UNAUTHORIZED !== "0",
     "HTTPS readback requires TLS verification",
   );
-  const evidence = await loadEvidence(evidenceFile);
+  const { evidence, evidenceSha256 } = await loadEvidence(evidenceFile);
   const result = await runStoreReviewSmoke({
     origin,
     connectionOrigin,
     revision,
     evidence,
   });
-  console.log(JSON.stringify(result));
+  console.log(
+    JSON.stringify({
+      ...result,
+      evidenceSha256,
+      observedAt: new Date().toISOString(),
+    }),
+  );
 }
 
 if (

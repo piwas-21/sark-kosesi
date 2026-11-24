@@ -188,10 +188,22 @@ export function inspectInformation(doc, store) {
       identity[1] === store.vatId,
     "Rendered seller identity differs from approved evidence",
   );
-  for (const [policy, id] of Object.entries(policySections)) {
+  for (const [policy, { id, title }] of Object.entries(policySections)) {
+    const sections = elements(doc, `#${id}`);
+    const section = sections[0];
+    const [heading, paragraph] = section?.children ?? [];
     requireCheck(
-      contents(doc, `main section#${id} p`) ===
-        normalized(store.policies[policy]) &&
+      sections.length === 1 &&
+        section.matches("main section") &&
+        section.children.length === 2 &&
+        heading.matches("h2") &&
+        paragraph.matches("p") &&
+        normalized(heading.textContent) === title &&
+        normalized(paragraph.textContent) ===
+          normalized(store.policies[policy]) &&
+        [...section.childNodes].every(
+          (node) => node.nodeType !== 3 || !normalized(node.textContent),
+        ) &&
         doc.querySelector(`footer a[href="${informationPath}#${id}"]`),
       `Rendered ${policy} policy or navigation differs from approved evidence`,
     );
