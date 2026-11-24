@@ -4,10 +4,12 @@ This deploys the non-selling preview for P3 integration work. It does not releas
 `main`, configure a live payment key or establish provider/product acceptance.
 Read AGENTS.md and the operations/security requirements first.
 
-The runtime uses a digest-pinned distroless Debian 13 C/C++ base with
-Debian's patched zlib from DSA-6613-1. It preserves the existing UID/GID
-1000 account mapping from the pinned Node build image. The web and
-callback-edge images also copy the pinned Node executable and its licence.
+The app runtime uses the digest-pinned Distroless Debian 13 no-SSL base.
+An offline build stage imports the compiler runtime packages, Debian inventory
+and notices from the pinned Distroless CC donor. The API uses Rustls. The web
+and callback edge copy the pinned Node executable and licence, so their bundled
+OpenSSL is tracked through the Node release separately from the Debian package
+inventory. The existing UID/GID 1000 mapping comes from the Node build image.
 Health checks use direct executable commands. Build and scan each exact image
 and verify private startup before reuse.
 
