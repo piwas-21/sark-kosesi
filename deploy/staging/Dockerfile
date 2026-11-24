@@ -32,7 +32,14 @@ RUN npm run build --workspace @piwas/web
 RUN cd /app/apps/web/.next/standalone/node_modules && \
     rm -rf -- sharp @img/sharp-* @img/colour
 
-FROM gcr.io/distroless/cc-debian13:nonroot@sha256:cb87acc574abe719b6e5c547384defa2f7b1f24af9605d3f618cf852495d8be2 AS runtime
+FROM gcr.io/distroless/cc-debian13:nonroot@sha256:cb87acc574abe719b6e5c547384defa2f7b1f24af9605d3f618cf852495d8be2 AS runtime-library-source
+
+FROM node-runtime AS runtime-libraries
+COPY deploy/staging/copy-runtime-libraries.sh /copy-runtime-libraries.sh
+RUN --network=none --mount=type=bind,from=runtime-library-source,target=/donor sh /copy-runtime-libraries.sh /donor /runtime-libraries
+
+FROM gcr.io/distroless/base-nossl-debian13:nonroot@sha256:4006ac92504be607b70de01d1f64f38288c69fcd8faa820f6d3aed266ea32ac5 AS runtime
+COPY --from=runtime-libraries /runtime-libraries/ /
 COPY --from=node-runtime /etc/passwd /etc/passwd
 COPY --from=node-runtime /etc/group /etc/group
 

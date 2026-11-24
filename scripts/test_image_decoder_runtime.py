@@ -133,6 +133,31 @@ def client(mode, path):
     print("API UID: prepare, validate, malformed input and disconnect recovery passed")
 
 
+def assert_runtime_packages(pid):
+    root = Path(f"/proc/{pid}/root")
+    metadata = root / "var/lib/dpkg/status.d"
+    for package in ("gcc-14-base", "libgcc-s1", "libstdc++6", "libgomp1"):
+        run(["sudo", "-n", "test", "-s", str(metadata / package)])
+        run(["sudo", "-n", "test", "-s", str(metadata / (package + ".md5sums"))])
+    run(["sudo", "-n", "test", "!", "-e", str(metadata / "libssl3t64")])
+    tls_libraries = run(
+        [
+            "sudo",
+            "-n",
+            "find",
+            str(root / "usr/lib"),
+            "-name",
+            "libssl.so*",
+            "-o",
+            "-name",
+            "libcrypto.so*",
+        ],
+        capture=True,
+    ).stdout
+    if tls_libraries:
+        raise AssertionError("runtime filesystem contains system OpenSSL libraries")
+
+
 def assert_runtime(container):
     info = json.loads(run(["docker", "inspect", container], capture=True).stdout)[0]
     config, host, state = info["Config"], info["HostConfig"], info["State"]
@@ -191,6 +216,7 @@ def assert_runtime(container):
     quota, period = (group / "cpu.max").read_text().split()
     if quota == "max" or int(quota) != int(period):
         raise AssertionError("cgroup CPU quota differs from one CPU")
+    assert_runtime_packages(pid)
     print("Live daemon UID, capabilities, root mount, network and cgroups verified")
 
 
