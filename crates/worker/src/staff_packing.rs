@@ -4,7 +4,8 @@ use commerce_infrastructure::{
     runtime::{SecureIdentifiers, SystemClock},
     staff_access::SessionToken,
 };
-use serde_json::{Value, json};
+use serde::Serialize;
+use serde_json::json;
 use sqlx::PgPool;
 use std::io::{self, Write};
 
@@ -97,32 +98,69 @@ pub(super) async fn release(
         .map_err(|_| io::Error::other("packing output unavailable"))
 }
 
-fn report(inspection: Inspection) -> Value {
-    let lines: Vec<_> = inspection
-        .lines
-        .into_iter()
-        .map(|line| {
-            json!({
-                "sku": line.sku,
-                "ordered": line.ordered,
-                "activeAsserted": line.active_asserted,
-                "notAsserted": line.not_asserted,
-            })
-        })
-        .collect();
-    let history: Vec<_> = inspection
-        .history
-        .into_iter()
-        .map(|entry| {
-            json!({
-                "id": entry.id,
-                "action": entry.action,
-                "targetId": entry.target_id,
-                "recordedAt": entry.recorded_at,
-            })
-        })
-        .collect();
-    json!({"kind": "packing_assertions", "lines": lines, "history": history})
+#[derive(Serialize)]
+pub(super) struct PackingSummary {
+    lines: Vec<Line>,
+    history: Vec<Entry>,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct Line {
+    sku: String,
+    ordered: u32,
+    active_asserted: u32,
+    not_asserted: u32,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct Entry {
+    id: String,
+    action: String,
+    target_id: Option<String>,
+    recorded_at: i64,
+}
+
+impl From<Inspection> for PackingSummary {
+    fn from(value: Inspection) -> Self {
+        Self {
+            lines: value
+                .lines
+                .into_iter()
+                .map(|line| Line {
+                    sku: line.sku,
+                    ordered: line.ordered,
+                    active_asserted: line.active_asserted,
+                    not_asserted: line.not_asserted,
+                })
+                .collect(),
+            history: value
+                .history
+                .into_iter()
+                .map(|entry| Entry {
+                    id: entry.id,
+                    action: entry.action,
+                    target_id: entry.target_id,
+                    recorded_at: entry.recorded_at,
+                })
+                .collect(),
+        }
+    }
+}
+
+#[derive(Serialize)]
+struct PackingReport {
+    kind: &'static str,
+    #[serde(flatten)]
+    summary: PackingSummary,
+}
+
+fn report(inspection: Inspection) -> PackingReport {
+    PackingReport {
+        kind: "packing_assertions",
+        summary: inspection.into(),
+    }
 }
 
 #[cfg(test)]
@@ -157,7 +195,7 @@ mod tests {
             ],
         });
         assert_eq!(
-            result,
+            serde_json::to_value(result).expect("serialize packing report"),
             json!({
                 "kind": "packing_assertions",
                 "lines": [{"sku": "SYNTHETIC-FILLED", "ordered": 2, "activeAsserted": 0, "notAsserted": 2}],

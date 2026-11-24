@@ -10,6 +10,8 @@ mod paid_parent;
 mod payments;
 mod reversal_items;
 mod reversal_pages;
+mod staff_cancellation;
+mod staff_handover;
 mod staff_input;
 mod staff_packing;
 mod staff_packing_input;
@@ -22,23 +24,33 @@ async fn main() -> Result<(), std::io::Error> {
     }
     let mode = mode()?;
     let subscriber = tracing_subscriber::fmt().json();
-    if matches!(
+    let staff_order_read = matches!(
         mode,
-        Mode::InspectPacking(_) | Mode::ReleasePacking { .. } | Mode::RecordPacking { .. }
-    ) {
+        Mode::ReviewCancellation(_)
+            | Mode::ReviewCancellationInbox(_)
+            | Mode::InspectCancellationPacking(_)
+            | Mode::InspectHandoverEvidence(_)
+    );
+    if staff_order_read
+        || matches!(
+            mode,
+            Mode::InspectPacking(_) | Mode::ReleasePacking { .. } | Mode::RecordPacking { .. }
+        )
+    {
         subscriber.with_writer(std::io::stderr).init();
     } else {
         subscriber.init();
     }
     // Read before any DB or provider configuration; never accept a token argument.
-    let staff_token = if matches!(
-        mode,
-        Mode::ReviewReversalItem(_)
-            | Mode::ReviewReversalInbox(_)
-            | Mode::InspectPacking(_)
-            | Mode::ReleasePacking { .. }
-            | Mode::RecordPacking { .. }
-    ) {
+    let staff_token = if staff_order_read
+        || matches!(
+            mode,
+            Mode::ReviewReversalItem(_)
+                | Mode::ReviewReversalInbox(_)
+                | Mode::InspectPacking(_)
+                | Mode::ReleasePacking { .. }
+                | Mode::RecordPacking { .. }
+        ) {
         Some(staff_input::read_token()?)
     } else {
         None
@@ -92,6 +104,30 @@ async fn main() -> Result<(), std::io::Error> {
             let token =
                 staff_token.ok_or_else(|| std::io::Error::other("staff review unavailable"))?;
             staff_reversal_review::next(&pool, &token, after.as_ref()).await?
+        }
+        Mode::ReviewCancellation(order) => {
+            let token = staff_token
+                .as_ref()
+                .ok_or_else(|| std::io::Error::other("staff cancellation review unavailable"))?;
+            staff_cancellation::inspect(&pool, token, &order).await?
+        }
+        Mode::ReviewCancellationInbox(after) => {
+            let token = staff_token
+                .as_ref()
+                .ok_or_else(|| std::io::Error::other("staff cancellation review unavailable"))?;
+            staff_cancellation::next(&pool, token, after.as_deref()).await?
+        }
+        Mode::InspectCancellationPacking(order) => {
+            let token = staff_token
+                .as_ref()
+                .ok_or_else(|| std::io::Error::other("staff cancellation review unavailable"))?;
+            staff_cancellation::inspect_packing(&pool, token, &order).await?
+        }
+        Mode::InspectHandoverEvidence(order) => {
+            let token = staff_token
+                .as_ref()
+                .ok_or_else(|| std::io::Error::other("staff handover inspection unavailable"))?;
+            staff_handover::inspect(&pool, token, &order).await?
         }
         Mode::InspectPacking(order) => {
             let token = staff_token
