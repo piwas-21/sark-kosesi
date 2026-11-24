@@ -3,6 +3,8 @@
 #[allow(dead_code)]
 #[path = "../../infrastructure/tests/support/payment_fixture.rs"]
 mod payment_fixture;
+#[path = "support/recovery_file.rs"]
+mod recovery_file;
 #[allow(dead_code)]
 #[path = "support/staff_review.rs"]
 mod staff_review;
@@ -19,6 +21,7 @@ use commerce_infrastructure::{
     staff_access::SessionToken,
     stock::{WarehouseRequest, warehouse_movement},
 };
+use recovery_file::IntentFile;
 use serde_json::{Value, json};
 use sqlx::{Executor, PgPool};
 use staff_review::{denied, recognize_paid_attempt, report};
@@ -51,7 +54,7 @@ async fn effects(pool: &PgPool) -> Value {
 }
 
 #[sqlx::test(migrator = "MIGRATOR")]
-async fn late_stock_cli_lists_one_validated_case_without_deciding_it(pool: PgPool) {
+async fn late_stock_cli_separates_review_from_confirmed_recovery(pool: PgPool) {
     seed_staff(&pool).await;
     let empty = json!({"kind":"late_stock_review_inbox","case":null,"nextCursor":null});
     assert_eq!(report(&pool, &[INBOX], &REVIEWER), empty);
@@ -137,6 +140,73 @@ async fn late_stock_cli_lists_one_validated_case_without_deciding_it(pool: PgPoo
     assert_eq!(report(&pool, &[INBOX, &case.id], &REVIEWER), empty);
     denied(&pool, &[INBOX], &RECOVERER, "late stock review unavailable");
     assert_eq!(effects(&pool).await, before);
+
+    let intent = IntentFile::new();
+    let args = ["--retry-late-stock", &case.id, intent.path(), "--confirm"];
+    let payload = |case_digest: &str, generation, effect| {
+        json!({"caseDigest":case_digest,"expectedGeneration":generation,
+            "effectKey":effect,"reason":"Synthetic report of a checked physical count"})
+    };
+    let first_effect = format!("{:032x}", 1);
+    let next_effect = format!("{:032x}", 2);
+    intent.write(&payload(&digest, 1, &first_effect));
+    denied(&pool, &args, &REVIEWER, "late stock retry unavailable");
+    intent.write(&payload(&"f".repeat(64), 1, &first_effect));
+    denied(&pool, &args, &RECOVERER, "late stock retry unavailable");
+    intent.write(&payload(&digest, 2, &next_effect));
+    denied(&pool, &args, &RECOVERER, "late stock retry unavailable");
+    assert_eq!(effects(&pool).await, before);
+
+    intent.write(&payload(&digest, 1, &first_effect));
+    let first = report(&pool, &args, &RECOVERER);
+    let (id, at): (String, i64) = sqlx::query_as(
+        "SELECT id,recorded_at FROM late_stock_dispositions WHERE case_id=$1 AND generation=1",
+    )
+    .bind(&case.id)
+    .fetch_one(&pool)
+    .await
+    .expect("one first decision");
+    assert_eq!(
+        first,
+        json!({"kind":"late_stock_retry","decisionId":id,"caseId":case.id,
+        "generation":1,"recordedAt":at,"outcome":{"state":"still_scarce"},"replayed":false})
+    );
+    let after_first = effects(&pool).await;
+    assert_eq!(after_first["allocations"], 0);
+    assert_eq!(after_first["stock"], before["stock"]);
+    assert_eq!(after_first["moves"], before["moves"]);
+
+    warehouse_movement(
+        &pool,
+        WarehouseRequest {
+            effect_key: "fixture-foam-restocked",
+            component_code: "SEAT-FOAM",
+            change: WarehouseChange::Count(6),
+            actor: "fixture-warehouse",
+            reason: "synthetic physical replenishment",
+        },
+    )
+    .await
+    .expect("genuine restock before a fresh decision");
+    intent.write(&payload(&digest, 2, &next_effect));
+    let second = report(&pool, &args, &RECOVERER);
+    let (id, at, allocation): (String, i64, String) = sqlx::query_as("SELECT id,recorded_at,allocation_id FROM late_stock_dispositions WHERE case_id=$1 AND generation=2")
+        .bind(&case.id).fetch_one(&pool).await.expect("one allocation decision");
+    assert_eq!(
+        second,
+        json!({"kind":"late_stock_retry","decisionId":id,"caseId":case.id,
+        "generation":2,"recordedAt":at,"outcome":{"state":"allocated","allocationId":allocation},"replayed":false})
+    );
+    let after_second = effects(&pool).await;
+    assert_eq!(after_second["allocations"], 1);
+    assert_eq!(after_second["cases"], 1);
+    assert_eq!(after_second["decisions"], 2);
+
+    intent.write(&payload(&digest, 1, &first_effect));
+    let mut expected_replay = first;
+    expected_replay["replayed"] = true.into();
+    assert_eq!(report(&pool, &args, &RECOVERER), expected_replay);
+    assert_eq!(effects(&pool).await, after_second);
 
     pool.execute("ALTER TABLE commerce_outbox DISABLE TRIGGER USER; DELETE FROM commerce_outbox WHERE kind='order.stock_recovery_review.v1'; ALTER TABLE commerce_outbox ENABLE TRIGGER USER")
         .await.expect("isolated damaged reciprocal custody");

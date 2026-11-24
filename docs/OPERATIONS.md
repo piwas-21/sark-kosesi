@@ -364,8 +364,30 @@ run recovery. Check those independently; preserve the original custody and slot.
 Review stops retain unresolved, ambiguity, paid-observed, scan/poll/step-limit,
 custody-invalid or exhausted-retry reasons. Any stock or financial transition
 requires its own current evidence and authority. Preserve an uncertain provider
-outcome after an empty search. The private finance-authorized resume operation
-handles eligible transient stops with a bounded, audited decision.
+outcome after an empty search. To resume an eligible exhausted transient stop,
+use `commerce-worker --resume-payment-recovery <attempt-id> <private-intent-file> --confirm`
+in an isolated local/test environment. Supply a recent-MFA `payment.reconcile`
+staff session as exactly 32 raw bytes on non-terminal stdin with EOF within five
+seconds. The owner-only regular JSON file is at most 8 KiB and contains exactly
+these fields.
+
+```json
+{
+  "profileId": "REVIEWED_TEST_PROFILE_ID",
+  "expectedGeneration": 5,
+  "expectedResumeRevision": 0,
+  "effectKey": "incident-example-key",
+  "reason": "Checked transient transport failures and original attempt custody"
+}
+```
+
+Copy the exact current generation and resume revision from the checkpoint and
+match the original frozen test profile. The receipt reports the original decision's
+generation, new resume revision, resulting phase and replay flag. This command
+records the decision without running a provider operation or using a provider key.
+A later separately configured supervisor pass handles the existing GET-only work.
+After a lost result, retry the same confirmed intent, effect key and actor.
+Continue to treat paid, ambiguous, capped and invalid-custody stops separately.
 
 For a process crash, wait for the 60-second lease to expire and run a later bounded
 pass; existing page receipts resume without replaying a list operation. Repeated
@@ -512,7 +534,16 @@ Supply the same 32-byte non-terminal session input as packing inspection. The
 JSON has one validated `case` and a `nextCursor` to pass on the next call.
 Both are null at the end. Start over to find earlier insertions. Keep the case
 identity and digest private. An open scarcity case may report its next decision
-generation.
+generation. Use `commerce-worker --retry-late-stock <case-id> <private-intent-file> --confirm`
+with a separately authorized recent-MFA `stock.recover` session and the same
+non-terminal input. The owner-only regular JSON file is at most 8 KiB and contains
+exactly `caseDigest`, `expectedGeneration`, `effectKey` and `reason`. Use the
+inbox case digest and exact next generation. The effect key is 32 lowercase
+hexadecimal characters. Use one key per confirmed decision. The receipt includes
+its internal decision and case IDs, generation, timestamp, replay flag and either
+`still_scarce` or `allocated` with an internal allocation ID. An exact retry
+returns the recorded outcome. A new assessment needs its own confirmation and
+next generation. Release and prior consumption cases remain stopped.
 
 Use `commerce-worker --inspect-refund-proposal <proposal-id>` with a
 recent-MFA `refund.execution.prepare` session and the same private input.

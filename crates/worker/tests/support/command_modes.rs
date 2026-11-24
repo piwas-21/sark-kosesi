@@ -238,3 +238,34 @@ fn packing_record_requires_exact_confirmed_arguments() {
         assert!(parse_mode(&args(&command)).is_err());
     }
 }
+
+#[test]
+fn operator_recovery_commands_require_exact_confirmation_and_a_file() {
+    let id = "0123456789abcdef0123456789abcdef";
+    for (command, action) in [
+        ("--retry-late-stock", staff_recovery::Action::RetryLateStock),
+        (
+            "--resume-payment-recovery",
+            staff_recovery::Action::ResumePayment,
+        ),
+    ] {
+        let expected = Mode::StaffRecovery {
+            action,
+            target: id.into(),
+            path: "private-intent.json".into(),
+        };
+        assert!(
+            parse_mode(&args(&[command, id, "private-intent.json", "--confirm"]))
+                .is_ok_and(|mode| mode == expected)
+        );
+        for invalid in [
+            vec![command, id, "private-intent.json"],
+            vec![command, id, "private-intent.json", "true"],
+            vec![command, id, "", "--confirm"],
+            vec![command, "bad", "private-intent.json", "--confirm"],
+            vec![command, id, "private-intent.json", "--confirm", "extra"],
+        ] {
+            assert!(parse_mode(&args(&invalid)).is_err());
+        }
+    }
+}

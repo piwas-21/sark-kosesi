@@ -330,3 +330,187 @@ fn custody_preflight_rejects_wrong_mode_and_invalid_identifier_before_database()
     assert!(!production.status.success());
     assert!(log(&production).contains("production is disabled"));
 }
+
+#[cfg(unix)]
+#[path = "support/recovery_file.rs"]
+mod recovery_file;
+#[cfg(unix)]
+#[allow(dead_code)]
+#[path = "support/staff_review.rs"]
+mod staff_review;
+
+#[cfg(unix)]
+#[sqlx::test(migrator = "MIGRATOR")]
+async fn finance_cli_resumes_exact_transient_checkpoint_without_provider_configuration(
+    pool: PgPool,
+) {
+    use commerce_application::request_context::Clock;
+    use commerce_infrastructure::{
+        payment_attempts::reconciliation::{Phase, read_job},
+        runtime::SystemClock,
+        staff_access::SessionToken,
+    };
+    use serde_json::json;
+    use staff_review::{denied, report};
+    use std::{fs, os::unix::fs::PermissionsExt};
+
+    let (store, clock, session, csrf, order) = Box::pin(payment_fixture::accepted(&pool)).await;
+    let guest = GuestCredential::from_session(&session).expect("fixture owner");
+    let config = payment_fixture::config();
+    let prepared = Box::pin(prepare_attempt(
+        &store,
+        &guest,
+        &csrf,
+        "operator-resume-fixture",
+        &payment_fixture::intent(&order),
+        &config,
+    ))
+    .await
+    .expect("prepared payment");
+    let binding = &prepared.frozen.snapshot().binding;
+    let ids = payment_fixture::Ids(AtomicU64::new(92_000));
+    Box::pin(start_dispatch(
+        &pool,
+        clock.as_ref(),
+        &ids,
+        &binding.id,
+        &config,
+    ))
+    .await
+    .expect("committed dispatch custody");
+    sqlx::query(
+        "INSERT INTO payment_reconciliation_jobs(attempt_id,source_event_id,created_at,updated_at,due_at)
+         SELECT $1,id,created_at,created_at,created_at FROM commerce_outbox
+         WHERE aggregate_id=$2 AND kind='payment.reconciliation_required.v1'",
+    )
+    .bind(&binding.id)
+    .bind(&order.identity.id)
+    .execute(&pool)
+    .await
+    .expect("guarded initial checkpoint");
+    for _ in 0..4 {
+        pool.execute("UPDATE payment_reconciliation_jobs SET failures=failures+1,generation=generation+1,operation=operation+1")
+            .await.expect("guarded earlier transient failure checkpoint");
+    }
+    pool.execute("UPDATE payment_reconciliation_jobs SET phase='needs_review',review_reason='retry_exhausted',failures=5,updated_at=1501,due_at=1501,generation=5,operation=5")
+        .await.expect("synthetic exhausted transient checkpoint");
+
+    let finance = [61; 32];
+    let reviewer = [62; 32];
+    pool.execute("INSERT INTO staff_accounts VALUES ('fixture-finance',true),('fixture-reviewer',true); INSERT INTO staff_capabilities VALUES ('fixture-finance','payment.reconcile'),('fixture-reviewer','stock.review')").await.expect("separate synthetic capabilities");
+    let now = i64::try_from(SystemClock.unix_seconds().expect("clock")).expect("SQL time");
+    for (id, token) in [("fixture-finance", finance), ("fixture-reviewer", reviewer)] {
+        sqlx::query("INSERT INTO staff_sessions(token_hash,staff_id,created_at,expires_at,mfa_verified_at) VALUES ($1,$2,$3,$4,$3)")
+            .bind(SessionToken::from_bytes(token).digest().as_slice())
+            .bind(id).bind(now - 1).bind(now + 300).execute(&pool).await.expect("synthetic staff session");
+    }
+
+    let file = recovery_file::IntentFile::new();
+    let args = [
+        "--resume-payment-recovery",
+        &binding.id,
+        file.path(),
+        "--confirm",
+    ];
+    let mut payload = json!({
+        "profileId":binding.profile.id,
+        "expectedGeneration":5,
+        "expectedResumeRevision":0,
+        "effectKey":"synthetic-finance-resume",
+        "reason":"Synthetic checked transport incident",
+    });
+    let before = payment_fixture::counts(&pool).await;
+    let receipt_count = || async {
+        sqlx::query_scalar::<_, i64>("SELECT count(*) FROM payment_recovery_resumes")
+            .fetch_one(&pool)
+            .await
+            .expect("immutable recovery audit count")
+    };
+    for body in [
+        b"[\"profile\",5,0,\"effect\",\"reason\"]".as_slice(),
+        br#"{"profileId":"profile","expectedGeneration":5,"expectedGeneration":5,"expectedResumeRevision":0,"effectKey":"effect","reason":"reason"}"#,
+        &vec![b'x'; 8193],
+    ] {
+        fs::write(file.path(), body).expect("invalid synthetic intent");
+        denied(&pool, &args, &finance, "operator recovery input unavailable");
+    }
+    file.write(&payload);
+    fs::set_permissions(file.path(), fs::Permissions::from_mode(0o640))
+        .expect("exposed fixture mode");
+    denied(
+        &pool,
+        &args,
+        &finance,
+        "operator recovery input unavailable",
+    );
+    fs::set_permissions(file.path(), fs::Permissions::from_mode(0o600))
+        .expect("restore private mode");
+    denied(
+        &pool,
+        &args,
+        &reviewer,
+        "payment recovery resume unavailable",
+    );
+    payload["profileId"] = "different-test-profile".into();
+    file.write(&payload);
+    denied(
+        &pool,
+        &args,
+        &finance,
+        "payment recovery resume unavailable",
+    );
+    payload["profileId"] = binding.profile.id.clone().into();
+    payload["expectedResumeRevision"] = 1.into();
+    file.write(&payload);
+    denied(
+        &pool,
+        &args,
+        &finance,
+        "payment recovery resume unavailable",
+    );
+    assert_eq!(receipt_count().await, 0);
+    assert_eq!(payment_fixture::counts(&pool).await, before);
+
+    payload["expectedResumeRevision"] = 0.into();
+    file.write(&payload);
+    assert_eq!(
+        report(&pool, &args, &finance),
+        json!({"kind":"payment_recovery_resume","generation":5,"resumeRevision":1,"phase":"search","replayed":false})
+    );
+    let resumed = read_job(&pool, &binding.id)
+        .await
+        .expect("valid checkpoint")
+        .expect("present");
+    assert_eq!(resumed.phase, Phase::Search);
+    assert_eq!(
+        (
+            resumed.generation,
+            resumed.operation,
+            resumed.failures,
+            resumed.resume_revision
+        ),
+        (5, 5, 0, 1)
+    );
+    pool.execute("UPDATE payment_reconciliation_jobs SET generation=6,operation=6,failures=1")
+        .await
+        .expect("later synthetic progress");
+    assert_eq!(
+        report(&pool, &args, &finance),
+        json!({"kind":"payment_recovery_resume","generation":5,"resumeRevision":1,"phase":"search","replayed":true})
+    );
+    let after = read_job(&pool, &binding.id)
+        .await
+        .expect("valid checkpoint")
+        .expect("present");
+    assert_eq!(
+        (
+            after.generation,
+            after.operation,
+            after.failures,
+            after.resume_revision
+        ),
+        (6, 6, 1, 1)
+    );
+    assert_eq!(receipt_count().await, 1);
+    assert_eq!(payment_fixture::counts(&pool).await, before);
+}

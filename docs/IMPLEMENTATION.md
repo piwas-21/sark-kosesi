@@ -407,7 +407,9 @@ full workload bounds and operational acceptance remain separate.
    local/test worker command. No key or scheduler is installed. Private finance-authorized recovery now permits
    at most three explicit resumes of exhausted transient GET failures. Immutable
    before/after checkpoints, fresh session/MFA and full-intent receipt retries keep
-   the original attempt, page, claim/poll/scan budgets and paid facts intact. Paid,
+   the original attempt, page, claim/poll/scan budgets and paid facts intact.
+   The local/test worker exposes confirmed resume through a private intent file and
+   the existing staff bearer input, with no provider operation during the decision. Paid,
    ambiguous, capped and invalid-custody stops cannot use this action. Complete
    durable bounded callback ingress/queue processing, remaining operator dispositions
    and separate financial/late-stock transitions
@@ -471,8 +473,10 @@ full workload bounds and operational acceptance remain separate.
    cursor. Refresh to see earlier insertions. A separate
    private recent-MFA `stock.recover` command accepts an explicitly confirmed
    scarcity case revision and one bounded generation. It atomically records an
-   allocation or fresh still-scarce assessment. Keep release/consumption cases
-   stopped and require fresh confirmation for every new scarcity generation.
+   allocation or fresh still-scarce assessment. The local/test worker accepts the
+   exact inbox digest and generation in a private intent file under the separate
+   recovery grant. Keep release/consumption cases stopped and require fresh
+   confirmation for every new scarcity generation.
    A private recent-MFA `refund.prepare` command records a confirmed, bounded
    reservation against the original order's current received EUR recognition.
    It serializes the original attempt and cumulative SKU/shipping gross, net and
