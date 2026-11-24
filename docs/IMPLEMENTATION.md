@@ -633,9 +633,8 @@ an unpublished SKU or clear all active entries. A separately enabled test-only
 GET uses preview authentication, the configured Origin and the customer cookie
 to return current published SKU identities and a decimal bucket revision. It
 may initialize an empty bucket. Separate private subscribe and unsubscribe
-adapters bind the session synchronizer inside the bucket transaction. HTTP
-mutation exposure and complete browser protections remain future work. No public
-account route, stock transition, outbox or alert delivery is installed. Current opt-in time
+adapters bind the session synchronizer inside the bucket transaction. Public
+browser protections, stock transition detection and alert delivery remain open. Current opt-in time
 is retained only while subscribed; this is not consent history. Alert scheduling,
 delivery idempotency and cancellation ordering, retention, locale, recurrence,
 privacy export/deletion, guest enrollment and abuse controls remain P4 work.
@@ -647,6 +646,15 @@ It takes an explicit desired subscription state and decimal bucket revision;
 the same transaction validates the proof and applies the owned change. A hidden
 SKU remains cancellable. The route is disabled unless explicitly enabled in test
 mode and does not provide public browser access or send notifications.
+
+The disposable Chromium rehearsal exercises the two lists from separate
+authenticated contexts. It checks crossed synchronizers, unchanged independent
+revisions, concurrent exact retries and stale mutations. After withdrawing the
+synthetic publication, it checks hidden removal and final empty memberships.
+The same rehearsal revokes the owner's session and verifies that a previously
+open tab loses access to favourites, restock and order history. Re-login
+restores the same owned data with a fresh synchronizer. PostgreSQL confirms the
+owner's revocation and the second customer's active session.
 
 ## P4 staff identity and operator access
 

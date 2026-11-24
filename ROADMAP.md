@@ -240,8 +240,9 @@ Mailbox delivery and public ingress readiness still require acceptance.
 An optional private test-only password login uses admitted credential checks
 and returns the issued session only in a secure host-only cookie. A separately
 opted-in test transport can issue a session-bound synchronizer and revoke that
-session with its cookie and proof. The original cookie-only login remains
-unchanged. Neither path establishes public login or browser readiness.
+session with its cookie and proof. The synthetic Chromium journey exercises
+revocation in an open tab, another customer's ongoing access and owner
+re-login with a fresh synchronizer. Public login remains gated.
 A private favourites primitive keeps up to 25 stable merchant SKUs per verified
 account. Live session authority and current publication are rechecked; withdrawn
 entries are hidden but can be removed or cleared. Browser controls, privacy
@@ -260,6 +261,10 @@ It sends no messages and does not detect stock transitions. Alert delivery,
 retention and cancellation policy remain open.
 An independently enabled test-only mutation uses a bound session proof to add or
 cancel a subscription; it is not public ingress or notification delivery.
+The synthetic Chromium journey covers both lists with independent accounts
+and revisions, exact retries, stale changes and removal after publication
+withdrawal. PostgreSQL confirms the final state and unchanged order, stock
+and delivery effects.
 
 A private guest-link issuer now atomically stores a proof and purpose-separated
 encrypted bearer after a durable nonce reservation. It returns no recipient or

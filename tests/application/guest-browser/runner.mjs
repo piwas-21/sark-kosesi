@@ -8,6 +8,17 @@ import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { chromium } from "@playwright/test";
 import { availablePort } from "../ports.mjs";
+import {
+  allowsBrowserCustomerList,
+  checkAnonymousCustomerLists,
+  checkCustomerLists,
+  customerListFlags,
+  customerListRoutes,
+} from "./customer-lists.mjs";
+import {
+  checkCustomerLogout,
+  customerLogoutRoute,
+} from "./customer-logout.mjs";
 import { allowsBrowserHistory } from "./link-policy.mjs";
 import {
   allowsPendingCancellationRead,
@@ -98,6 +109,8 @@ const routes = [
   ["POST", /^\/api\/test\/customer\/login-with-csrf$/],
   ["POST", /^\/api\/test\/customer\/guest-order-link\/redeem$/],
   ["GET", /^\/api\/test\/customer\/linked-orders$/],
+  ...customerListRoutes,
+  customerLogoutRoute,
 ];
 let origin = "";
 let server;
@@ -188,6 +201,7 @@ try {
       };
       const ownerRead =
         allowsBrowserHistory(browserRequest, origin) ||
+        allowsBrowserCustomerList(browserRequest, origin) ||
         allowsPendingCancellationRead(browserRequest, origin);
       if (
         (!ownerRead && request.headers.origin !== origin) ||
@@ -263,6 +277,7 @@ try {
     TEST_LOGIN_CSRF_TRANSPORT: "1",
     TEST_GUEST_LINK_REDEEM_TRANSPORT: "1",
     TEST_LINKED_ORDERS_TRANSPORT: "1",
+    ...Object.fromEntries(customerListFlags.map((key) => [key, "1"])),
   };
   delete env.CALLBACK_INTAKE_PROFILE_ID;
   for (const key of Object.keys(env))
@@ -278,6 +293,7 @@ try {
         "TEST_LOGIN_CSRF_TRANSPORT",
         "TEST_GUEST_LINK_REDEEM_TRANSPORT",
         "TEST_LINKED_ORDERS_TRANSPORT",
+        ...customerListFlags,
       ].includes(key)
     )
       delete env[key];
@@ -669,6 +685,7 @@ try {
     401,
   );
   assert.equal((await call(historyPath, "GET")).status, 401);
+  await checkAnonymousCustomerLists(call);
   await run(
     "cargo",
     [...testArgs, "guest_browser_link::verify_browser_link_unconsumed"],
@@ -685,6 +702,8 @@ try {
   const otherPage = await otherContext.newPage();
   otherPage.on("request", (request) => outbound.push(request));
   await otherPage.goto(origin);
+  const otherCall = (path, method, body, proof) =>
+    callWith(otherPage, path, method, body, proof);
   const otherLogin = await callWith(otherPage, loginPath, "POST", {
     email: "other@example.test",
     password,
@@ -812,8 +831,7 @@ try {
   await run("cargo", [...testArgs, "verify_guest_browser_effects"], env);
   const pending = await exercisePendingCancellation({
     call,
-    otherCall: (path, method, body, proof) =>
-      callWith(otherPage, path, method, body, proof),
+    otherCall,
     reload: () => page.reload(),
     csrf,
     quoteInput,
@@ -845,6 +863,40 @@ try {
       GUEST_BROWSER_PENDING_REQUESTED_AT: String(pending.requestedAt),
     },
   );
+  const listFixture = (test) =>
+    run("cargo", [...testArgs, `guest_browser_customer_lists::${test}`], env);
+  await listFixture("snapshot_customer_list_browser_effects");
+  await checkCustomerLists({
+    owner: call,
+    other: otherCall,
+    ownerCsrf,
+    otherCsrf: otherLogin.body.csrf_token,
+    withdraw: () => listFixture("withdraw_customer_list_browser_publication"),
+  });
+  await listFixture("verify_customer_list_browser_effects");
+  await checkCustomerLogout({
+    origin,
+    owner: call,
+    other: otherCall,
+    ownerContext: context,
+    otherContext,
+    ownerCsrf,
+    otherCsrf: otherLogin.body.csrf_token,
+    ownedOrderId: first.body.id,
+    openOwnerTab: async () => {
+      const tab = await context.newPage();
+      tab.on("request", (request) => outbound.push(request));
+      await tab.goto(origin);
+      return {
+        call: (path, method, body, proof) =>
+          callWith(tab, path, method, body, proof),
+        close: () => tab.close(),
+      };
+    },
+    loginOwner: () =>
+      call(loginPath, "POST", { email: "buyer@example.test", password }),
+  });
+  await listFixture("verify_customer_logout_browser_sessions");
   await otherContext.close();
   assert.equal(blockedNetwork, false);
   for (const request of outbound) {
@@ -861,7 +913,7 @@ try {
   }
   await context.close();
   console.log(
-    "Synthetic Chromium guest checkout, loopback guest-link delivery, owned history and pending cancellation passed.",
+    "Synthetic Chromium guest checkout, guest-link delivery, pending cancellation, favourites, restock and logout passed.",
   );
 } finally {
   if (browser) await browser.close();
