@@ -21,7 +21,7 @@ contracts remain separate and pending.
 ESLint 10.15.0 (MIT) lints JavaScript. Oxlint 1.94.0 (MIT) lints TypeScript
 and TSX with an explicit rule set and a separate TypeScript compiler check.
 The lint policy tests exercise each configured rule and check that generated
-files and the design specimen are excluded. jsdom 31.0.0 (MIT) supplies the
+files and the design specimen are excluded. jsdom 31.0.1 (MIT) supplies the
 DOM for frontend unit tests under the pinned Node version.
 
 The private password credential module uses RustCrypto Argon2 0.6.0 and
@@ -49,7 +49,7 @@ compliance of a future distributed image.
 
 The lint and test updates keep TypeScript on 5.9.3 and Node declarations on
 the Node 24 line. Globals 17.14.0 supplies the existing JavaScript globals
-under the MIT licence. Ruff 0.17.4 and coverage.py 7.17.2 remain
+under the MIT licence. Ruff 0.17.6 and coverage.py 7.17.3 remain
 hash-pinned developer tools. Ruff uses the MIT licence and coverage.py uses
 Apache-2.0.
 
@@ -113,11 +113,12 @@ The transport has no production configuration, provider credentials or relay.
 The TypeScript test suite uses the pinned Node test runner with tsx 4.23.15
 for TypeScript and React JSX. The coverage transformer uses the exact esbuild
 0.28.2 dependency. Chai 6.3.0 and the standalone `@vitest/expect` and
-`@vitest/spy` packages at 5.1.0 retain the matchers and spies. jsdom provides the
-DOM. Monocart Coverage Reports 3.2.1 converts V8 coverage into source-mapped
-LCOV, including maintained files that no test loaded. The existing aggregate,
-per-package and critical-file thresholds still apply. The added packages use
-MIT licences and are development dependencies. The DOM declarations come from
+`@vitest/spy` packages at 5.1.1 retain the matchers and spies.
+`@testing-library/jest-dom` 8.0.0 supplies its standalone DOM matchers under MIT.
+jsdom provides the DOM. Monocart Coverage Reports 3.2.1 converts V8 coverage
+into source-mapped LCOV, including maintained files that no test loaded. The
+existing aggregate, per-package and critical-file thresholds still apply. These
+development packages use MIT licences. The DOM declarations come from
 `@types/jsdom` 30.0.0 under MIT.
 
 Oxlint replaces the former TypeScript-eslint chain. The Node runner replaces
