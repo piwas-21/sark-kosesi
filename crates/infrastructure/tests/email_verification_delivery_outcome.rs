@@ -20,6 +20,11 @@ use std::sync::{
 };
 
 const ADDRESS: &str = "Example+synthetic@example.com";
+const INSERT_NATIVE_OUTCOME: &str = "INSERT INTO email_verification_delivery_outcomes
+     (verifier,start_transaction_id,outcome,observed_at,ciphertext_sha256)
+     SELECT s.verifier,s.transaction_id,'accepted',1000,sha256(e.ciphertext)
+     FROM email_verification_delivery_starts s
+     JOIN email_verification_delivery_envelopes e USING(verifier) WHERE s.verifier=$1";
 struct Time(AtomicU64);
 impl Clock for Time {
     fn unix_seconds(&self) -> Result<u64, ContextError> {
@@ -100,7 +105,9 @@ async fn closed_results_are_immutable_and_replay_never_calls_back(pool: PgPool) 
                 "start_transaction_id",
                 "outcome",
                 "observed_at",
-                "transaction_id"
+                "transaction_id",
+                "evidence_version",
+                "ciphertext_sha256",
             ]
         );
     }
@@ -249,13 +256,247 @@ async fn native_guard_rejects_wrong_start_and_unbounded_outcome(pool: PgPool) {
     claim_and_open(&pool, &verifier, time.as_ref(), &key, |_, _| {})
         .await
         .expect("start");
-    let wrong_xid = sqlx::query("INSERT INTO email_verification_delivery_outcomes(verifier,start_transaction_id,outcome,observed_at) VALUES($1,pg_current_xact_id(),'accepted',1000)")
+    let wrong_xid = sqlx::query("INSERT INTO email_verification_delivery_outcomes(verifier,start_transaction_id,outcome,observed_at,ciphertext_sha256) SELECT verifier,pg_current_xact_id(),'accepted',1000,sha256(ciphertext) FROM email_verification_delivery_envelopes WHERE verifier=$1")
         .bind(verifier.as_slice()).execute(&pool).await;
     assert!(wrong_xid.is_err());
-    let invalid = sqlx::query("INSERT INTO email_verification_delivery_outcomes(verifier,start_transaction_id,outcome,observed_at) SELECT verifier,transaction_id,'provider body',1000 FROM email_verification_delivery_starts WHERE verifier=$1")
+    let invalid = sqlx::query("INSERT INTO email_verification_delivery_outcomes(verifier,start_transaction_id,outcome,observed_at,ciphertext_sha256) SELECT s.verifier,s.transaction_id,'provider body',1000,sha256(e.ciphertext) FROM email_verification_delivery_starts s JOIN email_verification_delivery_envelopes e USING(verifier) WHERE s.verifier=$1")
         .bind(verifier.as_slice()).execute(&pool).await;
     assert!(invalid.is_err());
     assert_eq!(inspect(&pool, &verifier).await, Ok(DeliveryState::Unknown));
+}
+
+#[sqlx::test(migrations = false)]
+async fn upgrade_preserves_unbound_history_and_denies_legacy_writers(pool: PgPool) {
+    const OLD_INSERT: &str = "INSERT INTO email_verification_delivery_outcomes
+       (verifier,start_transaction_id,outcome,observed_at)
+       SELECT verifier,transaction_id,'accepted',1000
+       FROM email_verification_delivery_starts WHERE verifier=$1";
+    MIGRATOR.run_to(84, &pool).await.expect("previous schema");
+    let (time, key, legacy) = fixture(&pool).await;
+    assert_eq!(
+        claim_and_open(&pool, &legacy, time.as_ref(), &key, |_, _| {}).await,
+        Ok(OpenOutcome::Opened)
+    );
+    let outcome_row = sqlx::query_scalar::<_, serde_json::Value>(
+        "SELECT to_jsonb(o) FROM email_verification_delivery_outcomes o WHERE verifier=$1",
+    );
+    sqlx::query(OLD_INSERT)
+        .bind(legacy.as_slice())
+        .execute(&pool)
+        .await
+        .expect("earlier writer's historical callback outcome");
+    let before = outcome_row
+        .bind(legacy.as_slice())
+        .fetch_one(&pool)
+        .await
+        .expect("historical row");
+    MIGRATOR
+        .run_to(85, &pool)
+        .await
+        .expect("versioned outcome schema");
+    let after: (serde_json::Value, i16, bool) = sqlx::query_as(
+        "SELECT to_jsonb(o)-'evidence_version'-'ciphertext_sha256',
+         evidence_version,ciphertext_sha256 IS NULL
+         FROM email_verification_delivery_outcomes o WHERE verifier=$1",
+    )
+    .bind(legacy.as_slice())
+    .fetch_one(&pool)
+    .await
+    .expect("unchanged historical custody");
+    assert_eq!(after, (before, 0, true));
+    assert_eq!(
+        inspect(&pool, &legacy).await,
+        Ok(DeliveryState::LegacyRecorded(TransportOutcome::Accepted))
+    );
+    assert_eq!(
+        claim_open_and_record(&pool, &legacy, time.as_ref(), &key, |_, _| {
+            panic!("historical start must stay closed");
+        })
+        .await,
+        Ok(OpenOutcome::AlreadyStarted)
+    );
+
+    let (_, _, pending) = fixture(&pool).await;
+    assert_eq!(
+        claim_and_open(&pool, &pending, time.as_ref(), &key, |_, _| {}).await,
+        Ok(OpenOutcome::Opened)
+    );
+    for statement in [
+        OLD_INSERT,
+        "INSERT INTO email_verification_delivery_outcomes
+         (verifier,start_transaction_id,outcome,observed_at,evidence_version)
+         SELECT verifier,transaction_id,'accepted',1000,0
+         FROM email_verification_delivery_starts WHERE verifier=$1",
+        "INSERT INTO email_verification_delivery_outcomes
+         (verifier,start_transaction_id,outcome,observed_at,ciphertext_sha256)
+         SELECT verifier,transaction_id,'accepted',1000,decode(repeat('00',32),'hex')
+         FROM email_verification_delivery_starts WHERE verifier=$1",
+    ] {
+        let error = sqlx::query(statement)
+            .bind(pending.as_slice())
+            .execute(&pool)
+            .await
+            .expect_err("reject unbound or mismatched receipt");
+        assert_eq!(
+            error.as_database_error().and_then(|e| e.code()).as_deref(),
+            Some("23514")
+        );
+        assert_eq!(inspect(&pool, &pending).await, Ok(DeliveryState::Unknown));
+    }
+
+    let (_, _, modern) = fixture(&pool).await;
+    assert_eq!(
+        claim_open_and_record(&pool, &modern, time.as_ref(), &key, |_, _| {
+            TransportOutcome::Accepted
+        })
+        .await,
+        Ok(OpenOutcome::Opened)
+    );
+    assert_eq!(
+        inspect(&pool, &modern).await,
+        Ok(DeliveryState::Recorded(TransportOutcome::Accepted))
+    );
+    let exact: bool = sqlx::query_scalar(
+        "SELECT o.evidence_version=1 AND o.ciphertext_sha256=sha256(e.ciphertext)
+         FROM email_verification_delivery_outcomes o
+         JOIN email_verification_delivery_envelopes e USING(verifier) WHERE o.verifier=$1",
+    )
+    .bind(modern.as_slice())
+    .fetch_one(&pool)
+    .await
+    .expect("modern receipt commitment");
+    assert!(exact);
+}
+
+const DAMAGE_ENVELOPE: &str = "UPDATE email_verification_delivery_envelopes
+ SET ciphertext=set_byte(ciphertext,0,get_byte(ciphertext,0) # 1) WHERE verifier=$1";
+
+#[sqlx::test(migrator = "MIGRATOR")]
+async fn authenticated_open_cannot_record_for_an_envelope_changed_after_callback(pool: PgPool) {
+    let (time, key, verifier) = fixture(&pool).await;
+    pool.execute("ALTER TABLE email_verification_delivery_envelopes DISABLE TRIGGER guard_email_verification_delivery_envelope")
+        .await.expect("isolated source corruption setup");
+    let options = (*pool.connect_options()).clone();
+    let calls = AtomicUsize::new(0);
+    let result = claim_open_and_record(&pool, &verifier, time.as_ref(), &key, |_, _| {
+        calls.fetch_add(1, Ordering::SeqCst);
+        std::thread::spawn(move || {
+            tokio::runtime::Builder::new_current_thread()
+                .enable_all()
+                .build()
+                .expect("fixture runtime")
+                .block_on(async move {
+                    let other = PgPoolOptions::new()
+                        .max_connections(1)
+                        .connect_with(options)
+                        .await
+                        .expect("separate fixture connection");
+                    sqlx::query(DAMAGE_ENVELOPE)
+                        .bind(verifier.as_slice())
+                        .execute(&other)
+                        .await
+                        .expect("change the authenticated ciphertext after opening");
+                    other.close().await;
+                });
+        })
+        .join()
+        .expect("fixture mutation thread");
+        TransportOutcome::Accepted
+    })
+    .await;
+    assert_eq!(result, Err(VerificationError::Unavailable));
+    assert_eq!(calls.load(Ordering::SeqCst), 1);
+    assert_eq!(inspect(&pool, &verifier).await, Ok(DeliveryState::Unknown));
+    sqlx::query(DAMAGE_ENVELOPE)
+        .bind(verifier.as_slice())
+        .execute(&pool)
+        .await
+        .expect("restore authenticated envelope");
+    assert_eq!(
+        claim_open_and_record(&pool, &verifier, time.as_ref(), &key, |_, _| {
+            panic!("failed receipt must not reopen");
+        })
+        .await,
+        Ok(OpenOutcome::AlreadyStarted)
+    );
+}
+
+#[sqlx::test(migrator = "MIGRATOR")]
+async fn stored_and_deferred_receipts_recheck_exact_ciphertext(pool: PgPool) {
+    let (time, key, recorded) = fixture(&pool).await;
+    assert_eq!(
+        claim_open_and_record(&pool, &recorded, time.as_ref(), &key, |_, _| {
+            TransportOutcome::ExplicitRejection
+        })
+        .await,
+        Ok(OpenOutcome::Opened)
+    );
+    let expected = Ok(DeliveryState::Recorded(TransportOutcome::ExplicitRejection));
+    assert_eq!(inspect(&pool, &recorded).await, expected);
+
+    pool.execute("ALTER TABLE email_verification_delivery_outcomes DISABLE TRIGGER guard_email_verification_delivery_outcome; ALTER TABLE email_verification_delivery_envelopes DISABLE TRIGGER guard_email_verification_delivery_envelope")
+        .await.expect("isolated receipt and envelope corruption setup");
+    let missing = sqlx::query(
+        "UPDATE email_verification_delivery_outcomes SET ciphertext_sha256=NULL WHERE verifier=$1",
+    )
+    .bind(recorded.as_slice())
+    .execute(&pool)
+    .await
+    .expect_err("lost digest does not become legacy");
+    assert_eq!(
+        missing
+            .as_database_error()
+            .and_then(|e| e.code())
+            .as_deref(),
+        Some("23514")
+    );
+    sqlx::query(DAMAGE_ENVELOPE)
+        .bind(recorded.as_slice())
+        .execute(&pool)
+        .await
+        .expect("damage historically recorded envelope");
+    assert_eq!(
+        inspect(&pool, &recorded).await,
+        Err(VerificationError::Unavailable)
+    );
+    sqlx::query(DAMAGE_ENVELOPE)
+        .bind(recorded.as_slice())
+        .execute(&pool)
+        .await
+        .expect("restore exact historical envelope");
+    assert_eq!(inspect(&pool, &recorded).await, expected);
+
+    pool.execute("ALTER TABLE email_verification_delivery_outcomes ENABLE TRIGGER guard_email_verification_delivery_outcome; ALTER TABLE email_verification_delivery_envelopes ENABLE TRIGGER guard_email_verification_delivery_envelope")
+        .await.expect("restore insertion guards for fresh proof");
+    let (_, _, pending) = fixture(&pool).await;
+    assert_eq!(
+        claim_and_open(&pool, &pending, time.as_ref(), &key, |_, _| {}).await,
+        Ok(OpenOutcome::Opened)
+    );
+    pool.execute("ALTER TABLE email_verification_delivery_envelopes DISABLE TRIGGER guard_email_verification_delivery_envelope")
+        .await.expect("isolate native deferred ciphertext challenge");
+    let mut tx = pool.begin().await.expect("deferred native transaction");
+    sqlx::query(INSERT_NATIVE_OUTCOME)
+        .bind(pending.as_slice())
+        .execute(&mut *tx)
+        .await
+        .expect("initial exact digest");
+    sqlx::query(DAMAGE_ENVELOPE)
+        .bind(pending.as_slice())
+        .execute(&mut *tx)
+        .await
+        .expect("damage envelope after insert in same transaction");
+    let error =
+        sqlx::query("SET CONSTRAINTS require_email_verification_delivery_outcome IMMEDIATE")
+            .execute(&mut *tx)
+            .await
+            .expect_err("deferred check rejects changed digest source");
+    assert_eq!(
+        error.as_database_error().and_then(|e| e.code()).as_deref(),
+        Some("23514")
+    );
+    tx.rollback().await.expect("discard damaged test write");
+    assert_eq!(inspect(&pool, &pending).await, Ok(DeliveryState::Unknown));
 }
 
 #[sqlx::test(migrator = "MIGRATOR")]
@@ -420,7 +661,11 @@ async fn changed_start_after_insert_fails_exact_binding_even_when_native_check_p
     .expect("retained start");
     assert_eq!(retained, 1000, "failed operation rolled the mutation back");
     let mut tx = pool.begin().await.expect("native control");
-    sqlx::query("INSERT INTO email_verification_delivery_outcomes(verifier,start_transaction_id,outcome,observed_at) SELECT verifier,transaction_id,'accepted',1000 FROM email_verification_delivery_starts WHERE verifier=$1").bind(verifier.as_slice()).execute(&mut *tx).await.expect("insert control");
+    sqlx::query(INSERT_NATIVE_OUTCOME)
+        .bind(verifier.as_slice())
+        .execute(&mut *tx)
+        .await
+        .expect("insert control");
     sqlx::query("SET CONSTRAINTS require_email_verification_delivery_outcome IMMEDIATE")
         .execute(&mut *tx)
         .await
@@ -455,7 +700,11 @@ async fn changed_start_xid_or_chronology_fails_real_deferred_constraint(pool: Pg
         );
         assert_eq!(inspect(&pool, &verifier).await, Ok(DeliveryState::Unknown));
         let mut tx = pool.begin().await.expect("native control");
-        sqlx::query("INSERT INTO email_verification_delivery_outcomes(verifier,start_transaction_id,outcome,observed_at) SELECT verifier,transaction_id,'accepted',1000 FROM email_verification_delivery_starts WHERE verifier=$1").bind(verifier.as_slice()).execute(&mut *tx).await.expect("guard executes before test mutation");
+        sqlx::query(INSERT_NATIVE_OUTCOME)
+            .bind(verifier.as_slice())
+            .execute(&mut *tx)
+            .await
+            .expect("guard executes before test mutation");
         let error =
             sqlx::query("SET CONSTRAINTS require_email_verification_delivery_outcome IMMEDIATE")
                 .execute(&mut *tx)

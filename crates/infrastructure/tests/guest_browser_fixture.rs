@@ -9,6 +9,8 @@ use std::time::{SystemTime, UNIX_EPOCH};
 mod fixture;
 #[path = "support/guest_browser_customer_lists.rs"]
 mod guest_browser_customer_lists;
+#[path = "support/guest_browser_enrolment.rs"]
+mod guest_browser_enrolment;
 #[path = "support/guest_browser_link.rs"]
 mod guest_browser_link;
 #[path = "support/guest_browser_pending_cancellation.rs"]

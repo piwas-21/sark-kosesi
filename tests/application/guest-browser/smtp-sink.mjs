@@ -1,21 +1,28 @@
 // One fixture-only loopback mailbox. It keeps a single proof in memory.
 import { createServer } from "node:net";
 
-const exchange = [
-  ["EHLO example.test", "250 fixture"],
-  ["MAIL FROM:<sender@example.test>", "250 fixture"],
-  ["RCPT TO:<buyer@example.test>", "250 fixture"],
-  ["DATA", "354 send data"],
-];
-const headers = [
-  "From: sender@example.test",
-  "To: buyer@example.test",
-  "Subject: Synthetic guest order link",
-  "Content-Type: text/plain; charset=us-ascii",
-  "",
-];
+export function startGuestLinkSink() {
+  return startSink("buyer@example.test", "Synthetic guest order link");
+}
 
-export async function startGuestLinkSink() {
+export function startVerificationSink() {
+  return startSink("verify@example.test", "Synthetic verification");
+}
+
+async function startSink(recipient, subject) {
+  const exchange = [
+    ["EHLO example.test", "250 fixture"],
+    ["MAIL FROM:<sender@example.test>", "250 fixture"],
+    [`RCPT TO:<${recipient}>`, "250 fixture"],
+    ["DATA", "354 send data"],
+  ];
+  const headers = [
+    "From: sender@example.test",
+    `To: ${recipient}`,
+    `Subject: ${subject}`,
+    "Content-Type: text/plain; charset=us-ascii",
+    "",
+  ];
   const sockets = new Set();
   let connections = 0;
   let proof;
@@ -81,7 +88,7 @@ export async function startGuestLinkSink() {
     takeProof() {
       if (invalid || connections !== 1 || proof === undefined)
         throw new Error(
-          "Expected exactly one accepted synthetic guest-link message",
+          "Expected exactly one accepted synthetic proof message",
         );
       const received = proof;
       proof = undefined;

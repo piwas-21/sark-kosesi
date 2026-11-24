@@ -29,6 +29,8 @@ impl TransportOutcome {
 pub enum DeliveryState {
     NotStarted,
     Unknown,
+    /// Historical callback classification recorded before authenticated binding.
+    LegacyRecorded(TransportOutcome),
     Recorded(TransportOutcome),
 }
 
@@ -38,15 +40,24 @@ pub async fn inspect(
     verifier: &[u8; 32],
 ) -> Result<DeliveryState, VerificationError> {
     let mut tx = begin(pool).await?;
-    let row: Option<(Option<String>, bool)> = sqlx::query_as("SELECT left(o.outcome,20),COALESCE(o.start_transaction_id=s.transaction_id AND o.transaction_id<>s.transaction_id AND o.observed_at>=s.started_at AND o.observed_at<=9007199254740991,false) FROM email_verification_delivery_starts s LEFT JOIN email_verification_delivery_outcomes o USING(verifier) WHERE s.verifier=$1")
-        .bind(verifier.as_slice()).fetch_optional(&mut *tx).await.map_err(|_| VerificationError::Unavailable)?;
+    let row: (bool, bool, Option<String>, Option<i16>) =
+        sqlx::query_as(include_str!("outcome_inspect.sql"))
+            .bind(verifier.as_slice())
+            .fetch_one(&mut *tx)
+            .await
+            .map_err(|_| VerificationError::Unavailable)?;
     tx.commit()
         .await
         .map_err(|_| VerificationError::Unavailable)?;
     match row {
-        None => Ok(DeliveryState::NotStarted),
-        Some((None, false)) => Ok(DeliveryState::Unknown),
-        Some((Some(value), true)) => Ok(DeliveryState::Recorded(TransportOutcome::parse(&value)?)),
+        (false, false, None, None) => Ok(DeliveryState::NotStarted),
+        (true, false, None, None) => Ok(DeliveryState::Unknown),
+        (true, true, Some(value), Some(0)) => Ok(DeliveryState::LegacyRecorded(
+            TransportOutcome::parse(&value)?,
+        )),
+        (true, true, Some(value), Some(1)) => {
+            Ok(DeliveryState::Recorded(TransportOutcome::parse(&value)?))
+        }
         _ => Err(VerificationError::Unavailable),
     }
 }
@@ -54,18 +65,19 @@ pub async fn inspect(
 /// Only the private fresh-opening permit can enter this function.
 pub(super) async fn record(
     pool: &PgPool,
-    permit: &start::Permit,
+    permit: &opening::OutcomePermit,
     key: &VerificationDeliveryKey,
     clock: &ObservedClock<&dyn Clock>,
     outcome: TransportOutcome,
 ) -> Result<(), VerificationError> {
     let mut tx = begin_durable(pool).await?;
-    if !permit.matches_start(&mut tx, key).await? {
-        return Err(VerificationError::Unavailable);
-    }
+    require_custody(&mut tx, permit, key).await?;
     let at = bounded_now(clock)?;
-    let inserted = sqlx::query("INSERT INTO email_verification_delivery_outcomes(verifier,start_transaction_id,outcome,observed_at) VALUES($1,$2::text::xid8,$3,$4)")
-        .bind(permit.verifier.as_slice()).bind(permit.transaction_id()).bind(outcome.stored()).bind(at)
+    let verifier = permit.start().verifier.as_slice();
+    let start_xid = permit.start().transaction_id();
+    let digest = permit.ciphertext_sha256().as_slice();
+    let inserted = sqlx::query("INSERT INTO email_verification_delivery_outcomes(verifier,start_transaction_id,outcome,observed_at,evidence_version,ciphertext_sha256) VALUES($1,$2::text::xid8,$3,$4,1,$5)")
+        .bind(verifier).bind(start_xid).bind(outcome.stored()).bind(at).bind(digest)
         .execute(&mut *tx).await.map_err(|_| VerificationError::Unavailable)?;
     if inserted.rows_affected() != 1 {
         return Err(VerificationError::Unavailable);
@@ -74,15 +86,43 @@ pub(super) async fn record(
         .execute(&mut *tx)
         .await
         .map_err(|_| VerificationError::Unavailable)?;
-    let exact: bool = sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM email_verification_delivery_outcomes WHERE verifier=$1 AND start_transaction_id::text=$2 AND outcome=$3 AND observed_at=$4 AND transaction_id=pg_current_xact_id())")
-        .bind(permit.verifier.as_slice()).bind(permit.transaction_id()).bind(outcome.stored()).bind(at)
+    let exact: bool = sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM email_verification_delivery_outcomes WHERE verifier=$1 AND start_transaction_id::text=$2 AND outcome=$3 AND observed_at=$4 AND evidence_version=1 AND ciphertext_sha256=$5 AND transaction_id=pg_current_xact_id())")
+        .bind(verifier).bind(start_xid).bind(outcome.stored()).bind(at).bind(digest)
         .fetch_one(&mut *tx).await.map_err(|_| VerificationError::Unavailable)?;
-    if !exact || !permit.matches_start(&mut tx, key).await? {
+    if !exact {
         return Err(VerificationError::Unavailable);
     }
+    require_custody(&mut tx, permit, key).await?;
     require_durable(&mut tx).await?;
     bounded_now(clock)?;
     tx.commit()
         .await
         .map_err(|_| VerificationError::Unavailable)
+}
+
+async fn require_custody(
+    tx: &mut Transaction<'_, Postgres>,
+    permit: &opening::OutcomePermit,
+    key: &VerificationDeliveryKey,
+) -> Result<(), VerificationError> {
+    if !permit.start().matches_start(tx, key).await? {
+        return Err(VerificationError::Unavailable);
+    }
+    let matches: Option<bool> = sqlx::query_scalar(
+        "SELECT CASE WHEN e.envelope_version=1 AND octet_length(e.ciphertext)=48
+          THEN sha256(e.ciphertext)=$2 ELSE false END
+         FROM email_verification_delivery_envelopes e
+         JOIN email_verification_delivery_starts s
+          ON s.verifier=e.verifier AND s.key_id=e.key_id AND s.nonce_counter=e.nonce_counter
+         WHERE e.verifier=$1 FOR SHARE OF e",
+    )
+    .bind(permit.start().verifier.as_slice())
+    .bind(permit.ciphertext_sha256().as_slice())
+    .fetch_optional(&mut **tx)
+    .await
+    .map_err(|_| VerificationError::Unavailable)?;
+    if matches != Some(true) {
+        return Err(VerificationError::Unavailable);
+    }
+    Ok(())
 }

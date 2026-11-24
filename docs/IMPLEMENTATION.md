@@ -725,7 +725,13 @@ recovered bearer, then completes the transaction before calling the trusted
 in-process consumer. A failed or interrupted opening does not restore the start.
 An optional trusted synthetic callback records one bounded accepted, explicit
 rejection or uncertain result against the exact earlier start, after releasing all
-database locks. A start without a recorded result remains unknown, and the
+database locks. Migration 0085 binds new results to the digest of the exact
+authenticated ciphertext. Inspection reports earlier rows with explicit legacy
+provenance. The upgrade preserves those rows without deriving digests from
+retained ciphertext. Drain and stop pre-0085 outcome writers before applying
+the migration. Use the release preparation and rollback conditions in
+[operations](OPERATIONS.md#verification-outcome-writer-upgrade).
+A start without a recorded result remains unknown, and the
 envelope cannot be reopened. Results remain historical after expiry or consumption.
 The database records the trusted caller's classification. Provider authentication,
 mailbox receipt and redemption each require their own evidence. A provider,
@@ -739,6 +745,11 @@ timeout records uncertain. A missing outcome stays unknown and no result permits
 reopening or retry. The synthetic recipient is checked before starting and after
 authenticated opening. The local sink and test command provide no real mailbox,
 provider or deployment acceptance. Production delivery remains disabled.
+A disposable Chromium context receives the fixed synthetic proof from its
+owned loopback sink and redeems it through the existing test-only transport.
+The isolated native fixture issues and consumes a separate revision-bound
+password proof. Chromium then verifies bound login, while PostgreSQL checks
+one verified account, the exact credential revision and one active session.
 A private account operation now
 locks and consumes that exact proof and inserts one unique immutable normalized
 identity in the same transaction; the database binds consumption and insertion to

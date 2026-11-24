@@ -1,14 +1,13 @@
 //! Synthetic account and guest proof for the isolated browser fixture only.
-use crate::{fixture, guarded_pool};
+use crate::{
+    fixture, guarded_pool,
+    guest_browser_enrolment::{password_policy, verification_admission},
+};
 use commerce_infrastructure::{
-    customer_credential_admission::{AdmissionKey, AdmissionLimits},
-    customer_passwords::{self, BlocklistManifest, PasswordBlocklist, PasswordCandidate},
+    customer_passwords::{self, PasswordCandidate},
+    email_verification::{self, verified_customer_accounts},
 };
 use std::time::{SystemTime, UNIX_EPOCH};
-
-#[allow(dead_code)]
-#[path = "admitted_proofs.rs"]
-mod admitted_proofs;
 
 const PASSWORD: &str = "synthetic horse battery staple";
 
@@ -22,26 +21,24 @@ fn time() -> u64 {
 pub async fn seed_accounts(pool: &sqlx::PgPool) {
     let now = time();
     let clock = fixture::Time(std::sync::atomic::AtomicU64::new(now));
-    let manifest = BlocklistManifest {
-        version: "synthetic-browser-v1".into(),
-        provenance: "local synthetic fixture".into(),
-        qualification_ref: "not an operational corpus".into(),
-        valid_from: i64::try_from(now).expect("time") - 1,
-        valid_until: i64::try_from(now).expect("time") + 3600,
-        digests: vec![[0; 32]],
-    };
-    let integrity = manifest.integrity_digest();
-    let blocklist = PasswordBlocklist::new(manifest, integrity).expect("synthetic blocklist");
-    let key = AdmissionKey::new(1, [7; 32]).expect("synthetic admission key");
-    let limits = AdmissionLimits::new(1000, 100).expect("fixture limits");
+    let (verification_key, verification_limits) = verification_admission();
+    let (key, limits, blocklist) = password_policy(now);
     for email in ["buyer@example.test", "other@example.test"] {
-        let proof = admitted_proofs::email_verification::issue(pool, email, &clock)
-            .await
-            .expect("fixture verification proof");
-        admitted_proofs::verified_customer_accounts::establish(pool, email, &proof, &clock)
-            .await
-            .expect("fixture verified account");
-        let proof = admitted_proofs::customer_passwords::issue(pool, email, &clock)
+        let proof =
+            email_verification::issue(pool, email, &clock, &verification_key, verification_limits)
+                .await
+                .expect("fixture verification proof");
+        verified_customer_accounts::establish(
+            pool,
+            email,
+            &proof,
+            &clock,
+            &verification_key,
+            verification_limits,
+        )
+        .await
+        .expect("fixture verified account");
+        let proof = customer_passwords::issue(pool, email, &clock, &key, limits)
             .await
             .expect("fixture password proof");
         customer_passwords::replace(
