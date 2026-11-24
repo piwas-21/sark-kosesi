@@ -39,12 +39,36 @@ pub(crate) async fn attempt(
     tx: &mut Transaction<'_, Postgres>,
     order: &str,
 ) -> Result<String, SettlementError> {
-    let id: String =
-        sqlx::query_scalar("SELECT left(id,33) FROM payment_attempts WHERE order_id=$1")
-            .bind(order)
-            .fetch_optional(&mut **tx)
-            .await?
-            .ok_or(SettlementError::NotFound)?;
+    attempt_by_order(
+        tx,
+        order,
+        "SELECT left(id,33) FROM payment_attempts WHERE order_id=$1",
+    )
+    .await
+}
+
+pub(crate) async fn claim_order_attempt(
+    tx: &mut Transaction<'_, Postgres>,
+    order: &str,
+) -> Result<String, SettlementError> {
+    attempt_by_order(
+        tx,
+        order,
+        "SELECT left(id,33) FROM payment_attempts WHERE order_id=$1 FOR UPDATE",
+    )
+    .await
+}
+
+async fn attempt_by_order(
+    tx: &mut Transaction<'_, Postgres>,
+    order: &str,
+    query: &'static str,
+) -> Result<String, SettlementError> {
+    let id: String = sqlx::query_scalar(query)
+        .bind(order)
+        .fetch_optional(&mut **tx)
+        .await?
+        .ok_or(SettlementError::NotFound)?;
     if !identifier(&id) {
         return Err(SettlementError::InvalidStoredData);
     }

@@ -630,6 +630,15 @@ and grant through commit and recheck staff time after waits. An exact historical
 retry remains actor-bound and requires live authority. The outbox carries
 only the order, proposal and digest; keep reasons, payment/profile IDs and raw
 SQL errors out of diagnostics. No credentials or provider dispatch are installed.
+The local/test source read uses the grant for the selected phase. It checks the
+exact order's frozen attempt, captured EUR amount, current received recognition
+and observation prefix under the original attempt claim. It checks staff time
+after the wait, including on absence or source failure. Only proposal inspection
+of the current source returns the watermark. The detached binding is historical
+after a source change. Every preparation requires separately confirmed intent
+and validates its supplied source under the operation's own locks. Owner-only
+regular files bound local intent intake and closed output keeps reasons and
+provider identities private.
 Exact proposal inspection uses the same unseeded grant and recent MFA, claims the
 original payment attempt and revalidates historical source and reciprocal event.
 It returns a bounded allocation without the reason or provider identifiers and

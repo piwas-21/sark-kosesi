@@ -10,6 +10,7 @@ use commerce_application::{
 use commerce_domain::{Currency, checkout_orders::OrderSnapshot, payment_attempts::AttemptBinding};
 use sqlx::{PgPool, Postgres, Transaction};
 mod allocation;
+mod preparation_source;
 
 // The test-only observer sees named SQLx errors before ordinary redaction.
 macro_rules! sql_phase {
@@ -28,6 +29,7 @@ pub(crate) mod diagnostic;
 mod store;
 
 pub use allocation::{RefundAllocation, RefundAllocationAmounts, RefundAllocationLine};
+pub use preparation_source::{PreparationPhase, PreparationSource, inspect_preparation_source};
 
 pub struct RefundRequest<'a> {
     pub order_id: &'a str,
@@ -213,19 +215,13 @@ pub async fn reserve(
     store::lock_effect(&mut access.tx, request.effect_key).await?;
     let prior = store::lookup(&mut access.tx, request.effect_key).await?;
     let attempt = if let Some((_, attempt)) = &prior {
+        crate::order_stock::source::claim_attempt(&mut access.tx, attempt)
+            .await
+            .map_err(|_| RefundError::Database)?;
         attempt.clone()
     } else {
-        crate::order_stock::source::attempt(&mut access.tx, request.order_id)
-            .await
-            .map_err(|e| match e {
-                crate::order_stock::SettlementError::NotFound => RefundError::Unavailable,
-                crate::order_stock::SettlementError::Database => RefundError::Database,
-                _ => RefundError::InvalidStoredData,
-            })?
+        store::claim_attempt_for_order(&mut access.tx, request.order_id).await?
     };
-    crate::order_stock::source::claim_attempt(&mut access.tx, &attempt)
-        .await
-        .map_err(|_| RefundError::Database)?;
     access.check_time(&observed).map_err(staff)?;
     if let Some((order_id, _)) = prior {
         store::require_exact_history(&mut access.tx, &order_id).await?;

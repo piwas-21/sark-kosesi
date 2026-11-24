@@ -1,7 +1,7 @@
 //! Local/test view of one validated historical refund execution proposal.
 use commerce_infrastructure::{
     refund_execution_proposals::{self, ProposalInspection},
-    refund_reservations::RefundAllocationAmounts,
+    refund_reservations::{RefundAllocation, RefundAllocationAmounts},
     runtime::SystemClock,
     staff_access::SessionToken,
 };
@@ -24,7 +24,16 @@ pub(super) async fn inspect(pool: &PgPool, token: &SessionToken, id: &str) -> io
 }
 
 fn project(proposal: ProposalInspection) -> Value {
-    let allocation = proposal.allocation;
+    json!({
+        "id": proposal.id,
+        "orderId": proposal.order_id,
+        "reservationId": proposal.reservation_id,
+        "proposedAt": proposal.proposed_at,
+        "allocation": allocation(proposal.allocation),
+    })
+}
+
+pub(super) fn allocation(allocation: RefundAllocation) -> Value {
     let lines: Vec<_> = allocation
         .lines
         .into_iter()
@@ -38,16 +47,10 @@ fn project(proposal: ProposalInspection) -> Value {
         })
         .collect();
     json!({
-        "id": proposal.id,
-        "orderId": proposal.order_id,
-        "reservationId": proposal.reservation_id,
-        "proposedAt": proposal.proposed_at,
-        "allocation": {
-            "currency": "EUR",
-            "lines": lines,
-            "shipping": amounts(allocation.shipping),
-            "total": amounts(allocation.total),
-        },
+        "currency": "EUR",
+        "lines": lines,
+        "shipping": amounts(allocation.shipping),
+        "total": amounts(allocation.total),
     })
 }
 

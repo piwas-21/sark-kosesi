@@ -1,12 +1,12 @@
 //! Explicit local/test invocation of existing, staff-authorized recovery decisions.
-use crate::staff_files::{self, Visibility};
+use crate::staff_files;
 use commerce_infrastructure::{
     late_stock::disposition::{self, DecisionOutcome, RetryRequest},
     payment_attempts::reconciliation::operator::{self, ResumeRequest},
     runtime::{SecureIdentifiers, SystemClock},
     staff_access::SessionToken,
 };
-use serde::{Deserialize, de::DeserializeOwned};
+use serde::Deserialize;
 use serde_json::json;
 use sqlx::PgPool;
 use std::io::{self, Write};
@@ -28,24 +28,16 @@ impl Action {
     }
 
     pub(super) fn read(self, path: &str) -> io::Result<Intent> {
-        let bytes =
-            staff_files::read(path, MAX_BYTES, Visibility::OwnerOnly).map_err(|_| input_error())?;
         match self {
-            Self::RetryLateStock => decode(&bytes).map(Intent::RetryLateStock),
-            Self::ResumePayment => decode(&bytes).map(Intent::ResumePayment),
+            Self::RetryLateStock => {
+                staff_files::read_private_json(path, MAX_BYTES).map(Intent::RetryLateStock)
+            }
+            Self::ResumePayment => {
+                staff_files::read_private_json(path, MAX_BYTES).map(Intent::ResumePayment)
+            }
         }
+        .map_err(|_| io::Error::other("operator recovery input unavailable"))
     }
-}
-
-fn input_error() -> io::Error {
-    io::Error::other("operator recovery input unavailable")
-}
-
-fn decode<T: DeserializeOwned>(bytes: &[u8]) -> io::Result<T> {
-    if bytes.iter().find(|b| !b.is_ascii_whitespace()) != Some(&b'{') {
-        return Err(input_error());
-    }
-    serde_json::from_slice(bytes).map_err(|_| input_error())
 }
 
 pub(super) enum Intent {

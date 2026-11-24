@@ -1,9 +1,19 @@
 //! Bounded file input for private local/test staff commands.
+use serde::de::DeserializeOwned;
 use std::io;
 
 pub(super) enum Visibility {
     Regular,
     OwnerOnly,
+}
+
+pub(super) fn read_private_json<T: DeserializeOwned>(path: &str, max_bytes: u64) -> io::Result<T> {
+    let unavailable = || io::Error::other("staff input file unavailable");
+    let bytes = read(path, max_bytes, Visibility::OwnerOnly)?;
+    if bytes.iter().find(|byte| !byte.is_ascii_whitespace()) != Some(&b'{') {
+        return Err(unavailable());
+    }
+    serde_json::from_slice(&bytes).map_err(|_| unavailable())
 }
 
 #[cfg(unix)]

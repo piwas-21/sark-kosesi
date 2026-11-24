@@ -1,6 +1,11 @@
 //! Strict worker command and batch configuration parsing.
-use crate::{paid_parent, reversal_items, reversal_pages, staff_recovery};
-use commerce_infrastructure::payment_attempts::reversal_item_supervision::inbox::Cursor;
+use crate::{
+    paid_parent, reversal_items, reversal_pages, staff_recovery, staff_refund_preparation,
+};
+use commerce_infrastructure::{
+    payment_attempts::reversal_item_supervision::inbox::Cursor,
+    refund_reservations::PreparationPhase,
+};
 
 #[derive(PartialEq, Eq)]
 pub(super) enum Mode {
@@ -21,6 +26,15 @@ pub(super) enum Mode {
     InspectHandoverEvidence(String),
     ReviewLateStockInbox(Option<String>),
     InspectRefundProposal(String),
+    InspectRefundSource {
+        order: String,
+        phase: PreparationPhase,
+    },
+    PrepareRefund {
+        action: staff_refund_preparation::Action,
+        order: String,
+        path: String,
+    },
     StaffRecovery {
         action: staff_recovery::Action,
         target: String,
@@ -99,6 +113,20 @@ fn parse_mode(args: &[String]) -> Result<Mode, std::io::Error> {
         [argument] if argument == "--review-late-stock-inbox" => {
             Ok(Mode::ReviewLateStockInbox(None))
         }
+        [argument, order, phase]
+            if argument == "--inspect-refund-source"
+                && commerce_domain::order_stock::identifier(order) =>
+        {
+            let phase = match phase.as_str() {
+                "reservation" => PreparationPhase::Reservation,
+                "proposal" => PreparationPhase::Proposal,
+                _ => return Err(std::io::Error::other("unsupported worker command")),
+            };
+            Ok(Mode::InspectRefundSource {
+                order: order.clone(),
+                phase,
+            })
+        }
         [argument, order]
             if argument == "--inspect-packing"
                 && commerce_domain::order_stock::identifier(order) =>
@@ -141,6 +169,15 @@ fn parse_mode(args: &[String]) -> Result<Mode, std::io::Error> {
                     action,
                     target: target.clone(),
                     path: path.clone(),
+                })
+                .or_else(|| {
+                    staff_refund_preparation::Action::from_flag(argument).map(|action| {
+                        Mode::PrepareRefund {
+                            action,
+                            order: target.clone(),
+                            path: path.clone(),
+                        }
+                    })
                 })
                 .ok_or_else(|| std::io::Error::other("unsupported worker command"))
         }

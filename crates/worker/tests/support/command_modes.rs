@@ -190,6 +190,51 @@ fn packing_release_requires_exact_confirmed_arguments() {
 }
 
 #[test]
+fn refund_preparation_requires_an_exact_source_phase_or_confirmed_private_file() {
+    let id = "0123456789abcdef0123456789abcdef";
+    for (label, expected) in [
+        ("reservation", PreparationPhase::Reservation),
+        ("proposal", PreparationPhase::Proposal),
+    ] {
+        assert!(
+            matches!(parse_mode(&args(&["--inspect-refund-source", id, label])),
+            Ok(Mode::InspectRefundSource { order, phase }) if order == id && phase == expected)
+        );
+    }
+    for (flag, expected) in [
+        (
+            "--reserve-refund",
+            staff_refund_preparation::Action::Reserve,
+        ),
+        (
+            "--propose-refund",
+            staff_refund_preparation::Action::Propose,
+        ),
+    ] {
+        assert!(
+            matches!(parse_mode(&args(&[flag, id, "private.json", "--confirm"])),
+            Ok(Mode::PrepareRefund { action, order, path }) if action == expected && order == id && path == "private.json")
+        );
+        for bad in [
+            vec![flag, id, "private.json"],
+            vec![flag, "bad", "private.json", "--confirm"],
+            vec![flag, id, "", "--confirm"],
+            vec![flag, id, "private.json", "--confirm", "extra"],
+        ] {
+            assert!(parse_mode(&args(&bad)).is_err());
+        }
+    }
+    for bad in [
+        vec!["--inspect-refund-source", id],
+        vec!["--inspect-refund-source", "bad", "reservation"],
+        vec!["--inspect-refund-source", id, "payment.reconcile"],
+        vec!["--inspect-refund-source", id, "proposal", "extra"],
+    ] {
+        assert!(parse_mode(&args(&bad)).is_err());
+    }
+}
+
+#[test]
 fn packing_record_requires_exact_confirmed_arguments() {
     let id = "0123456789abcdef0123456789abcdef";
     assert!(matches!(
