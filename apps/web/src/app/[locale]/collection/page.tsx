@@ -2,7 +2,10 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { configuration } from "../../../lib/config";
 import { storeReviewFill } from "../../../lib/store-review";
-import { collectionPageLimit } from "../../../lib/published-catalogue";
+import {
+  collectionPageLimit,
+  type PublishedCatalogue,
+} from "../../../lib/published-catalogue";
 import { isLocale } from "../../../lib/locale";
 import { publishedPage } from "../../../lib/load-published";
 import { merchantCode } from "../../../lib/published-validation";
@@ -13,10 +16,18 @@ import {
 } from "../../../lib/published-presentation";
 import styles from "../../../components/published.module.css";
 
-async function firstEligiblePage(after?: string) {
+async function reviewCollectionPage(after?: string) {
+  let current: PublishedCatalogue | undefined;
   for (let pageNumber = 0; pageNumber < collectionPageLimit; pageNumber++) {
     const page = await publishedPage("nl", after);
-    if (page.items.length || page.next_after === null) return page;
+    if (page.items.length) {
+      // Keep the current page's raw cursor so the next request rechecks the gap.
+      if (current) return current;
+      current = page;
+    }
+    if (page.next_after === null) {
+      return current ? { ...current, next_after: null } : page;
+    }
     after = page.next_after;
   }
   throw new Error("Published collection exceeds preview limit");
@@ -36,7 +47,7 @@ export default async function Collection({
   const { storeReview } = configuration();
   if (storeReview && locale !== "nl") notFound();
   const page = storeReview
-    ? await firstEligiblePage(after)
+    ? await reviewCollectionPage(after)
     : await publishedPage(locale, after);
   if (storeReview && !page.items.length) notFound();
   return (

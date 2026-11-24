@@ -84,7 +84,8 @@ node tests/application/store-review-smoke.mjs --origin https://STOREFRONT_HOST -
 Keep both results with the release evidence and confirm their evidence-file
 SHA-256 values agree. The check compares served content with the supplied
 approvals. The receipt includes the UTC observation time and omits merchant
-facts and policy text. Use the fresh HTTPS result for the dedicated Mollie profile. The
+facts and policy text. It verifies that robots.txt allows crawlers to fetch the
+noindex pages and advertises no sitemap. Use the fresh HTTPS result for the dedicated Mollie profile. The
 application browser gate also exercises the built review mode against an
 isolated synthetic catalogue and a temporary upstream outage.
 

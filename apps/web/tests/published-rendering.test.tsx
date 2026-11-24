@@ -99,10 +99,12 @@ it("renders exact selected facts as escaped HTML and genuine variant links", asy
 });
 it("renders empty and paginated collection responses without pretending missing copy exists", async () => {
   environment();
-  vi.mocked(publishedPage).mockResolvedValue({
-    ...page([approved, filled], "SET-FILLED"),
-    production_enabled: false,
-  });
+  vi.mocked(publishedPage)
+    .mockClear()
+    .mockResolvedValue({
+      ...page([approved, filled], "SET-FILLED"),
+      production_enabled: false,
+    });
   const html = renderToStaticMarkup(
     await Collection({
       params: Promise.resolve({ locale: "nl" }),
@@ -111,6 +113,7 @@ it("renders empty and paginated collection responses without pretending missing 
   );
   expect(html).toContain("variant=SET-COVERS");
   expect(html).toContain("after=SET-FILLED");
+  expect(vi.mocked(publishedPage).mock.calls).toEqual([["nl", undefined]]);
   expect(html).toContain("Preview catalogue feed");
   expect(html).not.toContain("<script>");
   vi.mocked(publishedPage).mockResolvedValue({
@@ -335,4 +338,73 @@ it("continues across empty historical Dutch catalogue windows within the existin
   await expect(
     Collection({ ...args, params: Promise.resolve({ locale: "en" }) }),
   ).rejects.toThrow("NOT_FOUND");
+});
+
+it("omits a Dutch review continuation when only ineligible history follows", async () => {
+  for (const [name, value] of Object.entries(reviewEnvironment))
+    vi.stubEnv(name, value);
+  const args = {
+    params: Promise.resolve({ locale: "nl" }),
+    searchParams: Promise.resolve({}),
+  };
+  vi.mocked(publishedPage)
+    .mockClear()
+    .mockResolvedValueOnce(page([approved], "SET-CURSOR"))
+    .mockResolvedValueOnce(page([], "Z-ARCHIVED"))
+    .mockResolvedValueOnce(page([]));
+
+  const html = renderToStaticMarkup(await Collection(args));
+  expect(html).toContain(approved.copy.title);
+  expect(html).not.toContain("Meer uit de collectie");
+  expect(vi.mocked(publishedPage).mock.calls).toEqual([
+    ["nl", undefined],
+    ["nl", "SET-CURSOR"],
+    ["nl", "Z-ARCHIVED"],
+  ]);
+});
+
+it("preserves the raw Dutch review cursor when later eligible products exist", async () => {
+  for (const [name, value] of Object.entries(reviewEnvironment))
+    vi.stubEnv(name, value);
+  const args = {
+    params: Promise.resolve({ locale: "nl" }),
+    searchParams: Promise.resolve({}),
+  };
+  vi.mocked(publishedPage)
+    .mockClear()
+    .mockResolvedValueOnce(page([approved], "SET-CURSOR"))
+    .mockResolvedValueOnce(page([], "SET-DORMANT"))
+    .mockResolvedValueOnce(page([filled], "Z-ARCHIVED"));
+
+  const html = renderToStaticMarkup(await Collection(args));
+  expect(html).toContain(approved.copy.title);
+  expect(html).not.toContain("variant=SET-FILLED");
+  expect(html).toContain("/nl/collection?after=SET-CURSOR");
+  expect(html).toContain("Meer uit de collectie");
+  expect(vi.mocked(publishedPage).mock.calls).toEqual([
+    ["nl", undefined],
+    ["nl", "SET-CURSOR"],
+    ["nl", "SET-DORMANT"],
+  ]);
+});
+
+it("fails an unproved Dutch review continuation within the shared history budget", async () => {
+  for (const [name, value] of Object.entries(reviewEnvironment))
+    vi.stubEnv(name, value);
+  const args = {
+    params: Promise.resolve({ locale: "nl" }),
+    searchParams: Promise.resolve({}),
+  };
+  vi.mocked(publishedPage)
+    .mockClear()
+    .mockResolvedValueOnce(page([], "ARCHIVED"))
+    .mockResolvedValueOnce(page([approved], "SET-CURSOR"))
+    .mockImplementation(async (_locale, after) =>
+      page([], after === undefined ? "Z" : after + "Z"),
+    );
+
+  await expect(Collection(args)).rejects.toThrow(
+    "Published collection exceeds preview limit",
+  );
+  expect(vi.mocked(publishedPage)).toHaveBeenCalledTimes(40);
 });

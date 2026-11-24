@@ -93,6 +93,10 @@ const routes = new Map([
   ["/?variant=discarded", [307, { location: `${origin}/nl` }, null]],
   ["/nl", [307, { location: "/nl/collection" }, null]],
   [
+    "/robots.txt",
+    [200, { "content-type": "text/plain" }, "User-Agent: *\nAllow: /\n"],
+  ],
+  [
     "/nl/collection",
     [200, { "content-type": "text/html; charset=utf-8" }, collection],
   ],
@@ -192,6 +196,22 @@ test("readback fails closed on drift, incomplete output or access change", async
         null,
       ],
       /wrong served revision/,
+    ],
+    [
+      "robots disallows discovery of noindex",
+      "/robots.txt",
+      [200, { "content-type": "text/plain" }, "User-Agent: *\nDisallow: /\n"],
+      /must permit fetching noindex/,
+    ],
+    [
+      "robots advertises a sitemap",
+      "/robots.txt",
+      [
+        200,
+        { "content-type": "text/plain" },
+        `User-Agent: *\nAllow: /\nSitemap: ${origin}/sitemap.xml\n`,
+      ],
+      /without advertising a sitemap/,
     ],
     [
       "cacheable HTML",

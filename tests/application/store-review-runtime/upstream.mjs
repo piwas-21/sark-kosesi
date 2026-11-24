@@ -36,6 +36,17 @@ export const foam = {
   ],
 };
 
+const publicCatalogue = "/api/published/nl";
+const ready = new Map([
+  [publicCatalogue, page([], "ARCHIVED-A")],
+  [`${publicCatalogue}?after=ARCHIVED-A`, page([covers], "SET-CURSOR")],
+  [`${publicCatalogue}?after=SET-CURSOR`, page([], "SET-DORMANT")],
+  [`${publicCatalogue}?after=SET-DORMANT`, page([foam], "SET-FOAM")],
+  [`${publicCatalogue}?after=SET-FOAM`, page([], "Z-ARCHIVED-A")],
+  [`${publicCatalogue}?after=Z-ARCHIVED-A`, page([])],
+]);
+const empty = new Map([[publicCatalogue, page([])]]);
+
 // This loopback-only double supplies the reviewed projection, not a catalogue writer.
 export async function startUpstream(token) {
   let state = "ready";
@@ -45,19 +56,13 @@ export async function startUpstream(token) {
     if (request.headers.authorization !== `Bearer ${token}`)
       return response.writeHead(401).end();
     if (state === "unavailable") return response.writeHead(503).end();
-    if (request.url === "/api/published/nl") {
-      const result = state === "empty" ? page([]) : page([], "ARCHIVED-A");
+    const catalogue = state === "empty" ? empty : ready;
+    const result = catalogue.get(request.url);
+    if (result) {
       return response
         .writeHead(200, { "content-type": "application/json" })
         .end(JSON.stringify(result));
     }
-    if (
-      state === "ready" &&
-      request.url === "/api/published/nl?after=ARCHIVED-A"
-    )
-      return response
-        .writeHead(200, { "content-type": "application/json" })
-        .end(JSON.stringify(page([covers, foam])));
     if (
       state === "ready" &&
       [covers.images[0].url, foam.images[0].url].includes(request.url)

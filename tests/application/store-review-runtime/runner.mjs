@@ -70,7 +70,7 @@ async function checkReadback(environment, connectionOrigin) {
       revision,
       transport: "private-loopback",
       approvedProducts: 2,
-      collectionPages: 1,
+      collectionPages: 2,
     },
   );
 }
@@ -81,6 +81,7 @@ async function checkReviewDenials(origin, adminToken) {
     ["GET", "/nl/admin"],
     ["POST", "/nl/collection"],
     ["GET", "/nl/collection/isolated-room?variant=SET-MISSING"],
+    ["GET", "/nl/collection?after=SET-FOAM"],
   ]) {
     const response = await fetch(`${origin}${path}`, {
       method,

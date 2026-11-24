@@ -179,6 +179,30 @@ async function verifyImage(probe, product) {
   );
 }
 
+async function verifyRobots(probe) {
+  const label = "Review robots policy";
+  const response = await probe("GET", "/robots.txt", 200, label);
+  const head = await probe("HEAD", "/robots.txt", 200, label);
+  for (const receipt of [response, head]) {
+    requireCheck(
+      /^text\/plain(?:;|$)/i.test(receipt.headers.get("content-type") ?? ""),
+      `${label}: expected plain text`,
+    );
+  }
+  const bytes = await readBody(response, 4096, label);
+  const lines = new TextDecoder("utf-8", { fatal: true })
+    .decode(bytes)
+    .trim()
+    .split(/\r?\n/)
+    .map((line) => line.trim());
+  requireCheck(
+    lines.length === 2 &&
+      /^user-agent:\s*\*$/i.test(lines[0]) &&
+      /^allow:\s*\/$/i.test(lines[1]),
+    "Review robots policy must permit fetching noindex pages without advertising a sitemap",
+  );
+}
+
 export async function runStoreReviewSmoke({
   origin,
   connectionOrigin,
@@ -195,6 +219,7 @@ export async function runStoreReviewSmoke({
     "Store entry",
   );
   await verifyRedirect(probe, "/nl", collectionPath, origin, "Dutch home");
+  await verifyRobots(probe);
 
   const products = new Map(
     evidence.products.map((product) => [productHref(product), product]),

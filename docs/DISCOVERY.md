@@ -40,6 +40,11 @@ The checker fetches raw HTML, response headers, robots, sitemap and linked equiv
 
 Robots.txt is not authorisation. A crawler must be able to fetch a public noindex response to observe it; do not block that fetch and then claim noindex was processed. Protect private resources with authentication regardless of robots. Keep expected route inventory separate from the sitemap to detect missing pages.
 
+The Dutch review storefront keeps anonymous noindex HTML crawlable and serves no
+sitemap. Exact-host readback verifies both the robots response and the restricted
+sitemap route. The collection shows a continuation only when a bounded scan finds
+another eligible publication after the current page.
+
 ## Answer-focused content
 
 Create original reviewed guides and useful concise answers: what a şark köşesi/sedir is; filled set versus covers only; actual seat/back/parcel dimensions; foam firmness/density; fabric/care; delivery access and bulky returns by country; stock location; supplier/provenance story supported by evidence. Use headings, accessible tables, units and direct answers, with author/reviewer and honest updated dates.
