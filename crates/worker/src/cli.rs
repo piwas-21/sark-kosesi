@@ -26,6 +26,7 @@ pub(super) enum Mode {
     InspectHandoverEvidence(String),
     ReviewLateStockInbox(Option<String>),
     InspectRefundProposal(String),
+    InspectRefundReversalEvidence(String),
     InspectRefundSource {
         order: String,
         phase: PreparationPhase,
@@ -69,6 +70,9 @@ fn staff_review_read(command: &str, target: &str) -> Option<Mode> {
         "--inspect-handover-evidence" => Mode::InspectHandoverEvidence(target.to_owned()),
         "--review-late-stock-inbox" => Mode::ReviewLateStockInbox(Some(target.to_owned())),
         "--inspect-refund-proposal" => Mode::InspectRefundProposal(target.to_owned()),
+        "--inspect-refund-reversal-evidence" => {
+            Mode::InspectRefundReversalEvidence(target.to_owned())
+        }
         _ => return None,
     })
 }

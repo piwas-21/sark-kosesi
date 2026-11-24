@@ -104,6 +104,79 @@ async fn footprint(pool: &PgPool) -> (i64, i64, i64, i64, i64) {
 }
 
 #[sqlx::test(migrator = "MIGRATOR")]
+async fn refund_reversal_cli_reports_only_validated_and_redacted_custody(pool: PgPool) {
+    staff(&pool).await;
+    let proof = Box::pin(received_order(&pool)).await;
+    let args = [
+        "--inspect-refund-reversal-evidence",
+        proof.order_id.as_str(),
+    ];
+    let missing = [
+        "--inspect-refund-reversal-evidence",
+        "99999999999999999999999999999999",
+    ];
+    let before = footprint(&pool).await;
+    for command in [args, missing] {
+        denied(
+            &pool,
+            &command,
+            &RESERVER,
+            "refund reversal evidence inspection unavailable",
+        );
+    }
+    assert_eq!(
+        report(&pool, &missing, &REVIEWER),
+        json!({"kind":"refund_reversal_evidence","evidence":null}),
+    );
+    let actual = report(&pool, &args, &REVIEWER);
+    let digest = actual["evidence"]["digest"]
+        .as_str()
+        .expect("closed digest");
+    assert_eq!(digest.len(), 64);
+    assert!(
+        digest
+            .bytes()
+            .all(|byte| byte.is_ascii_digit() || (b'a'..=b'f').contains(&byte))
+    );
+    assert_eq!(
+        actual,
+        json!({
+            "kind":"refund_reversal_evidence",
+            "evidence":{
+                "orderId":proof.order_id,"recognitionId":proof.id,"throughObservation":1,
+                "parentOperations":0,"parentPending":0,"parentComplete":0,
+                "childObservations":0,"digest":digest
+            }
+        }),
+    );
+    let output = actual.to_string();
+    for private in [
+        proof.attempt_id.as_str(),
+        proof.resolution_id.as_str(),
+        "tr_SyntheticReviewPayment",
+        "synthetic-proposal-reviewer",
+    ] {
+        assert!(
+            !output.contains(private),
+            "internal custody and account identity remain private"
+        );
+    }
+    assert_eq!(report(&pool, &args, &REVIEWER), actual);
+    assert_eq!(footprint(&pool).await, before);
+
+    pool.execute("ALTER TABLE commerce_outbox DISABLE TRIGGER USER; DELETE FROM commerce_outbox WHERE kind='payment.recognized.v1'; ALTER TABLE commerce_outbox ENABLE TRIGGER USER")
+        .await.expect("isolated damaged recognition custody");
+    let damaged = footprint(&pool).await;
+    denied(
+        &pool,
+        &args,
+        &REVIEWER,
+        "refund reversal evidence inspection unavailable",
+    );
+    assert_eq!(footprint(&pool).await, damaged);
+}
+
+#[sqlx::test(migrator = "MIGRATOR")]
 async fn proposal_cli_returns_only_authorized_validated_allocations(pool: PgPool) {
     staff(&pool).await;
     let proof = Box::pin(received_order(&pool)).await;

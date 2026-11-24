@@ -12,7 +12,7 @@ use std::sync::atomic::Ordering;
 
 const PAYMENT: &str = "tr_SYNTHETIC_NotARealPayment";
 
-async fn paid(
+pub(super) async fn paid(
     pool: &PgPool,
 ) -> (
     std::sync::Arc<crate::payment_test_fixture::quote::Time>,

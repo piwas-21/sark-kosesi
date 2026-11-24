@@ -523,6 +523,15 @@ full workload bounds and operational acceptance remain separate.
    verify the original observation. A separate private read claims the attempt
    and validates the complete bounded local observation set, returning its count
    and source-bound digest without inferring provider completeness or net balance.
+   `--inspect-refund-reversal-evidence <order-id>` lets finance review both
+   sets together in local/test with the existing recent-MFA
+   `refund.execution.prepare` grant. It binds the exact order and current
+   received recognition under one attempt claim, verifies both bounded sets
+   and their reciprocal events, and fails closed if a retained child belongs
+   to another provider payment. Schema 83 adds an order-scoped partial index
+   for paid-parent receipt events. The final authorized clock covers the latest
+   retained evidence. The command returns only the recognition watermark, local
+   counts and a combined digest and performs no provider or financial operation.
    The page journal keeps a bounded linear scan
    and exact reciprocal events. A validated open tip restores a continuation
    under the same key. A rotated key starts a new root. The private page

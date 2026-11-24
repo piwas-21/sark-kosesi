@@ -166,6 +166,9 @@ under current finance authority. The local/test worker reports the validated
 historical allocation in integer EUR cents for authorized operator review.
 Finance staff can obtain each phase's current source binding and separately
 confirm a reservation or test-mode proposal through private local/test commands.
+An exact-order local/test review now validates the current received recognition
+and both bounded reversal evidence sets under one original attempt claim. It
+returns the recognition watermark, local counts and a combined custody digest.
 Provider execution, reconciliation and reservation disposition remain open.
 A separate private owner request after payment dispatch records pending cancellation
 intent against the exact original start. Order, payment, stock and packing state

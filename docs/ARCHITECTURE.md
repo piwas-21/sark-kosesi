@@ -565,6 +565,22 @@ local set changes and neither proves provider completeness nor a net balance.
 It must not be combined with another detached inspection as if both held the
 same claim.
 
+A private exact-order finance review validates both bounded sets in one
+transaction. It claims the original attempt, restores the current received
+recognition and independently verifies the paid identity. Parent operations
+and child receipts must all match that identity. The query reconciles complete
+parent receipts against a bounded, indexed query for their reciprocal events.
+A valid child retained for another candidate parent blocks the combined view
+and stays in the journal.
+The domain-separated digest binds the order and the two validated set digests,
+including the recognition prefix and each set's contents. The detached result
+reports the internal order and recognition, observation watermark, parent
+operation counts, child observation count and digest. The final authorization
+clock must cover the newest retained recognition, parent start or receipt and
+child observation. A new observation, recognition, operation or receipt can
+stale the result. Provider completeness, net balances and refund decisions
+require separate evidence and authority.
+
 The private page journal records a verified collection response after network I/O.
 It claims the dispatched attempt, preserves the provider's ordered candidates and
 binds every stored field to a reciprocal outbox digest. Each root starts a separate

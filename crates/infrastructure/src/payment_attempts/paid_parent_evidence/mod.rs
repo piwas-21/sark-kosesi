@@ -8,8 +8,10 @@ mod rows;
 mod set;
 mod source;
 mod transport;
+pub(crate) use set::inspect_claimed;
 pub use set::{SetInspection, inspect_set};
-use source::{claim_attempt, paid_identity, validate_source};
+pub(crate) use source::paid_identity;
+use source::{claim_attempt, validate_source};
 pub use transport::{Fetched, Permit, fetch};
 
 #[derive(Clone, PartialEq, Eq)]

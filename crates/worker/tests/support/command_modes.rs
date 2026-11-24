@@ -48,6 +48,10 @@ fn payment_operator_reads_require_exact_internal_identifiers() {
             "--inspect-refund-proposal",
             Mode::InspectRefundProposal(id.into()),
         ),
+        (
+            "--inspect-refund-reversal-evidence",
+            Mode::InspectRefundReversalEvidence(id.into()),
+        ),
     ] {
         assert!(parse_mode(&args(&[command, id])).is_ok_and(|mode| mode == expected));
         assert!(parse_mode(&args(&[command, &id.to_uppercase()])).is_err());
@@ -58,6 +62,7 @@ fn payment_operator_reads_require_exact_internal_identifiers() {
         Ok(Mode::ReviewLateStockInbox(None))
     ));
     assert!(parse_mode(&args(&["--inspect-refund-proposal"])).is_err());
+    assert!(parse_mode(&args(&["--inspect-refund-reversal-evidence"])).is_err());
 }
 
 #[test]

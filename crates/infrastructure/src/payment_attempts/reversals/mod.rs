@@ -6,6 +6,7 @@ use commerce_application::request_context::{Clock, Identifiers, ObservedClock};
 use sqlx::PgPool;
 pub(super) mod rows;
 mod set;
+pub(crate) use set::inspect_claimed;
 pub use set::{SetInspection, inspect_set};
 
 /// Immutable historical evidence. Identifiers and credential provenance are private.
