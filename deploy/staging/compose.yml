@@ -38,13 +38,7 @@ services:
       - "127.0.0.1:${STAGING_WEB_LOOPBACK_PORT:-45972}:3000"
     networks: [backend, ingress]
     healthcheck:
-      test:
-        [
-          CMD,
-          node,
-          -e,
-          "Promise.all([fetch('http://127.0.0.1:3000/nl'),fetch('http://127.0.0.1:3000/nl/admin'),fetch('http://127.0.0.1:45671/health/ready')]).then(([w,p,a])=>{if(w.status!==(process.env.STAGING_PUBLIC_STOREFRONT==='true'?200:401)||p.status!==(process.env.STAGING_STORE_REVIEW_CONTENT?404:401)||!a.ok)process.exit(1)}).catch(()=>process.exit(1))",
-        ]
+      test: [CMD, node, /app/web-health.mjs]
       interval: 10s
       timeout: 5s
       retries: 12

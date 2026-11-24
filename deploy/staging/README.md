@@ -58,14 +58,39 @@ and `policies`. The latter contains reviewed Dutch text in `delivery`, `returns`
 the release evidence. A syntactically valid object does not establish that the
 information is true, current or legally acceptable.
 
-The web health check follows the collection redirect and fails on an empty
-approved catalogue. Before setting the public edge, check the rendered product
-price and approved image, the exact selected configuration, and every policy
-section under `/nl/winkelinformatie`. Verify anonymous GET and HEAD. The candidate
-returns 404 for private, preview, alternate locale and mutation paths even when
-a preview credential is supplied. It serves no purchase controls or API
-credentials and retains noindex and no-store. Use fresh exact-host evidence for
-the dedicated Mollie profile.
+The web health check probes the collection and policy pages directly, requires
+API readiness and expects the anonymous admin path to return 404. An empty
+approved catalogue fails health. Use the Dockerfile and Compose file from the
+same revision when deploying or returning to an earlier stack.
+
+Before setting the public edge, prepare a private, mode-0600 JSON evidence file.
+Set `store` to the exact approved seller and policy object above. List every
+approved configuration in `products` with `slug`, `sku`, `title`, `price` as an
+EUR decimal string, `fill` as `with-foam` or `covers-only`, and the approved
+`imagePath` and `imageSha256` for one displayed rendition. Use the approved
+sources and rendition bytes to prepare the file.
+
+Run the anonymous smoke from the candidate host while ingress is disabled.
+After cutover, run it again without `--candidate-port` to verify the exact public
+HTTPS hostname with normal certificate validation. Run the commands from the
+reviewed checkout with the pinned Node/npm versions and installed dependencies.
+
+```sh
+npm ci --ignore-scripts
+node tests/application/store-review-smoke.mjs --origin https://STOREFRONT_HOST --revision REVISION --evidence-file PRIVATE_EVIDENCE_FILE --candidate-port LOOPBACK_PORT
+node tests/application/store-review-smoke.mjs --origin https://STOREFRONT_HOST --revision REVISION --evidence-file PRIVATE_EVIDENCE_FILE
+```
+
+Keep both results with the release evidence. The check compares served content
+with the supplied approvals. Its output contains no merchant facts or policy
+text. Use the fresh HTTPS result for the dedicated Mollie profile. The
+application browser gate also exercises the built review mode against an
+isolated synthetic catalogue and a temporary upstream outage.
+
+```sh
+npm run build --workspace @piwas/web
+npm run test:store-review
+```
 
 ## Optional private image decoder
 
@@ -194,8 +219,8 @@ docker --config PRIVATE_DOCKER_CONFIG --host unix:///var/run/docker.sock compose
 
 4. With ingress disabled, verify both images/processes and the dedicated database.
    The API applies the committed forward migrations. The web health check requires
-   the configured storefront access mode, an anonymous admin 401 challenge and API
-   readiness, without disclosing credentials.
+   the configured storefront access mode, its expected anonymous admin response,
+   and API readiness.
 5. After the exact-source checks and private startup pass, enable only this
    project's ingress flag and recreate its web/API services. The host rule must be
    the chosen staging hostname and the TLS resolver must be `letsencrypt`. Verify a
