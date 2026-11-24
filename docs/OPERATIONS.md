@@ -587,6 +587,17 @@ and total in integer cents. An authorized lookup of an absent proposal returns
 historical custody. Disposition, provider reconciliation and financial execution
 require their own authorization and evidence.
 
+In isolated local/test, run
+`commerce-worker --inspect-refund-reversal-evidence <order-id>` using the same
+recent-MFA `refund.execution.prepare` session and private stdin. The report
+contains the exact order, current received recognition, observation watermark,
+counts for all, pending and completed parent operations and retained child
+observations, and a combined digest. Authorized absence of a current received
+recognition returns `evidence: null`. Damaged or conflicting custody returns a
+fixed error. Read again after a new observation, recognition, operation or receipt.
+The report describes the local journal. Provider completeness, reconciliation and
+net balance require separate evidence.
+
 ## Private callback supervision
 
 `cargo run --locked -p commerce-worker -- --reconcile-callbacks` runs one bounded

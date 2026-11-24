@@ -317,6 +317,27 @@ fn packing_uses_the_bounded_staff_input_and_rejects_extra_arguments() {
 }
 
 #[test]
+fn refund_reversal_uses_local_test_and_bounded_staff_input_before_database() {
+    for (environment, input, expected) in [
+        ("staging", b"".as_slice(), "production is disabled"),
+        ("production", b"".as_slice(), "production is disabled"),
+        ("test", &BEARER[..31], "staff review input unavailable"),
+        ("test", &[b'x'; 33][..], "staff review input unavailable"),
+        ("test", &BEARER[..], "DATABASE_URL required"),
+        ("local", &BEARER[..], "DATABASE_URL required"),
+    ] {
+        let mut cmd = base_command();
+        cmd.args(["--inspect-refund-reversal-evidence", JOB])
+            .env("APP_ENV", environment);
+        let result = output(cmd, input);
+        assert!(!result.status.success());
+        assert!(result.stdout.is_empty());
+        assert!(text(&result).contains(expected));
+        assert!(!text(&result).contains("synthetic-staff-token"));
+    }
+}
+
+#[test]
 fn packing_release_checks_confirmation_environment_and_input_before_database() {
     let command = |environment: &str, confirmation: bool| {
         let mut cmd = base_command();

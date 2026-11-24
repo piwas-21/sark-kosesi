@@ -14,7 +14,7 @@ pub(super) async fn claim_attempt(
     Ok(())
 }
 
-pub(super) async fn paid_identity(
+pub(crate) async fn paid_identity(
     tx: &mut Transaction<'_, Postgres>,
     frozen: &FrozenAttempt,
     recognition: &Recognition,

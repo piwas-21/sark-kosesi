@@ -10,8 +10,10 @@ use commerce_application::{
 };
 use sqlx::PgPool;
 mod inspection;
+mod reversal_evidence;
 mod store;
 pub use inspection::{ProposalInspection, inspect};
+pub use reversal_evidence::{ReversalEvidence, inspect_reversal_evidence};
 
 pub struct ProposalRequest<'a> {
     pub order_id: &'a str,

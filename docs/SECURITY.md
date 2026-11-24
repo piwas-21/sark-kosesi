@@ -671,6 +671,18 @@ private and binds the fetched fact to the operation. The durable event carries
 the order, operation and digest. Keep raw credentials and provider identifiers
 out of event payloads and diagnostics.
 
+The exact-order combined custody review uses the unseeded
+`refund.execution.prepare` capability with recent MFA and the local/test worker's
+bounded staff session input. The authority rows and original attempt claim stay
+held through evidence validation and the final freshness check, which includes
+the newer stored custody timestamps. Both sets bind to the current received
+recognition's exact paid identity. A bounded, order-indexed event check rejects
+missing, changed and orphan parent receipt events. The report
+contains internal order and recognition identifiers, the observation watermark,
+bounded counts and one digest. Provider identifiers, credentials, financial
+amounts, raw facts and database errors remain private. The read produces no
+network call, financial decision or inventory effect.
+
 The private page journal accepts only a verified payment-scoped list result.
 The attempt lock serializes page admission. The native journal enforces bounded
 history, one successor per predecessor and exact continuation scope. Receipt

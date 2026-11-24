@@ -24,6 +24,7 @@ SELECT coalesce(paid_parent_total_operation_shape(o) AND s.valid
  AND s.order_id=o.order_id AND s.attempt_id=o.attempt_id AND s.state='received'
  AND s.through_observation=o.through_observation AND o.started_at>=s.recorded_at
  AND o.profile_id=a.configuration->'profile'->>'id'
+ AND ($3::text IS NULL OR o.payment_id=$3)
  AND jsonb_typeof(s.summary->'provider_ids')='array'
  AND jsonb_typeof(s.summary->'paid_provider_ids')='array'
  AND s.summary->'provider_ids'=jsonb_build_array(o.payment_id)
@@ -33,6 +34,7 @@ SELECT coalesce(paid_parent_total_operation_shape(o) AND s.valid
    AND e.aggregate_id=o.order_id AND e.kind='payment.paid_parent_totals_observed.v1'
    AND e.created_at=r.recorded_at AND e.payload=paid_parent_total_receipt_event(r,o)))),false) AS valid,
  (r.operation_id IS NOT NULL) AS complete,
+ greatest(o.started_at,r.recorded_at) AS recorded_at,
  encode(sha256(convert_to(jsonb_build_array(o.id,o.order_id,o.attempt_id,o.effect_key,
    o.recognition_id,o.through_observation,o.profile_id,o.payment_id,o.credential_fingerprint,
    o.started_at,o.fetch_before,o.transaction_id::text,

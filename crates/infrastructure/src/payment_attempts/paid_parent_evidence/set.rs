@@ -14,6 +14,7 @@ struct SetRow {
     valid: bool,
     complete: bool,
     digest: Option<String>,
+    recorded_at: i64,
 }
 
 /// Claim the attempt and inspect its current received recognition and entire
@@ -30,6 +31,36 @@ pub async fn inspect_set(pool: &PgPool, attempt: &str) -> Result<SetInspection, 
     if current.state != recognition::State::Received {
         return Err(PaymentStoreError::Unavailable);
     }
+    let (evidence, _) = inspect(&mut tx, &current, None).await?;
+    tx.rollback().await?;
+    Ok(evidence)
+}
+
+/// Also reconcile all order-scoped receipt events against the bounded set.
+pub(crate) async fn inspect_claimed(
+    tx: &mut Transaction<'_, Postgres>,
+    current: &recognition::Recognition,
+    exact_parent: &str,
+) -> Result<(SetInspection, i64), PaymentStoreError> {
+    let (set, recorded_at) = inspect(tx, current, Some(exact_parent)).await?;
+    // Valid receipts each bind a distinct event ID. Count by the event's
+    // order and kind so a malformed orphan payload cannot hide from the proof.
+    let events: i64 = sqlx::query_scalar(include_str!("scoped_event_count.sql"))
+        .bind(&current.order_id)
+        .fetch_one(&mut **tx)
+        .await?;
+    if events != set.complete as i64 {
+        return Err(PaymentStoreError::InvalidStoredData);
+    }
+    Ok((set, recorded_at))
+}
+
+async fn inspect(
+    tx: &mut Transaction<'_, Postgres>,
+    current: &recognition::Recognition,
+    exact_parent: Option<&str>,
+) -> Result<(SetInspection, i64), PaymentStoreError> {
+    let attempt = &current.attempt_id;
     // This full native proof is the prerequisite for the bounded historical
     // prefix checks below, all under the same claimed attempt and transaction.
     let source: Option<(bool, String)> = sqlx::query_as(
@@ -37,7 +68,7 @@ pub async fn inspect_set(pool: &PgPool, attempt: &str) -> Result<SetInspection, 
     )
     .bind(&current.id)
     .bind(attempt)
-    .fetch_optional(&mut *tx)
+    .fetch_optional(&mut **tx)
     .await?;
     let Some((true, source_digest)) = source else {
         return Err(PaymentStoreError::InvalidStoredData);
@@ -45,7 +76,8 @@ pub async fn inspect_set(pool: &PgPool, attempt: &str) -> Result<SetInspection, 
     let rows = sqlx::query_as::<_, SetRow>(include_str!("set.sql"))
         .bind(attempt)
         .bind(current.through_observation)
-        .fetch_all(&mut *tx)
+        .bind(exact_parent)
+        .fetch_all(&mut **tx)
         .await?;
     if rows.len() > 128 || rows.iter().any(|row| !row.valid || row.digest.is_none()) {
         return Err(PaymentStoreError::InvalidStoredData);
@@ -58,8 +90,10 @@ pub async fn inspect_set(pool: &PgPool, attempt: &str) -> Result<SetInspection, 
     hash.update(source_digest.as_bytes());
     hash.update((rows.len() as u64).to_be_bytes());
     let mut complete = 0;
+    let mut recorded_at = current.recorded_at;
     for row in &rows {
         complete += usize::from(row.complete);
+        recorded_at = recorded_at.max(row.recorded_at);
         hash.update(
             row.digest
                 .as_deref()
@@ -72,11 +106,13 @@ pub async fn inspect_set(pool: &PgPool, attempt: &str) -> Result<SetInspection, 
         .iter()
         .map(|byte| format!("{byte:02x}"))
         .collect();
-    tx.rollback().await?;
-    Ok(SetInspection {
-        operations: rows.len(),
-        pending: rows.len() - complete,
-        complete,
-        digest,
-    })
+    Ok((
+        SetInspection {
+            operations: rows.len(),
+            pending: rows.len() - complete,
+            complete,
+            digest,
+        },
+        recorded_at,
+    ))
 }

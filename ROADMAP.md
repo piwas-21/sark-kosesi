@@ -166,6 +166,9 @@ under current finance authority. The local/test worker reports the validated
 historical allocation in integer EUR cents for authorized operator review.
 Finance staff can obtain each phase's current source binding and separately
 confirm a reservation or test-mode proposal through private local/test commands.
+An exact-order local/test review now validates the current received recognition
+and both bounded reversal evidence sets under one original attempt claim. It
+returns the recognition watermark, local counts and a combined custody digest.
 Provider execution, reconciliation and reservation disposition remain open.
 A separate private owner request after payment dispatch records pending cancellation
 intent against the exact original start. Order, payment, stock and packing state
@@ -240,8 +243,9 @@ Mailbox delivery and public ingress readiness still require acceptance.
 An optional private test-only password login uses admitted credential checks
 and returns the issued session only in a secure host-only cookie. A separately
 opted-in test transport can issue a session-bound synchronizer and revoke that
-session with its cookie and proof. The original cookie-only login remains
-unchanged. Neither path establishes public login or browser readiness.
+session with its cookie and proof. The synthetic Chromium journey exercises
+revocation in an open tab, another customer's ongoing access and owner
+re-login with a fresh synchronizer. Public login remains gated.
 A private favourites primitive keeps up to 25 stable merchant SKUs per verified
 account. Live session authority and current publication are rechecked; withdrawn
 entries are hidden but can be removed or cleared. Browser controls, privacy
@@ -260,6 +264,10 @@ It sends no messages and does not detect stock transitions. Alert delivery,
 retention and cancellation policy remain open.
 An independently enabled test-only mutation uses a bound session proof to add or
 cancel a subscription; it is not public ingress or notification delivery.
+The synthetic Chromium journey covers both lists with independent accounts
+and revisions, exact retries, stale changes and removal after publication
+withdrawal. PostgreSQL confirms the final state and unchanged order, stock
+and delivery effects.
 
 A private guest-link issuer now atomically stores a proof and purpose-separated
 encrypted bearer after a durable nonce reservation. It returns no recipient or

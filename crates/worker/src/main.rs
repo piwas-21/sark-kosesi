@@ -20,6 +20,7 @@ mod staff_packing_input;
 mod staff_recovery;
 mod staff_refund_preparation;
 mod staff_refund_proposal;
+mod staff_refund_reversal;
 mod staff_reversal_review;
 
 #[tokio::main]
@@ -37,6 +38,7 @@ async fn main() -> Result<(), std::io::Error> {
             | Mode::InspectHandoverEvidence(_)
             | Mode::ReviewLateStockInbox(_)
             | Mode::InspectRefundProposal(_)
+            | Mode::InspectRefundReversalEvidence(_)
             | Mode::InspectRefundSource { .. }
             | Mode::PrepareRefund { .. }
             | Mode::StaffRecovery { .. }
@@ -158,6 +160,12 @@ async fn main() -> Result<(), std::io::Error> {
                 .as_ref()
                 .ok_or_else(|| std::io::Error::other("refund proposal inspection unavailable"))?;
             staff_refund_proposal::inspect(&pool, token, &proposal).await?
+        }
+        Mode::InspectRefundReversalEvidence(order) => {
+            let token = staff_token.as_ref().ok_or_else(|| {
+                std::io::Error::other(staff_refund_reversal::INSPECTION_UNAVAILABLE)
+            })?;
+            staff_refund_reversal::inspect(&pool, token, &order).await?
         }
         Mode::InspectRefundSource { order, phase } => {
             let token = staff_token
