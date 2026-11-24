@@ -11,10 +11,15 @@ use commerce_domain::{
 };
 use sqlx::{Postgres, Transaction};
 mod create;
+mod progress;
 mod read;
 mod redemption;
 mod stored;
 pub(crate) use create::products as product_snapshots;
+pub use progress::{
+    OwnerGrossPaymentProgress, OwnerOrderLifecycle, OwnerOrderProgress, owned_order_progress,
+    owned_verified_order_progress,
+};
 pub use read::{owned_order, owned_verified_promoted_order};
 pub(crate) use stored::{
     OrderAccess, by_id as snapshot_in_transaction,

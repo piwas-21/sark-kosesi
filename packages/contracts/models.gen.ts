@@ -65,6 +65,8 @@ export type Fibre = {
     name: string;
 };
 
+export type GrossPaymentProgress = 'no_recorded_dispatch' | 'no_recognition' | 'unconfirmed' | 'received' | 'needs_review';
+
 export type GuestBasket = {
     csrf_token: string;
     lines: Array<GuestLine>;
@@ -89,6 +91,18 @@ export type GuestIssueRequest = {
 export type GuestLine = {
     quantity: number;
     sku: string;
+};
+
+export type GuestOrderProgress = {
+    /**
+     * Gross recognition only.
+     */
+    gross_payment: GrossPaymentProgress;
+    order: OrderLifecycle;
+    /**
+     * Pending intent is independent of the recorded order lifecycle.
+     */
+    pending_cancellation: boolean;
 };
 
 export type ImageBytes = Blob | File;
@@ -118,6 +132,8 @@ export type Measurements = {
     tolerance_mm: number;
     width_mm: number;
 };
+
+export type OrderLifecycle = 'accepted' | 'cancelled_before_dispatch';
 
 export type Parcel = {
     dimensions: Measurements;
@@ -1069,6 +1085,35 @@ export type TestGuestRequestPendingCancellationResponses = {
 };
 
 export type TestGuestRequestPendingCancellationResponse = TestGuestRequestPendingCancellationResponses[keyof TestGuestRequestPendingCancellationResponses];
+
+export type TestGuestOrderProgressData = {
+    body?: never;
+    headers: {
+        Origin: string;
+    };
+    path: {
+        id: string;
+    };
+    query?: never;
+    url: '/api/test/guest/orders/{id}/progress';
+};
+
+export type TestGuestOrderProgressErrors = {
+    400: ApiError;
+    401: ApiError;
+    403: ApiError;
+    404: ApiError;
+    503: ApiError;
+    504: ApiError;
+};
+
+export type TestGuestOrderProgressError = TestGuestOrderProgressErrors[keyof TestGuestOrderProgressErrors];
+
+export type TestGuestOrderProgressResponses = {
+    200: GuestOrderProgress;
+};
+
+export type TestGuestOrderProgressResponse = TestGuestOrderProgressResponses[keyof TestGuestOrderProgressResponses];
 
 export type RedeemTestVerificationData = {
     body: RedeemRequest;

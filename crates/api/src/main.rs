@@ -75,6 +75,7 @@ async fn run_server() -> Result<(), Box<dyn std::error::Error>> {
             order: config.test_guest_order,
             cancellation: config.test_guest_cancellation,
             pending_cancellation: config.test_guest_pending_cancellation,
+            order_progress: config.test_guest_order_progress,
         },
     )
     .map_err(|_| std::io::Error::other("API configuration invalid"))?;

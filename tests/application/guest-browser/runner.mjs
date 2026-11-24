@@ -21,6 +21,11 @@ import {
 } from "./customer-logout.mjs";
 import { allowsBrowserHistory } from "./link-policy.mjs";
 import {
+  allowsBrowserOrderProgress,
+  checkOrderProgress,
+  orderProgressPath,
+} from "./order-progress.mjs";
+import {
   allowsPendingCancellationRead,
   exercisePendingCancellation,
   pendingCancellationPath,
@@ -106,6 +111,7 @@ const routes = [
   ["POST", /^\/api\/test\/guest\/orders\/[0-9a-f]{32}\/cancellation$/],
   ["POST", pendingCancellationPath],
   ["GET", pendingCancellationPath],
+  ["GET", orderProgressPath],
   ["POST", /^\/api\/test\/customer\/login-with-csrf$/],
   ["POST", /^\/api\/test\/customer\/guest-order-link\/redeem$/],
   ["GET", /^\/api\/test\/customer\/linked-orders$/],
@@ -202,7 +208,8 @@ try {
       const ownerRead =
         allowsBrowserHistory(browserRequest, origin) ||
         allowsBrowserCustomerList(browserRequest, origin) ||
-        allowsPendingCancellationRead(browserRequest, origin);
+        allowsPendingCancellationRead(browserRequest, origin) ||
+        allowsBrowserOrderProgress(browserRequest, origin);
       if (
         (!ownerRead && request.headers.origin !== origin) ||
         !routes.some(
@@ -271,6 +278,7 @@ try {
     TEST_GUEST_ORDER_TRANSPORT: "1",
     TEST_GUEST_CANCELLATION_TRANSPORT: "1",
     TEST_GUEST_PENDING_CANCELLATION_TRANSPORT: "1",
+    TEST_GUEST_ORDER_PROGRESS_TRANSPORT: "1",
     TEST_GUEST_ORDER_SELLER: JSON.stringify(seller),
     TEST_LOGIN_ORIGIN: origin,
     TEST_LOGIN_ADMISSION_KEY: randomBytes(32).toString("hex"),
@@ -287,6 +295,7 @@ try {
         "TEST_GUEST_ORDER_TRANSPORT",
         "TEST_GUEST_CANCELLATION_TRANSPORT",
         "TEST_GUEST_PENDING_CANCELLATION_TRANSPORT",
+        "TEST_GUEST_ORDER_PROGRESS_TRANSPORT",
         "TEST_GUEST_ORDER_SELLER",
         "TEST_LOGIN_ORIGIN",
         "TEST_LOGIN_ADMISSION_KEY",
@@ -651,6 +660,11 @@ try {
   assert.equal(orderRequests()[0].postData(), orderRequests()[1].postData());
   assert.deepEqual(JSON.parse(orderRequests()[0].postData()), order);
   const first = { body: lostOrderReceipt };
+  await checkOrderProgress(call, first.body.id, {
+    order: "accepted",
+    pending_cancellation: false,
+    gross_payment: "no_recorded_dispatch",
+  });
   // The private issuer delivers an encrypted proof through the owned loopback
   // mailbox. Child output is discarded and never carries the proof.
   const mailbox = await startGuestLinkSink();
@@ -828,6 +842,11 @@ try {
     (await call(cancellationPath, "POST", cancellation, csrf)).body,
     { replayed: true },
   );
+  await checkOrderProgress(call, first.body.id, {
+    order: "cancelled_before_dispatch",
+    pending_cancellation: false,
+    gross_payment: "no_recorded_dispatch",
+  });
   await run("cargo", [...testArgs, "verify_guest_browser_effects"], env);
   const pending = await exercisePendingCancellation({
     call,
@@ -913,7 +932,7 @@ try {
   }
   await context.close();
   console.log(
-    "Synthetic Chromium guest checkout, guest-link delivery, pending cancellation, favourites, restock and logout passed.",
+    "Synthetic Chromium guest checkout, guest-link delivery, order progress, pending cancellation, favourites, restock and logout passed.",
   );
 } finally {
   if (browser) await browser.close();

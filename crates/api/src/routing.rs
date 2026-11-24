@@ -1,7 +1,7 @@
 use crate::{
     AppState, bounded,
     callbacks::{self, CallbackProfile},
-    config::{TestGuestCancellation, TestGuestPendingCancellation},
+    config::{TestGuestCancellation, TestGuestOrderProgress, TestGuestPendingCancellation},
     get_catalogue,
     guest::{self, GuestOrigin, GuestState},
     protected, published, ready,
@@ -61,6 +61,7 @@ pub struct TestGuestOperations {
     pub order: Option<guest::test_orders::TestOrderConfig>,
     pub cancellation: Option<TestGuestCancellation>,
     pub pending_cancellation: Option<TestGuestPendingCancellation>,
+    pub order_progress: Option<TestGuestOrderProgress>,
 }
 
 pub fn router_with_test_guest_operations(
@@ -73,7 +74,8 @@ pub fn router_with_test_guest_operations(
 ) -> Result<Router, GuestError> {
     if (operations.order.is_some()
         || operations.cancellation.is_some()
-        || operations.pending_cancellation.is_some())
+        || operations.pending_cancellation.is_some()
+        || operations.order_progress.is_some())
         && guest.is_none()
     {
         return Err(GuestError::InvalidRequest);
@@ -123,6 +125,12 @@ fn guest_router(
             get(guest::pending_cancellation::read)
                 .post(guest::pending_cancellation::submit)
                 .layer::<_, std::convert::Infallible>(DefaultBodyLimit::max(256)),
+        );
+    }
+    if operations.order_progress.is_some() {
+        guest = guest.route(
+            "/api/test/guest/orders/{id}/progress",
+            get(guest::order_progress::read),
         );
     }
     let guest = guest

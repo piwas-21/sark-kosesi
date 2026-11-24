@@ -401,6 +401,15 @@ issuance reject account-bound custody. Private verified payment preparation and
 history require both the retained order account and current guest ownership.
 Native insertion binds the attempt to the quote account. The account association
 stays in the private relational record.
+The private progress read claims the applicable live account and session, then
+the guest basket and exact original attempt. It validates reciprocal order,
+cancellation and dispatch events and the current gross recognition before
+rechecking both authorities and the source clock. The small result describes
+stored evidence for that one order. It carries no identity, provider handle,
+balance, net settlement or fulfilment data.
+An independent test-only GET requires preview authority, exact Origin, the
+canonical current guest cookie and an empty body. It projects only the order
+lifecycle, whether cancellation intent is pending and the closed gross state.
 A separate post-dispatch pending request retains the original guest/CSRF and,
 when bound, customer-session authority through the attempt claim and event write.
 The detached receipt is pending intent only; it neither changes cancellation nor

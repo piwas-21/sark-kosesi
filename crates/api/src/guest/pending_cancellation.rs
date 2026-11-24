@@ -1,6 +1,6 @@
 //! Test-only owner request custody after a durable dispatch start.
 use super::{
-    cancellation::{failed, mutation_input, owned_request},
+    cancellation::{failed, mutation_input},
     *,
 };
 use axum::extract::{Path, State};
@@ -82,16 +82,19 @@ pub(crate) async fn read(
     session: Session,
     request: Request,
 ) -> Response {
-    if let Err(value) = mutation(&state, &request, false) {
-        return value.into_response();
-    }
-    let key = match owned_request(&id, &request, &session, SUFFIX) {
+    let key = match owned_order_read(
+        &state,
+        request,
+        &session,
+        &id,
+        SUFFIX,
+        "invalid_cancellation_request",
+    )
+    .await
+    {
         Ok(value) => value,
         Err(value) => return value.into_response(),
     };
-    if to_bytes(request.into_body(), 0).await.is_err() {
-        return error(StatusCode::BAD_REQUEST, "invalid_cancellation_request");
-    }
     match Box::pin(checkout_cancellations::owned_pending_cancellation(
         &state.store,
         &key,

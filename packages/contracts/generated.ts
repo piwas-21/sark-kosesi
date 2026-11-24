@@ -13,15 +13,18 @@ export interface components {
     Catalogue: Model.Catalogue;
     Component: Model.Component;
     Fibre: Model.Fibre;
+    GrossPaymentProgress: Model.GrossPaymentProgress;
     GuestBasket: Model.GuestBasket;
     GuestBasketReceipt: Model.GuestBasketReceipt;
     GuestBasketUpdate: Model.GuestBasketUpdate;
     GuestIssueRequest: Model.GuestIssueRequest;
     GuestLine: Model.GuestLine;
+    GuestOrderProgress: Model.GuestOrderProgress;
     ImageBytes: Model.ImageBytes;
     LoginRequest: Model.LoginRequest;
     Material: Model.Material;
     Measurements: Model.Measurements;
+    OrderLifecycle: Model.OrderLifecycle;
     Parcel: Model.Parcel;
     PendingCancellationLookup: Model.PendingCancellationLookup;
     PendingCancellationReceipt: Model.PendingCancellationReceipt;
@@ -123,6 +126,9 @@ export interface paths {
   "/api/test/guest/orders/{id}/pending-cancellation": {
     get: operations["test_guest_pending_cancellation_status"];
     post: operations["test_guest_request_pending_cancellation"];
+  };
+  "/api/test/guest/orders/{id}/progress": {
+    get: operations["test_guest_order_progress"];
   };
   "/api/test/verification/redeem": {
     post: operations["redeem_test_verification"];
@@ -564,6 +570,24 @@ export interface operations {
       409: { headers: { [name: string]: unknown }; content: { "application/json": Model.ApiError; } };
       413: { headers: { [name: string]: unknown }; content: { "application/json": Model.ApiError; } };
       415: { headers: { [name: string]: unknown }; content: { "application/json": Model.ApiError; } };
+      503: { headers: { [name: string]: unknown }; content: { "application/json": Model.ApiError; } };
+      504: { headers: { [name: string]: unknown }; content: { "application/json": Model.ApiError; } };
+    };
+  };
+  "test_guest_order_progress": {
+    parameters: {
+      query?: never;
+      header: NonNullable<Model.TestGuestOrderProgressData["headers"]>;
+      path: NonNullable<Model.TestGuestOrderProgressData["path"]>;
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      200: { headers: { [name: string]: unknown }; content: { "application/json": Model.GuestOrderProgress; } };
+      400: { headers: { [name: string]: unknown }; content: { "application/json": Model.ApiError; } };
+      401: { headers: { [name: string]: unknown }; content: { "application/json": Model.ApiError; } };
+      403: { headers: { [name: string]: unknown }; content: { "application/json": Model.ApiError; } };
+      404: { headers: { [name: string]: unknown }; content: { "application/json": Model.ApiError; } };
       503: { headers: { [name: string]: unknown }; content: { "application/json": Model.ApiError; } };
       504: { headers: { [name: string]: unknown }; content: { "application/json": Model.ApiError; } };
     };

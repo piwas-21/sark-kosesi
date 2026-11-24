@@ -1,6 +1,7 @@
 //! Opt-in internal guest API. Rust alone owns browser credentials and basket authority.
 pub(crate) mod cancellation;
 pub(crate) mod cookies;
+pub(crate) mod order_progress;
 pub(crate) mod origin;
 pub(crate) mod pending_cancellation;
 pub(crate) mod quotes;
@@ -14,6 +15,7 @@ use axum::{
     http::StatusCode,
     response::{IntoResponse, Response},
 };
+use commerce_domain::order_stock::identifier;
 use commerce_infrastructure::guest_baskets::{
     self, GuestCredential, GuestError, GuestSessionStore,
 };
@@ -98,6 +100,41 @@ fn exact_guest_cookie(
         return None;
     }
     GuestCredential::from_session(session).ok()
+}
+
+fn owned_order_request(
+    id: &str,
+    request: &Request,
+    session: &Session,
+    suffix: &str,
+    invalid: &'static str,
+) -> Result<GuestCredential, Rejection> {
+    if request.uri().query().is_some()
+        || !identifier(id)
+        || request.uri().path() != format!("/api/test/guest/orders/{id}/{suffix}")
+    {
+        return Err(Rejection(StatusCode::BAD_REQUEST, invalid));
+    }
+    exact_guest_cookie(request.headers(), session).ok_or(Rejection(
+        StatusCode::UNAUTHORIZED,
+        "guest_session_required",
+    ))
+}
+
+async fn owned_order_read(
+    state: &GuestState,
+    request: Request,
+    session: &Session,
+    id: &str,
+    suffix: &str,
+    invalid: &'static str,
+) -> Result<GuestCredential, Rejection> {
+    mutation(state, &request, false)?;
+    let key = owned_order_request(id, &request, session, suffix, invalid)?;
+    to_bytes(request.into_body(), 0)
+        .await
+        .map_err(|_| Rejection(StatusCode::BAD_REQUEST, invalid))?;
+    Ok(key)
 }
 
 #[cfg(test)]

@@ -55,6 +55,7 @@ fn configured_app(pool: &PgPool, values: &HashMap<String, String>) -> (Router, A
                 order: config.test_guest_order,
                 cancellation: config.test_guest_cancellation,
                 pending_cancellation: config.test_guest_pending_cancellation,
+                order_progress: config.test_guest_order_progress,
             },
         )
         .expect("router"),
@@ -319,6 +320,7 @@ async fn owner_can_accept_and_retry_exact_order_without_payment(pool: PgPool) {
             order: cfg.test_guest_order,
             cancellation: cfg.test_guest_cancellation,
             pending_cancellation: cfg.test_guest_pending_cancellation,
+            order_progress: cfg.test_guest_order_progress,
         },
     )
     .expect("restarted router");

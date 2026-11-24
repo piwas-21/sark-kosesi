@@ -4,7 +4,7 @@ use axum::{
     body::Bytes,
     extract::{FromRequest, Path, State},
 };
-use commerce_domain::{media::valid_command_id, order_stock::identifier};
+use commerce_domain::media::valid_command_id;
 use commerce_infrastructure::{checkout_cancellations, checkout_orders::OrderStoreError};
 use serde::{Deserialize, Serialize, de::DeserializeOwned};
 use utoipa::ToSchema;
@@ -58,27 +58,6 @@ pub(crate) async fn cancel(
     }
 }
 
-pub(super) fn owned_request(
-    id: &str,
-    request: &Request,
-    session: &Session,
-    suffix: &str,
-) -> Result<GuestCredential, Rejection> {
-    if request.uri().query().is_some()
-        || !identifier(id)
-        || request.uri().path() != format!("/api/test/guest/orders/{id}/{suffix}")
-    {
-        return Err(Rejection(
-            StatusCode::BAD_REQUEST,
-            "invalid_cancellation_request",
-        ));
-    }
-    exact_guest_cookie(request.headers(), session).ok_or(Rejection(
-        StatusCode::UNAUTHORIZED,
-        "guest_session_required",
-    ))
-}
-
 pub(super) async fn mutation_input<T: DeserializeOwned>(
     app: &crate::AppState,
     state: &GuestState,
@@ -88,7 +67,13 @@ pub(super) async fn mutation_input<T: DeserializeOwned>(
     suffix: &str,
 ) -> Result<(GuestCredential, String, T), Rejection> {
     let csrf = mutation(state, &request, true)?;
-    let key = owned_request(id, &request, session, suffix)?;
+    let key = owned_order_request(
+        id,
+        &request,
+        session,
+        suffix,
+        "invalid_cancellation_request",
+    )?;
     if single_header(request.headers(), "content-type").and_then(|v| v.split(';').next())
         != Some("application/json")
     {

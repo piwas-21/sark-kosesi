@@ -21,6 +21,7 @@ pub(crate) mod evidence;
 pub mod identities;
 pub mod observations;
 mod owner_dispatch;
+mod owner_progress;
 pub mod paid_parent_evidence;
 mod prepare;
 mod read;
@@ -36,7 +37,9 @@ pub use dispatch::{
     DispatchOutcome, DispatchPermit, InitialDispatchError, InitialDispatchOutcome,
     dispatch_and_observe_test_payment, start_dispatch,
 };
+pub(crate) use owner_dispatch::claim_owned_attempt;
 pub use owner_dispatch::{RecordedDispatch, owned_dispatch_status, owned_verified_dispatch_status};
+pub(crate) use owner_progress::{GrossPaymentSource, owner_gross_progress_locked};
 pub use prepare::{PreparationReceipt, prepare_attempt, prepare_verified_attempt};
 pub use read::{owned_attempt, owned_verified_attempt};
 /// Nested boundary errors are already static/redacted; raw database errors are discarded.

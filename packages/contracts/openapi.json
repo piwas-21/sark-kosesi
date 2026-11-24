@@ -2484,6 +2484,103 @@
         ]
       }
     },
+    "/api/test/guest/orders/{id}/progress": {
+      "get": {
+        "tags": [
+          "crate::guest::order_progress"
+        ],
+        "operationId": "test_guest_order_progress",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "Origin",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GuestOrderProgress"
+                }
+              }
+            }
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "504": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "guest": [],
+            "preview": []
+          }
+        ]
+      }
+    },
     "/api/test/verification/redeem": {
       "post": {
         "tags": [
@@ -2774,6 +2871,16 @@
           }
         }
       },
+      "GrossPaymentProgress": {
+        "type": "string",
+        "enum": [
+          "no_recorded_dispatch",
+          "no_recognition",
+          "unconfirmed",
+          "received",
+          "needs_review"
+        ]
+      },
       "GuestBasket": {
         "type": "object",
         "required": [
@@ -2858,6 +2965,27 @@
           }
         },
         "additionalProperties": false
+      },
+      "GuestOrderProgress": {
+        "type": "object",
+        "required": [
+          "order",
+          "pending_cancellation",
+          "gross_payment"
+        ],
+        "properties": {
+          "gross_payment": {
+            "$ref": "#/components/schemas/GrossPaymentProgress",
+            "description": "Gross recognition only."
+          },
+          "order": {
+            "$ref": "#/components/schemas/OrderLifecycle"
+          },
+          "pending_cancellation": {
+            "type": "boolean",
+            "description": "Pending intent is independent of the recorded order lifecycle."
+          }
+        }
       },
       "ImageBytes": {
         "type": "string",
@@ -2958,6 +3086,13 @@
             "minimum": 0
           }
         }
+      },
+      "OrderLifecycle": {
+        "type": "string",
+        "enum": [
+          "accepted",
+          "cancelled_before_dispatch"
+        ]
       },
       "Parcel": {
         "type": "object",

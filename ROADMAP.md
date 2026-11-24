@@ -360,6 +360,10 @@ pre-dispatch command with exact Origin, cookie, CSRF and explicit confirmation;
 account-bound orders remain unavailable on this route. A private owner-scoped read
 can validate a recorded test dispatch and its reconciliation event under the
 attempt claim; this point-in-time fact grants no payment or cancellation decision.
+The private exact-order progress read validates the order lifecycle, any
+pending cancellation intent and current gross payment recognition under the
+same original attempt claim. It supports the live guest or combined guest and
+account authority appropriate to the order. Public order progress remains gated.
 Normal hold expiry still governs stock, and lifetime promotion usage stays recorded. Complete post-dispatch disposition and trusted-edge
 abuse controls before exposing customer routes.
 An independently enabled test-only guest order POST uses the same session,

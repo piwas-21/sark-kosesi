@@ -7,11 +7,27 @@ use crate::{
     customer_sessions::{CustomerSessionToken, HeldSession},
     guest_baskets::{GuestCredential, GuestSessionStore},
 };
+use sqlx::{Postgres, Transaction};
 
 /// The timestamp of the recorded request. Disposition remains separate.
 #[derive(Debug, PartialEq, Eq)]
 pub struct PendingCancellationStatus {
     pub requested_at: i64,
+}
+
+pub(crate) async fn pending_cancellation_locked(
+    tx: &mut Transaction<'_, Postgres>,
+    order: &str,
+) -> Result<Option<PendingCancellationStatus>, OrderStoreError> {
+    let request = Box::pin(inspection::inspect_locked(tx, order))
+        .await
+        .map_err(|error| match error {
+            InspectionError::Database => OrderStoreError::Database,
+            _ => OrderStoreError::InvalidStoredData,
+        })?;
+    Ok(request.map(|request| PendingCancellationStatus {
+        requested_at: request.requested_at,
+    }))
 }
 
 pub async fn owned_pending_cancellation(
@@ -56,12 +72,7 @@ async fn read(
             account,
         )
         .await?;
-        Box::pin(inspection::inspect_locked(scope.transaction(), order))
-            .await
-            .map_err(|error| match error {
-                InspectionError::Database => OrderStoreError::Database,
-                _ => OrderStoreError::InvalidStoredData,
-            })
+        pending_cancellation_locked(scope.transaction(), order).await
     }
     .await;
     let at = scope.checked_at()?;
@@ -74,7 +85,5 @@ async fn read(
         return Err(OrderStoreError::ClockUnavailable);
     }
     drop(scope);
-    Ok(result.map(|request| PendingCancellationStatus {
-        requested_at: request.requested_at,
-    }))
+    Ok(result)
 }

@@ -17,6 +17,7 @@ pub use evidence_view::{
 };
 pub use inbox::next_post_dispatch_request;
 pub use inspection::{CancellationInspection, InspectionError, inspect_post_dispatch_request};
+pub(crate) use owner_pending::pending_cancellation_locked;
 pub use owner_pending::{
     PendingCancellationStatus, owned_pending_cancellation, owned_verified_pending_cancellation,
 };
@@ -29,6 +30,27 @@ pub struct CancellationReceipt {
     pub order_id: String,
     pub canceled_at: i64,
     pub replayed: bool,
+}
+
+/// The caller has validated the order and holds its basket and any attempt.
+pub(crate) async fn pre_dispatch_canceled_at_locked(
+    tx: &mut Transaction<'_, Postgres>,
+    order: &commerce_domain::checkout_orders::OrderIdentity,
+    account: Option<i64>,
+) -> Result<Option<i64>, OrderStoreError> {
+    let saved = rows::by_order(tx, order, account).await?;
+    let (record, events): (bool, i64) = sqlx::query_as(
+        "SELECT EXISTS(SELECT 1 FROM public.checkout_order_cancellations WHERE order_id=$1),
+         (SELECT count(*) FROM (SELECT 1 FROM public.commerce_outbox
+         WHERE aggregate_id=$1 AND kind='checkout.order_canceled.v1' LIMIT 2) AS events)",
+    )
+    .bind(&order.id)
+    .fetch_one(&mut **tx)
+    .await?;
+    if record != saved.is_some() || events != i64::from(record) {
+        return Err(OrderStoreError::InvalidStoredData);
+    }
+    Ok(saved.map(|row| row.canceled_at))
 }
 
 pub async fn cancel_order(
