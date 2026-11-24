@@ -3,15 +3,8 @@ use crate::{fixture, guarded_pool};
 use commerce_infrastructure::{
     customer_credential_admission::{AdmissionKey, AdmissionLimits},
     customer_passwords::{self, BlocklistManifest, PasswordBlocklist, PasswordCandidate},
-    guest_baskets::GuestCredential,
-    guest_order_links,
 };
-use std::{
-    fmt::Write as _,
-    sync::Arc,
-    time::{SystemTime, UNIX_EPOCH},
-};
-use tower_sessions::{Session, session::Id};
+use std::time::{SystemTime, UNIX_EPOCH};
 
 #[allow(dead_code)]
 #[path = "admitted_proofs.rs"]
@@ -68,9 +61,17 @@ pub async fn seed_accounts(pool: &sqlx::PgPool) {
     }
 }
 
+#[cfg(feature = "test-verification-smtp")]
 #[tokio::test]
-#[ignore = "manual browser harness issues one proof for its real guest session"]
-async fn issue_browser_guest_link_proof() {
+#[ignore = "manual browser harness delivers one encrypted proof to its owned SMTP sink"]
+async fn deliver_browser_guest_link_proof() {
+    use commerce_infrastructure::{
+        guest_baskets::GuestCredential,
+        guest_order_links::delivery::{self, DeliveryKey, OpenOutcome, outcome, test_smtp},
+    };
+    use std::{net::SocketAddr, sync::Arc};
+    use tower_sessions::{Session, session::Id};
+
     let pool = guarded_pool().await;
     let id: Id = std::env::var("GUEST_BROWSER_GUEST_COOKIE")
         .expect("guest cookie")
@@ -84,17 +85,37 @@ async fn issue_browser_guest_link_proof() {
                 .bytes()
                 .all(|b| b.is_ascii_digit() || (b'a'..=b'f').contains(&b))
     );
-    let (store, _) = fixture::store(&pool, time());
+    let port: u16 = std::env::var("GUEST_BROWSER_LINK_SMTP_PORT")
+        .expect("owned SMTP sink port")
+        .parse()
+        .expect("numeric SMTP port");
+    let endpoint =
+        test_smtp::LocalTestEndpoint::new(true, SocketAddr::from(([127, 0, 0, 1], port)))
+            .expect("numeric local SMTP endpoint");
+    let (store, clock) = fixture::store(&pool, time());
     let session = Session::new(Some(id), Arc::new(store.clone()), None);
     let guest = GuestCredential::from_session(&session).expect("guest credential");
-    let proof = guest_order_links::issue(&store, &guest, &csrf, &order)
+    let key = DeliveryKey::capture("synthetic-browser-guest-link", [43; 32]).expect("test key");
+    delivery::register_key(&pool, clock.as_ref(), &key)
         .await
-        .expect("owned guest proof");
-    let mut hex = String::with_capacity(64);
-    for byte in proof.expose_bytes() {
-        write!(&mut hex, "{byte:02x}").expect("hex");
-    }
-    println!("BROWSER_LINK_PROOF={hex}");
+        .expect("register seed key in the disposable database");
+    let receipt = delivery::issue_for_delivery(&store, &guest, &csrf, &order, &key)
+        .await
+        .expect("durable owned envelope");
+    assert_eq!(
+        test_smtp::deliver(&pool, &receipt.verifier, clock.as_ref(), &key, &endpoint).await,
+        Ok(OpenOutcome::Opened),
+    );
+    assert_eq!(
+        outcome::inspect(&pool, &receipt.verifier).await,
+        Ok(outcome::DeliveryState::Recorded(
+            outcome::TransportOutcome::Accepted
+        )),
+    );
+    assert_eq!(
+        test_smtp::deliver(&pool, &receipt.verifier, clock.as_ref(), &key, &endpoint).await,
+        Ok(OpenOutcome::AlreadyStarted),
+    );
     pool.close().await;
 }
 
@@ -102,8 +123,8 @@ async fn issue_browser_guest_link_proof() {
 #[ignore = "manual browser harness checks failed proof attempts before redemption"]
 async fn verify_browser_link_unconsumed() {
     let pool = guarded_pool().await;
-    let custody: (i64, i64, i64) = sqlx::query_as("SELECT (SELECT count(*) FROM guest_order_link_proofs),(SELECT count(*) FROM guest_order_link_proofs WHERE consumed_at IS NULL AND consumed_account_id IS NULL AND consumed_xid IS NULL),(SELECT count(*) FROM customer_order_links)")
-        .fetch_one(&pool).await.expect("unconsumed proof custody");
-    assert_eq!(custody, (1, 1, 0));
+    let custody: (i64, i64, i64, i64) = sqlx::query_as("SELECT (SELECT count(*) FROM guest_order_link_proofs),(SELECT count(*) FROM guest_order_link_proofs WHERE consumed_at IS NULL AND consumed_account_id IS NULL AND consumed_xid IS NULL),(SELECT count(*) FROM customer_order_links),(SELECT count(*) FROM guest_link_delivery_outcomes WHERE outcome='accepted')")
+        .fetch_one(&pool).await.expect("unconsumed proof and accepted synthetic sink custody");
+    assert_eq!(custody, (1, 1, 0, 1));
     pool.close().await;
 }

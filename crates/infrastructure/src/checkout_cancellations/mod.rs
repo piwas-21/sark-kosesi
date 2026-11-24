@@ -9,6 +9,7 @@ use sqlx::{Postgres, Transaction};
 mod evidence_view;
 mod inbox;
 mod inspection;
+mod owner_pending;
 mod post_dispatch;
 mod rows;
 pub use evidence_view::{
@@ -16,6 +17,9 @@ pub use evidence_view::{
 };
 pub use inbox::next_post_dispatch_request;
 pub use inspection::{CancellationInspection, InspectionError, inspect_post_dispatch_request};
+pub use owner_pending::{
+    PendingCancellationStatus, owned_pending_cancellation, owned_verified_pending_cancellation,
+};
 pub use post_dispatch::{
     PendingCancellationReceipt, request_after_dispatch, request_verified_after_dispatch,
 };

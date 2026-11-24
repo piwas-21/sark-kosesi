@@ -3,7 +3,8 @@ mod migration_manifest;
 mod preapplied;
 
 use commerce_api::{
-    AppState, PREVIEW_REQUEST_CAPACITY, config::Config, contract, router_with_test_guest_operations,
+    AppState, PREVIEW_REQUEST_CAPACITY, TestGuestOperations, config::Config, contract,
+    router_with_test_guest_operations,
 };
 use commerce_infrastructure::image_ingestion::configure_decoder;
 use commerce_infrastructure::runtime::{SecureIdentifiers, SystemClock};
@@ -70,8 +71,11 @@ async fn run_server() -> Result<(), Box<dyn std::error::Error>> {
         config.callback_profile,
         config.verification,
         config.test_login,
-        config.test_guest_order,
-        config.test_guest_cancellation,
+        TestGuestOperations {
+            order: config.test_guest_order,
+            cancellation: config.test_guest_cancellation,
+            pending_cancellation: config.test_guest_pending_cancellation,
+        },
     )
     .map_err(|_| std::io::Error::other("API configuration invalid"))?;
     axum::serve(listener, app)

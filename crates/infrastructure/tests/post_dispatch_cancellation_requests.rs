@@ -11,7 +11,10 @@ mod payment;
 
 use commerce_infrastructure::{
     MIGRATOR,
-    checkout_cancellations::{request_after_dispatch, request_verified_after_dispatch},
+    checkout_cancellations::{
+        PendingCancellationStatus, owned_pending_cancellation, owned_verified_pending_cancellation,
+        request_after_dispatch, request_verified_after_dispatch,
+    },
     checkout_orders::OrderStoreError,
     checkout_orders::create_verified_promoted_order,
     checkout_quotes::issue_verified_promoted_quote,
@@ -37,6 +40,20 @@ async fn pending_request_requires_prior_dispatch_and_exact_owner_replays_without
     let key = GuestCredential::from_session(&session).expect("guest");
     let (foreign_session, foreign_csrf) = payment::quote::guest(&store).await;
     let foreign = GuestCredential::from_session(&foreign_session).expect("other guest");
+    let id = &order.identity.id;
+    assert_eq!(
+        Box::pin(owned_pending_cancellation(&store, &key, id)).await,
+        Ok(None)
+    );
+    assert_eq!(
+        Box::pin(owned_pending_cancellation(&store, &key, "invalid-order")).await,
+        Err(OrderStoreError::InvalidRequest)
+    );
+    assert!(
+        Box::pin(owned_pending_cancellation(&store, &foreign, id))
+            .await
+            .is_err()
+    );
     assert!(matches!(
         request_after_dispatch(&store, &key, &csrf, "request", &order.identity.id).await,
         Err(OrderStoreError::Conflict)
@@ -156,6 +173,30 @@ async fn pending_request_requires_prior_dispatch_and_exact_owner_replays_without
         (&order.identity.id, 1500)
     );
     assert_ne!(one.replayed, two.replayed);
+    assert_eq!(
+        Box::pin(owned_pending_cancellation(&store, &key, id)).await,
+        Ok(Some(PendingCancellationStatus { requested_at: 1500 }))
+    );
+    time.0.store(1499, Ordering::SeqCst);
+    assert_eq!(
+        Box::pin(owned_pending_cancellation(&store, &key, id)).await,
+        Err(OrderStoreError::ClockUnavailable)
+    );
+    time.0.store(1500, Ordering::SeqCst);
+    pool.execute(
+        "ALTER TABLE checkout_post_dispatch_requests RENAME TO unavailable_pending_requests",
+    )
+    .await
+    .expect("isolated unavailable request storage");
+    assert_eq!(
+        Box::pin(owned_pending_cancellation(&store, &key, id)).await,
+        Err(OrderStoreError::Database)
+    );
+    pool.execute(
+        "ALTER TABLE unavailable_pending_requests RENAME TO checkout_post_dispatch_requests",
+    )
+    .await
+    .expect("restore pending request storage");
     assert!(matches!(
         request_after_dispatch(&store, &key, &csrf, "different", &order.identity.id).await,
         Err(OrderStoreError::Conflict)
@@ -177,6 +218,84 @@ async fn pending_request_requires_prior_dispatch_and_exact_owner_replays_without
             .get("request_sha256")
             .and_then(|v| v.as_str())
             .is_some_and(|v| v.len() == 64)
+    );
+}
+
+#[sqlx::test(migrator = "MIGRATOR")]
+async fn owner_pending_status_rechecks_guest_after_waiting_for_the_attempt(pool: PgPool) {
+    let (store, time, session, csrf, order) = Box::pin(payment::accepted(&pool)).await;
+    let key = GuestCredential::from_session(&session).expect("owned guest");
+    let id = &order.identity.id;
+    let config = payment::config();
+    let prepared = Box::pin(prepare_attempt(
+        &store,
+        &key,
+        &csrf,
+        "owner-pending-pay",
+        &payment::intent(&order),
+        &config,
+    ))
+    .await
+    .expect("original attempt");
+    let attempt = &prepared.frozen.snapshot().binding.id;
+    Box::pin(start_dispatch(
+        &pool,
+        time.as_ref(),
+        &payment::Ids(AtomicU64::new(910_000)),
+        attempt,
+        &config,
+    ))
+    .await
+    .expect("offline start");
+    Box::pin(request_after_dispatch(
+        &store,
+        &key,
+        &csrf,
+        "owner-pending-request",
+        id,
+    ))
+    .await
+    .expect("prior request");
+    let before = footprint(&pool).await;
+    let expiry: i64 =
+        sqlx::query_scalar("SELECT expires_at FROM guest_sessions WHERE basket_id=$1")
+            .bind(&order.identity.basket_id)
+            .fetch_one(&pool)
+            .await
+            .expect("held guest expiry");
+    let mut blocker = pool.begin().await.expect("isolated lock");
+    let blocking_pid: i32 = sqlx::query_scalar("SELECT pg_backend_pid()")
+        .fetch_one(&mut *blocker)
+        .await
+        .expect("exact lock owner");
+    sqlx::query("SELECT id FROM payment_attempts WHERE id=$1 FOR UPDATE")
+        .bind(attempt)
+        .execute(&mut *blocker)
+        .await
+        .expect("hold original attempt");
+    let operation = Box::pin(owned_pending_cancellation(&store, &key, id));
+    let release = async {
+        tokio::time::timeout(std::time::Duration::from_millis(800),async {
+            loop {
+                let waiting: bool=sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM pg_stat_activity WHERE datname=current_database() AND $1=ANY(pg_blocking_pids(pid)))")
+                    .bind(blocking_pid).fetch_one(&pool).await.expect("actual owner status wait");
+                if waiting { break; }
+                tokio::time::sleep(std::time::Duration::from_millis(5)).await;
+            }
+        }).await.expect("owner reader reached original attempt");
+        time.0.store(
+            u64::try_from(expiry).expect("guest expiry"),
+            Ordering::SeqCst,
+        );
+        blocker.rollback().await.expect("release original attempt");
+    };
+    let (expired, ()) = tokio::join!(operation, release);
+    assert_eq!(expired, Err(OrderStoreError::Denied));
+    assert_eq!(footprint(&pool).await, before);
+    time.0.store(1500, Ordering::SeqCst);
+    assert_eq!(
+        Box::pin(owned_pending_cancellation(&store, &key, id)).await,
+        Ok(Some(PendingCancellationStatus { requested_at: 1500 }))
     );
 }
 
@@ -471,6 +590,33 @@ async fn account_bound_request_requires_both_live_authorities_and_rechecks_after
     .expect("valid pending request");
     assert!(!receipt.replayed);
     assert!(
+        Box::pin(owned_pending_cancellation(&store, &key, &order.identity.id))
+            .await
+            .is_err()
+    );
+    assert!(
+        Box::pin(owned_verified_pending_cancellation(
+            &store,
+            &key,
+            &foreign,
+            &order.identity.id
+        ))
+        .await
+        .is_err()
+    );
+    assert_eq!(
+        Box::pin(owned_verified_pending_cancellation(
+            &store,
+            &key,
+            &customer,
+            &order.identity.id
+        ))
+        .await,
+        Ok(Some(PendingCancellationStatus {
+            requested_at: receipt.requested_at
+        }))
+    );
+    assert!(
         request_verified_after_dispatch(
             &store,
             &key,
@@ -484,6 +630,17 @@ async fn account_bound_request_requires_both_live_authorities_and_rechecks_after
         .replayed
     );
     assert_eq!(footprint(&pool).await, before);
+    time.0.store(44300, Ordering::SeqCst);
+    assert_eq!(
+        Box::pin(owned_verified_pending_cancellation(
+            &store,
+            &key,
+            &customer,
+            &order.identity.id
+        ))
+        .await,
+        Err(OrderStoreError::Denied)
+    );
     time.0.store(1500, Ordering::SeqCst);
     let reviewer = inspection_staff(&pool, "account-inspector", 47, "cancellation.review").await;
     assert!(

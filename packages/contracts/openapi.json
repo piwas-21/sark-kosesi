@@ -2247,6 +2247,243 @@
         ]
       }
     },
+    "/api/test/guest/orders/{id}/pending-cancellation": {
+      "get": {
+        "tags": [
+          "crate::guest::pending_cancellation"
+        ],
+        "operationId": "test_guest_pending_cancellation_status",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "Origin",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PendingCancellationLookup"
+                }
+              }
+            }
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "504": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "guest": [],
+            "preview": []
+          }
+        ]
+      },
+      "post": {
+        "tags": [
+          "crate::guest::pending_cancellation"
+        ],
+        "operationId": "test_guest_request_pending_cancellation",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "Origin",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "x-csrf-token",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PendingCancellationRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PendingCancellationReceipt"
+                }
+              }
+            }
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "413": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "415": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "504": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "guest": [],
+            "preview": []
+          }
+        ]
+      }
+    },
     "/api/test/verification/redeem": {
       "post": {
         "tags": [
@@ -2738,6 +2975,73 @@
             "minimum": 0
           }
         }
+      },
+      "PendingCancellationLookup": {
+        "type": "object",
+        "required": [
+          "request"
+        ],
+        "properties": {
+          "request": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/PendingCancellationRecord"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        }
+      },
+      "PendingCancellationReceipt": {
+        "type": "object",
+        "required": [
+          "requested_at",
+          "replayed"
+        ],
+        "properties": {
+          "replayed": {
+            "type": "boolean"
+          },
+          "requested_at": {
+            "type": "integer",
+            "format": "int64"
+          }
+        }
+      },
+      "PendingCancellationRecord": {
+        "type": "object",
+        "required": [
+          "requested_at"
+        ],
+        "properties": {
+          "requested_at": {
+            "type": "integer",
+            "format": "int64"
+          }
+        }
+      },
+      "PendingCancellationRequest": {
+        "type": "object",
+        "required": [
+          "effect_key",
+          "confirmed"
+        ],
+        "properties": {
+          "confirmed": {
+            "type": "boolean",
+            "description": "Must be true to confirm recording the request."
+          },
+          "effect_key": {
+            "type": "string",
+            "description": "Stable identifier for exact retries of this pending request.",
+            "maxLength": 128,
+            "minLength": 1,
+            "pattern": "^[a-zA-Z0-9-]+$"
+          }
+        },
+        "additionalProperties": false
       },
       "Product": {
         "type": "object",

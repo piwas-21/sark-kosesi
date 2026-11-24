@@ -5,6 +5,10 @@ use std::{collections::HashMap, net::SocketAddr};
 #[derive(Clone)]
 pub struct TestGuestCancellation(());
 
+/// Capability created only by the separately validated pending-request flag.
+#[derive(Clone)]
+pub struct TestGuestPendingCancellation(());
+
 pub struct Config {
     pub database_url: String,
     pub preview_database_preapplied: bool,
@@ -13,6 +17,7 @@ pub struct Config {
     pub image_decoder: Option<DecoderEndpoint>,
     pub guest_origin: Option<crate::guest::GuestOrigin>,
     pub test_guest_cancellation: Option<TestGuestCancellation>,
+    pub test_guest_pending_cancellation: Option<TestGuestPendingCancellation>,
     pub verification: Option<crate::verification::VerificationConfig>,
     pub test_login: Option<crate::test_login::LoginConfig>,
     pub test_guest_order: Option<crate::guest::test_orders::TestOrderConfig>,
@@ -86,6 +91,16 @@ impl Config {
             }
             _ => return Err("Test guest cancellation requires test mode and GUEST_ORIGIN"),
         };
+        let test_guest_pending_cancellation = match values
+            .get("TEST_GUEST_PENDING_CANCELLATION_TRANSPORT")
+            .map(String::as_str)
+        {
+            None => None,
+            Some("1") if environment == Some("test") && guest_origin.is_some() => {
+                Some(TestGuestPendingCancellation(()))
+            }
+            _ => return Err("Test guest pending cancellation requires test mode and GUEST_ORIGIN"),
+        };
         let callback_profile = values
             .get("CALLBACK_INTAKE_PROFILE_ID")
             .map(|value| crate::callbacks::CallbackProfile::parse(value))
@@ -115,6 +130,7 @@ impl Config {
             image_decoder,
             guest_origin,
             test_guest_cancellation,
+            test_guest_pending_cancellation,
             callback_profile,
             verification,
             test_login,

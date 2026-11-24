@@ -172,7 +172,10 @@ intent against the exact original start. Order, payment, stock and packing state
 remain intact. Private staff inspection now validates that historical request
 under a dedicated recent-MFA grant. The same authority can discover one recorded
 request at a time through a live private cursor; refresh to include earlier inserts.
-Operator disposition and customer-facing handling remain open.
+Independent test-only guest POST and GET adapters record and read pending intent
+under the existing ownership boundary. The synthetic browser rehearsal uses a
+separate order to cover request, replay and refreshed readback. Operator
+disposition and public customer handling remain open.
 Private promotion drafts and independent exact-revision reviews now persist
 canonical eligibility/discount terms and explicit lifetime budget/redemption limits.
 New drafts and withdrawal block older approvals for new orders. Private guest
@@ -206,11 +209,11 @@ issued to the guest basket owner and a current customer session for the verified
 buyer mailbox. Private detail and bounded history reads return the linked
 order's captured items and amounts under live customer authority. An independently
 enabled test-only history route exposes bounded linked guest orders to the current
-session; linking and safe proof delivery remain separate. The encrypted guest-link
-custody now supports one durable local start, trusted in-process opening and a
-redacted synthetic outcome without a transport. Sender custody, real mailbox acceptance and
-retention remain open. Private credential admission provides shared purpose and mailbox quotas. A private
-session variant binds a synchronizer digest to issuance and protects revocation
+session. The encrypted guest-link custody now supports one durable local start,
+trusted in-process opening and one bounded outcome via a synthetic loopback SMTP
+sink. Sender custody, real mailbox acceptance and retention remain open.
+Private credential admission provides shared purpose and mailbox quotas. A
+private session variant binds a synchronizer digest to issuance and protects revocation
 under the same session claim. The separately enabled test transport is described
 below; public browser ingress and production CSRF policy remain open. Login,
 email verification, enrolment and password proof operations commit both
@@ -260,12 +263,13 @@ cancel a subscription; it is not public ingress or notification delivery.
 
 A private guest-link issuer now atomically stores a proof and purpose-separated
 encrypted bearer after a durable nonce reservation. It returns no recipient or
-bearer. A trusted in-process opening and redacted synthetic outcome retain local
-custody without installing a sender or public route. Key operations, recovery,
-retention, anti-abuse and real mailbox delivery remain open.
+bearer. A trusted in-process opening retains local custody and the test-only
+SMTP adapter delivers a reserved proof to the owned loopback mail sink. Key
+operations, recovery, retention, anti-abuse and real mailbox delivery remain open.
 A default-off test-only guest-order redemption route binds the customer session
-synchronizer to proof consumption and linking in the same transaction. Proof
-delivery, public linking and browser acceptance remain open.
+synchronizer to proof consumption and linking in the same transaction. Chromium
+redeems the synthetic proof captured from the owned sink. Real proof delivery,
+public linking and deployed browser acceptance remain open.
 
 The local room-planner preview combines the rectangle calculator with keyboard
 measurement and rotation controls, a drawn footprint, and text clearance and fit
@@ -354,9 +358,10 @@ An independently enabled test-only guest order POST uses the same session,
 Origin and CSRF checks, with an explicit server-only test seller policy. It
 returns only the order ID and replay flag; no provider operation follows. Public
 checkout and seller/legal acceptance remain separate gates.
-The application browser job covers quote, acceptance, cancellation and exact
-replay through a loopback HTTPS fixture and disposable PostgreSQL. The customer
-checkout interface and deployed ingress still need acceptance.
+The application browser job exercises quote, acceptance, pre-dispatch
+cancellation, pending cancellation intent and guest-link redemption through
+owned loopback fixtures and disposable PostgreSQL. The customer checkout
+interface and deployed ingress still need acceptance.
 
 Private durable owned-order test attempts and one serialized dispatch-start fact
 now compose the frozen request policy, existing physically backed reservation and

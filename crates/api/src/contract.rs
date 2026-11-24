@@ -12,6 +12,8 @@ use utoipa::{
     paths(
         crate::test_guest_link_redeem::redeem,
         crate::guest::cancellation::cancel,
+        crate::guest::pending_cancellation::submit,
+        crate::guest::pending_cancellation::read,
         crate::guest::test_orders::create,
         crate::test_favourites_mutation::set,
         crate::test_linked_orders::list,

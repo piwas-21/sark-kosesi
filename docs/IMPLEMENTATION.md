@@ -321,6 +321,14 @@ full workload bounds and operational acceptance remain separate.
    A separate private owner-authenticated request after dispatch records only pending
    intent against the original attempt and exact reconciliation event. It can replay
    under live authority but neither cancels the order nor pauses packing or dispatch.
+   Independently opt in to the test-only POST and GET with
+   `TEST_GUEST_PENDING_CANCELLATION_TRANSPORT=1` and the configured guest Origin.
+   Both require preview and exact guest ownership. POST holds the basket
+   synchronizer and records confirmed intent with an effect key. GET returns only
+   the recorded timestamp or an empty request. The synthetic Chromium journey
+   uses a separate order and a durable test dispatch start to exercise request,
+   replay, and readback after refreshing. Staff custody and unchanged order
+   effects are checked in the same isolated database.
    Operator disposition, customer handling and account-only access remain separate.
    Private exact-order inspection requires the unseeded `cancellation.review`
    capability and recent MFA, revalidates the historical request and dispatch
@@ -763,9 +771,13 @@ durable transaction bound to its exact start. A missing result stays unknown;
 it has only relational custody, not an authenticated ciphertext commitment.
 A recorded result binds the exact authenticated ciphertext by SHA-256, which is
 checked against the retained envelope. Redemption or expiry does not erase
-historical custody. This establishes no
-sender, transport, public route or mailbox acceptance. Migration 0070 follows
-the protected 0067 and the queued 0068 and 0069 prerequisites.
+historical custody. Production sender custody, public ingress and real mailbox
+acceptance remain open. An explicit test-only
+SMTP adapter sends the reserved synthetic order proof to its owned numeric
+loopback sink after the durable start and opening. The Chromium journey
+retrieves the proof from that sink for redemption. The sender records one
+bounded outcome, and an uncertain or missing result leaves the start closed.
+Migration 0070 follows its 0067, 0068 and 0069 prerequisites.
 
 Private guest-order linking requires a live guest basket credential and CSRF
 proof to issue a one-use challenge for that exact accepted order. A current

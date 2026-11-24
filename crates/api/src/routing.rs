@@ -1,6 +1,7 @@
 use crate::{
     AppState, bounded,
     callbacks::{self, CallbackProfile},
+    config::{TestGuestCancellation, TestGuestPendingCancellation},
     get_catalogue,
     guest::{self, GuestOrigin, GuestState},
     protected, published, ready,
@@ -45,7 +46,21 @@ pub fn router_with_test_login(
     verification: Option<VerificationConfig>,
     login: Option<LoginConfig>,
 ) -> Result<Router, GuestError> {
-    router_with_test_guest_operations(state, guest, callback, verification, login, None, None)
+    router_with_test_guest_operations(
+        state,
+        guest,
+        callback,
+        verification,
+        login,
+        TestGuestOperations::default(),
+    )
+}
+
+#[derive(Default)]
+pub struct TestGuestOperations {
+    pub order: Option<guest::test_orders::TestOrderConfig>,
+    pub cancellation: Option<TestGuestCancellation>,
+    pub pending_cancellation: Option<TestGuestPendingCancellation>,
 }
 
 pub fn router_with_test_guest_operations(
@@ -54,22 +69,24 @@ pub fn router_with_test_guest_operations(
     callback: Option<CallbackProfile>,
     verification: Option<VerificationConfig>,
     login: Option<LoginConfig>,
-    order: Option<guest::test_orders::TestOrderConfig>,
-    cancellation: Option<crate::config::TestGuestCancellation>,
+    operations: TestGuestOperations,
 ) -> Result<Router, GuestError> {
-    if (order.is_some() || cancellation.is_some()) && guest.is_none() {
+    if (operations.order.is_some()
+        || operations.cancellation.is_some()
+        || operations.pending_cancellation.is_some())
+        && guest.is_none()
+    {
         return Err(GuestError::InvalidRequest);
     }
     let guest = guest
-        .map(|origin| guest_router(&state, origin, order, cancellation.is_some()))
+        .map(|origin| guest_router(&state, origin, operations))
         .transpose()?;
     Ok(build(state, guest, callback, verification, login))
 }
 fn guest_router(
     state: &AppState,
     origin: GuestOrigin,
-    order: Option<guest::test_orders::TestOrderConfig>,
-    cancellation: bool,
+    operations: TestGuestOperations,
 ) -> Result<Router<AppState>, GuestError> {
     let store = GuestSessionStore::new(
         state.pool.clone(),
@@ -85,7 +102,7 @@ fn guest_router(
         .route("/api/guest/basket", get(guest::read).put(guest::write))
         .route("/api/guest/{locale}/quotes", post(guest::quotes::issue))
         .route("/api/guest/quotes/{id}", get(guest::quotes::read));
-    if let Some(order) = order {
+    if let Some(order) = operations.order {
         guest = guest.route(
             "/api/test/guest/orders",
             post(guest::test_orders::create)
@@ -93,10 +110,18 @@ fn guest_router(
                 .layer(Extension(order)),
         );
     }
-    if cancellation {
+    if operations.cancellation.is_some() {
         guest = guest.route(
             "/api/test/guest/orders/{id}/cancellation",
             post(guest::cancellation::cancel)
+                .layer::<_, std::convert::Infallible>(DefaultBodyLimit::max(256)),
+        );
+    }
+    if operations.pending_cancellation.is_some() {
+        guest = guest.route(
+            "/api/test/guest/orders/{id}/pending-cancellation",
+            get(guest::pending_cancellation::read)
+                .post(guest::pending_cancellation::submit)
                 .layer::<_, std::convert::Infallible>(DefaultBodyLimit::max(256)),
         );
     }

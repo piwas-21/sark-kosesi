@@ -161,8 +161,11 @@ pub async fn claim_and_open(
     accept: impl FnOnce(&str, &GuestOrderLinkToken),
 ) -> Result<OpenOutcome, LinkError> {
     let observed = ObservedClock::new(clock, 0);
-    match open(pool, verifier, &observed, key, accept).await? {
-        Some(((), _)) => Ok(OpenOutcome::Opened),
+    match open(pool, verifier, &observed, key, None).await? {
+        Some(opened) => {
+            accept(&opened.identity, &opened.token);
+            Ok(OpenOutcome::Opened)
+        }
         None => Ok(OpenOutcome::AlreadyStarted),
     }
 }
@@ -177,8 +180,15 @@ pub async fn claim_open_and_record(
     accept: impl FnOnce(&str, &GuestOrderLinkToken) -> super::outcome::TransportOutcome,
 ) -> Result<OpenOutcome, LinkError> {
     let observed = ObservedClock::new(clock, 0);
-    match open(pool, verifier, &observed, key, accept).await? {
-        Some((result, permit)) => {
+    match open(pool, verifier, &observed, key, None).await? {
+        Some(opened) => {
+            let result = accept(&opened.identity, &opened.token);
+            let FreshOpening {
+                identity,
+                token,
+                permit,
+            } = opened;
+            drop((identity, token));
             super::outcome::record(pool, &permit, &observed, result).await?;
             Ok(OpenOutcome::Opened)
         }
@@ -186,16 +196,25 @@ pub async fn claim_open_and_record(
     }
 }
 
-async fn open<T>(
+pub(super) struct FreshOpening {
+    pub(super) identity: Zeroizing<String>,
+    pub(super) token: GuestOrderLinkToken,
+    pub(super) permit: Permit,
+}
+
+pub(super) async fn open(
     pool: &PgPool,
     verifier: &[u8; 32],
     observed: &dyn Clock,
     key: &DeliveryKey,
-    accept: impl FnOnce(&str, &GuestOrderLinkToken) -> T,
-) -> Result<Option<(T, Permit)>, LinkError> {
+    only_identity: Option<&str>,
+) -> Result<Option<FreshOpening>, LinkError> {
     now(observed)?;
     let mut tx = begin_durable(pool).await?;
     let original = source(&mut tx, verifier, key, observed).await?;
+    if only_identity.is_some_and(|identity| identity != original.identity.as_str()) {
+        return Err(LinkError::Denied);
+    }
     if let Some(start) = read_start(&mut tx, verifier).await? {
         check_start(&start, &original, key, observed)?;
         durable(&mut tx).await?;
@@ -255,8 +274,11 @@ async fn open<T>(
     current.live(observed)?;
     tx.commit().await.map_err(|_| LinkError::Unavailable)?;
     current.live(observed)?;
-    let result = accept(&current.identity, &token);
-    Ok(Some((result, permit)))
+    Ok(Some(FreshOpening {
+        identity: current.identity,
+        token,
+        permit,
+    }))
 }
 
 #[cfg(test)]

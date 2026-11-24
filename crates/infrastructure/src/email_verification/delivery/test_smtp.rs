@@ -53,7 +53,7 @@ pub async fn deliver(
         return Ok(opening::OpenOutcome::AlreadyStarted);
     };
     require_synthetic_recipient(&opened.identity)?;
-    let result = send(endpoint, &opened.bearer).await?;
+    let result = send_proof(endpoint, Message::Verification, &opened.bearer).await?;
     let opening::FreshOpening {
         identity,
         bearer,
@@ -81,14 +81,26 @@ fn append_proof_hex(message: &mut String, bearer: &[u8; 32]) {
     }
 }
 
-async fn send(
+pub(crate) const GUEST_LINK_RECIPIENT: &str = "buyer@example.test";
+
+pub(crate) enum Message {
+    Verification,
+    GuestOrderLink,
+}
+
+pub(crate) async fn send_proof(
     endpoint: &LocalTestEndpoint,
+    purpose: Message,
     bearer: &[u8; 32],
 ) -> Result<outcome::TransportOutcome, VerificationError> {
+    let (recipient, subject) = match purpose {
+        Message::Verification => (RECIPIENT, "Synthetic verification"),
+        Message::GuestOrderLink => (GUEST_LINK_RECIPIENT, "Synthetic guest order link"),
+    };
     let envelope = Envelope::new(
         Some(SENDER.parse().map_err(|_| VerificationError::Unavailable)?),
         vec![
-            RECIPIENT
+            recipient
                 .parse()
                 .map_err(|_| VerificationError::Unavailable)?,
         ],
@@ -96,8 +108,8 @@ async fn send(
     .map_err(|_| VerificationError::Unavailable)?;
     // Fixed ASCII headers and body: neither input can inject a header. The proof
     // is a test-only hex value, not a public redemption URL.
-    let mut message = Zeroizing::new(String::from(
-        "From: sender@example.test\r\nTo: verify@example.test\r\nSubject: Synthetic verification\r\nContent-Type: text/plain; charset=us-ascii\r\n\r\nproof=",
+    let mut message = Zeroizing::new(format!(
+        "From: {SENDER}\r\nTo: {recipient}\r\nSubject: {subject}\r\nContent-Type: text/plain; charset=us-ascii\r\n\r\nproof=",
     ));
     append_proof_hex(&mut message, bearer);
     message.push_str("\r\n");

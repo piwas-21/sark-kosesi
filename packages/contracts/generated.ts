@@ -23,6 +23,10 @@ export interface components {
     Material: Model.Material;
     Measurements: Model.Measurements;
     Parcel: Model.Parcel;
+    PendingCancellationLookup: Model.PendingCancellationLookup;
+    PendingCancellationReceipt: Model.PendingCancellationReceipt;
+    PendingCancellationRecord: Model.PendingCancellationRecord;
+    PendingCancellationRequest: Model.PendingCancellationRequest;
     Product: Model.Product;
     ProductCopy: Model.ProductCopy;
     ProductImage: Model.ProductImage;
@@ -115,6 +119,10 @@ export interface paths {
   };
   "/api/test/guest/orders/{id}/cancellation": {
     post: operations["test_guest_cancel_order"];
+  };
+  "/api/test/guest/orders/{id}/pending-cancellation": {
+    get: operations["test_guest_pending_cancellation_status"];
+    post: operations["test_guest_request_pending_cancellation"];
   };
   "/api/test/verification/redeem": {
     post: operations["redeem_test_verification"];
@@ -510,6 +518,45 @@ export interface operations {
     requestBody: { content: { "application/json": Model.CancellationRequest; } };
     responses: {
       200: { headers: { [name: string]: unknown }; content: { "application/json": Model.CancellationResponse; } };
+      400: { headers: { [name: string]: unknown }; content: { "application/json": Model.ApiError; } };
+      401: { headers: { [name: string]: unknown }; content: { "application/json": Model.ApiError; } };
+      403: { headers: { [name: string]: unknown }; content: { "application/json": Model.ApiError; } };
+      404: { headers: { [name: string]: unknown }; content: { "application/json": Model.ApiError; } };
+      409: { headers: { [name: string]: unknown }; content: { "application/json": Model.ApiError; } };
+      413: { headers: { [name: string]: unknown }; content: { "application/json": Model.ApiError; } };
+      415: { headers: { [name: string]: unknown }; content: { "application/json": Model.ApiError; } };
+      503: { headers: { [name: string]: unknown }; content: { "application/json": Model.ApiError; } };
+      504: { headers: { [name: string]: unknown }; content: { "application/json": Model.ApiError; } };
+    };
+  };
+  "test_guest_pending_cancellation_status": {
+    parameters: {
+      query?: never;
+      header: NonNullable<Model.TestGuestPendingCancellationStatusData["headers"]>;
+      path: NonNullable<Model.TestGuestPendingCancellationStatusData["path"]>;
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      200: { headers: { [name: string]: unknown }; content: { "application/json": Model.PendingCancellationLookup; } };
+      400: { headers: { [name: string]: unknown }; content: { "application/json": Model.ApiError; } };
+      401: { headers: { [name: string]: unknown }; content: { "application/json": Model.ApiError; } };
+      403: { headers: { [name: string]: unknown }; content: { "application/json": Model.ApiError; } };
+      404: { headers: { [name: string]: unknown }; content: { "application/json": Model.ApiError; } };
+      503: { headers: { [name: string]: unknown }; content: { "application/json": Model.ApiError; } };
+      504: { headers: { [name: string]: unknown }; content: { "application/json": Model.ApiError; } };
+    };
+  };
+  "test_guest_request_pending_cancellation": {
+    parameters: {
+      query?: never;
+      header: NonNullable<Model.TestGuestRequestPendingCancellationData["headers"]>;
+      path: NonNullable<Model.TestGuestRequestPendingCancellationData["path"]>;
+      cookie?: never;
+    };
+    requestBody: { content: { "application/json": Model.PendingCancellationRequest; } };
+    responses: {
+      200: { headers: { [name: string]: unknown }; content: { "application/json": Model.PendingCancellationReceipt; } };
       400: { headers: { [name: string]: unknown }; content: { "application/json": Model.ApiError; } };
       401: { headers: { [name: string]: unknown }; content: { "application/json": Model.ApiError; } };
       403: { headers: { [name: string]: unknown }; content: { "application/json": Model.ApiError; } };

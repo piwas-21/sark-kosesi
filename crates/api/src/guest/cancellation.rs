@@ -6,7 +6,7 @@ use axum::{
 };
 use commerce_domain::{media::valid_command_id, order_stock::identifier};
 use commerce_infrastructure::{checkout_cancellations, checkout_orders::OrderStoreError};
-use serde::{Deserialize, Serialize};
+use serde::{Deserialize, Serialize, de::DeserializeOwned};
 use utoipa::ToSchema;
 
 #[derive(Deserialize, ToSchema)]
@@ -31,36 +31,18 @@ pub(crate) async fn cancel(
     session: Session,
     request: Request,
 ) -> Response {
-    let csrf = match mutation(&state, &request, true) {
+    let (key, csrf, input) = match mutation_input::<CancellationRequest>(
+        &app,
+        &state,
+        &session,
+        &id,
+        request,
+        "cancellation",
+    )
+    .await
+    {
         Ok(value) => value,
         Err(value) => return value.into_response(),
-    };
-    if request.uri().query().is_some()
-        || !identifier(&id)
-        || request.uri().path() != format!("/api/test/guest/orders/{id}/cancellation")
-    {
-        return error(StatusCode::BAD_REQUEST, "invalid_cancellation_request");
-    }
-    let Some(key) = exact_guest_cookie(request.headers(), &session) else {
-        return error(StatusCode::UNAUTHORIZED, "guest_session_required");
-    };
-    if single_header(request.headers(), "content-type").and_then(|v| v.split(';').next())
-        != Some("application/json")
-    {
-        return error(StatusCode::UNSUPPORTED_MEDIA_TYPE, "guest_json_required");
-    }
-    let bytes = match Bytes::from_request(request, &app).await {
-        Ok(bytes) => bytes,
-        Err(value) if value.status() == StatusCode::PAYLOAD_TOO_LARGE => {
-            return error(StatusCode::PAYLOAD_TOO_LARGE, "guest_request_too_large");
-        }
-        Err(_) => return error(StatusCode::BAD_REQUEST, "invalid_cancellation_request"),
-    };
-    if bytes.iter().copied().find(|b| !b.is_ascii_whitespace()) != Some(b'{') {
-        return error(StatusCode::BAD_REQUEST, "invalid_cancellation_request");
-    }
-    let Ok(input) = serde_json::from_slice::<CancellationRequest>(&bytes) else {
-        return error(StatusCode::BAD_REQUEST, "invalid_cancellation_request");
     };
     if !input.confirmed || !valid_command_id(&input.effect_key) {
         return error(StatusCode::BAD_REQUEST, "invalid_cancellation_request");
@@ -75,7 +57,72 @@ pub(crate) async fn cancel(
         Err(value) => failed(value),
     }
 }
-fn failed(value: OrderStoreError) -> Response {
+
+pub(super) fn owned_request(
+    id: &str,
+    request: &Request,
+    session: &Session,
+    suffix: &str,
+) -> Result<GuestCredential, Rejection> {
+    if request.uri().query().is_some()
+        || !identifier(id)
+        || request.uri().path() != format!("/api/test/guest/orders/{id}/{suffix}")
+    {
+        return Err(Rejection(
+            StatusCode::BAD_REQUEST,
+            "invalid_cancellation_request",
+        ));
+    }
+    exact_guest_cookie(request.headers(), session).ok_or(Rejection(
+        StatusCode::UNAUTHORIZED,
+        "guest_session_required",
+    ))
+}
+
+pub(super) async fn mutation_input<T: DeserializeOwned>(
+    app: &crate::AppState,
+    state: &GuestState,
+    session: &Session,
+    id: &str,
+    request: Request,
+    suffix: &str,
+) -> Result<(GuestCredential, String, T), Rejection> {
+    let csrf = mutation(state, &request, true)?;
+    let key = owned_request(id, &request, session, suffix)?;
+    if single_header(request.headers(), "content-type").and_then(|v| v.split(';').next())
+        != Some("application/json")
+    {
+        return Err(Rejection(
+            StatusCode::UNSUPPORTED_MEDIA_TYPE,
+            "guest_json_required",
+        ));
+    }
+    let bytes = match Bytes::from_request(request, app).await {
+        Ok(bytes) => bytes,
+        Err(value) if value.status() == StatusCode::PAYLOAD_TOO_LARGE => {
+            return Err(Rejection(
+                StatusCode::PAYLOAD_TOO_LARGE,
+                "guest_request_too_large",
+            ));
+        }
+        Err(_) => {
+            return Err(Rejection(
+                StatusCode::BAD_REQUEST,
+                "invalid_cancellation_request",
+            ));
+        }
+    };
+    if bytes.iter().copied().find(|b| !b.is_ascii_whitespace()) != Some(b'{') {
+        return Err(Rejection(
+            StatusCode::BAD_REQUEST,
+            "invalid_cancellation_request",
+        ));
+    }
+    let input = serde_json::from_slice(&bytes)
+        .map_err(|_| Rejection(StatusCode::BAD_REQUEST, "invalid_cancellation_request"))?;
+    Ok((key, csrf, input))
+}
+pub(super) fn failed(value: OrderStoreError) -> Response {
     let (status, code) = match value {
         OrderStoreError::InvalidRequest => {
             (StatusCode::BAD_REQUEST, "invalid_cancellation_request")
