@@ -77,7 +77,7 @@ finish() {
       printf 'assembly_phase=%s\n' "$phase" >&2
     fi
     if [[ "$stage" == isolated_runtime && -f "$scratch/runtime.log" ]]; then
-      awk '/^runtime_failure=(packages|run_lab|runtime)\.py:[1-9][0-9]?[0-9]?$/ && ++count <= 6' \
+      awk '/^runtime_failure=(packages|run_lab|runtime)\.py:[1-9][0-9]?[0-9]?$/ && ++count <= 15' \
         "$scratch/runtime.log" > "$out/runtime-failures.txt" || rc=1
       cat "$out/runtime-failures.txt" >&2 || rc=1
     fi

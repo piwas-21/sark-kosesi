@@ -361,7 +361,7 @@ def failure_sites(error):
             for frame, line in traceback.walk_tb(error.__traceback__)
             if frame.f_code.co_filename in allowed and frame.f_code.co_name != "require"
         ]
-        yield from reversed(sites[-2:])
+        yield from reversed(sites[-5:])
         error = error.__cause__ or error.__context__
 
 

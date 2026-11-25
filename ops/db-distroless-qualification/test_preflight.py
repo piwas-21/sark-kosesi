@@ -7,6 +7,7 @@ import subprocess
 import tarfile
 import tempfile
 import unittest
+from dataclasses import replace
 from datetime import UTC, datetime
 from pathlib import Path
 from unittest.mock import patch
@@ -273,7 +274,7 @@ class RuntimeTests(unittest.TestCase):
             "Name": "/" + scope.name(role),
             "Config": {
                 "Labels": {runtime.LABEL: scope.nonce},
-                "User": runtime.USER,
+                "User": "0:0" if role == "prepare" else runtime.USER,
                 "Entrypoint": [entry],
                 "Cmd": command,
                 "StopSignal": "SIGINT",
@@ -299,6 +300,9 @@ class RuntimeTests(unittest.TestCase):
                     }
                 ],
                 "CapDrop": ["ALL"],
+                "CapAdd": ["CAP_CHOWN"]
+                if role == "prepare" and scope.data_owner == runtime.USER
+                else None,
                 "SecurityOpt": ["no-new-privileges"],
             },
             "Mounts": []
@@ -316,7 +320,7 @@ class RuntimeTests(unittest.TestCase):
         }
 
     def test_owned_split_roles_without_routes_and_direct_nonroot_pid_one(self):
-        for role in ("server", "bootstrap", "client"):
+        for role in ("prepare", "server", "bootstrap", "client"):
             record = self.record(role)
             command = runtime.create_args(
                 self.scope,
@@ -332,6 +336,22 @@ class RuntimeTests(unittest.TestCase):
             if role == "client":
                 self.assertNotIn("--mount", command)
         runtime.direct_server(self.record("server"), self.scope, self.server_id, 321, "postgres\n")
+
+    def test_only_normal_prepare_gets_the_exact_docker_chown_capability(self):
+        for data_owner, capability in ((runtime.USER, ["CAP_CHOWN"]), ("0:0", None)):
+            self.scope = replace(self.scope, data_owner=data_owner)
+            record = self.record("prepare")
+            command = runtime.create_args(
+                self.scope, "prepare", daemon_id=self.scope.daemon, volume=self.volume
+            )
+            if capability:
+                self.assertEqual(command[command.index("--cap-add") + 1], "CAP_CHOWN")
+            else:
+                self.assertNotIn("--cap-add", command)
+            runtime.container_owned(record, self.scope, "prepare", self.id)
+            record["HostConfig"]["CapAdd"] = [*(capability or []), "CAP_DAC_OVERRIDE"]
+            with self.assertRaisesRegex(ValueError, "unverified"):
+                runtime.container_owned(record, self.scope, "prepare", self.id)
 
     def test_isolation_and_package_role_guards_fail_closed(self):
         for mapping, key, value in (

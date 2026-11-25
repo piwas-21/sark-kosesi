@@ -10,6 +10,7 @@ POSTGRES = "/opt/pg-smoke/bin/postgres"
 USER = "65532:65532"
 TMPFS = "rw,nosuid,nodev,mode=1777,size=32m"
 BASH = "/usr/bin/bash"
+CHOWN = "CAP_CHOWN"
 TLS_RESULTS = (
     "verify_full=pass",
     "scram_and_hba=pass",
@@ -137,7 +138,7 @@ def create_args(scope, role, *, daemon_id, volume, server_id=None, server=None):
         f"/tmp:{TMPFS}",
     ]
     if role == "prepare" and scope.data_owner == USER:
-        args += ["--cap-add", "CHOWN"]
+        args += ["--cap-add", CHOWN]
     if role != "client":
         args += ["--mount", f"type=volume,src={scope.volume},dst={VOLUME_TARGET},volume-nocopy"]
     if role == "server":
@@ -159,42 +160,50 @@ def volume_owned(volume, scope):
 def container_owned(record, scope, role, identity, server_id=None):
     image, network, entrypoint, command = role_parameters(scope, role, server_id)
     config, host = record["Config"], record["HostConfig"]
-    capabilities = {"CHOWN"} if role == "prepare" and scope.data_owner == USER else set()
+    capabilities = {CHOWN} if role == "prepare" and scope.data_owner == USER else set()
+    reason = "Foreign or unverified qualification container"
     require(
         instance_id(identity)
         and record["Id"] == identity
         and record["Image"] == image
         and record["Name"] == "/" + scope.name(role)
-        and (config["Labels"] or {}).get(LABEL) == scope.nonce
-        and config["User"] == ("0:0" if role == "prepare" else USER)
-        and config["Entrypoint"] == [entrypoint]
-        and config["Cmd"] == command
-        and (role != "server" or config["StopSignal"] == "SIGINT")
-        and host["NetworkMode"] == network
-        and host.get("PidMode", "") == ""
+        and (config["Labels"] or {}).get(LABEL) == scope.nonce,
+        reason,
+    )
+    require(config["User"] == ("0:0" if role == "prepare" else USER), reason)
+    require(config["Entrypoint"] == [entrypoint] and config["Cmd"] == command, reason)
+    require(role != "server" or config["StopSignal"] == "SIGINT", reason)
+    require(host["NetworkMode"] == network, reason)
+    require(
+        host.get("PidMode", "") == ""
         and host.get("IpcMode") == "private"
         and host.get("UTSMode", "") == ""
-        and host.get("UsernsMode", "") == ""
-        and not host.get("PortBindings")
+        and host.get("UsernsMode", "") == "",
+        reason,
+    )
+    require(
+        not host.get("PortBindings")
         and not host.get("PublishAllPorts")
-        and not any((record["NetworkSettings"].get("Ports") or {}).values())
-        and host["ReadonlyRootfs"] is True
+        and not any((record["NetworkSettings"].get("Ports") or {}).values()),
+        reason,
+    )
+    require(
+        host["ReadonlyRootfs"] is True
         and host["Privileged"] is False
         and not host.get("Devices")
         and not host.get("DeviceRequests")
         and not host.get("DeviceCgroupRules")
         and not host.get("GroupAdd")
         and not host.get("Binds")
-        and not host.get("VolumesFrom")
-        and host["Memory"] == host["MemorySwap"] == 512 * 1024**2
-        and host["NanoCpus"] == 10**9
-        and host["PidsLimit"] == 128
-        and host["Tmpfs"] == {"/tmp": TMPFS}
-        and set(host["CapDrop"] or ()) == {"ALL"}
-        and set(host.get("CapAdd") or ()) == capabilities
-        and host["SecurityOpt"] in (["no-new-privileges"], ["no-new-privileges:true"]),
-        "Foreign or unverified qualification container",
+        and not host.get("VolumesFrom"),
+        reason,
     )
+    require(host["Memory"] == host["MemorySwap"] == 512 * 1024**2, reason)
+    require(host["NanoCpus"] == 10**9 and host["PidsLimit"] == 128, reason)
+    require(host["Tmpfs"] == {"/tmp": TMPFS}, reason)
+    require(set(host["CapDrop"] or ()) == {"ALL"}, reason)
+    require(set(host.get("CapAdd") or ()) == capabilities, reason)
+    require(host["SecurityOpt"] in (["no-new-privileges"], ["no-new-privileges:true"]), reason)
     mounts = [
         (item["Type"], item.get("Name"), item["Destination"], item["RW"])
         for item in record["Mounts"]
