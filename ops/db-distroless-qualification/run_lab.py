@@ -5,6 +5,8 @@ import hashlib
 import json
 import secrets
 import subprocess
+import sys
+import traceback
 from pathlib import Path
 
 import runtime
@@ -349,6 +351,20 @@ def run(server_id, tools_id, private, output, cleanup_receipt, pinned):
     )
 
 
+def failure_sites(error):
+    allowed = {str(HERE / name): name for name in ("packages.py", "run_lab.py", "runtime.py")}
+    for _ in range(3):
+        if error is None:
+            break
+        sites = [
+            (allowed[frame.f_code.co_filename], line)
+            for frame, line in traceback.walk_tb(error.__traceback__)
+            if frame.f_code.co_filename in allowed and frame.f_code.co_name != "require"
+        ]
+        yield from reversed(sites[-2:])
+        error = error.__cause__ or error.__context__
+
+
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("server_id")
@@ -358,11 +374,16 @@ if __name__ == "__main__":
     parser.add_argument("cleanup_receipt", type=Path)
     parser.add_argument("daemon_id")
     args = parser.parse_args()
-    run(
-        args.server_id,
-        args.tools_id,
-        args.private,
-        args.output,
-        args.cleanup_receipt,
-        args.daemon_id,
-    )
+    try:
+        run(
+            args.server_id,
+            args.tools_id,
+            args.private,
+            args.output,
+            args.cleanup_receipt,
+            args.daemon_id,
+        )
+    except Exception as error:
+        for name, line in failure_sites(error):
+            print(f"runtime_failure={name}:{line}", file=sys.stderr, flush=True)
+        raise

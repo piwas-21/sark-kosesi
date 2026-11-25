@@ -400,6 +400,38 @@ class RuntimeTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "unverified"):
             runtime.volume_owned(self.volume, self.scope)
 
+    def test_volume_nocopy_accepts_docker_empty_driver_config_in_use_and_cleanup(self):
+        server = self.record("server")
+        mount = server["HostConfig"]["Mounts"][0]
+        mount["VolumeOptions"] = {"NoCopy": True, "DriverConfig": {}}
+        runtime.container_owned(server, self.scope, "server", self.server_id)
+        server["State"]["Running"] = False
+        self.assertEqual(
+            runtime.container_remove_args(
+                self.scope,
+                "server",
+                self.server_id,
+                server,
+                daemon_id=self.scope.daemon,
+                volume=self.volume,
+            ),
+            ["container", "rm", self.server_id],
+        )
+        for options in (
+            {"NoCopy": False, "DriverConfig": {}},
+            {"NoCopy": 1, "DriverConfig": {}},
+            {"NoCopy": True, "DriverConfig": {"Name": "other"}},
+            {"NoCopy": True, "DriverConfig": {"Options": {"type": "tmpfs"}}},
+            {"NoCopy": True, "DriverConfig": {}, "Subpath": "other"},
+            {"NoCopy": True, "DriverConfig": {}, "Labels": {"conflict": "foreign"}},
+        ):
+            mount["VolumeOptions"] = options
+            with (
+                self.subTest(options=options),
+                self.assertRaisesRegex(ValueError, "options differ"),
+            ):
+                runtime.container_owned(server, self.scope, "server", self.server_id)
+
     def test_client_and_cleanup_require_pinned_daemon_owned_volume_and_exact_server(self):
         client = self.record("client")
         proof = {
@@ -495,6 +527,25 @@ class RuntimeTests(unittest.TestCase):
                 custody.resolve("image", "local/wrong-tag", nonce=self.scope.nonce)
             with self.assertRaisesRegex(ValueError, "candidate image ID"):
                 custody.resolve("image", tag, expected=self.scope.tools)
+
+
+class RuntimeDiagnosticsTests(unittest.TestCase):
+    def test_failure_sites_identify_both_exceptions_without_rendering_private_text(self):
+        diagnostic = b"private runtime diagnostic"
+        response = subprocess.CompletedProcess([], 2, b"", diagnostic)
+        with patch.object(run_lab, "docker", return_value=response):
+            try:
+                try:
+                    run_lab.inspect("container", "synthetic")
+                finally:
+                    run_lab.inspect("volume", "synthetic")
+            except ValueError as error:
+                sites = list(run_lab.failure_sites(error))
+            else:
+                self.fail("Private error fixture unexpectedly passed")
+        self.assertEqual([name for name, _ in sites], ["run_lab.py", "run_lab.py"])
+        self.assertTrue(all(isinstance(line, int) and line > 0 for _, line in sites))
+        self.assertNotIn(diagnostic.decode(), repr(sites))
 
 
 class FixtureCustodyTests(unittest.TestCase):

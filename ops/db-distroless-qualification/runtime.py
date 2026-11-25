@@ -211,12 +211,17 @@ def container_owned(record, scope, role, identity, server_id=None):
         "Qualification container mounts differ",
     )
     for mount in requested:
+        # Docker serializes a blank DriverConfig when the CLI sets volume-nocopy.
+        options = mount.get("VolumeOptions")
         require(
             mount["Type"] == "volume"
             and mount["Source"] == scope.volume
             and mount["Target"] == VOLUME_TARGET
             and mount.get("ReadOnly", False) is False
-            and mount["VolumeOptions"] == {"NoCopy": True},
+            and isinstance(options, dict)
+            and options.get("NoCopy") is True
+            and options.keys() <= {"NoCopy", "DriverConfig"}
+            and options.get("DriverConfig", {}) == {},
             "Qualification container volume options differ",
         )
 
