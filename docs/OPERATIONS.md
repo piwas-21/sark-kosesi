@@ -732,6 +732,49 @@ readiness or vulnerability disposition. A separate reviewed slice must add the
 verified PostgreSQL install, exercise the runtime and compare unfiltered scans.
 No image is published or deployed by this workflow.
 
+## PostgreSQL Distroless qualification
+
+The optional [Distroless qualification workflow](../.github/workflows/db-distroless-qualification.yml)
+runs one synthetic Linux AMD64 experiment on a disposable GitHub-hosted runner.
+Pull requests to `develop` trigger it when they change the workflow or the
+[lab directory](../ops/db-distroless-qualification/). Dispatch on a reviewed ref
+once the workflow is present on the default branch, `develop`.
+Run it again when the shared PostgreSQL build, archive, diagnostics, runtime or
+scan helpers change. Those changes do not automatically trigger this optional
+workflow.
+
+The job builds PostgreSQL 18.7 once from the existing pinned public source and
+build inputs. It verifies the exact same-job save and matches the full file,
+mode, owner and link inventory against the frozen public source baseline.
+The new image and archive have their own recorded digests. The assembly verifies
+both Distroless OCI signatures and the signed Debian Release, fixed signing
+window, index and all 20 package payloads. It enforces any declared Valid-Until
+against the actual runner time. The signed Trixie Release selected here omits
+that field. The assembler keeps vendor layers and package metadata intact in
+separate server and tools images.
+The signed base replaces its own `usr/lib/os-release` in a later layer. The
+assembler verifies both exact file digests and keeps added layers
+non-overwriting. The server inventory also verifies the exact checksum lists
+that accompany the base package records.
+
+The runtime lab exercises direct nonroot PostgreSQL PID 1, uninitialized and
+wrong-owner startup controls, clean shutdown and restart. A separate tools
+container bootstraps the owned volume. Its verified Bash provides `/bin/sh`
+for the subprocess checks in `initdb`. An isolated client verifies TLS/SCRAM
+and rejects a wrong CA, hostname, plaintext connection and wrong password.
+The fixture verifies that a committed row survives restart and a rolled-back
+row remains absent. Tests use synthetic credentials, no published DB ports and
+only disposable lab resources.
+
+The paired, unfiltered Trivy pass binds stock Debian 13.7 and the Distroless
+server's Debian 13.8 archive to one current scanner database. It checks each
+package inventory and SBOM, preserves the stock positive finding control and
+retains all findings including OpenSSL. Published artifacts contain bounded
+receipts, inventories, scan reports, fixed verdicts and checksums. Images and
+synthetic credentials stay in runner scratch. Live restore, stock custody,
+operational compatibility, security disposition and deployment are separate
+acceptance steps.
+
 ## PostgreSQL sibling TLS lab
 
 The path-scoped `PostgreSQL sibling TLS lab` rebuilds and verifies the sibling

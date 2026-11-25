@@ -1,0 +1,41 @@
+name: PostgreSQL Distroless qualification
+on:
+  workflow_dispatch:
+  pull_request:
+    branches: [develop]
+    paths:
+      - .github/workflows/db-distroless-qualification.yml
+      - ops/db-distroless-qualification/**
+permissions: {}
+concurrency:
+  group: distroless-qualification-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+jobs:
+  qualification:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 85
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+      - name: Verify qualification controls
+        env:
+          PYTHONPATH: scripts:ops/db-sibling-scan-evidence
+        run: |
+          python3 -B -m unittest discover -s ops/db-distroless-qualification -p 'test_*.py'
+          for script in ops/db-distroless-qualification/*.sh; do bash -n "$script"; done
+      - name: Qualify exact synthetic split images
+        env:
+          QUALIFICATION_REVISION: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: bash ops/db-distroless-qualification/run.sh
+      - name: Retain allowlisted qualification evidence
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+        with:
+          name: db-distroless-qualification-${{ github.event.pull_request.head.sha || github.sha }}
+          path: ${{ runner.temp }}/db-distroless-qualification-evidence/
+          if-no-files-found: error
+          retention-days: 30

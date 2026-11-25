@@ -1,0 +1,168 @@
+{
+  "cosign": {
+    "sha256": "912502def4baf810eaf36b210a4f51e1da214f9f6d664e2a9a2154cfc67ee0d6",
+    "version": "v3.1.5"
+  },
+  "inputs_sha256": "bc6fa0379e8cf1614f2c93eb86dc42d42bad89eaa6acf66c595d35337e490508",
+  "regctl": {
+    "sha256": "3737fbbdd791e04e7a831640b681f3397a376498e80e2ad9b1b2d27296f239bc",
+    "version": "v0.11.7"
+  },
+  "schema": 1,
+  "source_lock_sha256": "043977a3d746c3cb5cfa771e991617f38a474ad941d0cd0a5c0b2399af01d2c6",
+  "tools_packages": {
+    "bash": {
+      "arch": "amd64",
+      "bytes": 1500792,
+      "dependencies": [
+        "base-files (>= 2.1.12), debianutils (>= 5.6-0.1)",
+        "libc6 (>= 2.38), libtinfo6 (>= 6)"
+      ],
+      "filename": "pool/main/b/bash/bash_5.2.37-2+b10_amd64.deb",
+      "installed_kib": 7196,
+      "sha256": "2fd7b04f1b7caa29c4e683f5216e6af354a41e3cdcf6e75394d7cda680f9ab82",
+      "version": "5.2.37-2+b10"
+    },
+    "coreutils": {
+      "arch": "amd64",
+      "bytes": 3023556,
+      "dependencies": [
+        "libacl1 (>= 2.2.23), libattr1 (>= 1:2.4.48), libc6 (>= 2.38), libcap2 (>= 1:2.10), libgmp10 (>= 2:6.3.0+dfsg), libselinux1 (>= 3.1~), libssl3t64 (>= 3.0.0), libsystemd0 (>= 254)"
+      ],
+      "filename": "pool/main/c/coreutils/coreutils_9.7-3_amd64.deb",
+      "installed_kib": 18457,
+      "sha256": "1299ab6f9389a288eb2f5f3dd222c26cc777b9a2d5ecb6ee4cbd340cebcdada2",
+      "version": "9.7-3"
+    },
+    "debianutils": {
+      "arch": "amd64",
+      "bytes": 92360,
+      "dependencies": [
+        "libc6 (>= 2.38)"
+      ],
+      "filename": "pool/main/d/debianutils/debianutils_5.23.2_amd64.deb",
+      "installed_kib": 225,
+      "sha256": "720e43fda316676076498b4224ad3318049deafe60cc7c601011048de03ee97d",
+      "version": "5.23.2"
+    },
+    "grep": {
+      "arch": "amd64",
+      "bytes": 431488,
+      "dependencies": [
+        "libc6 (>= 2.34), libpcre2-8-0 (>= 10.32)"
+      ],
+      "filename": "pool/main/g/grep/grep_3.11-4_amd64.deb",
+      "installed_kib": 1266,
+      "sha256": "2d78ed07d86a530ebf538f05cb2415f37c8daf908596bc32fc2563cc7e88c55a",
+      "version": "3.11-4"
+    },
+    "libacl1": {
+      "arch": "amd64",
+      "bytes": 32860,
+      "dependencies": [
+        "libc6 (>= 2.38)"
+      ],
+      "filename": "pool/main/a/acl/libacl1_2.3.2-2+b1_amd64.deb",
+      "installed_kib": 74,
+      "sha256": "08074f01e384bc07c0c2d79a58cf4a6523f71cf75d1808101c79617656c9a39d",
+      "version": "2.3.2-2+b1"
+    },
+    "libattr1": {
+      "arch": "amd64",
+      "bytes": 22876,
+      "dependencies": [
+        "libc6 (>= 2.4)"
+      ],
+      "filename": "pool/main/a/attr/libattr1_2.5.2-3_amd64.deb",
+      "installed_kib": 60,
+      "sha256": "606b5ee12ea2786be607a17f40c1fb5e65c76ceaff66665bdf8f8c6c1b71d1fb",
+      "version": "1:2.5.2-3"
+    },
+    "libcap2": {
+      "arch": "amd64",
+      "bytes": 28988,
+      "dependencies": [
+        "libc6 (>= 2.38)"
+      ],
+      "filename": "pool/main/libc/libcap2/libcap2_2.75-10+deb13u1+b3_amd64.deb",
+      "installed_kib": 92,
+      "sha256": "89fc4d34fc7a28ad6f0fcd0c561ab253b9dedf6f77f5a000b47c276c8295bf67",
+      "version": "1:2.75-10+deb13u1+b3"
+    },
+    "libgmp10": {
+      "arch": "amd64",
+      "bytes": 560220,
+      "dependencies": [
+        "libc6 (>= 2.38)"
+      ],
+      "filename": "pool/main/g/gmp/libgmp10_6.3.0+dfsg-3_amd64.deb",
+      "installed_kib": 882,
+      "sha256": "d0d0265eb01770f17afd0f7c8c0622f80479dcfbbe13653a0debeec61464e622",
+      "version": "2:6.3.0+dfsg-3"
+    },
+    "libpcre2-8-0": {
+      "arch": "amd64",
+      "bytes": 299148,
+      "dependencies": [
+        "libc6 (>= 2.34)"
+      ],
+      "filename": "pool/main/p/pcre2/libpcre2-8-0_10.46-1~deb13u3_amd64.deb",
+      "installed_kib": 774,
+      "sha256": "e226f661d918f04daf38cdbc4806b7ed7d6ef95c7eb0ade692fc350e31970040",
+      "version": "10.46-1~deb13u3"
+    },
+    "libreadline8t64": {
+      "arch": "amd64",
+      "bytes": 168832,
+      "dependencies": [
+        "readline-common, libc6 (>= 2.38), libtinfo6 (>= 6)"
+      ],
+      "filename": "pool/main/r/readline/libreadline8t64_8.2-6_amd64.deb",
+      "installed_kib": 485,
+      "sha256": "eeadf2b5e755c9f183883feea2d9b5b28560284275d5f54d3e55d0923b1d0967",
+      "version": "8.2-6"
+    },
+    "libselinux1": {
+      "arch": "amd64",
+      "bytes": 84680,
+      "dependencies": [
+        "libc6 (>= 2.38), libpcre2-8-0 (>= 10.22)"
+      ],
+      "filename": "pool/main/libs/libselinux/libselinux1_3.8.1-1_amd64.deb",
+      "installed_kib": 229,
+      "sha256": "68bb8d32bd8d6d7d2f5952a169db03d1484b46ae1e52abccdec42a19dccea5d5",
+      "version": "3.8.1-1"
+    },
+    "libsystemd0": {
+      "arch": "amd64",
+      "bytes": 454648,
+      "dependencies": [
+        "libc6 (>= 2.39), libcap2 (>= 1:2.10)"
+      ],
+      "filename": "pool/main/s/systemd/libsystemd0_257.13-1~deb13u1_amd64.deb",
+      "installed_kib": 1223,
+      "sha256": "ab0d4127b5e46e6f8c015a1db15a62ba9ae274cdefa150083adf90ada0600ea1",
+      "version": "257.13-1~deb13u1"
+    },
+    "libtinfo6": {
+      "arch": "amd64",
+      "bytes": 348380,
+      "dependencies": [
+        "libc6 (>= 2.34)"
+      ],
+      "filename": "pool/main/n/ncurses/libtinfo6_6.5+20250216-2_amd64.deb",
+      "installed_kib": 569,
+      "sha256": "8b9f6a7983e9418564e48a627518de4c03917b56efe68d7f3e93bd8fffa1cc10",
+      "version": "6.5+20250216-2"
+    },
+    "readline-common": {
+      "arch": "all",
+      "bytes": 69360,
+      "dependencies": [],
+      "filename": "pool/main/r/readline/readline-common_8.2-6_all.deb",
+      "installed_kib": 89,
+      "sha256": "f77e8aa0bf0de618f11cb0b21658a4ed60f177d63b3cf26d7fc3706b6d0eaaa9",
+      "version": "8.2-6"
+    }
+  }
+}

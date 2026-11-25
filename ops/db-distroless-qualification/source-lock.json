@@ -1,0 +1,17 @@
+{
+  "artifact_id": 14942857533,
+  "artifact_sha256": "15b1235b3a1a570069bd1700c13f63dc7a1d0769e327819dbc90dfeb624f7a90",
+  "baseline_source_revision": "0900919c8c0545911d2ab478bacf7ffd84063290",
+  "build_packages_sha256": "fce5a59f8bd1a6eab5bed1f8c9c464fd7ed6ed24ceaf54322aa173f603c36db9",
+  "dockerfile_sha256": "07f0d6def151fdb2110f09dc2557a86d9ad03278d5a6d5e1ce3bc74975947e9c",
+  "file_sha256": {
+    "/opt/pg-smoke/bin/pg_config": "20b207eeb4b515da388a1cc886835f5dbcbaaf042a3ace95498ec96c0b526cae",
+    "/opt/pg-smoke/bin/postgres": "db558dc8741532e92aaae4930ea64add7b18e2586b203b6c7dae7411838f2496",
+    "/opt/pg-smoke/bin/psql": "df903992ee6c789358376c4591373687adc69a8c5100ade55be4d9372bdb5bb9",
+    "/opt/pg-smoke/lib/libpq.so.5.18": "b30d283fd548060f46a2df43abd40f2702e3f00777cbbaec4cbd06e0d16cbb42"
+  },
+  "files_sha256": "8b7f656d4738773c834b048abae7f5c1644fa4d51337acc4ed9e25e48feb3015",
+  "metadata_sha256": "dbf6df4cf20e7d7ca0962e97dc16e03517b2df82bf12e38acf2f48c810a4d5f1",
+  "upstream_sha256": "441dfae4280cae3e0425e5f876f80559fb0731c140f1aae22b3e5a54d0411bfd",
+  "version": "18.7"
+}
