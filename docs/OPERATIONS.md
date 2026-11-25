@@ -752,10 +752,15 @@ window, index and all 20 package payloads. It enforces any declared Valid-Until
 against the actual runner time. The signed Trixie Release selected here omits
 that field. The assembler keeps vendor layers and package metadata intact in
 separate server and tools images.
+The signed base replaces its own `usr/lib/os-release` in a later layer. The
+assembler verifies both exact file digests and keeps added layers
+non-overwriting. The server inventory also verifies the exact checksum lists
+that accompany the base package records.
 
 The runtime lab exercises direct nonroot PostgreSQL PID 1, uninitialized and
 wrong-owner startup controls, clean shutdown and restart. A separate tools
-container bootstraps the owned volume. An isolated client verifies TLS/SCRAM
+container bootstraps the owned volume. Its verified Bash provides `/bin/sh`
+for the subprocess checks in `initdb`. An isolated client verifies TLS/SCRAM
 and rejects a wrong CA, hostname, plaintext connection and wrong password.
 The fixture verifies that a committed row survives restart and a rolled-back
 row remains absent. Tests use synthetic credentials, no published DB ports and

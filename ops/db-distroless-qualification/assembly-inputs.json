@@ -3,7 +3,7 @@
     "sha256": "912502def4baf810eaf36b210a4f51e1da214f9f6d664e2a9a2154cfc67ee0d6",
     "version": "v3.1.5"
   },
-  "inputs_sha256": "2d79195028cee64556110782e483a20123825c7e7d951a23fe568c9691fb3a96",
+  "inputs_sha256": "bc6fa0379e8cf1614f2c93eb86dc42d42bad89eaa6acf66c595d35337e490508",
   "regctl": {
     "sha256": "3737fbbdd791e04e7a831640b681f3397a376498e80e2ad9b1b2d27296f239bc",
     "version": "v0.11.7"

@@ -53,7 +53,7 @@ export_owned() {
   [[ "$found" == "$export_id" ]]
 }
 finish() {
-  local rc=$? clean=success
+  local rc=$? clean=success phase
   trap - EXIT
   if "$export_planned"; then
     custody remove container "$export_name" --expected "$server_id" --nonce "$nonce" \
@@ -68,6 +68,14 @@ finish() {
     printf 'stage=complete outcome=success cleanup=%s\n' "$clean" > "$out/status.txt"
   else
     printf 'stage=%s outcome=failed exit=%s cleanup=%s\n' "$stage" "$rc" "$clean" > "$out/status.txt"
+    if [[ "$stage" == assembly && -f "$scratch/assembly.log" ]]; then
+      phase=$(awk '
+        /^(assembly_preflight|debian_signatures_and_payloads|signed_base_inventory|common_package_layers|archived_source_tree|tools_package_layers|split_payload_inventory|oci_append_(common|server|tools))$/ { last = $0 }
+        END { print last ? last : "launcher" }
+      ' "$scratch/assembly.log") || phase=unavailable
+      printf 'assembly_phase=%s\n' "$phase" > "$out/assembly-phase.txt" || rc=1
+      printf 'assembly_phase=%s\n' "$phase" >&2
+    fi
   fi
   if ! publish_tls_evidence "$out" "$published"; then rc=1; fi
   if ! rm -rf -- "$scratch"; then rc=1; fi

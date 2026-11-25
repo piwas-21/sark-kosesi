@@ -238,8 +238,13 @@ def image_inventory(archive, lock):
     }
     expected_members = {name: entry["member"] for name, entry in base.items()}
     expected_members.update({name: STATUS + name for name in additions})
+    expected_checksums = {
+        entry["member"] + ".md5sums": (entry["md5sums_bytes"], entry["md5sums_sha256"])
+        for entry in base.values()
+    }
     hashes = {name: lock["postgres"]["file_sha256"]["/" + name] for name in SERVER_FILES}
     installed, exact_files, seen = {}, set(), set()
+    exact_checksums = set()
     with tarfile.open(archive, mode="r:") as exported:
         for number, entry in enumerate(exported):
             require(number < 100_000, "Too many root filesystem entries")
@@ -256,6 +261,19 @@ def image_inventory(archive, lock):
                 require(
                     root.name not in TOOL_ONLY, "Server image includes bootstrap or client tools"
                 )
+            if name.startswith(STATUS) and name.endswith(".md5sums"):
+                expected_checksum = expected_checksums.get(name)
+                require(
+                    expected_checksum is not None
+                    and (entry.type, entry.mode, entry.uid, entry.gid)
+                    == (tarfile.REGTYPE, 0o644, 0, 0)
+                    and entry.size == expected_checksum[0]
+                    and hashlib.file_digest(exported.extractfile(entry), "sha256").hexdigest()
+                    == expected_checksum[1],
+                    "Unexpected dpkg status.d checksum list",
+                )
+                exact_checksums.add(name)
+                continue
             if name.startswith(STATUS) and not entry.isdir():
                 require(
                     entry.isfile() and 0 < entry.size <= MAX_FIELD, "Unexpected dpkg status.d entry"
@@ -281,7 +299,9 @@ def image_inventory(archive, lock):
                 )
                 exact_files.add(name)
     require(
-        installed == expected and exact_files == set(hashes),
+        installed == expected
+        and exact_files == set(hashes)
+        and exact_checksums == set(expected_checksums),
         "Server package or PostgreSQL inventory differs",
     )
     # Native Distroless status.d has no Status field. After exact inventory validation,

@@ -169,6 +169,11 @@ class PackageTests(unittest.TestCase):
             )
             for name, meta in records.items()
         }
+        for meta in self.lock["base"]["packages"].values():
+            member = meta["member"] + ".md5sums"
+            files[member] = ("synthetic " + member).encode()
+            meta["md5sums_bytes"] = len(files[member])
+            meta["md5sums_sha256"] = sha(files[member])
         for name in packages.SERVER_FILES:
             files[name] = ("synthetic " + name).encode()
             self.lock["postgres"]["file_sha256"]["/" + name] = sha(files[name])
@@ -224,6 +229,23 @@ class PackageTests(unittest.TestCase):
         native_member = packages.STATUS + "libssl3t64"
         files[packages.STATUS + "moved-libssl3t64"] = files.pop(native_member)
         with self.assertRaisesRegex(ValueError, "Unexpected dpkg status.d package path"):
+            packages.image_inventory(self.write_rootfs(files), self.lock)
+
+    def test_inventory_requires_exact_vendor_checksum_lists(self):
+        files = self.rootfs_fixture()
+        checksum = packages.STATUS + "libssl3t64.md5sums"
+        for name, payload in (
+            (checksum, b"x" * len(files[checksum])),
+            (checksum, None),
+            (packages.STATUS + "unknown.md5sums", files[checksum]),
+        ):
+            with (
+                self.subTest(name=name, payload=payload),
+                self.assertRaisesRegex(ValueError, "Unexpected dpkg status.d checksum list"),
+            ):
+                packages.image_inventory(self.write_rootfs({**files, name: payload}), self.lock)
+        del files[checksum]
+        with self.assertRaisesRegex(ValueError, "Server package or PostgreSQL inventory differs"):
             packages.image_inventory(self.write_rootfs(files), self.lock)
 
 

@@ -11,12 +11,13 @@ from unittest.mock import patch
 import assembly as recipe
 
 
-def tar_bytes(entries, *, archive_format=tarfile.PAX_FORMAT):
+def tar_bytes(entries, *, archive_format=tarfile.PAX_FORMAT, modes=None):
     buffer = io.BytesIO()
     with tarfile.open(fileobj=buffer, mode="w:", format=archive_format) as tar:
         for name, kind, contents in entries:
             info = tarfile.TarInfo(name)
-            info.type, info.mode = kind, 0o755 if kind == tarfile.DIRTYPE else 0o644
+            info.type = kind
+            info.mode = (modes or {}).get(name, 0o755 if kind == tarfile.DIRTYPE else 0o644)
             if kind == tarfile.REGTYPE:
                 info.size = len(contents)
                 tar.addfile(info, io.BytesIO(contents))
@@ -250,6 +251,13 @@ class AssemblyTests(unittest.TestCase):
             self.assertNotIn("--replace", argv)
         with self.assertRaisesRegex(ValueError, "exact OCI parent"):
             recipe.image_command(tool, layout, "vendor:latest", "server", [layer], role="server")
+        package = self.folder / "libstdc++6.tar"
+        common = recipe.image_command(tool, layout, digest, "common", [package], role="common")
+        self.assertIn(f"tar={package}", common)
+        for separator in (",", "="):
+            with self.subTest(separator=separator), self.assertRaisesRegex(ValueError, "OCI path"):
+                invalid = self.folder / f"package{separator}option.tar"
+                recipe.image_command(tool, layout, digest, "common", [invalid], role="common")
 
     def test_package_layer_uses_unmodified_payload_and_full_vendor_control(self):
         debian = self.folder / "debian-inputs"
@@ -326,6 +334,152 @@ class AssemblyTests(unittest.TestCase):
                 else:
                     with self.assertRaisesRegex(ValueError, "blob payload differs"):
                         recipe.derived_image(layout, "server", base, base_config, [raw])
+
+    def vendor_layer_fixture(self):
+        path = "usr/lib/os-release"
+        layout = self.folder / "images"
+        blobs = layout / "blobs" / "sha256"
+        blobs.mkdir(parents=True)
+
+        def put(entries, **tar_options):
+            data = gzip.compress(tar_bytes(entries, **tar_options))
+            sha = recipe.sha_bytes(data)
+            (blobs / sha[7:]).write_bytes(data)
+            return {"digest": sha, "size": len(data)}
+
+        original = put(
+            [(path, tarfile.REGTYPE, b"VERSION=first"), ("etc/file", tarfile.REGTYPE, b"keep")]
+        )
+        replacement = put([("./" + path, tarfile.REGTYPE, b"VERSION=second")])
+        inherited = {
+            "path": path,
+            "original": {
+                "layer": original["digest"],
+                "file_sha256": recipe.sha_bytes(b"VERSION=first")[7:],
+            },
+            "replacement": {
+                "layer": replacement["digest"],
+                "file_sha256": recipe.sha_bytes(b"VERSION=second")[7:],
+            },
+        }
+        return layout, original, replacement, inherited, put
+
+    def test_exact_vendor_os_release_replacement_preserves_strict_addon_guard(self):
+        layout, original, replacement, inherited, _ = self.vendor_layer_fixture()
+        paths, _ = recipe.vendor_layers(layout, [original, replacement], inherited)
+        self.assertEqual(
+            paths,
+            {
+                PurePosixPath("usr/lib/os-release"): (tarfile.REGTYPE, 0o644, 0, 0),
+                PurePosixPath("etc/file"): (tarfile.REGTYPE, 0o644, 0, 0),
+            },
+        )
+        with (
+            tarfile.open(recipe.blob(layout, replacement)) as archive,
+            self.assertRaisesRegex(ValueError, "would overwrite"),
+        ):
+            recipe.check_layer(archive, paths)
+
+    def test_vendor_os_release_replacement_requires_pinned_order_and_pair(self):
+        layout, original, replacement, inherited, put = self.vendor_layer_fixture()
+        third = put([("usr/lib/os-release", tarfile.REGTYPE, b"VERSION=third")])
+        for layers, rule, reason in (
+            ([original, replacement], None, "would overwrite"),
+            ([replacement, original], inherited, "replacement vendor layer order"),
+            ([original, original, replacement], inherited, "original vendor layer order"),
+            ([original, replacement, replacement], inherited, "replacement vendor layer order"),
+            ([original], inherited, "Missing pinned vendor layer replacement"),
+            ([original, replacement, third], inherited, "would overwrite"),
+            ([original, replacement], {**inherited, "path": "etc/file"}, "replacement rule"),
+        ):
+            with (
+                self.subTest(layers=layers, reason=reason),
+                self.assertRaisesRegex(ValueError, reason),
+            ):
+                recipe.vendor_layers(layout, layers, rule)
+
+    def test_vendor_os_release_replacement_checks_both_payloads_and_raw_layer_rules(self):
+        layout, original, replacement, inherited, put = self.vendor_layer_fixture()
+        for role in ("original", "replacement"):
+            wrong_payload = {**inherited[role], "file_sha256": "f" * 64}
+            with (
+                self.subTest(role=role),
+                self.assertRaisesRegex(ValueError, "type, ownership, mode or payload differs"),
+            ):
+                recipe.vendor_layers(
+                    layout, [original, replacement], {**inherited, role: wrong_payload}
+                )
+
+        for entries, reason in (
+            ([("etc/new", tarfile.REGTYPE, b"fresh")], "missing or ambiguous"),
+            (
+                [("usr/lib/os-release", tarfile.SYMTYPE, "etc/file")],
+                "type, ownership, mode or payload differs",
+            ),
+            (
+                [
+                    ("usr/lib/os-release", tarfile.REGTYPE, b"VERSION=second"),
+                    ("etc/file", tarfile.REGTYPE, b"altered"),
+                ],
+                "would overwrite",
+            ),
+        ):
+            modified = put(entries)
+            pin = {**inherited["replacement"], "layer": modified["digest"]}
+            with (
+                self.subTest(reason=reason),
+                self.assertRaisesRegex(ValueError, reason),
+            ):
+                recipe.vendor_layers(
+                    layout, [original, modified], {**inherited, "replacement": pin}
+                )
+
+    def test_tools_shell_layer_writes_one_exact_link_and_preserves_shell_free_server(self):
+        layout, _, _, _, put = self.vendor_layer_fixture()
+        layer = put([("bin", tarfile.SYMTYPE, "usr/bin")], modes={"bin": 0o777})
+        server_paths, vendor_bin_target = recipe.vendor_layers(layout, [layer], None)
+        self.assertEqual(vendor_bin_target, "usr/bin")
+        tools_paths = server_paths.copy()
+        bash = put(
+            [("usr/bin/bash", tarfile.REGTYPE, b"signed Bash package fixture")],
+            modes={"usr/bin/bash": 0o755},
+        )
+        with tarfile.open(recipe.blob(layout, bash)) as archive:
+            recipe.check_layer(archive, tools_paths)
+        shell = PurePosixPath("usr/bin/sh")
+        output = self.folder / "tools-shell.tar"
+        self.assertEqual(recipe.tools_shell_layer(output, tools_paths, vendor_bin_target), output)
+        self.assertIn(shell, tools_paths)
+        self.assertNotIn(shell, server_paths)
+        with tarfile.open(output) as archive:
+            (entry,) = archive.getmembers()
+            self.assertEqual(
+                (entry.name, entry.type, entry.mode, entry.linkname, entry.uid, entry.gid),
+                ("usr/bin/sh", tarfile.SYMTYPE, 0o777, "bash", 0, 0),
+            )
+            with self.assertRaisesRegex(ValueError, "known tool"):
+                recipe.check_layer(archive, server_paths, shell_free=True)
+
+    def test_tools_shell_layer_rejects_wrong_vendor_link_missing_bash_and_existing_shell(self):
+        mount = PurePosixPath("bin")
+        bash = PurePosixPath("usr/bin/bash")
+        shell = PurePosixPath("usr/bin/sh")
+        paths = {mount: (tarfile.SYMTYPE, 0o777, 0, 0), bash: (tarfile.REGTYPE, 0o755, 0, 0)}
+        for index, (inventory, target, reason) in enumerate(
+            (
+                (paths, "usr/sbin", "does not resolve"),
+                ({**paths, mount: (tarfile.DIRTYPE, 0o755, 0, 0)}, "usr/bin", "does not resolve"),
+                ({mount: paths[mount]}, "usr/bin", "requires the verified Bash"),
+                (
+                    {**paths, bash: (tarfile.SYMTYPE, 0o777, 0, 0)},
+                    "usr/bin",
+                    "requires the verified Bash",
+                ),
+                ({**paths, shell: (tarfile.REGTYPE, 0o755, 0, 0)}, "usr/bin", "would overwrite"),
+            )
+        ):
+            with self.subTest(reason=reason), self.assertRaisesRegex(ValueError, reason):
+                recipe.tools_shell_layer(self.folder / f"shell-{index}.tar", inventory, target)
 
     def test_vendor_layout_requires_exact_index_manifest_config_and_package_path(self):
         layout = self.folder / "images"

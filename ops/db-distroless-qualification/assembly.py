@@ -15,7 +15,7 @@ import tarfile
 import tempfile
 from pathlib import Path, PurePosixPath
 
-from runtime import POSTGRES, USER
+from runtime import BASH, POSTGRES, USER
 
 from packages import (
     BUDGET,
@@ -36,6 +36,11 @@ TOOLS_BIN = {
     f"{PG}/bin/{name}" for name in ("initdb", "pg_config", "pg_dump", "pg_restore", "psql")
 }
 TOOLS_ENTRY = "/usr/bin/sleep"
+VENDOR_BIN = PurePosixPath("bin")
+TOOLS_SHELL = PurePosixPath("usr/bin/sh")
+TOOLS_SHELL_TARGET = "bash"
+OS_RELEASE = PurePosixPath("usr/lib/os-release")
+OS_RELEASE_INODE = (tarfile.REGTYPE, 0o644, 0, 0)
 BASE_RESERVE = 16 * 1024**2
 PG_BUDGET = 128 * 1024**2
 TAR_MEMBERS = {tarfile.REGTYPE, tarfile.AREGTYPE, tarfile.DIRTYPE, tarfile.SYMTYPE, tarfile.LNKTYPE}
@@ -238,6 +243,69 @@ def selected_image(layout, tag, *, expected=None):
     return desc, manifest, config
 
 
+def verify_os_release(tar, expected):
+    matches = [member for member in tar.getmembers() if name_in_tar(member.name) == OS_RELEASE]
+    require(len(matches) == 1, "Inherited vendor file is missing or ambiguous")
+    member = matches[0]
+    require(
+        (member.type, member.mode, member.uid, member.gid) == OS_RELEASE_INODE
+        and 0 < member.size <= 64 * 1024
+        and hashlib.file_digest(tar.extractfile(member), "sha256").hexdigest() == expected,
+        "Inherited vendor file type, ownership, mode or payload differs",
+    )
+
+
+def vendor_layers(layout, layers, inherited):
+    # This exact vendor ancestry updates os-release once. The original blobs and
+    # the normal overwrite checks stay intact for all other paths and layers.
+    original, replacement = (
+        (inherited["original"], inherited["replacement"]) if inherited else ({}, {})
+    )
+    if inherited:
+        require(
+            inherited["path"] == str(OS_RELEASE) and original["layer"] != replacement["layer"],
+            "Unexpected inherited vendor replacement rule",
+        )
+    paths = {}
+    bin_target = None
+    original_seen = replacement_seen = False
+    for layer in layers:
+        layer_path = blob(layout, layer)
+        layer_id = layer["digest"]
+        expected = None
+        if layer_id == original.get("layer"):
+            require(
+                not original_seen and OS_RELEASE not in paths,
+                "Unexpected original vendor layer order",
+            )
+            original_seen = True
+            expected = original
+        elif layer_id == replacement.get("layer"):
+            require(
+                original_seen
+                and not replacement_seen
+                and paths.get(OS_RELEASE) == OS_RELEASE_INODE,
+                "Unexpected replacement vendor layer order",
+            )
+            del paths[OS_RELEASE]
+            replacement_seen = True
+            expected = replacement
+        with tarfile.open(layer_path, "r:*") as tar:
+            observed = check_layer(tar, paths, shell_free=True)
+            if expected is not None:
+                verify_os_release(tar, expected["file_sha256"])
+            if VENDOR_BIN in observed:
+                (top_level_bin,) = (
+                    member for member in tar.getmembers() if name_in_tar(member.name) == VENDOR_BIN
+                )
+                bin_target = top_level_bin.linkname
+    require(
+        not inherited or (original_seen and replacement_seen),
+        "Missing pinned vendor layer replacement",
+    )
+    return paths, bin_target
+
+
 def vendor_inventory(layout, raw_index, lock):
     require(
         "sha256:" + digest(regular(raw_index, 2 * 1024**2)) == lock["index"],
@@ -260,13 +328,10 @@ def vendor_inventory(layout, raw_index, lock):
         desc["size"] == amd64[0]["size"] and manifest["config"]["digest"] == lock["config"],
         "Vendor AMD64 config or size differs",
     )
-    paths = {}
-    for layer in manifest["layers"]:
-        with tarfile.open(blob(layout, layer), "r:*") as tar:
-            check_layer(tar, paths, shell_free=True)
+    paths, bin_target = vendor_layers(layout, manifest["layers"], lock.get("inherited_replacement"))
     for record in lock["packages"].values():
         require(PurePosixPath(record["member"]) in paths, "Expected vendor package path missing")
-    return desc, manifest, config, paths
+    return desc, manifest, config, paths, bin_target
 
 
 def source_binary(path):
@@ -481,11 +546,31 @@ def package_layers(folder, output, records, existing, *, shell_free):
     return [*layers, status_tar]
 
 
+def tools_shell_layer(output, paths, vendor_bin_target):
+    # PostgreSQL initdb uses libc popen, which invokes /bin/sh. The signed
+    # vendor /bin link and this tools-only alias route it to verified Bash.
+    require(
+        vendor_bin_target == "usr/bin" and paths.get(VENDOR_BIN) == (tarfile.SYMTYPE, 0o777, 0, 0),
+        "Signed vendor /bin does not resolve to /usr/bin",
+    )
+    require(
+        paths.get(PurePosixPath(BASH[1:])) == (tarfile.REGTYPE, 0o755, 0, 0),
+        "Tools shell requires the verified Bash executable",
+    )
+    member = tarfile.TarInfo(str(TOOLS_SHELL))
+    member.type, member.mode, member.linkname = tarfile.SYMTYPE, 0o777, TOOLS_SHELL_TARGET
+    with tarfile.open(output, "x:") as tar:
+        tar.addfile(member)
+    with tarfile.open(output, "r:") as tar:
+        check_layer(tar, paths)
+    return output
+
+
 def image_command(tool, layout, source, tag, layers, *, role):
     require(re.fullmatch(r"sha256:[a-f0-9]{64}", source), "Expected an exact OCI parent digest")
     require(tag in {"common", "server", "tools"} and tag == role, "Unexpected assembly tag")
     require(
-        all(re.fullmatch(r"[a-zA-Z0-9_./-]+", str(path)) for path in [layout, *layers]),
+        all(re.fullmatch(r"[a-zA-Z0-9_./+-]+", str(path)) for path in [layout, *layers]),
         "Unexpected OCI path",
     )
     command = [str(tool), "image", "mod", f"ocidir://{layout}@{source}", "--create", tag]
@@ -553,32 +638,40 @@ def assemble(folder, lock, assembly, source_receipt):
     )
     debian = lock["debian"]
     common, tools = debian["packages"], assembly["tools_packages"]
+    require("bash" in tools, "Missing pinned Bash tool package")
     require(
         not common.keys() & tools.keys() and not lock["base"]["packages"].keys() & tools.keys(),
         "Tool packages overlap existing vendor packages",
     )
+    print("debian_signatures_and_payloads", flush=True)
     apt = package_inputs(
         folder / "debian-inputs", {"debian": {**debian, "packages": common | tools}}
     )
     layout = folder / "images"
-    base, manifest, config, paths = vendor_inventory(
+    print("signed_base_inventory", flush=True)
+    base, manifest, config, paths, bin_target = vendor_inventory(
         layout, folder / "vendor-index.json", lock["base"]
     )
     with tempfile.TemporaryDirectory(dir=folder, prefix="layers-") as scratch:
         layers = Path(scratch)
+        print("common_package_layers", flush=True)
         common_layers = package_layers(folder, layers, common, paths, shell_free=True)
         server_paths, tool_paths = paths.copy(), paths.copy()
         require(
             scratch_bytes(folder) + PG_BUDGET <= BUDGET,
             "No bounded space for the measured PostgreSQL layers",
         )
+        print("archived_source_tree", flush=True)
         source = app_layers(
             folder / "source-image.tar",
             source_receipt,
             layers / "server.tar",
             layers / "pg-tools.tar",
         )
+        print("tools_package_layers", flush=True)
         tool_layers = package_layers(folder, layers, tools, tool_paths, shell_free=False)
+        tool_layers.append(tools_shell_layer(layers / "tools-shell.tar", tool_paths, bin_target))
+        print("split_payload_inventory", flush=True)
         for name, fs, shell_free in (
             ("server.tar", server_paths, True),
             ("server.tar", tool_paths, False),
@@ -610,6 +703,7 @@ def assemble(folder, lock, assembly, source_receipt):
             ("server", "common", [layers / "server.tar"]),
             ("tools", "common", [layers / "server.tar", *tool_layers, layers / "pg-tools.tar"]),
         ):
+            print(f"oci_append_{tag}", flush=True)
             desc, upstream, upstream_config = (
                 results[parent] if parent else (base, manifest, config)
             )
@@ -632,6 +726,7 @@ def assemble(folder, lock, assembly, source_receipt):
             "signed_base_manifest": base["digest"],
             "verified_debian_packages": apt,
             "source_component_files": source,
+            "tools_shell_alias": {"path": "/" + str(TOOLS_SHELL), "target": TOOLS_SHELL_TARGET},
             "images": {
                 tag: {"manifest": desc["digest"], "config": meta["config"]["digest"]}
                 for tag, (desc, meta, _) in results.items()
@@ -656,6 +751,7 @@ def main():
         )
         owned_directory(folder)
         owned_directory(folder / "debian-inputs")
+        print("assembly_preflight", flush=True)
         scratch_bytes(folder)
         assembly = scoped_source(HERE / "assembly-inputs.json", args.assembly_sha256)
         inputs = scoped_source(HERE / "inputs.json", assembly["inputs_sha256"])
