@@ -352,7 +352,14 @@ def run(server_id, tools_id, private, output, cleanup_receipt, pinned):
 
 
 def failure_sites(error):
-    allowed = {str(HERE / name): name for name in ("packages.py", "run_lab.py", "runtime.py")}
+    allowed = {
+        str(path): path.name
+        for path in (
+            *(HERE / name for name in ("packages.py", "run_lab.py", "runtime.py", "scan.py")),
+            REPO / "scripts/capture_db_image_scan.py",
+            REPO / "ops/db-sibling-scan-evidence/compare.py",
+        )
+    }
     for _ in range(3):
         if error is None:
             break

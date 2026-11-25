@@ -5,6 +5,7 @@ import json
 import os
 import shutil
 import subprocess
+import sys
 from collections import Counter
 from datetime import UTC, datetime
 from pathlib import Path
@@ -22,7 +23,7 @@ from compare import (
     load_dpkg,
     timestamp,
 )
-from run_lab import docker
+from run_lab import docker, failure_sites
 from runtime import instance_id
 
 from packages import HERE, digest, image_inventory, owned_directory, require
@@ -79,6 +80,9 @@ def run(folder, evidence, server_id):
     scratch = folder / "scan"
     scratch.mkdir(mode=0o700)
     os.chmod(scratch, 0o700)
+    temporary = scratch / "tmp"
+    temporary.mkdir(mode=0o700)
+    owned_directory(temporary)
     capture_identity(scratch)
     cfg_stock = read_json(scratch / "config.json")
     config = folder / "server-config.json"
@@ -181,6 +185,9 @@ def run(folder, evidence, server_id):
             f"{os.getuid()}:{os.getgid()}",
             "--tmpfs",
             "/tmp:rw,nosuid,nodev,size=64m",
+            # Trivy stages the complete compressed DB before extracting it.
+            "--env",
+            "TMPDIR=/scan/tmp",
             "--mount",
             f"type=bind,src={scratch},dst=/scan",
             *mount,
@@ -287,4 +294,9 @@ if __name__ == "__main__":
     parser.add_argument("evidence", type=Path)
     parser.add_argument("server_id")
     opts = parser.parse_args()
-    run(opts.folder, opts.evidence, opts.server_id)
+    try:
+        run(opts.folder, opts.evidence, opts.server_id)
+    except Exception as error:
+        for name, line in failure_sites(error):
+            print(f"scan_failure={name}:{line}", file=sys.stderr, flush=True)
+        raise

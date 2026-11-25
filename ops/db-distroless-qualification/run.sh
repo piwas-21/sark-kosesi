@@ -81,6 +81,11 @@ finish() {
         "$scratch/runtime.log" > "$out/runtime-failures.txt" || rc=1
       cat "$out/runtime-failures.txt" >&2 || rc=1
     fi
+    if [[ "$stage" == paired_scan && -f "$scratch/scan.log" ]]; then
+      awk '/^scan_failure=(capture_db_image_scan|compare|packages|run_lab|runtime|scan)\.py:[1-9][0-9]?[0-9]?$/ && ++count <= 15' \
+        "$scratch/scan.log" > "$out/scan-failures.txt" || rc=1
+      cat "$out/scan-failures.txt" >&2 || rc=1
+    fi
   fi
   if ! publish_tls_evidence "$out" "$published"; then rc=1; fi
   if ! rm -rf -- "$scratch"; then rc=1; fi
